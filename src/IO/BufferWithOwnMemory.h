@@ -2,13 +2,16 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Allocator.h>
+#include <Common/GWPAsan.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
+
+#include "config.h"
 
 
 namespace ProfileEvents
@@ -72,7 +75,7 @@ struct Memory : boost::noncopyable, Allocator
 
     size_t size() const { return m_size; }
     const char & operator[](size_t i) const { return m_data[i]; }
-    char & operator[](size_t i) { return m_data[i]; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
+    char & operator[](size_t i) { return m_data[i]; }
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 

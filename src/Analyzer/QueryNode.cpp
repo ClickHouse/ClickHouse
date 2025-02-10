@@ -29,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -51,20 +50,9 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
+    if (projection_columns_value.size() != getProjection().getNodes().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
 
-    // Ensure the number of aliases matches the number of projection columns
-    if (!this->projection_aliases_to_override.empty())
-    {
-        if (this->projection_aliases_to_override.size() != projection_columns_value.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Number of aliases does not match number of projection columns. "
-                "Expected {}, got {}",
-                projection_columns_value.size(),
-                this->projection_aliases_to_override.size());
-
-        for (size_t i = 0; i < projection_columns_value.size(); ++i)
-            projection_columns_value[i].name = this->projection_aliases_to_override[i];
-    }
     projection_columns = std::move(projection_columns_value);
 }
 
@@ -309,12 +297,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(projection_column_type_name);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
-    {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
-    }
-
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -356,7 +338,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
-    result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_query_node;
 }

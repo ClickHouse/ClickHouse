@@ -58,9 +58,7 @@ KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 KILL QUERY WHERE user='username' SYNC
 ```
 
-:::tip 
-If you are killing a query in ClickHouse Cloud or in a self-managed cluster, then be sure to use the ```ON CLUSTER [cluster-name]``` option, in order to ensure the query is killed on all replicas
-:::
+:::tip If you are killing a query in ClickHouse Cloud or in a self-managed cluster, then be sure to use the ```ON CLUSTER [cluster-name]``` option, in order to ensure the query is killed on all replicas:::
 
 Read-only users can only stop their own queries.
 
@@ -83,7 +81,7 @@ The presence of long-running or incomplete mutations often indicates that a Clic
 - Or manually kill some of these mutations by sending a `KILL` command.
 
 ``` sql
-KILL MUTATION
+KILL MUTATION [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.mutations query>
   [TEST]
   [FORMAT format]
@@ -135,11 +133,8 @@ KILL MUTATION WHERE database = 'default' AND table = 'table'
 -- Cancel the specific mutation:
 KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = 'mutation_3.txt'
 ```
+:::tip If you are killing a mutation in ClickHouse Cloud or in a self-managed cluster, then be sure to use the ```ON CLUSTER [cluster-name]``` option, in order to ensure the mutation is killed on all replicas:::
 
 The query is useful when a mutation is stuck and cannot finish (e.g. if some function in the mutation query throws an exception when applied to the data contained in the table).
 
 Changes already made by the mutation are not rolled back.
-
-:::note 
-`is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/docs/en/operations/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
-:::

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/callOnTypeIndex.h>
-#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
@@ -55,12 +54,8 @@ private:
         /// Integers are converted to Float64.
         if (Impl::always_returns_float64 || !isFloat(argument))
             return std::make_shared<DataTypeFloat64>();
-        return argument;
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return Impl::always_returns_float64 ? std::make_shared<DataTypeFloat64>() : nullptr;
+        else
+            return argument;
     }
 
     template <typename T, typename ReturnType>
@@ -71,7 +66,7 @@ private:
             /// Process all data as a whole and use FastOps implementation
 
             /// If the argument is integer, convert to Float64 beforehand
-            if constexpr (!is_floating_point<T>)
+            if constexpr (!std::is_floating_point_v<T>)
             {
                 PODArray<Float64> tmp_vec(size);
                 for (size_t i = 0; i < size; ++i)
@@ -153,7 +148,7 @@ private:
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
-            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !is_floating_point<Type>, Float64, Type>;
+            using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
             using ColVecType = ColumnVectorOrDecimal<Type>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());

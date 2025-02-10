@@ -335,4 +335,4 @@ Result:
 
 ### Online Playground
 
-The dataset is also available in the [Online Playground](https://sql.clickhouse.com?query_id=HQXNQZE26Z1QWYP9KC76ML).
+The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhcnJheUpvaW4oTkVSKSBBUyBrLAogICAgY291bnQoKSBBUyBjCkZST00gcmVjaXBlcwpHUk9VUCBCWSBrCk9SREVSIEJZIGMgREVTQwpMSU1JVCA1MA==).

@@ -1,12 +1,11 @@
 import os
+import grpc
+import pymysql.connections
+import pytest
 import random
 import sys
 import threading
 import time
-
-import grpc
-import pymysql.connections
-import pytest
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
@@ -14,8 +13,8 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
 if grpc_protocol_pb2_dir not in sys.path:
     sys.path.append(grpc_protocol_pb2_dir)
-import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
-import clickhouse_grpc_pb2_grpc
+import clickhouse_grpc_pb2, clickhouse_grpc_pb2_grpc  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+
 
 POSTGRES_SERVER_PORT = 5433
 MYSQL_SERVER_PORT = 9001

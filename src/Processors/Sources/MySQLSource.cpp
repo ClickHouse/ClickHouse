@@ -28,12 +28,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 external_storage_max_read_bytes;
-    extern const SettingsUInt64 external_storage_max_read_rows;
-    extern const SettingsUInt64 max_block_size;
-}
 
 namespace ErrorCodes
 {
@@ -42,9 +36,8 @@ namespace ErrorCodes
 }
 
 StreamSettings::StreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
-    : max_read_mysql_row_nums(
-          (settings[Setting::external_storage_max_read_rows]) ? settings[Setting::external_storage_max_read_rows] : settings[Setting::max_block_size])
-    , max_read_mysql_bytes_size(settings[Setting::external_storage_max_read_bytes])
+    : max_read_mysql_row_nums((settings.external_storage_max_read_rows) ? settings.external_storage_max_read_rows : settings.max_block_size)
+    , max_read_mysql_bytes_size(settings.external_storage_max_read_bytes)
     , auto_close(auto_close_)
     , fetch_by_name(fetch_by_name_)
     , default_num_tries_on_connection_loss(max_retry_)
@@ -60,7 +53,7 @@ MySQLSource::Connection::Connection(
 {
 }
 
-/// Used in MySQL tables and in doInvalidateQuery for dictionary source.
+/// Used in MaterializedMySQL and in doInvalidateQuery for dictionary source.
 MySQLSource::MySQLSource(
     const mysqlxx::PoolWithFailover::Entry & entry,
     const std::string & query_str,
@@ -117,10 +110,6 @@ void MySQLWithFailoverSource::onStart()
                 LOG_ERROR(log, "Failed to create connection to MySQL. ({}/{})", count_connect_attempts, settings->default_num_tries_on_connection_loss);
                 throw;
             }
-        }
-        catch (mysqlxx::ConnectionFailed & ecl)  /// Replica is probably down - try next.
-        {
-            LOG_WARNING(log, "Failed connection ({}/{}). Trying to reconnect... (Info: {})", count_connect_attempts, settings->default_num_tries_on_connection_loss, ecl.displayText());
         }
         catch (const mysqlxx::BadQuery & e)
         {
@@ -297,8 +286,7 @@ namespace
                 if (point_type != 1)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
 
-                Float64 x;
-                Float64 y;
+                Float64 x, y;
                 if (endian == 1)
                 {
                     readBinaryLittleEndian(x, payload);

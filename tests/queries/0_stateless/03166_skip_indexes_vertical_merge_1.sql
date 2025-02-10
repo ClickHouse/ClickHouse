@@ -10,9 +10,7 @@ ORDER BY a SETTINGS
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_columns_to_activate = 1,
     min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0,
-    enable_block_number_column = 0,
-    enable_block_offset_column = 0;
+    min_bytes_for_full_part_storage = 0;
 
 INSERT INTO t_ind_merge_1 SELECT number, number, rand(), rand() FROM numbers(1000);
 INSERT INTO t_ind_merge_1 SELECT number, number, rand(), rand() FROM numbers(1000);
@@ -26,7 +24,7 @@ SELECT count() FROM t_ind_merge_1 WHERE b < 100 SETTINGS force_data_skipping_ind
 EXPLAIN indexes = 1 SELECT count() FROM t_ind_merge_1 WHERE b < 100;
 
 SYSTEM FLUSH LOGS;
-SET max_rows_to_read = 0; -- system.text_log can be really big
+
 WITH
     (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND table = 't_ind_merge_1') AS uuid,
     extractAllGroupsVertical(message, 'containing (\\d+) columns \((\\d+) merged, (\\d+) gathered\)')[1] AS groups

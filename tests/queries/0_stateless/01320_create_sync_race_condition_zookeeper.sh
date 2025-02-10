@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, no-shared-merge-tree
-# no-shared-merge-tree: database ordinary not supported for shared merge tree
+# Tags: race, zookeeper, no-parallel
 
 # Creation of a database with Ordinary engine emits a warning.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
@@ -18,7 +17,7 @@ function thread1()
 {
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
-        $CLICKHOUSE_CLIENT --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE test_01320.r;"
+        $CLICKHOUSE_CLIENT -n --query "CREATE TABLE test_01320.r (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r') ORDER BY x; DROP TABLE test_01320.r;"
     done
 }
 

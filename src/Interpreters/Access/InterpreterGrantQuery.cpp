@@ -400,8 +400,7 @@ namespace
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
-        AccessRightsElements elements_to_grant;
-        AccessRightsElements elements_to_revoke;
+        AccessRightsElements elements_to_grant, elements_to_revoke;
         collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
         std::vector<UUID> roles_to_grant;
@@ -419,7 +418,7 @@ BlockIO InterpreterGrantQuery::execute()
     auto & query = updated_query->as<ASTGrantQuery &>();
 
     query.replaceCurrentUserTag(getContext()->getUserName());
-    query.access_rights_elements.eraseNotGrantable();
+    query.access_rights_elements.eraseNonGrantable();
 
     if (!query.access_rights_elements.sameOptions())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Elements of an ASTGrantQuery are expected to have the same options");
@@ -432,8 +431,7 @@ BlockIO InterpreterGrantQuery::execute()
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     /// Collect access rights and roles we're going to grant or revoke.
-    AccessRightsElements elements_to_grant;
-    AccessRightsElements elements_to_revoke;
+    AccessRightsElements elements_to_grant, elements_to_revoke;
     collectAccessRightsElementsToGrantOrRevoke(query, elements_to_grant, elements_to_revoke);
 
     std::vector<UUID> roles_to_grant;
@@ -476,7 +474,7 @@ BlockIO InterpreterGrantQuery::execute()
         calculateCurrentGrantRightsWithIntersection(new_rights, current_user_access, elements_to_grant);
 
     /// Update roles and users listed in `grantees`.
-    auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
+    auto update_func = [&](const AccessEntityPtr & entity) -> AccessEntityPtr
     {
         auto clone = entity->clone();
         if (query.current_grants)

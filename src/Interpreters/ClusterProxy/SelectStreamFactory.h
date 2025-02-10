@@ -28,10 +28,6 @@ struct StorageID;
 
 class PreparedSets;
 using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-
-class PlannerContext;
-using PlannerContextPtr = std::shared_ptr<PlannerContext>;
-
 namespace ClusterProxy
 {
 
@@ -56,7 +52,6 @@ public:
         /// Query and header may be changed depending on shard.
         ASTPtr query;
         QueryTreeNodePtr query_tree;
-        PlannerContextPtr planner_context;
 
         /// Used to check the table existence on remote node
         StorageID main_table;

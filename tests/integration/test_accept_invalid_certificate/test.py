@@ -1,10 +1,9 @@
+import pytest
+from helpers.client import Client
+from helpers.cluster import ClickHouseCluster
 import os.path
 from os import remove
 
-import pytest
-
-from helpers.client import Client
-from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MAX_RETRY = 5

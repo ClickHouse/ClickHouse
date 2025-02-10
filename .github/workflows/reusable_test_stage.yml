@@ -1,8 +1,4 @@
-env:
-  PYTHONUNBUFFERED: 1
-
 name: StageWF
-
 'on':
   workflow_call:
     inputs:
@@ -15,11 +11,8 @@ name: StageWF
         type: string
         required: true
     secrets:
-      robot_git_token:
-        required: false
-      ci_db_url:
-        required: false
-      ci_db_password:
+      secret_envs:
+        description: if given, it's passed to the environments
         required: false
 
 jobs:
@@ -35,6 +28,4 @@ jobs:
       runner_type: ${{ matrix.job_name_and_runner_type.runner_type }}
       data: ${{ inputs.data }}
     secrets:
-      robot_git_token: ${{ secrets.robot_git_token }}
-      ci_db_url: ${{ secrets.ci_db_url }}
-      ci_db_password: ${{ secrets.ci_db_password }}
+      secret_envs: ${{ secrets.secret_envs }}

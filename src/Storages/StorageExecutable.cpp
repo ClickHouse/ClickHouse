@@ -23,30 +23,12 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/ExecutableSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsSeconds max_execution_time;
-}
-
-namespace ExecutableSetting
-{
-    extern const ExecutableSettingsBool send_chunk_header;
-    extern const ExecutableSettingsUInt64 pool_size;
-    extern const ExecutableSettingsUInt64 max_command_execution_time;
-    extern const ExecutableSettingsUInt64 command_termination_timeout;
-    extern const ExecutableSettingsUInt64 command_read_timeout;
-    extern const ExecutableSettingsUInt64 command_write_timeout;
-    extern const ExecutableSettingsExternalCommandStderrReaction stderr_reaction;
-    extern const ExecutableSettingsBool check_exit_code;
-}
 
 namespace ErrorCodes
 {
@@ -98,9 +80,9 @@ StorageExecutable::StorageExecutable(
     const ConstraintsDescription & constraints,
     const String & comment)
     : IStorage(table_id_)
-    , settings(std::make_unique<ExecutableSettings>(settings_))
+    , settings(settings_)
     , input_queries(input_queries_)
-    , log(settings->is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
+    , log(settings.is_executable_pool ? getLogger("StorageExecutablePool") : getLogger("StorageExecutable"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
@@ -111,30 +93,21 @@ StorageExecutable::StorageExecutable(
     ShellCommandSourceCoordinator::Configuration configuration
     {
         .format = format,
-        .command_termination_timeout_seconds = (*settings)[ExecutableSetting::command_termination_timeout],
-        .command_read_timeout_milliseconds = (*settings)[ExecutableSetting::command_read_timeout],
-        .command_write_timeout_milliseconds = (*settings)[ExecutableSetting::command_write_timeout],
-        .stderr_reaction = (*settings)[ExecutableSetting::stderr_reaction],
-        .check_exit_code = (*settings)[ExecutableSetting::check_exit_code],
+        .command_termination_timeout_seconds = settings.command_termination_timeout,
+        .command_read_timeout_milliseconds = settings.command_read_timeout,
+        .command_write_timeout_milliseconds = settings.command_write_timeout,
+        .stderr_reaction = settings.stderr_reaction,
+        .check_exit_code = settings.check_exit_code,
 
-        .pool_size = (*settings)[ExecutableSetting::pool_size],
-        .max_command_execution_time_seconds = (*settings)[ExecutableSetting::max_command_execution_time],
+        .pool_size = settings.pool_size,
+        .max_command_execution_time_seconds = settings.max_command_execution_time,
 
-        .is_executable_pool = settings->is_executable_pool,
-        .send_chunk_header = (*settings)[ExecutableSetting::send_chunk_header],
+        .is_executable_pool = settings.is_executable_pool,
+        .send_chunk_header = settings.send_chunk_header,
         .execute_direct = true
     };
 
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
-}
-
-StorageExecutable::~StorageExecutable() = default;
-
-String StorageExecutable::getName() const
-{
-    if (settings->is_executable_pool)
-        return "ExecutablePool";
-    return "Executable";
 }
 
 void StorageExecutable::read(
@@ -147,7 +120,7 @@ void StorageExecutable::read(
     size_t max_block_size,
     size_t /*threads*/)
 {
-    auto & script_name = settings->script_name;
+    auto & script_name = settings.script_name;
 
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
@@ -177,7 +150,7 @@ void StorageExecutable::read(
     for (auto & input_query : input_queries)
     {
         QueryPipelineBuilder builder;
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef().allow_experimental_analyzer)
             builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
         else
             builder = InterpreterSelectWithUnionQuery(input_query, context, {}).buildQueryPipeline();
@@ -185,7 +158,7 @@ void StorageExecutable::read(
     }
 
     /// For executable pool we read data from input streams and convert it to single blocks streams.
-    if (settings->is_executable_pool)
+    if (settings.is_executable_pool)
         transformToSingleBlockSources(inputs);
 
     auto sample_block = storage_snapshot->metadata->getSampleBlock();
@@ -193,14 +166,14 @@ void StorageExecutable::read(
     ShellCommandSourceConfiguration configuration;
     configuration.max_block_size = max_block_size;
 
-    if (settings->is_executable_pool)
+    if (settings.is_executable_pool)
     {
         configuration.read_fixed_number_of_rows = true;
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    auto pipe = coordinator->createPipe(script_path, settings->script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
-    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
+    auto pipe = coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
     query_plan.addResources(std::move(resources));
 }
 
@@ -255,11 +228,11 @@ void registerStorageExecutable(StorageFactory & factory)
         {
             size_t max_command_execution_time = 10;
 
-            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettingsRef()[Setting::max_execution_time].totalSeconds());
+            size_t max_execution_time_seconds = static_cast<size_t>(args.getContext()->getSettingsRef().max_execution_time.totalSeconds());
             if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
                 max_command_execution_time = max_execution_time_seconds;
 
-            settings[ExecutableSetting::max_command_execution_time] = max_command_execution_time;
+            settings.max_command_execution_time = max_command_execution_time;
         }
 
         if (args.storage_def->settings)
@@ -271,7 +244,6 @@ void registerStorageExecutable(StorageFactory & factory)
 
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
-    storage_features.has_builtin_setting_fn = ExecutableSettings::hasBuiltin;
 
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {

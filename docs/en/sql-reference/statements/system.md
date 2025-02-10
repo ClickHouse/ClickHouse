@@ -4,8 +4,6 @@ sidebar_position: 36
 sidebar_label: SYSTEM
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # SYSTEM Statements
 
 ## RELOAD EMBEDDED DICTIONARIES
@@ -17,7 +15,7 @@ Always returns `Ok.` regardless of the result of the internal dictionary update.
 ## RELOAD DICTIONARIES
 
 Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
+By default, dictionaries are loaded lazily (see [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
 Always returns `Ok.` regardless of the result of the dictionary update.
 
 **Syntax**
@@ -128,13 +126,13 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 ## DROP UNCOMPRESSED CACHE
 
 Clears the uncompressed data cache.
-The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
-Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
+Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
 Clears the compiled expression cache.
-The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](../../operations/settings/settings.md#compile_expressions).
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
 ## DROP QUERY CACHE
 
@@ -148,7 +146,7 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
+Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-format_schema_path).
 
 Supported formats:
 
@@ -185,8 +183,6 @@ SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 
 ## SHUTDOWN
 
-<CloudNotSupportedBadge/>
-
 Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
 
 ## KILL
@@ -195,7 +191,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](../../operations/settings/settings.md#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [START DISTRIBUTED SENDS](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
 
 ### STOP DISTRIBUTED SENDS
 
@@ -204,10 +200,6 @@ Disables background data distribution when inserting data into distributed table
 ``` sql
 SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
-
-:::note
-In case of [`prefer_localhost_replica`](../../operations/settings/settings.md#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
-:::
 
 ### FLUSH DISTRIBUTED
 
@@ -263,8 +255,6 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 
 ### STOP MERGES
 
-<CloudNotSupportedBadge/>
-
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
@@ -276,8 +266,6 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 :::
 
 ### START MERGES
-
-<CloudNotSupportedBadge/>
 
 Provides possibility to start background merges for tables in the MergeTree family:
 
@@ -343,8 +331,6 @@ ClickHouse can manage background replication related processes in [ReplicatedMer
 
 ### STOP FETCHES
 
-<CloudNotSupportedBadge/>
-
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
@@ -353,8 +339,6 @@ SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family
 ```
 
 ### START FETCHES
-
-<CloudNotSupportedBadge/>
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
@@ -422,7 +406,7 @@ SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_
 After running this statement the `[db.]replicated_merge_tree_family_table_name` fetches commands from the common replicated log into its own replication queue, and then the query waits till the replica processes all of the fetched commands. The following modifiers are supported:
 
  - If a `STRICT` modifier was specified then the query waits for the replication queue to become empty. The `STRICT` version may never succeed if new entries constantly appear in the replication queue.
- - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.
+ - If a `LIGHTWEIGHT` modifier was specified then the query waits only for `GET_PART`, `ATTACH_PART`, `DROP_RANGE`, `REPLACE_RANGE` and `DROP_PART` entries to be processed.  
    Additionally, the LIGHTWEIGHT modifier supports an optional FROM 'srcReplicas' clause, where 'srcReplicas' is a comma-separated list of source replica names. This extension allows for more targeted synchronization by focusing only on replication tasks originating from the specified source replicas.
  - If a `PULL` modifier was specified then the query pulls new replication queue entries from ZooKeeper, but does not wait for anything to be processed.
 
@@ -522,18 +506,6 @@ Will do sync syscall.
 SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
 ```
 
-### LOAD PRIMARY KEY
-
-Load the primary keys for the given table or for all tables.
-
-```sql
-SYSTEM LOAD PRIMARY KEY [db.]name
-```
-
-```sql
-SYSTEM LOAD PRIMARY KEY
-```
-
 ### UNLOAD PRIMARY KEY
 
 Unload the primary keys for the given table or for all tables.
@@ -559,10 +531,6 @@ Trigger an immediate out-of-schedule refresh of a given view.
 ```sql
 SYSTEM REFRESH VIEW [db.]name
 ```
-
-### REFRESH VIEW
-
-Wait for the currently running refresh to complete. If the refresh fails, throws an exception. If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
 
 ### STOP VIEW, STOP VIEWS
 
@@ -592,14 +560,4 @@ If there's a refresh in progress for the given view, interrupt and cancel it. Ot
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name
-```
-
-### SYSTEM WAIT VIEW
-
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
-
-Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
-
-```sql
-SYSTEM WAIT VIEW [db.]name
 ```
