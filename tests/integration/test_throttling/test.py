@@ -19,8 +19,6 @@ import time
 
 import pytest
 
-import uuid
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -80,14 +78,18 @@ def revert_config():
     node.restart_clickhouse()
 
 
+backup_id_counter = 0
 
 
 def next_backup_name(storage):
-    backup_id_counter = uuid.uuid4().hex
+    global backup_id_counter
+    timestamp = time.time_ns()
     if storage == "local":
-        return f"Disk('default', '{backup_id_counter}/')"
+        backup_id_counter += 1
+        return f"Disk('default', '{backup_id_counter}_{timestamp}/')"
     elif storage == "remote":
-        return f"S3(s3, '{backup_id_counter}/')"
+        backup_id_counter += 1
+        return f"S3(s3, '{backup_id_counter}_{timestamp}/')"
     else:
         raise Exception(storage)
 
