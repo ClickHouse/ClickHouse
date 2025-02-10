@@ -2605,6 +2605,7 @@ void MutateTask::processProjectionsWithLightweightDelete(std::vector<MutationCom
             ctx->commands_for_part,
             commands,
             ctx->for_file_renames,
+            false,
             ctx->log);
 
         chassert(!commands.empty());
