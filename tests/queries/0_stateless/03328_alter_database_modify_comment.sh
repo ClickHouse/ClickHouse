@@ -47,6 +47,10 @@ function test_database_comments()
     echo re-attach database
     $CLICKHOUSE_CLIENT --query="ATTACH DATABASE comment_test_database;"
     get_database_comment_info
+
+    echo drop database
+    $CLICKHOUSE_CLIENT --query="DROP DATABASE comment_test_database";
+    get_database_comment_info
 }
 
 test_database_comments "Atomic"

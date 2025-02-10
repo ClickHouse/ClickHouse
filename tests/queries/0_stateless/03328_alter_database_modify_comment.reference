@@ -16,6 +16,8 @@ detach database
 re-attach database
 name=	comment_test_database	comment=	another comment on a table
 
+drop database
+
 engine : Lazy
 initial comment
 name=	comment_test_database	comment=	Test database with comment
@@ -33,4 +35,6 @@ detach database
 
 re-attach database
 name=	comment_test_database	comment=	another comment on a table
+
+drop database
 
