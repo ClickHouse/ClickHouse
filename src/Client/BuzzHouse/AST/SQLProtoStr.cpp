@@ -1212,7 +1212,7 @@ CONV_FN(SQLFuncCall, sfc)
         ret += ')';
     }
     ret += '(';
-    if (sfc.args_size() == 1 && sfc.distinct())
+    if (sfc.args_size() > 0 && sfc.distinct())
     {
         ret += "DISTINCT ";
     }
