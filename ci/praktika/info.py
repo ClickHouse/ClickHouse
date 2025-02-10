@@ -79,6 +79,10 @@ class Info:
     def is_local_run(self):
         return self.env.LOCAL_RUN
 
+    def get_job_report_url(self, latest=False):
+        url = self.get_report_url(latest=latest)
+        return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
+
     def get_report_url(self, latest=False):
         sha = self.env.SHA
         if latest:
