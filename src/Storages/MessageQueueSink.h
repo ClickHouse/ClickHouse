@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/WriteBufferFromString.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/IMessageProducer.h>
 #include <Interpreters/Context.h>

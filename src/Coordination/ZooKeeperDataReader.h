@@ -1,13 +1,6 @@
 #pragma once
 #include <string>
-#include <memory>
-
-namespace Poco
-{
-class Logger;
-}
-
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
+#include <Coordination/KeeperStorage.h>
 
 namespace DB
 {

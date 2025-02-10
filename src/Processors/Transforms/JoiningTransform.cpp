@@ -3,14 +3,6 @@
 #include <Interpreters/JoinUtils.h>
 
 #include <Common/logger_useful.h>
-#include <Interpreters/GraceHashJoin.h>
-
-namespace ProfileEvents
-{
-    extern const Event JoinBuildTableRowCount;
-    extern const Event JoinProbeTableRowCount;
-    extern const Event JoinResultRowCount;
-}
 
 namespace DB
 {
@@ -22,13 +14,12 @@ namespace ErrorCodes
 
 Block JoiningTransform::transformHeader(Block header, const JoinPtr & join)
 {
-    LOG_TRACE(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "Before join block: '{}'", header.dumpStructure());
     join->checkTypesOfKeys(header);
     join->initialize(header);
     ExtraBlockPtr tmp;
     join->joinBlock(header, tmp);
-    materializeBlockInplace(header);
-    LOG_TRACE(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
+    LOG_TEST(getLogger("JoiningTransform"), "After join block: '{}'", header.dumpStructure());
     return header;
 }
 
@@ -124,7 +115,7 @@ IProcessor::Status JoiningTransform::prepare()
         return Status::NeedData;
 
     input_chunk = input.pull(true);
-    has_input = input_chunk.hasRows() || on_totals;
+    has_input = true;
     return Status::Ready;
 }
 
@@ -163,12 +154,8 @@ void JoiningTransform::work()
             return;
         }
 
-        if (block.rows())
-        {
-            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunks.emplace_back(block.getColumns(), block.rows());
-            has_output = true;
-        }
+        output_chunks.emplace_back(block.getColumns(), block.rows());
+        has_output = true;
     }
 }
 
@@ -202,18 +189,9 @@ void JoiningTransform::transform(Chunk & chunk)
         JoinCommon::joinTotals(left_totals, right_totals, join->getTableJoin(), res.back());
     }
     else
-    {
         res = readExecute(chunk);
-    }
 
-    for (const auto & block : res)
-    {
-        if (block.rows())
-        {
-            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, block.rows());
-            output_chunks.emplace_back(block.getColumns(), block.rows());
-        }
-    }
+    std::ranges::for_each(res, [this](Block & block) { output_chunks.emplace_back(block.getColumns(), block.rows()); });
 }
 
 Blocks JoiningTransform::readExecute(Chunk & chunk)
@@ -223,7 +201,6 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
 
     auto join_block = [&]()
     {
-        ProfileEvents::increment(ProfileEvents::JoinProbeTableRowCount, block.rows());
         if (join->isScatteredJoin())
         {
             join->joinBlock(block, remaining_blocks, res);
@@ -264,11 +241,10 @@ Blocks JoiningTransform::readExecute(Chunk & chunk)
     return res;
 }
 
-FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_, FinishCounterPtr finish_counter_)
-    : IProcessor({input_header}, {Block()}), join(std::move(join_)), finish_counter(std::move(finish_counter_))
-{
-    spillable = typeid_cast<GraceHashJoin *>(join.get());
-}
+FillingRightJoinSideTransform::FillingRightJoinSideTransform(Block input_header, JoinPtr join_)
+    : IProcessor({input_header}, {Block()})
+    , join(std::move(join_))
+{}
 
 InputPort * FillingRightJoinSideTransform::addTotalsPort()
 {
@@ -336,9 +312,6 @@ IProcessor::Status FillingRightJoinSideTransform::prepare()
         return Status::Ready;
     }
 
-    if (finish_counter->isLast())
-        join->onBuildPhaseFinish();
-
     output.finish();
     return Status::Finished;
 }
@@ -351,44 +324,14 @@ void FillingRightJoinSideTransform::work()
     if (for_totals)
         join->setTotals(block);
     else
-    {
-        ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, block.rows());
         stop_reading = !join->addBlockToJoin(block);
-    }
 
-    if (input.isFinished() && !join->supportParallelJoin())
+    if (input.isFinished())
         join->tryRerangeRightTableData();
 
     set_totals = for_totals;
 }
 
-ProcessorMemoryStats FillingRightJoinSideTransform::getMemoryStats()
-{
-    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
-    {
-        ProcessorMemoryStats res;
-        res.spillable_memory_bytes = grace_join->getTotalByteCount();
-        // in case the hash table will resize which requires more than 2x additional memory.
-        // we must reserve enough memory.
-        res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
-        return res;
-    }
-    return {};
-}
-
-bool FillingRightJoinSideTransform::spillOnSize(size_t bytes)
-{
-    if (auto * grace_join = typeid_cast<GraceHashJoin *>(join.get()))
-    {
-        auto total_bytes = grace_join->getTotalByteCount();
-        if (total_bytes >= bytes)
-        {
-            grace_join->forceSpill();
-            return true;
-        }
-    }
-    return false;
-}
 
 DelayedJoinedBlocksWorkerTransform::DelayedJoinedBlocksWorkerTransform(
     Block output_header_,
@@ -570,7 +513,7 @@ IProcessor::Status DelayedJoinedBlocksTransform::prepare()
     {
         // This counter is used to ensure that only the last DelayedJoinedBlocksWorkerTransform
         // could read right non-joined blocks from the join.
-        auto left_delayed_stream_finished_counter = std::make_shared<FinishCounter>(outputs.size());
+        auto left_delayed_stream_finished_counter = std::make_shared<JoiningTransform::FinishCounter>(outputs.size());
         for (auto & output : outputs)
         {
             Chunk chunk;

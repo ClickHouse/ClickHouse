@@ -4,8 +4,7 @@
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowOutputFormat.h>
-#    include <Formats/FormatSchemaInfo.h>
-#    include <Formats/ProtobufSchemas.h>
+#   include <Formats/FormatSchemaInfo.h>
 
 namespace DB
 {
@@ -43,7 +42,6 @@ private:
     void resetFormatterImpl() override;
 
     std::unique_ptr<ProtobufWriter> writer;
-    ProtobufSchemas::DescriptorHolder descriptor_holder;
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 

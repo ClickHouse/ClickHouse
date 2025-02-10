@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
 #include <Common/COW.h>
@@ -35,10 +34,6 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using IColumnPermutation = PaddedPODArray<size_t>;
-using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -52,6 +47,8 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
+using EqualRanges = std::vector<EqualRange>;
+
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -62,6 +59,9 @@ struct ColumnCheckpoint
     explicit ColumnCheckpoint(size_t size_) : size(size_) {}
     virtual ~ColumnCheckpoint() = default;
 };
+
+using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
+using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
 {
@@ -144,8 +144,6 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
-    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
-
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
@@ -158,7 +156,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
     }
 
-    /// If column stores native numeric type, it returns n-th element cast to Float64
+    /// If column stores native numeric type, it returns n-th element casted to Float64
     /// Is used in regression methods to cast each features into uniform type
     [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
     {
@@ -170,7 +168,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
     }
 
-    /** If column is numeric, return value of n-th element, cast to UInt64.
+    /** If column is numeric, return value of n-th element, casted to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
@@ -187,7 +185,7 @@ public:
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
 
-    /** If column is numeric, return value of n-th element, cast to bool.
+    /** If column is numeric, return value of n-th element, casted to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
@@ -350,7 +348,7 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-    using Filter = IColumnFilter;
+    using Filter = PaddedPODArray<UInt8>;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
@@ -363,7 +361,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = IColumnPermutation;
+    using Permutation = PaddedPODArray<size_t>;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -560,22 +558,22 @@ public:
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachMutableSubcolumn(MutableColumnCallback) {}
+    virtual void forEachSubcolumn(MutableColumnCallback) {}
 
-    /// Note: If you implement forEachSubcolumn(Recursively), you must also implement forEachMutableSubcolumn(Recursively), and vice versa
+    /// Default implementation calls the mutable overload using const_cast.
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const {}
+    virtual void forEachSubcolumn(ColumnCallback) const;
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
     using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback) {}
+    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
 
     /// Default implementation calls the mutable overload using const_cast.
     using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
@@ -603,8 +601,7 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
-    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
+    [[nodiscard]] virtual Ptr compress() const
     {
         /// No compression by default.
         return getPtr();
@@ -632,7 +629,7 @@ public:
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
+        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 
@@ -753,6 +750,13 @@ private:
     }
 #endif
 };
+
+using ColumnPtr = IColumn::Ptr;
+using MutableColumnPtr = IColumn::MutablePtr;
+using Columns = std::vector<ColumnPtr>;
+using MutableColumns = std::vector<MutableColumnPtr>;
+
+using ColumnRawPtrs = std::vector<const IColumn *>;
 
 
 template <typename ... Args>

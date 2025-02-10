@@ -57,7 +57,7 @@ public:
             return arguments[1].column;
 
         /// Could not contain nulls, so nullIf makes no sense.
-        if (!canContainNull(*arguments[0].type))
+        if (!arguments[0].type->isNullable())
             return arguments[0].column;
 
         /// ifNull(col1, col2) == if(isNotNull(col1), assumeNotNull(col1), col2)

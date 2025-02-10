@@ -19,13 +19,12 @@ ProtobufListInputFormat::ProtobufListInputFormat(
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
-    , descriptor_holder(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-          schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          descriptor_holder,
+          ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,

@@ -4,7 +4,7 @@ sidebar_position: 50
 sidebar_label: 設定ファイル
 ---
 
-# 設定ファイル {#configuration-files}
+# 設定ファイル
 
 ClickHouseサーバーは、XMLまたはYAML構文の設定ファイルで構成できます。ほとんどのインストールタイプでは、ClickHouseサーバーはデフォルトの設定ファイルとして `/etc/clickhouse-server/config.xml` で実行されますが、サーバーの起動時にコマンドラインオプション `--config-file=` または `-C` を使用して設定ファイルの場所を手動で指定することも可能です。追加の設定ファイルは、メインの設定ファイルの相対ディレクトリ `config.d/` に配置することができます。例えば、ディレクトリ `/etc/clickhouse-server/config.d/` に配置します。このディレクトリとメインの設定がClickHouseサーバーで設定を適用する前に前処理ステップでマージされます。設定ファイルはアルファベット順でマージされます。更新を簡素化し、モジュール化を改善するためには、デフォルトの `config.xml` ファイルを変更せず、追加のカスタマイズを `config.d/` に配置するのが最良のプラクティスです。
 (ClickHouse keeper の設定は `/etc/clickhouse-keeper/keeper_config.xml` に存在するため、追加ファイルは `/etc/clickhouse-keeper/keeper_config.d/` に配置する必要があります。)

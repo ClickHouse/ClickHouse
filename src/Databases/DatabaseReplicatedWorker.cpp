@@ -199,7 +199,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
 }
 
-String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &)
+String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &, QueryStatusPtr)
 {
     auto zookeeper = getAndSetZooKeeper();
     return enqueueQueryImpl(zookeeper, entry, database);
@@ -307,7 +307,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -368,7 +368,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    processTask(*task, zookeeper, internal_query);
+    processTask(*task, zookeeper);
 
     if (!task->was_executed)
     {

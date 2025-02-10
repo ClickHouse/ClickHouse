@@ -11,7 +11,6 @@
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -28,7 +27,6 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
@@ -66,7 +64,6 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
     extern const SettingsBool parallel_view_processing;
     extern const SettingsBool use_concurrency_control;
-    extern const SettingsBool use_async_executor_for_materialized_views;
 }
 
 namespace ErrorCodes
@@ -134,7 +131,6 @@ private:
 };
 
 /// For source chunk, execute view query over it.
-template <typename Executor>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
 {
 public:
@@ -154,7 +150,7 @@ private:
     struct State
     {
         QueryPipeline pipeline;
-        Executor executor;
+        PullingPipelineExecutor executor;
 
         explicit State(QueryPipeline pipeline_)
             : pipeline(std::move(pipeline_))
@@ -374,7 +370,7 @@ std::optional<Chain> generateViewChain(
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
         out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
-        if (interpreter.shouldAddSquashingForStorage(inner_table))
+        if (interpreter.shouldAddSquashingFroStorage(inner_table))
         {
             bool table_prefers_large_blocks = inner_table->prefersLargeBlocks();
             const auto & settings = insert_context->getSettingsRef();
@@ -385,7 +381,7 @@ std::optional<Chain> generateViewChain(
                 table_prefers_large_blocks ? settings[Setting::min_insert_block_size_bytes] : 0ULL));
         }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Before squashing", out.getInputHeader()));
 #endif
 
@@ -434,34 +430,20 @@ std::optional<Chain> generateViewChain(
 
     if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
     {
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", out.getInputHeader()));
 #endif
 
-        if (context->getSettingsRef()[Setting::use_async_executor_for_materialized_views])
-        {
-             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingAsyncPipelineExecutor>>(
-                 storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
-             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
+            storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
+        executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
-             out.addSource(std::move(executing_inner_query));
-        }
-        else
-        {
+        out.addSource(std::move(executing_inner_query));
 
-             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingPipelineExecutor>>(
-                 storage_header, views_data->views.back(), views_data, disable_deduplication_for_children);
-             executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
-
-             out.addSource(std::move(executing_inner_query));
-
-        }
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", out.getInputHeader()));
 #endif
     }
-
 
     return out;
 }
@@ -479,7 +461,7 @@ Chain buildPushingToViewsChain(
     std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
     const Block & live_view_header
-)
+ )
 {
     checkStackSize();
     Chain result_chain;
@@ -508,12 +490,6 @@ Chain buildPushingToViewsChain(
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
-    auto log = getLogger("buildPushingToViewsChain");
-    LOG_TEST(log, "Views: {}", views.size());
-
-    if (no_destination && views.empty())
-        LOG_WARNING(log, "No views attached and no_destination = 1");
-
     ViewsDataPtr views_data;
     if (!views.empty())
     {
@@ -522,6 +498,7 @@ Chain buildPushingToViewsChain(
     }
 
     std::vector<Chain> chains;
+
     for (const auto & view_id : views)
     {
         try
@@ -547,7 +524,7 @@ Chain buildPushingToViewsChain(
                 context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
             }
         }
-        catch (const Poco::Exception & e)
+        catch (const Exception & e)
         {
             LOG_ERROR(&Poco::Logger::get("PushingToViews"), "Failed to push block to view {}, {}", view_id, e.message());
             if (!context->getSettingsRef()[Setting::materialized_views_ignore_errors])
@@ -804,8 +781,7 @@ IProcessor::Status CopyingDataToViewsTransform::prepare()
 }
 
 
-template <typename Executor>
-ExecutingInnerQueryFromViewTransform<Executor>::ExecutingInnerQueryFromViewTransform(
+ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
     const Block & header,
     ViewRuntimeData & view_,
     std::shared_ptr<ViewsData> views_data_,
@@ -817,16 +793,14 @@ ExecutingInnerQueryFromViewTransform<Executor>::ExecutingInnerQueryFromViewTrans
 {
 }
 
-template <typename Executor>
-void ExecutingInnerQueryFromViewTransform<Executor>::onConsume(Chunk chunk)
+void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
     state.emplace(process(std::move(block), view, *views_data, std::move(chunk.getChunkInfos()), disable_deduplication_for_children));
 }
 
 
-template <typename Executor>
-ExecutingInnerQueryFromViewTransform<Executor>::GenerateResult ExecutingInnerQueryFromViewTransform<Executor>::onGenerate()
+ExecutingInnerQueryFromViewTransform::GenerateResult ExecutingInnerQueryFromViewTransform::onGenerate()
 {
     GenerateResult res;
     if (!state.has_value())
@@ -1010,7 +984,8 @@ void FinalizingViewsTransform::work()
 
             LOG_TRACE(
                 getLogger("PushingToViews"),
-                "Pushing from {} to {} took {} ms.",
+                "Pushing ({}) from {} to {} took {} ms.",
+                views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
                 view.runtime_stats->elapsed_ms);

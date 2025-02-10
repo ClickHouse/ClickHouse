@@ -212,7 +212,7 @@ NamesAndTypesList ArrowSchemaReader::readSchema()
         format_settings.arrow.skip_columns_with_unsupported_types_in_schema_inference,
         format_settings.schema_inference_make_columns_nullable != 0);
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header, format_settings);
+        return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
 

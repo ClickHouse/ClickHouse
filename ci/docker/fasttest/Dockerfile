@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 # ARG for quick switch to a given ubuntu mirror
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:19.1.4"
+ARG LLVM_APT_VERSION="1:19.1.4~*"
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
 
@@ -27,7 +27,7 @@ RUN apt-get update \
     && echo "deb https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
         /etc/apt/sources.list \
     && apt-get update \
-    && apt-get satisfy --yes --no-install-recommends "llvm-${LLVM_VERSION} (>= ${LLVM_APT_VERSION})" \
+    && apt-get install --yes --no-install-recommends --verbose-versions llvm-${LLVM_VERSION}>=${LLVM_APT_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
@@ -102,13 +102,5 @@ RUN groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse \
     && mkdir -p /.cache/sccache && chmod 777 /.cache/sccache
 
-
-# TODO move nfpm to docker that will do packaging
-ARG TARGETARCH
-ARG NFPM_VERSION=2.20.0
-RUN arch=${TARGETARCH:-amd64} \
-    && curl -Lo /tmp/nfpm.deb "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${arch}.deb" \
-    && dpkg -i /tmp/nfpm.deb \
-    && rm /tmp/nfpm.deb
-
+ENV PYTHONPATH="/wd"
 ENV PYTHONUNBUFFERED=1

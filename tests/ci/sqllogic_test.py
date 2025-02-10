@@ -38,7 +38,6 @@ def get_run_command(
 ) -> str:
     return (
         f"docker run "
-        "--tmpfs /tmp/clickhouse "
         f"--volume={builds_path}:/package_folder "
         f"--volume={repo_path}:/repo "
         f"--volume={result_path}:/test_output "
