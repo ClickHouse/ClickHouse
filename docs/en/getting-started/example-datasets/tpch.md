@@ -1,10 +1,9 @@
 ---
+description:  "The TPC-H benchmark data set and queries."
 slug: /en/getting-started/example-datasets/tpch
 sidebar_label: TPC-H
-description:  "The TPC-H benchmark data set and queries."
+title: "TPC-H (1999)"
 ---
-
-# TPC-H (1999)
 
 A popular benchmark which models the internal data warehouse of a wholesale supplier.
 The data is stored into a 3rd normal form representation, requiring lots of joins at query runtime.

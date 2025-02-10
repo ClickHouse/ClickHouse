@@ -25,10 +25,9 @@
 
 #include <DataTypes/DataTypesDecimal.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <atomic>
 #include <memory>
