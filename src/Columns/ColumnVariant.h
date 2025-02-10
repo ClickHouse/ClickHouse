@@ -2,12 +2,12 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
 {
-struct FormatSettings;
 
 /**
  * Column for storing Variant(...) type values.
@@ -173,7 +173,6 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
@@ -255,7 +254,7 @@ public:
     void forEachSubcolumn(MutableColumnCallback callback) override;
     void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
     bool structureEquals(const IColumn & rhs) const override;
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;

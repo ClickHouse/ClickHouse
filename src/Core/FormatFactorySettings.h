@@ -849,11 +849,6 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 )", 0) \
-    DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
-
-Enabled by default.
-)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
@@ -897,27 +892,11 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
-    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 24, R"(
-If the column name is too long, cut it to this length.
-The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
-)", 0) \
-    DECLARE(UInt64, output_format_pretty_max_column_name_width_min_chars_to_cut, 4, R"(
-Minimum characters to cut if the column name is too long.
-The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
-)", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width, 10000, R"(
 Maximum width of value to display in Pretty formats. If greater - it will be cut.
-The value 0 means - never cut.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
-)", 0) \
-DECLARE(UInt64, output_format_pretty_squash_consecutive_ms, 50, R"(
-Wait for the next block for up to specified number of milliseconds and squash it to the previous before writing.
-This avoids frequent output of too small blocks, but still allows to display data in a streaming fashion.
-)", 0) \
-DECLARE(UInt64, output_format_pretty_squash_max_wait_ms, 1000, R"(
-Output the pending block in pretty formats if more than the specified number of milliseconds has passed since the previous output.
 )", 0) \
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
@@ -992,9 +971,6 @@ Check page size every this many rows. Consider decreasing if you have columns wi
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
 Add a possibility to write page index into parquet files.
-)", 0) \
-    DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
-Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1103,6 +1079,12 @@ Field escaping rule (for Regexp format)
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
 Skip lines unmatched by regular expression (for Regexp format)
 )", 0) \
+    \
+    DECLARE(Bool, output_format_enable_streaming, false, R"(
+Enable streaming in output formats that support it.
+
+Disabled by default.
+)", 0) \
     DECLARE(Bool, output_format_write_statistics, true, R"(
 Write statistics about read rows, bytes, time elapsed in suitable output formats.
 
@@ -1116,26 +1098,6 @@ If enabled and if output is a terminal, highlight every digit corresponding to t
 )", 0) \
     DECLARE(UInt64, output_format_pretty_single_large_number_tip_threshold, 1'000'000, R"(
 Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)
-)", 0) \
-    DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
-If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
-)", 0) \
-    DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
-If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
-If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
-)", 0) \
-    DECLARE(Bool, output_format_pretty_fallback_to_vertical, true, R"(
-If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
-See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
-)", 0) \
-    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 10, R"(
-The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
-)", 0) \
-    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
-The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
-)", 0) \
-    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
-The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
@@ -1188,9 +1150,6 @@ Target row index stride in ORC output format
 )", 0) \
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
-)", 0) \
-    DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
-The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0) \
     \
     DECLARE(CapnProtoEnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::CapnProtoEnumComparingMode::BY_VALUES, R"(
@@ -1272,15 +1231,7 @@ Execute a pipeline for reading dictionary source in several threads. It's suppor
 Prefer more precise (but slower) float parsing algorithm
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
-
-Possible values:
-
-- `ignore` — Silently ignore overflows. Result are undefined.
-- `throw` — Throw an exception in case of overflow.
-- `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
-
-Default value: `ignore`.
+Overflow mode for Date, Date32, DateTime, DateTime64 types. Possible values: 'ignore', 'throw', 'saturate'.
 )", 0) \
     DECLARE(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, R"(
 Validate usage of experimental and suspicious types inside nested types like Array/Map/Tuple
@@ -1299,11 +1250,11 @@ Set the quoting style for identifiers in SHOW CREATE query
     /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false)                                                                          \
 
 #endif // __CLION_IDE__
 
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
+

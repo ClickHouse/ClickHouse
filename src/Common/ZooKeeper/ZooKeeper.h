@@ -14,7 +14,7 @@
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <unistd.h>
 
 

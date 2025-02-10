@@ -14,8 +14,8 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH="."
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h'
-EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|utils/keeper-bench/example.yaml'
+EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettingsDeclaration\.h'
 
 # From [1]:
 #     But since array_to_string_internal() in array.c still loops over array
@@ -69,7 +69,6 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::end
     ProfileEvents::increment
     ProfileEvents::incrementForLogMessage
-    ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
     ProfileEvents::Timer
     ProfileEvents::Type
@@ -86,8 +85,6 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::add
     CurrentMetrics::sub
     CurrentMetrics::get
-    CurrentMetrics::getDocumentation
-    CurrentMetrics::getName
     CurrentMetrics::set
     CurrentMetrics::end
     CurrentMetrics::Increment
@@ -101,7 +98,6 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::end
-    ErrorCodes::extendedMessage
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
@@ -192,7 +188,6 @@ std_cerr_cout_excludes=(
     /tests/
     _fuzzer
     # OK
-    base/base/ask.cpp
     src/Common/ProgressIndication.cpp
     src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests

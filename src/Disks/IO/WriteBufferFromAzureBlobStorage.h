@@ -28,7 +28,7 @@ class TaskTracker;
 class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
 public:
-    using AzureClientPtr = std::shared_ptr<const AzureBlobStorage::ContainerClient>;
+    using AzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
 
     WriteBufferFromAzureBlobStorage(
         AzureClientPtr blob_container_client_,

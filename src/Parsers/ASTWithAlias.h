@@ -30,14 +30,14 @@ public:
     String tryGetAlias() const override { return alias; }
     void setAlias(const String & to) override { alias = to; }
 
+    /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const final;
+
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
-    virtual void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
+    virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 
 protected:
-    /// Calls formatImplWithoutAlias, and also outputs an alias. If necessary, encloses the entire expression in brackets.
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const final;
-
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;
 };
 

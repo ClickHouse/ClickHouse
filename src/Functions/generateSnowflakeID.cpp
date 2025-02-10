@@ -224,9 +224,9 @@ REGISTER_FUNCTION(GenerateSnowflakeID)
     };
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UInt64";
     FunctionDocumentation::Examples examples = {{"no_arguments", "SELECT generateSnowflakeID()", "7201148511606784000"}, {"with_machine_id", "SELECT generateSnowflakeID(1)", "7201148511606784001"}, {"with_expression_and_machine_id", "SELECT generateSnowflakeID('some_expression', 1)", "7201148511606784002"}};
-    FunctionDocumentation::Category category = {"UUIDs"};
+    FunctionDocumentation::Categories categories = {"Snowflake ID"};
 
-    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, category});
+    factory.registerFunction<FunctionGenerateSnowflakeID>({description, syntax, arguments, returned_value, examples, categories});
 }
 
 }

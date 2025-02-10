@@ -29,7 +29,7 @@ The condition could be any expression based on your requirements.
 Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 8:
 
 ```sql
-SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,6);
+SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 ```
 
 Result:

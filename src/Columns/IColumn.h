@@ -34,8 +34,6 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -146,8 +144,6 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
-    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
-
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
@@ -160,7 +156,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
     }
 
-    /// If column stores native numeric type, it returns n-th element cast to Float64
+    /// If column stores native numeric type, it returns n-th element casted to Float64
     /// Is used in regression methods to cast each features into uniform type
     [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
     {
@@ -172,7 +168,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
     }
 
-    /** If column is numeric, return value of n-th element, cast to UInt64.
+    /** If column is numeric, return value of n-th element, casted to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
@@ -189,7 +185,7 @@ public:
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
 
-    /** If column is numeric, return value of n-th element, cast to bool.
+    /** If column is numeric, return value of n-th element, casted to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
@@ -605,8 +601,7 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
-    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
+    [[nodiscard]] virtual Ptr compress() const
     {
         /// No compression by default.
         return getPtr();

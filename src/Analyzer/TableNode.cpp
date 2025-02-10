@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 
 #include <Core/Settings.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {

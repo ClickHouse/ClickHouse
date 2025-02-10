@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List
 
-from .cache import Cache
-from .settings import Settings
-from .utils import MetaClasses, Utils
+from praktika.cache import Cache
+from praktika.settings import Settings
+from praktika.utils import MetaClasses, Utils
 
 
 @dataclass
@@ -17,7 +17,6 @@ class RunConfig(MetaClasses.Serializable):
     cache_artifacts: Dict[str, Cache.CacheRecord]
     cache_jobs: Dict[str, Cache.CacheRecord]
     sha: str
-    custom_data: Dict[str, Any]
 
     @classmethod
     def from_dict(cls, obj):

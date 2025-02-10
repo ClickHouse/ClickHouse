@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 
 #include <Poco/NumberParser.h>

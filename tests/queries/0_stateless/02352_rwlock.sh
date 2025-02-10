@@ -24,7 +24,7 @@ function wait_query_by_id_started()
     # wait for query to be started
     while [ "$($CLICKHOUSE_CLIENT "$@" -q "select count() from system.processes where query_id = '$query_id'")" -ne 1 ]; do
         if [ "$(
-            $CLICKHOUSE_CLIENT --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 -m -q "
+            $CLICKHOUSE_CLIENT --max_bytes_before_external_group_by 0 -m -q "
                 system flush logs;
 
                 select count() from system.query_log
@@ -59,7 +59,7 @@ while :; do
 
     insert_query_id="insert-$(random_str 10)"
     # 20 seconds sleep
-    $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 20000000 --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
+    $CLICKHOUSE_CLIENT --function_sleep_max_microseconds_per_block 20000000 --max_bytes_before_external_group_by 0 --query_id "$insert_query_id" -q "INSERT INTO ${CLICKHOUSE_DATABASE}_ordinary.data_02352 SELECT sleepEachRow(1) FROM numbers(20) GROUP BY number" &
     if ! wait_query_by_id_started "$insert_query_id"; then
         wait
         continue
