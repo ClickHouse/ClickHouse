@@ -304,7 +304,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
             && (vv.is_deterministic || this->allow_not_deterministic);
     };
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
-    const bool has_view = collectionHas<SQLTable>(has_view_lambda);
+    const bool has_view = collectionHas<SQLView>(has_view_lambda);
 
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
     const uint32_t cte = 10 * static_cast<uint32_t>(!this->ctes.empty());
