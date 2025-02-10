@@ -792,10 +792,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
-                tx->metadata_transaction->createMetadataFile(path, key_, count);
+                if (count == 0)
+                    tx->metadata_transaction->createEmptyMetadataFile(path);
+                else
+                    tx->metadata_transaction->createMetadataFile(path, key_, count);
             }
             else
-                tx->metadata_transaction->addBlobToMetadata(path, key_, count);
+            {
+                if (count != 0)
+                    tx->metadata_transaction->addBlobToMetadata(path, key_, count);
+            }
 
             tx->metadata_transaction->commit();
         };
@@ -827,10 +833,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                         object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
                     }
 
-                    tx->createMetadataFile(path, key_, count);
+                    if (count == 0)
+                        tx->createEmptyMetadataFile(path);
+                    else
+                        tx->createMetadataFile(path, key_, count);
                 }
                 else
-                    tx->addBlobToMetadata(path, key_, count);
+                {
+                    if (count != 0)
+                        tx->addBlobToMetadata(path, key_, count);
+                }
             });
         };
 
@@ -847,7 +859,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         settings);
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(
-        std::move(impl), std::move(create_metadata_callback), object.remote_path);
+        std::move(impl), std::move(create_metadata_callback), object.remote_path, true);
 }
 
 
