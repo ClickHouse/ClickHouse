@@ -2,26 +2,25 @@
 
 #if USE_PARQUET
 
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnNullable.h>
-#include <Core/NamesAndTypes.h>
-#include <arrow/api.h>
-#include <arrow/status.h>
-#include <parquet/file_reader.h>
-#include <parquet/statistics.h>
-#include "ArrowBufferedStreams.h"
-#include <DataTypes/NestedUtils.h>
+#    include <Columns/ColumnArray.h>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <Core/NamesAndTypes.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <DataTypes/NestedUtils.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/ReadBufferFromMemory.h>
+#    include <Processors/Formats/Impl/Parquet/ParquetMetadataReader.h>
+#    include <arrow/api.h>
+#    include <arrow/status.h>
+#    include <parquet/statistics.h>
 
 
 namespace DB
@@ -29,7 +28,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 static NamesAndTypesList getHeaderForParquetMetadata()
@@ -43,32 +42,31 @@ static NamesAndTypesList getHeaderForParquetMetadata()
         {"total_uncompressed_size", std::make_shared<DataTypeUInt64>()},
         {"total_compressed_size", std::make_shared<DataTypeUInt64>()},
         {"columns",
-         std::make_shared<DataTypeArray>(
-             std::make_shared<DataTypeTuple>(
-                 DataTypes{
-                     std::make_shared<DataTypeString>(),
-                     std::make_shared<DataTypeString>(),
-                     std::make_shared<DataTypeUInt64>(),
-                     std::make_shared<DataTypeUInt64>(),
-                     std::make_shared<DataTypeString>(),
-                     std::make_shared<DataTypeString>(),
-                     std::make_shared<DataTypeString>(),
-                     std::make_shared<DataTypeUInt64>(),
-                     std::make_shared<DataTypeUInt64>(),
-                     std::make_shared<DataTypeString>(),
-                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-                 Names{
-                     "name",
-                     "path",
-                     "max_definition_level",
-                     "max_repetition_level",
-                     "physical_type",
-                     "logical_type",
-                     "compression",
-                     "total_uncompressed_size",
-                     "total_compressed_size",
-                     "space_saved",
-                     "encodings"}))},
+         std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+             DataTypes{
+                 std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeUInt64>(),
+                 std::make_shared<DataTypeUInt64>(),
+                 std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeUInt64>(),
+                 std::make_shared<DataTypeUInt64>(),
+                 std::make_shared<DataTypeString>(),
+                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+             Names{
+                 "name",
+                 "path",
+                 "max_definition_level",
+                 "max_repetition_level",
+                 "physical_type",
+                 "logical_type",
+                 "compression",
+                 "total_uncompressed_size",
+                 "total_compressed_size",
+                 "space_saved",
+                 "encodings"}))},
         {"row_groups",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
              DataTypes{
@@ -77,25 +75,31 @@ static NamesAndTypesList getHeaderForParquetMetadata()
                  std::make_shared<DataTypeUInt64>(),
                  std::make_shared<DataTypeUInt64>(),
                  std::make_shared<DataTypeUInt64>(),
-                 std::make_shared<DataTypeArray>(
-                     std::make_shared<DataTypeTuple>(
-                         DataTypes{
-                             std::make_shared<DataTypeString>(),
-                             std::make_shared<DataTypeString>(),
-                             std::make_shared<DataTypeUInt64>(),
-                             std::make_shared<DataTypeUInt64>(),
-                             DataTypeFactory::instance().get("Bool"),
-                             std::make_shared<DataTypeTuple>(
-                                 DataTypes{
-                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
-                                     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-                                 Names{"num_values", "null_count", "distinct_count", "min", "max"}),
-                             std::make_shared<DataTypeInt64>(),
-                         },
-                         Names{"name", "path", "total_compressed_size", "total_uncompressed_size", "have_statistics", "statistics", "bloom_filter_bytes"}))},
+                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
+                     DataTypes{
+                         std::make_shared<DataTypeString>(),
+                         std::make_shared<DataTypeString>(),
+                         std::make_shared<DataTypeUInt64>(),
+                         std::make_shared<DataTypeUInt64>(),
+                         DataTypeFactory::instance().get("Bool"),
+                         std::make_shared<DataTypeTuple>(
+                             DataTypes{
+                                 std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+                                 std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+                                 std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+                                 std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+                                 std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+                             Names{"num_values", "null_count", "distinct_count", "min", "max"}),
+                         std::make_shared<DataTypeInt64>(),
+                     },
+                     Names{
+                         "name",
+                         "path",
+                         "total_compressed_size",
+                         "total_uncompressed_size",
+                         "have_statistics",
+                         "statistics",
+                         "bloom_filter_bytes"}))},
              Names{"file_offset", "num_columns", "num_rows", "total_uncompressed_size", "total_compressed_size", "columns"}))},
     };
     return names_and_types;
@@ -115,7 +119,8 @@ void checkHeader(const Block & header)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected column: {}. ParquetMetadata format allows only the next columns: num_columns, num_rows, num_row_groups, "
-                "format_version, metadata_size, total_uncompressed_size, total_compressed_size, columns, row_groups", name);
+                "format_version, metadata_size, total_uncompressed_size, total_compressed_size, columns, row_groups",
+                name);
 
         if (!it->second->equals(*type))
             throw Exception(
@@ -127,17 +132,9 @@ void checkHeader(const Block & header)
     }
 }
 
-static std::shared_ptr<parquet::FileMetaData> getFileMetadata(
-    ReadBuffer & in,
-    const FormatSettings & format_settings,
-    std::atomic<int> & is_stopped)
-{
-    auto arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
-    return parquet::ReadMetaData(arrow_file);
-}
-
 ParquetMetadataInputFormat::ParquetMetadataInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), &in_), format_settings(format_settings_)
+    : IInputFormat(std::move(header_), &in_)
+    , format_settings(format_settings_)
 {
     checkHeader(getPort().getHeader());
 }
@@ -330,7 +327,8 @@ void ParquetMetadataInputFormat::fillRowGroupsMetadata(const std::shared_ptr<par
     row_groups_array_column.getOffsets().push_back(row_groups_column.size());
 }
 
-void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column)
+void ParquetMetadataInputFormat::fillColumnChunksMetadata(
+    const std::unique_ptr<parquet::RowGroupMetaData> & row_group_metadata, IColumn & column)
 {
     auto & array_column = assert_cast<ColumnArray &>(column);
     auto & tuple_column = assert_cast<ColumnTuple &>(array_column.getData());
@@ -351,7 +349,10 @@ void ParquetMetadataInputFormat::fillColumnChunksMetadata(const std::unique_ptr<
         bool have_statistics = column_chunk_metadata->is_stats_set();
         assert_cast<ColumnUInt8 &>(tuple_column.getColumn(4)).insertValue(have_statistics);
         if (have_statistics)
-            fillColumnStatistics(column_chunk_metadata->statistics(), tuple_column.getColumn(5), row_group_metadata->schema()->Column(column_i)->type_length());
+            fillColumnStatistics(
+                column_chunk_metadata->statistics(),
+                tuple_column.getColumn(5),
+                row_group_metadata->schema()->Column(column_i)->type_length());
         else
             tuple_column.getColumn(5).insertDefault();
         assert_cast<ColumnInt64 &>(tuple_column.getColumn(6)).insertValue(column_chunk_metadata->bloom_filter_length().value_or(0));
@@ -367,7 +368,8 @@ static void getMinMaxNumberStatistics(const std::shared_ptr<parquet::Statistics>
     max = std::to_string(typed_statistics.max());
 }
 
-void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parquet::Statistics> & statistics, IColumn & column, int32_t type_length)
+void ParquetMetadataInputFormat::fillColumnStatistics(
+    const std::shared_ptr<parquet::Statistics> & statistics, IColumn & column, int32_t type_length)
 {
     auto & statistics_column = assert_cast<ColumnTuple &>(column);
     /// num_values
@@ -416,54 +418,45 @@ void ParquetMetadataInputFormat::fillColumnStatistics(const std::shared_ptr<parq
         String max;
         switch (statistics->physical_type())
         {
-            case parquet::Type::type::FLOAT:
-            {
+            case parquet::Type::type::FLOAT: {
                 getMinMaxNumberStatistics<parquet::FloatType>(statistics, min, max);
                 break;
             }
-            case parquet::Type::type::DOUBLE:
-            {
+            case parquet::Type::type::DOUBLE: {
                 getMinMaxNumberStatistics<parquet::DoubleType>(statistics, min, max);
                 break;
             }
-            case parquet::Type::type::INT32:
-            {
+            case parquet::Type::type::INT32: {
                 getMinMaxNumberStatistics<parquet::Int32Type>(statistics, min, max);
                 break;
             }
-            case parquet::Type::type::INT64:
-            {
+            case parquet::Type::type::INT64: {
                 getMinMaxNumberStatistics<parquet::Int64Type>(statistics, min, max);
                 break;
             }
-            case parquet::Type::type::INT96:
-            {
+            case parquet::Type::type::INT96: {
                 const auto & int96_statistics = dynamic_cast<parquet::TypedStatistics<parquet::Int96Type> &>(*statistics);
                 min = parquet::Int96ToString(int96_statistics.min());
                 max = parquet::Int96ToString(int96_statistics.max());
                 break;
             }
-            case parquet::Type::type::BOOLEAN:
-            {
+            case parquet::Type::type::BOOLEAN: {
                 getMinMaxNumberStatistics<parquet::BooleanType>(statistics, min, max);
                 break;
             }
-            case parquet::Type::type::BYTE_ARRAY:
-            {
+            case parquet::Type::type::BYTE_ARRAY: {
                 const auto & byte_array_statistics = dynamic_cast<parquet::ByteArrayStatistics &>(*statistics);
                 min = parquet::ByteArrayToString(byte_array_statistics.min());
                 max = parquet::ByteArrayToString(byte_array_statistics.max());
                 break;
             }
-            case parquet::Type::type::FIXED_LEN_BYTE_ARRAY:
-            {
+            case parquet::Type::type::FIXED_LEN_BYTE_ARRAY: {
                 const auto & flba_statistics = dynamic_cast<parquet::FLBAStatistics &>(*statistics);
                 min = parquet::FixedLenByteArrayToString(flba_statistics.min(), type_length);
                 max = parquet::FixedLenByteArrayToString(flba_statistics.max(), type_length);
                 break;
             }
-            case parquet::Type::type::UNDEFINED:
-            {
+            case parquet::Type::type::UNDEFINED: {
                 break; /// unreachable
             }
         }
@@ -503,27 +496,19 @@ void registerInputFormatParquetMetadata(FormatFactory & factory)
     factory.registerRandomAccessInputFormat(
         "ParquetMetadata",
         [](ReadBuffer & buf,
-            const Block & sample,
-            const FormatSettings & settings,
-            const ReadSettings &,
-            bool /* is_remote_fs */,
-            size_t /* max_download_threads */,
-            size_t /* max_parsing_threads */)
-        {
-            return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings);
-        });
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings &,
+           bool /* is_remote_fs */,
+           size_t /* max_download_threads */,
+           size_t /* max_parsing_threads */) { return std::make_shared<ParquetMetadataInputFormat>(buf, sample, settings); });
     factory.markFormatSupportsSubsetOfColumns("ParquetMetadata");
 }
 
 void registerParquetMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(
-        "ParquetMetadata",
-        [](ReadBuffer & buf, const FormatSettings &)
-        {
-            return std::make_shared<ParquetMetadataSchemaReader>(buf);
-        }
-    );
+        "ParquetMetadata", [](ReadBuffer & buf, const FormatSettings &) { return std::make_shared<ParquetMetadataSchemaReader>(buf); });
 }
 
 }
@@ -537,7 +522,9 @@ void registerInputFormatParquetMetadata(FormatFactory &)
 {
 }
 
-void registerParquetMetadataSchemaReader(FormatFactory &) {}
+void registerParquetMetadataSchemaReader(FormatFactory &)
+{
+}
 }
 
 #endif
