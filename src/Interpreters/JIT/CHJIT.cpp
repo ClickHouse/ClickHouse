@@ -508,11 +508,12 @@ static std::string DumpModuleIR(const llvm::Module& module)
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module, llvm::TargetIRAnalysis target_analysis) const
 {
     /// llvm::DebugFlag = true; // comment out to enable debug output
-    const char *argv[] = {
+    const char *argv[] =
+    {
         "CH-JIT",
         "-extra-vectorizer-passes", // Enable ExtraVectorizerPasses
     };
-    int argc = sizeof(argv) / sizeof(argv[0]);
+    constexpr int argc = 2;
     llvm::cl::ParseCommandLineOptions(argc, argv, "CH-JIT");
 
     llvm::LoopAnalysisManager lam;
