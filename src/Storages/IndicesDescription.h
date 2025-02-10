@@ -45,6 +45,9 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
+    /// Used for auto generated secondary minmax indices
+    bool is_auto_generated = false;
+
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 

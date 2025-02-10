@@ -828,7 +828,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
         {
-            properties.indices = as_storage_metadata->getSecondaryIndices();
+            /// The auto generated indices will be generated again, so they do not need to be copied
+            /// The setting needed to generate these indices are copied
+            const auto & indices = as_storage_metadata->getSecondaryIndices();
+            for (const auto & index : indices)
+            {
+                if (!index.is_auto_generated)
+                    properties.indices.push_back(index);
+            }
             properties.projections = as_storage_metadata->getProjections().clone();
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
@@ -1311,6 +1318,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
+
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);

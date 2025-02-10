@@ -40,6 +40,7 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
+    , is_auto_generated(other.is_auto_generated)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -74,6 +75,7 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
+    is_auto_generated = other.is_auto_generated;
     return *this;
 }
 

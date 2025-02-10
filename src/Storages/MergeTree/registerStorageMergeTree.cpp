@@ -710,50 +710,52 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             metadata.settings_changes = args.storage_def->settings->ptr();
         }
 
-        if (args.query.columns_list && args.query.columns_list->indices)
-        {
-            for (const auto & index : args.query.columns_list->indices->children)
-            {
+        if (args.query.columns_list && args.query.columns_list->indices) {
+            for (const auto &index: args.query.columns_list->indices->children) {
+                auto index_name = index->as<ASTIndexDeclaration>()->name;
+
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
 
-                auto index_name = index->as<ASTIndexDeclaration>()->name;
                 if (((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
-                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
-                }
-            }
-
-            /// Try to add "implicit" min-max indexes on all columns
-            for (const auto & column : metadata.columns)
-            {
-                if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
-                    || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
-                {
-                    bool minmax_index_exists = false;
-
-                    for (const auto & index: metadata.secondary_indices)
-                    {
-                        if (index.column_names.front() == column.name && index.type == "minmax")
-                        {
-                            minmax_index_exists = true;
-                            break;
-                        }
-                    }
-
-                    if (minmax_index_exists)
-                        continue;
-
-                    auto index_type = makeASTFunction("minmax");
-                    auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                            std::make_shared<ASTIdentifier>(column.name), index_type,
-                            IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
+                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)) {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Cannot create table because index {} uses a reserved index name", index_name);
                 }
             }
         }
+
+        /// Try to add "implicit" min-max indexes on all columns
+        for (const auto & column : metadata.columns)
+        {
+            if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
+                || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
+            {
+                bool minmax_index_exists = false;
+
+                for (const auto &index: metadata.secondary_indices)
+                {
+                    if (index.column_names.front() == column.name && index.type == "minmax")
+                    {
+                        minmax_index_exists = true;
+                        break;
+                    }
+                }
+
+                if (minmax_index_exists)
+                    continue;
+
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(
+                        std::make_shared<ASTIdentifier>(column.name), index_type,
+                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
+                new_index.is_auto_generated = true;
+                metadata.secondary_indices.push_back(std::move(new_index));
+            }
+        }
+
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)
