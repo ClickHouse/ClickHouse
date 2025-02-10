@@ -63,11 +63,11 @@ struct ProfileInfo
 
 private:
     /// For these fields we make accessors, because they must be calculated beforehand.
-    mutable bool applied_limit = false;                    /// Whether LIMIT was applied
-    mutable size_t rows_before_limit = 0;
+    bool applied_limit = false;                    /// Whether LIMIT was applied
+    size_t rows_before_limit = 0;
 
-    mutable bool applied_aggregation = false; /// Whether GROUP BY was applied
-    mutable size_t rows_before_aggregation = 0;
+    bool applied_aggregation = false; /// Whether GROUP BY was applied
+    size_t rows_before_aggregation = 0;
 };
 
 }
