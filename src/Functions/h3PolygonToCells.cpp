@@ -221,7 +221,8 @@ private:
 
 REGISTER_FUNCTION(H3PolygonToCells)
 {
-    factory.registerFunction<FunctionH3PolygonToCells>();
+    factory.registerFunction<FunctionH3PolygonToCells>(FunctionDocumentation{
+        .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon."});
 }
 
 }
