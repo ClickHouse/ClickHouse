@@ -1,3 +1,4 @@
+version: '2.3'
 services:
     # nginx server to host static files.
     # Accepts only PUT data by test.com/path and GET already existing data on test.com/path.

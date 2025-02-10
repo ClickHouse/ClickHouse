@@ -7,7 +7,6 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
-#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Common/re2.h>
 
@@ -21,11 +20,15 @@ INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
 INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
 INCBIN(resource_lz_string_js, SOURCE_DIR "/programs/server/js/lz-string.js");
 INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
-INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 
 
 namespace DB
 {
+
+PlayWebUIRequestHandler::PlayWebUIRequestHandler(IServer & server_) : server(server_) {}
+DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : server(server_) {}
+BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
+JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
 
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
@@ -35,9 +38,7 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD).write(html.data(), html.size());
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -66,11 +67,6 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
-}
-
-void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
-{
-    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)

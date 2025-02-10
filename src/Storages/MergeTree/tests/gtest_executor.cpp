@@ -39,8 +39,6 @@ public:
         return false;
     }
 
-    void cancel() noexcept override { /* no op */ }
-
     StorageID getStorageID() const override
     {
         return {"test", name};
@@ -81,8 +79,6 @@ public:
             step_func(name, step_count);
         return --step_count;
     }
-
-    void cancel() noexcept override { chassert(false, "Not implemented"); }
 
     StorageID getStorageID() const override
     {

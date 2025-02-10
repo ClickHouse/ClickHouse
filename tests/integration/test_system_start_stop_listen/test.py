@@ -2,12 +2,10 @@
 
 
 import os
-
 import pytest
-import requests
-
-from helpers.client import Client, QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.client import Client, QueryRuntimeException
+import requests
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 

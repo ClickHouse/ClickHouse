@@ -55,11 +55,6 @@ CREATE TABLE NULL (c String) ENGINE = MergeTree ORDER BY c;
 SHOW COLUMNS FROM NULL;
 DROP TABLE NULL;
 
-DROP TABLE IF EXISTS `tab.with.dots`;
-CREATE TABLE `tab.with.dots` (c String) ENGINE = MergeTree ORDER BY c;
-SHOW COLUMNS FROM `tab.with.dots`;
-DROP TABLE `tab.with.dots`;
-
 DROP DATABASE IF EXISTS `'`;
 CREATE DATABASE `'`;
 CREATE TABLE `'`.`'` (c String) ENGINE = MergeTree ORDER BY c;

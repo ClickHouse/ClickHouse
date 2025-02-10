@@ -21,13 +21,6 @@ namespace ErrorCodes
     extern const int RECEIVED_EMPTY_DATA;
 }
 
-void ColumnGathererStream::Source::update(ColumnPtr column_)
-{
-    column = std::move(column_);
-    size = column->size();
-    pos = 0;
-}
-
 ColumnGathererStream::ColumnGathererStream(
     size_t num_inputs,
     ReadBuffer & row_sources_buf_,
@@ -190,14 +183,13 @@ void ColumnGathererStream::consume(Input & input, size_t source_num)
 ColumnGathererTransform::ColumnGathererTransform(
     const Block & header,
     size_t num_inputs,
-    std::unique_ptr<ReadBuffer> row_sources_buf_,
+    ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
     bool is_result_sparse_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_)
-    , row_sources_buf_holder(std::move(row_sources_buf_))
+        num_inputs, row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_)
     , log(getLogger("ColumnGathererStream"))
 {
     if (header.columns() != 1)

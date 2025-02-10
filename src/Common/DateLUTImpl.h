@@ -9,7 +9,6 @@
 #include <string>
 #include <type_traits>
 
-/// NOLINTBEGIN(modernize-macro-to-enum)
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -29,7 +28,6 @@
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
 #define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
-/// NOLINTEND(modernize-macro-to-enum)
 
 
 /// Flags for toYearWeek() function.
@@ -885,12 +883,14 @@ public:
         {
             return toFirstDayNumOfWeek(v);
         }
-
-        const auto day_of_week = toDayOfWeek(v);
-        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
-            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        {
+            const auto day_of_week = toDayOfWeek(v);
+            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            else
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        }
     }
 
     /// Get last day of week with week_mode, return Saturday or Sunday
@@ -902,13 +902,15 @@ public:
         {
             return toLastDayNumOfWeek(v);
         }
-
-        const auto day_of_week = toDayOfWeek(v);
-        v += 6;
-        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
-            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        {
+            const auto day_of_week = toDayOfWeek(v);
+            v += 6;
+            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            else
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        }
     }
 
     /// Check and change mode to effective.
@@ -935,7 +937,8 @@ public:
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
             return toDayOfWeek(i) - 1;
-        return toDayOfWeek(i + 1) - 1;
+        else
+            return toDayOfWeek(i + 1) - 1;
     }
 
     /// Calculate days in one year.
@@ -1168,10 +1171,6 @@ public:
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
 
-    Values lutIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const;
-
-    Values lutIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const;
-
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
     {
@@ -1368,12 +1367,14 @@ public:
 
             return makeLUTIndex(year, month, day_of_month);
         }
+        else
+        {
+            auto year = values.year - (12 - month) / 12;
+            month = 12 - (-month % 12);
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
-        auto year = values.year - (12 - month) / 12;
-        month = 12 - (-month % 12);
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
-
-        return makeLUTIndex(year, month, day_of_month);
+            return makeLUTIndex(year, month, day_of_month);
+        }
     }
 
     /// If resulting month has less days than source month, then saturation can happen.

@@ -49,7 +49,7 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     if (path.starts_with(url))
         path = path.substr(url.size());
     if (path.starts_with("/"))
-        path = path.substr(1);
+        path.substr(1);
     return path;
 }
 
@@ -82,12 +82,28 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
     initializeHDFSFS();
     auto path = extractObjectKeyFromURL(object);
     return std::make_unique<ReadBufferFromHDFS>(
-        fs::path(url_without_path) / "",
-        fs::path(data_directory) / path,
-        config,
-        patchSettings(read_settings),
-        /* read_until_position */0,
-        read_settings.remote_read_buffer_use_external_buffer);
+        fs::path(url_without_path) / "", fs::path(data_directory) / path, config, patchSettings(read_settings));
+}
+
+std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObjects( /// NOLINT
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t>,
+    std::optional<size_t>) const
+{
+    initializeHDFSFS();
+    auto disk_read_settings = patchSettings(read_settings);
+    auto read_buffer_creator =
+        [this, disk_read_settings]
+        (bool /* restricted_seek */, const StoredObject & object_) -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        auto path = extractObjectKeyFromURL(object_);
+        return std::make_unique<ReadBufferFromHDFS>(
+            fs::path(url_without_path) / "", fs::path(data_directory) / path, config, disk_read_settings, /* read_until_position */0, /* use_external_buffer */true);
+    };
+
+    return std::make_unique<ReadBufferFromRemoteFSGather>(
+        std::move(read_buffer_creator), objects, "hdfs:", disk_read_settings, nullptr, /* use_external_buffer */false);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOLINT
@@ -103,15 +119,15 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
             ErrorCodes::UNSUPPORTED_METHOD,
             "HDFS API doesn't support custom attributes/metadata for stored objects");
 
-    auto path = extractObjectKeyFromURL(object);
+    std::string path = object.remote_path;
+    if (path.starts_with("/"))
+        path = path.substr(1);
+    if (!path.starts_with(url))
+        path = fs::path(url) / path;
+
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     return std::make_unique<WriteBufferFromHDFS>(
-        url_without_path,
-        fs::path(data_directory) / path,
-        config,
-        settings->replication,
-        patchSettings(write_settings),
-        buf_size,
+        path, config, settings->replication, patchSettings(write_settings), buf_size,
         mode == WriteMode::Rewrite ? O_WRONLY : O_WRONLY | O_APPEND);
 }
 
@@ -168,41 +184,21 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) co
     return metadata;
 }
 
-HDFSFileInfo HDFSObjectStorage::hdfsListDirectoryWrapper(const std::string & path) const
+void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
-    HDFSFileInfo ls;
+    initializeHDFSFS();
+    LOG_TEST(log, "Trying to list files for {}", path);
 
+    HDFSFileInfo ls;
     ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
-    #if USE_KRB5
-    if (ls.file_info == nullptr && errno == EACCES) // NOLINT
-    {
-        // libhdfs3 wraps GSASL_GSSAPI_INIT_SEC_CONTEXT_ERROR into AccessControlException (EACCES),
-        // which means than sasl context is not active by the reason that krb5 ticket is expired.
-        // runKinit will handle KRB5KRB_AP_ERR_TKT_EXPIRED error and reinitialize ticket again
-        // TODO: it would be good to extract exact gsasl error code from libhdfs3,
-        // but it needs libhdfs3 exceptions refactoring
-        hdfs_builder.runKinit(); // krb5 keytab reinitialization
-        ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
-    }
-    #endif // USE_KRB5
 
     if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
     {
         // ignore file not found exception, keep throw other exception,
         // libhdfs3 doesn't have function to get exception type, so use errno.
         throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
-                    path, String(hdfsGetLastError()));
+                        path, String(hdfsGetLastError()));
     }
-
-    return ls;
-}
-
-void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
-{
-    initializeHDFSFS();
-    LOG_TEST(log, "Trying to list files for {}", path);
-
-    HDFSFileInfo ls = hdfsListDirectoryWrapper(path);
 
     if (!ls.file_info && ls.length > 0)
     {

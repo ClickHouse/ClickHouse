@@ -121,11 +121,12 @@ public:
 
         if (container_type == details::ContainerType::SMALL)
             return small.size();
-        if (container_type == details::ContainerType::MEDIUM)
+        else if (container_type == details::ContainerType::MEDIUM)
             return getContainer<Medium>().size();
-        if (container_type == details::ContainerType::LARGE)
+        else if (container_type == details::ContainerType::LARGE)
             return getContainer<Large>().size();
-        throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+        else
+            throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
     }
 
     void merge(const Self & rhs)
@@ -174,6 +175,48 @@ public:
             toLarge();
             getContainer<Large>().read(in);
         }
+    }
+
+    void readAndMerge(DB::ReadBuffer & in)
+    {
+        auto container_type = getContainerType();
+
+        /// If readAndMerge is called with an empty state, just deserialize
+        /// the state is specified as a parameter.
+        if ((container_type == details::ContainerType::SMALL) && small.empty())
+        {
+            read(in);
+            return;
+        }
+
+        UInt8 v;
+        readBinary(v, in);
+        auto rhs_container_type = static_cast<details::ContainerType>(v);
+
+        auto max_container_type = details::max(container_type, rhs_container_type);
+
+        if (container_type != max_container_type)
+        {
+            if (max_container_type == details::ContainerType::MEDIUM)
+                toMedium();
+            else if (max_container_type == details::ContainerType::LARGE)
+                toLarge();
+        }
+
+        if (rhs_container_type == details::ContainerType::SMALL)
+        {
+            typename Small::Reader reader(in);
+            while (reader.next())
+                insert(reader.get());
+        }
+        else if (rhs_container_type == details::ContainerType::MEDIUM)
+        {
+            typename Medium::Reader reader(in);
+            while (reader.next())
+                insert(reader.get());
+        }
+        else if (rhs_container_type == details::ContainerType::LARGE)
+            getContainer<Large>().readAndMerge(in);
     }
 
     void write(DB::WriteBuffer & out) const

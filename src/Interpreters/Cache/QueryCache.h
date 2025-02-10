@@ -2,7 +2,6 @@
 
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
-#include <Interpreters/Cache/QueryCacheUsage.h>
 #include <Core/Block.h>
 #include <Parsers/IAST.h>
 #include <Processors/Chunk.h>
@@ -23,9 +22,6 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 /// Does AST contain system tables like "system.processes"?
 bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
-class QueryCacheWriter;
-class QueryCacheReader;
-
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -36,6 +32,14 @@ class QueryCacheReader;
 class QueryCache
 {
 public:
+    enum class Usage : uint8_t
+    {
+        Unknown,  /// we don't know what what happened
+        None,     /// query result neither written nor read into/from query cache
+        Write,    /// query result written into query cache
+        Read,     /// query result read from query cache
+    };
+
     /// Represents a query result in the cache.
     struct Key
     {
@@ -80,12 +84,9 @@ public:
         const bool is_compressed;
 
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
-        /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which would otherwise look
-        /// ugly in SYSTEM.QUERY_CACHE.
+        /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which will look ugly in
+        /// SYSTEM.QUERY_CACHE.
         const String query_string;
-
-        /// ID of the query.
-        const String query_id;
 
         /// A tag (namespace) for distinguish multiple entries of the same query.
         /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
@@ -97,7 +98,6 @@ public:
             const String & current_database,
             const Settings & settings,
             Block header_,
-            const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -107,7 +107,6 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;
@@ -136,22 +135,81 @@ private:
         bool operator()(const Key & key) const;
     };
 
-public:
     /// query --> query result
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryCacheEntryWeight>;
+
+public:
+    /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
+    ///
+    /// Implementation note: Queries may throw exceptions during runtime, e.g. out-of-memory errors. In this case, no query result must be
+    /// written into the query cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline which
+    /// holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise, we
+    /// could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
+    /// finalizeWrite() as opposed to the Writer destructor. This function is then called only for successful queries in finish_callback()
+    /// which runs before the transform and the Writer are destroyed, whereas for unsuccessful queries we do nothing (the Writer is
+    /// destroyed w/o inserting anything).
+    /// Queries may also be cancelled by the user, in which case IProcessor's cancel bit is set. FinalizeWrite() is only called if the
+    /// cancel bit is not set.
+    class Writer
+    {
+    public:
+
+        Writer(const Writer & other);
+
+        enum class ChunkType : uint8_t {Result, Totals, Extremes};
+        void buffer(Chunk && chunk, ChunkType chunk_type);
+
+        void finalizeWrite();
+    private:
+        std::mutex mutex;
+        Cache & cache;
+        const Key key;
+        const size_t max_entry_size_in_bytes;
+        const size_t max_entry_size_in_rows;
+        const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
+        const std::chrono::milliseconds min_query_runtime;
+        const bool squash_partial_results;
+        const size_t max_block_size;
+        Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<Entry>();
+        std::atomic<bool> skip_insert = false;
+        bool was_finalized = false;
+        LoggerPtr logger = getLogger("QueryCache");
+
+        Writer(Cache & cache_, const Key & key_,
+            size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
+            std::chrono::milliseconds min_query_runtime_,
+            bool squash_partial_results_,
+            size_t max_block_size_);
+
+        friend class QueryCache; /// for createWriter()
+    };
+
+    /// Reader's constructor looks up a query result for a key in the cache. If found, it constructs source processors (that generate the
+    /// cached result) for use in a pipe or query pipeline.
+    class Reader
+    {
+    public:
+        bool hasCacheEntryForKey() const;
+        /// getSource*() moves source processors out of the Reader. Call each of these method just once.
+        std::unique_ptr<SourceFromChunks> getSource();
+        std::unique_ptr<SourceFromChunks> getSourceTotals();
+        std::unique_ptr<SourceFromChunks> getSourceExtremes();
+    private:
+        Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &);
+        void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+        std::unique_ptr<SourceFromChunks> source_from_chunks;
+        std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
+        std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+        LoggerPtr logger = getLogger("QueryCache");
+        friend class QueryCache; /// for createReader()
+    };
 
     QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_);
 
-    QueryCacheReader createReader(const Key & key);
-    QueryCacheWriter createWriter(
-        const Key & key,
-        std::chrono::milliseconds min_query_runtime,
-        bool squash_partial_results,
-        size_t max_block_size,
-        size_t max_query_cache_size_in_bytes_quota,
-        size_t max_query_cache_entries_quota);
+    Reader createReader(const Key & key);
+    Writer createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota);
 
     void clear(const std::optional<String> & tag);
 
@@ -178,86 +236,7 @@ private:
     size_t max_entry_size_in_rows TSA_GUARDED_BY(mutex) = 0;
 
     friend class StorageSystemQueryCache;
-    friend class QueryCacheWriter;
-    friend class QueryCacheReader;
 };
-
-/// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
-///
-/// Implementation note: Queries may throw exceptions during runtime, e.g. out-of-memory errors. In this case, no query result must be
-/// written into the query cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline which
-/// holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise, we
-/// could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
-/// finalizeWrite() as opposed to the Writer destructor. This function is then called only for successful queries in finish_callback()
-/// which runs before the transform and the Writer are destroyed, whereas for unsuccessful queries we do nothing (the Writer is
-/// destroyed w/o inserting anything).
-/// Queries may also be cancelled by the user, in which case IProcessor's cancel bit is set. FinalizeWrite() is only called if the
-/// cancel bit is not set.
-class QueryCacheWriter
-{
-public:
-    QueryCacheWriter(const QueryCacheWriter & other);
-
-    enum class ChunkType : uint8_t
-    {
-        Result,
-        Totals,
-        Extremes
-    };
-    void buffer(Chunk && chunk, ChunkType chunk_type);
-
-    void finalizeWrite();
-private:
-    using Cache = QueryCache::Cache;
-
-    std::mutex mutex;
-    Cache & cache;
-    const QueryCache::Key key;
-    const size_t max_entry_size_in_bytes;
-    const size_t max_entry_size_in_rows;
-    const std::chrono::time_point<std::chrono::system_clock> query_start_time = std::chrono::system_clock::now(); /// Writer construction and finalizeWrite() coincide with query start/end
-    const std::chrono::milliseconds min_query_runtime;
-    const bool squash_partial_results;
-    const size_t max_block_size;
-    Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryCache::Entry>();
-    std::atomic<bool> skip_insert = false;
-    bool was_finalized = false;
-    LoggerPtr logger = getLogger("QueryCache");
-
-    QueryCacheWriter(
-        Cache & cache_,
-        const Cache::Key & key_,
-        size_t max_entry_size_in_bytes_,
-        size_t max_entry_size_in_rows_,
-        std::chrono::milliseconds min_query_runtime_,
-        bool squash_partial_results_,
-        size_t max_block_size_);
-
-    friend class QueryCache; /// for createWriter()
-};
-
-/// Reader's constructor looks up a query result for a key in the cache. If found, it constructs source processors (that generate the
-/// cached result) for use in a pipe or query pipeline.
-class QueryCacheReader
-{
-public:
-    bool hasCacheEntryForKey() const;
-    /// getSource*() moves source processors out of the Reader. Call each of these method just once.
-    std::unique_ptr<SourceFromChunks> getSource();
-    std::unique_ptr<SourceFromChunks> getSourceTotals();
-    std::unique_ptr<SourceFromChunks> getSourceExtremes();
-private:
-    using Cache = QueryCache::Cache;
-
-    QueryCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
-    void buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
-    std::unique_ptr<SourceFromChunks> source_from_chunks;
-    std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
-    std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
-    LoggerPtr logger = getLogger("QueryCache");
-    friend class QueryCache; /// for createReader()
-};
-
 
 using QueryCachePtr = std::shared_ptr<QueryCache>;
 

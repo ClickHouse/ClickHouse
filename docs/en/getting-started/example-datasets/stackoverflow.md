@@ -1,12 +1,13 @@
 ---
-description: "Analyzing Stack Overflow data with ClickHouse"
 slug: /en/getting-started/example-datasets/stackoverflow
 sidebar_label: Stack Overflow
 sidebar_position: 1
-title: "Analyzing Stack Overflow data with ClickHouse"
+description: Analyzing Stack Overflow data with ClickHouse
 ---
 
-This dataset contains every `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, and `PostLinks` that has occurred on Stack Overflow.
+# Analyzing Stack Overflow data with ClickHouse
+
+This dataset contains every `Post`, `User`, `Vote`, `Comment`, `Badge, `PostHistory`, and `PostLink` that has occurred on Stack Overflow.
 
 Users can either download pre-prepared Parquet versions of the data, containing every post up to April 2024, or download the latest data in XML format and load this. Stack Overflow provide updates to this data periodically - historically every 3 months.
 
@@ -158,7 +159,7 @@ INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentatio
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-### PostLinks
+### `PostLinks`
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -177,7 +178,7 @@ INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documenta
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-### PostHistory
+### `PostHistory`
 
 ```sql
 CREATE TABLE stackoverflow.posthistory

@@ -4,7 +4,6 @@
 #include <cstring>
 #include <cassert>
 #include <city.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <base/hex.h>
@@ -23,10 +22,6 @@ namespace ProfileEvents
     extern const Event ReadCompressedBytes;
     extern const Event CompressedReadBufferBlocks;
     extern const Event CompressedReadBufferBytes;
-
-    extern const Event CompressedReadBufferChecksumDoesntMatch;
-    extern const Event CompressedReadBufferChecksumDoesntMatchSingleBitMismatch;
-    extern const Event CompressedReadBufferChecksumDoesntMatchMicroseconds;
 }
 
 namespace DB
@@ -44,14 +39,11 @@ using Checksum = CityHash_v1_0_2::uint128;
 
 
 /// Validate checksum of data, and if it mismatches, find out possible reason and throw exception.
-static void validateChecksum(char * data, size_t size, const Checksum expected_checksum, bool external_data)
+static void validateChecksum(char * data, size_t size, const Checksum expected_checksum)
 {
     auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
         return;
-
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatch);
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CompressedReadBufferChecksumDoesntMatchMicroseconds);
 
     WriteBufferFromOwnString message;
 
@@ -71,8 +63,6 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
                                             "if the number of errors is huge) or bad CPU on host. If you read data from disk, "
                                             "this can be caused by disk bit rot. This exception protects ClickHouse "
                                             "from data corruption due to hardware failures.";
-
-    int error_code = external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CHECKSUM_DOESNT_MATCH;
 
     auto flip_bit = [](char * buf, size_t pos)
     {
@@ -95,10 +85,9 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
-                ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
-                throw Exception::createDeprecated(message.str(), error_code);
+                throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
             }
 
             flip_bit(tmp_data, bit_pos);    /// Restore
@@ -111,13 +100,12 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     if (difference == 1)
     {
-        ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
-        throw Exception::createDeprecated(message.str(), error_code);
+        throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
     }
 
-    throw Exception::createDeprecated(message.str(), error_code);
+    throw Exception::createDeprecated(message.str(), ErrorCodes::CHECKSUM_DOESNT_MATCH);
 }
 
 static void readHeaderAndGetCodecAndSize(
@@ -163,7 +151,7 @@ static void readHeaderAndGetCodecAndSize(
                         "Most likely corrupted data.", size_compressed_without_checksum);
 
     if (size_compressed_without_checksum < header_size)
-        throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Can't decompress data: "
             "the compressed data size ({}, this should include header size) is less than the header size ({})",
             size_compressed_without_checksum, static_cast<size_t>(header_size));
 }
@@ -214,7 +202,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         readBinaryLittleEndian(checksum.low64, checksum_in);
         readBinaryLittleEndian(checksum.high64, checksum_in);
 
-        validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum, external_data);
+        validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
     }
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
@@ -259,15 +247,17 @@ size_t CompressedReadBufferBase::readCompressedDataBlockForAsynchronous(size_t &
             readBinaryLittleEndian(checksum.low64, checksum_in);
             readBinaryLittleEndian(checksum.high64, checksum_in);
 
-            validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum, external_data);
+            validateChecksum(compressed_buffer, size_compressed_without_checksum, checksum);
         }
 
         ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
         return size_compressed_without_checksum + sizeof(Checksum);
     }
-
-    compressed_in->position() -= (sizeof(Checksum) + header_size);
-    return 0;
+    else
+    {
+        compressed_in->position() -= (sizeof(Checksum) + header_size);
+        return 0;
+    }
 }
 
 static void readHeaderAndGetCodec(const char * compressed_buffer, size_t size_decompressed, CompressionCodecPtr & codec,
@@ -317,7 +307,7 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
 
         UInt8 header_size = ICompressionCodec::getHeaderSize();
         if (size_compressed_without_checksum < header_size)
-            throw Exception(external_data ? ErrorCodes::CANNOT_DECOMPRESS : ErrorCodes::CORRUPTED_DATA,
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Can't decompress data: the compressed data size ({}, this should include header size) is less than the header size ({})",
                     size_compressed_without_checksum, static_cast<size_t>(header_size));
 
@@ -325,6 +315,18 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
     }
     else
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+}
+
+void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
+{
+    if (codec)
+        codec->flushAsynchronousDecompressRequests();
+}
+
+void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode) const
+{
+    if (codec)
+        codec->setDecompressMode(mode);
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

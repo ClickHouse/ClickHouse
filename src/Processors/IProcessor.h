@@ -1,13 +1,9 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <memory>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
-#include <memory>
 
 class EventCounter;
 
@@ -70,6 +66,7 @@ using Processors = std::vector<ProcessorPtr>;
   *
   * Simple transformation. Has single input and single output port. Pulls data, transforms it and pushes to output port.
   * Example: expression calculator.
+  * TODO Better to make each function a separate processor. It's better for pipeline analysis. Also keep in mind 'sleep' and 'rand' functions.
   *
   * Squashing or filtering transformation. Pulls data, possibly accumulates it, and sometimes pushes it to output port.
   * Examples: DISTINCT, WHERE, squashing of blocks for INSERT SELECT.
@@ -124,13 +121,18 @@ protected:
     OutputPorts outputs;
 
 public:
-    IProcessor();
+    IProcessor() = default;
 
-    IProcessor(InputPorts inputs_, OutputPorts outputs_);
+    IProcessor(InputPorts inputs_, OutputPorts outputs_)
+        : inputs(std::move(inputs_)), outputs(std::move(outputs_))
+    {
+        for (auto & port : inputs)
+            port.processor = this;
+        for (auto & port : outputs)
+            port.processor = this;
+    }
 
     virtual String getName() const = 0;
-
-    String getUniqID() const { return fmt::format("{}_{}", getName(), processor_index); }
 
     enum class Status : uint8_t
     {
@@ -151,7 +153,7 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will return a descriptor.
+        /// You may call 'schedule' method and processor will return descriptor.
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
@@ -160,7 +162,7 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(std::optional<Status> status);
+    static std::string statusToName(Status status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -309,13 +311,14 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
+    {
+        query_plan_step = step;
+        query_plan_step_group = group;
+    }
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
-    const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
-    const String & getPlanStepName() const { return plan_step_name; }
-    const String & getPlanStepDescription() const { return plan_step_description; }
 
     uint64_t getElapsedNs() const { return elapsed_ns; }
     uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
@@ -364,11 +367,11 @@ public:
 
     /// Set limits for current storage.
     /// Different limits may be applied to different storages, we need to keep it per processor.
-    /// This method needs to be overridden only for sources.
+    /// This method is need to be override only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
 
     /// This method is called for every processor without input ports.
-    /// Processor can return new progress for the last read operation.
+    /// Processor can return a new progress for the last read operation.
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
@@ -380,24 +383,10 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
-    /// Returns true if processor can spill memory to disk.
-    /// Aggregate, join and sort processors can be spillable.
-    /// For unspillable processors, the memory usage is not tracked.
-    inline bool isSpillable() const { return spillable; }
-
-    virtual ProcessorMemoryStats getMemoryStats()
-    {
-        return {};
-    }
-
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
-
 protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
-    bool spillable = false;
 
 private:
     /// For:
@@ -420,13 +409,7 @@ private:
     size_t stream_number = NO_STREAM;
 
     IQueryPlanStep * query_plan_step = nullptr;
-    String step_uniq_id;
     size_t query_plan_step_group = 0;
-
-    size_t processor_index = 0;
-    String plan_step_name;
-    String plan_step_description;
-
 };
 
 

@@ -2,10 +2,8 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
@@ -20,7 +18,6 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/BackupLog.h>
-#include <Interpreters/PeriodicLog.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -160,7 +157,8 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     {
         if (should_prepare_tables_anyway)
             return (flushed_index >= expected_flushed_index && prepared_tables >= requested_prepare_tables) || is_shutdown;
-        return (flushed_index >= expected_flushed_index) || is_shutdown;
+        else
+            return (flushed_index >= expected_flushed_index) || is_shutdown;
     });
 
     if (!result)
@@ -209,19 +207,13 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (is_shutdown)
             return PopResult{.is_shutdown = true};
 
-        const auto queue_size = queue.size();
-        queue_front_index += queue_size;
+        queue_front_index += queue.size();
         prev_ignored_logs = ignored_logs;
         ignored_logs = 0;
 
         result.last_log_index = queue_front_index;
-        if (!queue.empty())
-            result.logs.swap(queue);
+        result.logs.swap(queue);
         result.create_table_force = requested_prepare_tables > prepared_tables;
-
-        /// Preallocate same amount of memory for the next batch to minimize reallocations.
-        if (queue_size > queue.capacity())
-            queue.reserve(std::max(settings.reserved_size_rows, queue_size));
     }
 
     if (prev_ignored_logs)
@@ -282,25 +274,6 @@ void SystemLogBase<LogElement>::startup()
 }
 
 template <typename LogElement>
-void SystemLogBase<LogElement>::stopFlushThread()
-{
-    {
-        std::lock_guard lock(thread_mutex);
-
-        if (!saving_thread || !saving_thread->joinable())
-            return;
-
-        if (is_shutdown)
-            return;
-
-        is_shutdown = true;
-        queue->shutdown();
-    }
-
-    saving_thread->join();
-}
-
-template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
     queue->push(std::move(element));
@@ -308,10 +281,8 @@ void SystemLogBase<LogElement>::add(LogElement element)
 
 #define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
-SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 
 #define INSTANTIATE_SYSTEM_LOG_QUEUE(ELEMENT) template class SystemLogQueue<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
-SYSTEM_PERIODIC_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_QUEUE)
 
 }

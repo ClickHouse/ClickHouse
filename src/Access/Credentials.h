@@ -1,10 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <Access/Common/SSLCertificateSubjects.h>
-#include <Common/SSHWrapper.h>
-
 #include <base/types.h>
+#include <boost/container/flat_set.hpp>
+#include <Access/Common/SSLCertificateSubjects.h>
+#include <memory>
 
 #include "config.h"
 
@@ -16,9 +15,6 @@ class Credentials
 public:
     explicit Credentials() = default;
     explicit Credentials(const String & user_name_);
-
-    Credentials(const Credentials &) = default;
-    Credentials(Credentials &&) = default;
 
     virtual ~Credentials() = default;
 
@@ -125,30 +121,6 @@ private:
     String signature;
     String original;
 };
-
-/// Credentials used only for logging in with PTY.
-class SSHPTYCredentials : public Credentials
-{
-public:
-    explicit SSHPTYCredentials(const String & user_name_, const SSHKey & key_)
-        : Credentials(user_name_), key(key_)
-    {
-        is_ready = true;
-    }
-
-    const SSHKey & getKey() const
-    {
-        if (!isReady())
-        {
-            throwNotReady();
-        }
-        return key;
-    }
-
-private:
-    SSHKey key;
-};
 #endif
-
 
 }

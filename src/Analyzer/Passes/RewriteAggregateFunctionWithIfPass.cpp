@@ -1,26 +1,25 @@
 #include <Analyzer/Passes/RewriteAggregateFunctionWithIfPass.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Core/Settings.h>
 
 #include <Functions/FunctionFactory.h>
+
+#include <Interpreters/Context.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Utils.h>
 
-
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_rewrite_aggregate_function_with_if;
-}
 
 namespace
 {
@@ -33,7 +32,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_rewrite_aggregate_function_with_if])
+        if (!getSettings().optimize_rewrite_aggregate_function_with_if)
             return;
 
         auto * function_node = node->as<FunctionNode>();

@@ -6,7 +6,7 @@ sidebar_label: User Settings
 
 # Users and Roles Settings
 
-The `users` section of the `users.xml` configuration file contains user settings.
+The `users` section of the `user.xml` configuration file contains user settings.
 
 :::note
 ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing users. We recommend using it.
@@ -178,7 +178,7 @@ To open access for user from any network, specify:
 ```
 
 :::note
-It's insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
+It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
 :::
 
 To open access only from localhost, specify:
