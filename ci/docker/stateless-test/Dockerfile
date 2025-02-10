@@ -112,8 +112,6 @@ ENV MINIO_ROOT_PASSWORD="clickhouse"
 # for minio to work without root
 RUN chmod 777 /home
 ENV HOME="/home"
-ENV TEMP_DIR="/tmp/praktika"
-ENV PATH="/wd/tests:/tmp/praktika/input:$PATH"
 
 RUN npm install -g azurite@3.30.0 \
     && npm install -g tslib && npm install -g node

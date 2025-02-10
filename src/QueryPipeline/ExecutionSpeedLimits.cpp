@@ -127,9 +127,9 @@ bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMod
             return handleOverflowMode(
                 overflow_mode,
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {} seconds, maximum: {} seconds",
-                static_cast<double>(elapsed_ns) / 1000000000ULL,
-                max_execution_time.totalMicroseconds() / 1000000.0);
+                "Timeout exceeded: elapsed {} ms, maximum: {} ms",
+                static_cast<double>(elapsed_ns) / 1000000ULL,
+                max_execution_time.totalMilliseconds());
     }
 
     return true;

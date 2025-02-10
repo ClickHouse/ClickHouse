@@ -1,16 +1,18 @@
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/escapeForFileName.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/escapeForFileName.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/Context.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ServerSettings.h>
-#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+
+#include <filesystem>
 
 
 namespace DB
@@ -18,8 +20,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LIMIT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
+    extern const int LIMIT_EXCEEDED;
 }
 
 namespace ServerSetting
@@ -91,7 +93,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"series name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}
+            {"series_identifier", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"}
         };
         validateFunctionArguments(*this, arguments, mandatory_args);
 
@@ -100,9 +102,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        if (!checkColumnConst<ColumnString>(arguments[0].column.get()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} must be constant string", getName());
-
         String series_name = assert_cast<const ColumnConst &>(*arguments[0].column).getValue<String>();
 
         if (series_name.empty())
@@ -169,11 +168,10 @@ This function takes a constant string argument - a series identifier.
 
 The server should be configured with Keeper.
 The series are stored in Keeper nodes under the path, which can be configured in `series_keeper_path` in the server configuration.
-By default, it is `/clickhouse/series/`.
 )",
-        .syntax = "generateSerialID('identifier')",
+        .syntax = "generateSerialID('series_identifier')",
         .arguments{
-            {"series identifier", "Series identifier (a short constant String)"}
+            {"series_identifier", "Series identifier, (a short constant String)"}
         },
         .returned_value = "Sequential numbers starting from the previous counter value",
         .examples{
@@ -194,7 +192,7 @@ By default, it is `/clickhouse/series/`.
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
                   )"}},
-        .categories{"Unique identifiers"}
+        .category{"Other"}
     });
 }
 

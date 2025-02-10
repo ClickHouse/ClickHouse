@@ -85,7 +85,7 @@ std::optional<Chunk> CollapsingSortedAlgorithm::insertRows()
 
     std::optional<Chunk> res;
 
-    if (last_is_positive || count_positive != count_negative)
+    if ((last_is_positive || count_positive != count_negative) && (count_positive > 0 || count_negative > 0))
     {
         if (count_positive <= count_negative && !only_positive_sign)
         {
@@ -165,6 +165,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 
             count_negative = 0;
             count_positive = 0;
+            count_invalid = 0;
 
             current_pos = 0;
             first_negative_pos = 0;
@@ -203,11 +204,15 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
         }
         else if (!throw_if_invalid_sign)
         {
-            /// Insert row with invalid sign as is
-            insertRow(current_row);
-            ++count_invalid;
-            if (out_row_sources_buf)
-                current_row_sources[current_pos].setSkipFlag(false);
+            /// Insert row with invalid sign as is during a background merge.
+            /// Do not return it for SELECT ... FINAL.
+            if (!only_positive_sign)
+            {
+                insertRow(current_row);
+                ++count_invalid;
+                if (out_row_sources_buf)
+                    current_row_sources[current_pos].setSkipFlag(false);
+            }
 
             if (count_invalid_sign < MAX_ERROR_MESSAGES)
                 LOG_WARNING(log, "Incorrect data: Sign = {} (must be 1 or -1).", toString(sign));
@@ -236,6 +241,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
         /// Set counter to zero so that insertRows() will return immediately next time.
         count_positive = 0;
         count_negative = 0;
+        count_invalid = 0;
         return Status(std::move(*res));
     }
 

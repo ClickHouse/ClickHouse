@@ -64,7 +64,7 @@ struct QueryPlan::SerializationFlags
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
-    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION);
+    UInt64 version = std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     writeVarUInt(version, out);
 
     SerializationFlags flags;
@@ -135,10 +135,10 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
     UInt64 version;
     readVarUInt(version, in);
 
-    if (version > DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION)
+    if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Query plan serialization version {} is not supported. The last supported version is {}",
-            version, DBMS_QUERY_PLAN_SERIALIZATIONL_VERSION);
+            version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     SerializationFlags flags;
     return deserialize(in, context, flags);

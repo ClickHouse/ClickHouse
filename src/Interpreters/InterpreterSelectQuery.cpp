@@ -78,8 +78,10 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
 #include <Columns/Collator.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -223,6 +225,7 @@ FilterDAGInfoPtr generateFilterActions(
     const StorageMetadataPtr & metadata_snapshot,
     Names & prerequisite_columns,
     PreparedSetsPtr prepared_sets)
+try
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
@@ -284,6 +287,11 @@ FilterDAGInfoPtr generateFilterActions(
     }
 
     return filter_info;
+}
+catch (Exception & e)
+{
+    e.addMessage("While applying a row policy (see system.row_policies)");
+    throw;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -527,7 +535,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor::visit(query_ptr);
+        ApplyWithSubqueryVisitor(context).visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
