@@ -1,4 +1,9 @@
-# Laion-400M dataset
+---
+description: "Dataset containing 400 million images with English image captions"
+slug: /en/getting-started/example-datasets/laion-400m-dataset
+sidebar_label: Laion-400M dataset
+title: "Laion-400M dataset"
+---
 
 The [Laion-400M dataset](https://laion.ai/blog/laion-400-open-dataset/) contains 400 million images with English image captions. Laion nowadays provides [an even larger dataset](https://laion.ai/blog/laion-5b/) but working with it will be similar.
 
