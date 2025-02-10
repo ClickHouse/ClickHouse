@@ -230,7 +230,6 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -3213,3 +3212,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+JSONCompactEachRowWithProgress
+JSONCompactStringsEachRowWithProgress

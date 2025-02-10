@@ -37,7 +37,7 @@ class CacheRunnerHooks:
                 artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
-            if job.requires:
+            if job.requires and job.digest_config:
                 # include digest of required artifact to the job digest, so that they affect job state
                 for artifact_name in job.requires:
                     if artifact_name in artifact_digest_map:
@@ -53,12 +53,15 @@ class CacheRunnerHooks:
         print("Check remote cache")
 
         def fetch_record(job_name, job_digest, cache_):
+            if job_digest == "f" * Settings.CACHE_DIGEST_LEN:
+                return None
             """Fetch a single record from the cache."""
             record = cache_.fetch_success(job_name=job_name, job_digest=job_digest)
             if record:
                 return job_name, record
             return None
 
+        # implement algorithm to skip dependee jobs if dependency is not in the cache
         # Step 1: Fetch records concurrently
         fetched_records = []
         if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
@@ -75,9 +78,16 @@ class CacheRunnerHooks:
                     if result:  # If a record was found, add it to the fetched list
                         fetched_records.append(result)
 
+        env = _Environment.get()
         # Step 2: Apply the fetched records sequentially
         for job_name, record in fetched_records:
             assert Utils.normalize_string(job_name) not in workflow_config.cache_success
+            if workflow.is_event_push() and record.branch != env.BRANCH:
+                # TODO: make this behaviour configurable?
+                print(
+                    f"NOTE: Result for [{job_name}] cached from branch [{record.branch}] - skip for workflow with event=PUSH"
+                )
+                continue
             workflow_config.cache_success.append(job_name)
             workflow_config.cache_success_base64.append(Utils.to_base64(job_name))
             workflow_config.cache_jobs[job_name] = record
@@ -107,7 +117,7 @@ class CacheRunnerHooks:
                         )
 
         print(f"Write config to GH's job output")
-        with open(_Environment.get().JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
+        with open(env.JOB_OUTPUT_STREAM, "a", encoding="utf8") as f:
             print(
                 f"DATA={workflow_config.to_json()}",
                 file=f,
@@ -136,7 +146,9 @@ class CacheRunnerHooks:
                 record = runtime_config.cache_artifacts[artifact.name]
                 print(f"Reuse artifact [{artifact.name}] from [{record}]")
                 path_prefixes.append(
-                    env.get_s3_prefix_static(record.pr_number, record.sha)
+                    env.get_s3_prefix_static(
+                        record.pr_number, record.branch, record.sha
+                    )
                 )
             else:
                 path_prefixes.append(env.get_s3_prefix())
@@ -154,4 +166,10 @@ class CacheRunnerHooks:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_fs(workflow.name)
             job_digest = workflow_runtime.digest_jobs[job.name]
-            Cache.push_success_record(job.name, job_digest, workflow_runtime.sha)
+            # if_not_exist=workflow.is_event_pull_request() - to not overwrite record from "push" workflow, as it can reuse only from push, "pull_request" - from both
+            Cache.push_success_record(
+                job.name,
+                job_digest,
+                workflow_runtime.sha,
+                if_not_exist=workflow.is_event_pull_request(),
+            )

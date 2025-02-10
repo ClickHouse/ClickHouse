@@ -94,7 +94,7 @@ class _Environment(MetaClasses.Serializable):
         RUN_ID = os.getenv("GITHUB_RUN_ID", "0")
         RUN_URL = f"https://github.com/{REPOSITORY}/actions/runs/{RUN_ID}"
         BASE_BRANCH = os.getenv("GITHUB_BASE_REF", "")
-        USER_LOGIN = os.getenv("GITHUB_ACTOR")
+        USER_LOGIN = ""
         FORK_NAME = ""
         PR_BODY = ""
         PR_TITLE = ""
@@ -103,8 +103,8 @@ class _Environment(MetaClasses.Serializable):
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
                 github_event = json.load(f)
-            FORK_NAME = github_event["repository"]["full_name"]
             if "pull_request" in github_event:
+                FORK_NAME = github_event["pull_request"]["head"]["repo"]["full_name"]
                 EVENT_TYPE = Workflow.Event.PULL_REQUEST
                 PR_NUMBER = github_event["pull_request"]["number"]
                 SHA = github_event["pull_request"]["head"]["sha"]
@@ -115,6 +115,7 @@ class _Environment(MetaClasses.Serializable):
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
+                USER_LOGIN = github_event["pull_request"]["user"]["login"]
             elif "commits" in github_event:
                 EVENT_TYPE = Workflow.Event.PUSH
                 SHA = github_event["after"]
@@ -199,11 +200,15 @@ class _Environment(MetaClasses.Serializable):
         )
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.SHA, latest)
+        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, sha, latest=False):
-        prefix = f"{pr_number}"
+    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
+        assert pr_number or branch
+        if pr_number:
+            prefix = f"PRs/{pr_number}"
+        else:
+            prefix = f"REFs/{branch}"
         assert sha or latest
         assert pr_number >= 0
         if latest:
