@@ -4,8 +4,6 @@ sidebar_position: 38
 sidebar_label: GRANT
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # GRANT Statement
 
 - Grants [privileges](#privileges) to ClickHouse user accounts or roles.
@@ -66,7 +64,7 @@ It means that `john` has the permission to execute:
 - `SELECT x FROM db.table`.
 - `SELECT y FROM db.table`.
 
-`john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
+`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
@@ -233,7 +231,7 @@ Hierarchy of privileges:
     - `SYSTEM FLUSH`
         - `SYSTEM FLUSH DISTRIBUTED`
         - `SYSTEM FLUSH LOGS`
-- [CLUSTER](#cluster)
+    - `CLUSTER` (see also `access_control_improvements.on_cluster_queries_require_cluster_grant` configuration directive)
 - [INTROSPECTION](#introspection)
     - `addressToLine`
     - `addressToLineWithInlines`
@@ -319,7 +317,7 @@ Consider the following privilege:
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT
 
@@ -402,30 +400,6 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 **Notes**
 
 - To delete the created table, a user needs [DROP](#drop).
-
-### CLUSTER
-
-Allows executing `ON CLUSTER` queries.
-
-```sql title="Syntax"
-GRANT CLUSTER ON *.* TO <username>
-```
-
-By default, queries with `ON CLUSTER` require the user to have the `CLUSTER` grant.
-You will get the following error if you to try to use `ON CLUSTER` in a query without first granting the `CLUSTER` privilege:
-
-```text
-Not enough privileges. To execute this query, it's necessary to have the grant CLUSTER ON *.*. 
-```
-
-The default behavior can be changed by setting the `on_cluster_queries_require_cluster_grant` setting,
-located in the `access_control_improvements` section of `config.xml` (see below), to `false`.
-
-```yaml title="config.xml"
-<access_control_improvements>
-    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
-</access_control_improvements>
-```
 
 ### DROP
 
@@ -629,18 +603,15 @@ Allows using a specified table engine when creating a table. Applies to [table e
 
 ### ALL
 
-<CloudNotSupportedBadge/>
-
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
 The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
-Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 
 ### NONE
 
-Doesn't grant any privileges.
+Doesn’t grant any privileges.
 
 ### ADMIN OPTION
 

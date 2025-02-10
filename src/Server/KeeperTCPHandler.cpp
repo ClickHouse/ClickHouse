@@ -23,9 +23,6 @@
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
-#    include <Compression/CompressionFactory.h>
-
-#    include <boost/algorithm/string/trim.hpp>
 
 
 #    ifdef POCO_HAVE_FD_EPOLL
@@ -68,7 +65,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int TIMEOUT_EXCEEDED;
     extern const int BAD_ARGUMENTS;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 struct PollResult
@@ -331,21 +327,9 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     Coordination::read(last_zxid_seen, *in);
     Coordination::read(timeout_ms, *in);
 
+    /// TODO Stop ignoring this value
     Coordination::read(previous_session_id, *in);
     Coordination::read(passwd, *in);
-
-
-    auto auth_data = keeper_dispatcher->getAuthenticationData();
-    if (auth_data)
-    {
-        String password{std::begin(passwd), std::end(passwd)};
-        /// It was padded to Coordination::PASSWORD_LENGTH with '\0'
-        boost::trim_right_if(password, [](char c) { return c == '\0'; });
-        AuthenticationData client_auth_data(auth_data->getType());
-        client_auth_data.setPassword(password, true);
-        if (client_auth_data != *auth_data)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Wrong password specified, authentication failed");
-    }
 
     int8_t readonly;
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
@@ -625,8 +609,7 @@ void KeeperTCPHandler::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
         compressed_out->cancel();
-    if (out)
-        out->cancel();
+    out->cancel();
 }
 
 ReadBuffer & KeeperTCPHandler::getReadBuffer()

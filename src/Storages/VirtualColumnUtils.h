@@ -13,8 +13,8 @@
 namespace DB
 {
 
-class Chunk;
 class NamesAndTypesList;
+
 
 namespace VirtualColumnUtils
 {

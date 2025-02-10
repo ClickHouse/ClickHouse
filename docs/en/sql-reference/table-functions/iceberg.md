@@ -73,10 +73,6 @@ At the moment, with the help of CH, you can read iceberg tables, the schema of w
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
-**Partition Pruning**
-
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
-
 **Aliases**
 
 Table function `iceberg` is an alias to `icebergS3` now.

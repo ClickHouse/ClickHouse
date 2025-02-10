@@ -12,8 +12,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
-
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -21,23 +19,25 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=[],
+            main_configs=[
+                "configs/storage_conf.xml",
+            ],
             user_configs=[
                 "configs/setting.xml",
                 "configs/s3_retries.xml",
             ],
             with_minio=True,
-            stay_alive=True,
         )
         cluster.add_instance(
             "node_with_inf_s3_retries",
-            main_configs=[],
+            main_configs=[
+                "configs/storage_conf.xml",
+            ],
             user_configs=[
                 "configs/setting.xml",
                 "configs/inf_s3_retries.xml",
             ],
             with_minio=True,
-            stay_alive=True,
         )
         cluster.add_instance(
             "node_with_query_log_on_s3",
@@ -50,21 +50,9 @@ def cluster():
                 "configs/no_s3_retries.xml",
             ],
             with_minio=True,
-            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
-
-        start_s3_mock(cluster, "broken_s3", "8083")
-
-        for _, node in cluster.instances.items():
-            node.stop_clickhouse()
-            node.copy_file_to_container(
-                os.path.join(CONFIG_DIR, "storage_conf.xml"),
-                "/etc/clickhouse-server/config.d/storage_conf.xml",
-            )
-            node.start_clickhouse()
-
         logging.info("Cluster started")
 
         yield cluster

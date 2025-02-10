@@ -70,10 +70,6 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
-
-    factory.markOutputFormatNotTTYFriendly("RowBinary");
-    factory.markOutputFormatNotTTYFriendly("RowBinaryWithNames");
-    factory.markOutputFormatNotTTYFriendly("RowBinaryWithNamesAndTypes");
 }
 
 }

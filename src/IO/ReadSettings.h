@@ -113,5 +113,4 @@ struct ReadSettings
 
 ReadSettings getReadSettings();
 
-ReadSettings getReadSettingsForMetadata();
 }

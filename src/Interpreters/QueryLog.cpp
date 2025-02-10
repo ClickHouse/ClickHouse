@@ -46,10 +46,10 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCacheUsage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCacheUsage::None)},
-            {"Write",       static_cast<Int8>(QueryCacheUsage::Write)},
-            {"Read",        static_cast<Int8>(QueryCacheUsage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
+            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
+            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
+            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -77,7 +77,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"current_database", low_cardinality_string, "Name of the current database."},
         {"query", std::make_shared<DataTypeString>(), " Query string."},
         {"formatted_query", std::make_shared<DataTypeString>(), "Formatted query string."},
-        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "Identical hash value without the values of literals for similar queries."},
         {"query_kind", low_cardinality_string, "Type of the query."},
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
@@ -109,8 +109,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_major", std::make_shared<DataTypeUInt32>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt32>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
-        {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
-        {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
         {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
@@ -338,9 +336,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.client_version_major);
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
-
-    columns[i++]->insert(client_info.script_query_number);
-    columns[i++]->insert(client_info.script_line_number);
 
     columns[i++]->insert(static_cast<UInt64>(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);

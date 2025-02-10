@@ -12,7 +12,6 @@
 #    include <Columns/ColumnString.h>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnVector.h>
-#    include <Core/AccurateComparison.h>
 #    include <Core/DecimalComparison.h>
 #    include <DataTypes/DataTypeAggregateFunction.h>
 #    include <DataTypes/DataTypeArray.h>

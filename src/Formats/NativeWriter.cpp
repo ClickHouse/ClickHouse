@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {

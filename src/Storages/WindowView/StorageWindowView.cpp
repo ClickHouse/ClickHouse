@@ -50,18 +50,15 @@
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <boost/algorithm/string/replace.hpp>
 
 #include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
-#include <Storages/ReadInOrderOptimizer.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Poco/String.h>
 
 namespace DB
 {
@@ -594,7 +591,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     column.column = column.type->createColumnConst(0, Tuple{w_start, watermark});
     auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
     auto adding_column_actions
-        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings(getContext()));
+        = std::make_shared<ExpressionActions>(std::move(adding_column_dag), ExpressionActionsSettings::fromContext(getContext()));
     builder.addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ExpressionTransform>(header, adding_column_actions);
@@ -608,7 +605,7 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
         new_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
     auto actions = std::make_shared<ExpressionActions>(
-        std::move(convert_actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
+        std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const Block & stream_header)
     {
         return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -736,7 +733,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings(getContext(), CompileExpressions::yes));
+            ExpressionActionsSettings::fromContext(getContext(), CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -1553,7 +1550,7 @@ void StorageWindowView::writeIntoWindowView(
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
             auto adding_column_actions = std::make_shared<ExpressionActions>(
                 std::move(adding_column_dag),
-                ExpressionActionsSettings(local_context));
+                ExpressionActionsSettings::fromContext(local_context));
 
             pipe.addSimpleTransform([&](const Block & stream_header)
             {
@@ -1666,7 +1663,7 @@ void StorageWindowView::writeIntoWindowView(
             output->getHeader().getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name);
         auto convert_actions = std::make_shared<ExpressionActions>(
-            std::move(convert_actions_dag), ExpressionActionsSettings(local_context, CompileExpressions::yes));
+            std::move(convert_actions_dag), ExpressionActionsSettings::fromContext(local_context, CompileExpressions::yes));
 
         builder.addSimpleTransform([&](const Block & header_) { return std::make_shared<ExpressionTransform>(header_, convert_actions); });
     }
