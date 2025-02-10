@@ -488,12 +488,12 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
-            print(f"=== Run scrip finished ===\n\n")
+            print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
             self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
-            print(f"=== Post run scrip finished ===")
+            print(f"=== Post run script finished ===")
 
         if not res:
             sys.exit(1)

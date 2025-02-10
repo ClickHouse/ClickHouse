@@ -53,6 +53,11 @@
 #include <fmt/core.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event SystemLogErrorOnFlush;
+}
+
 namespace DB
 {
 
@@ -523,6 +528,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }
