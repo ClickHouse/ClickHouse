@@ -30,7 +30,7 @@ T byteSwap(T x)
 template <typename T>
 T byteSwap(T)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap() is not implemented for {} datatype", demangle(typeid(T).name()));
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "byteSwap is not implemented for {} datatype", demangle(typeid(T).name()));
 }
 
 template <typename T>

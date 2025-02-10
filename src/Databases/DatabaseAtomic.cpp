@@ -590,7 +590,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
         if (if_data_path_exist && !db_disk->existsFileOrDirectory(data))
             return;
 
-        db_disk->createDirectoriesSymlink(data, link);
+        db_disk->createDirectorySymlink(data, link);
     }
     catch (...)
     {
@@ -636,7 +636,7 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
             if (db_disk->isSymlinkNoThrow(metadata_symlink))
                 db_disk->removeFileIfExists(metadata_symlink);
 
-            db_disk->createDirectoriesSymlink(fs::proximate(metadata_path, fs::path(path_to_metadata_symlink).parent_path()), path_to_metadata_symlink);
+            db_disk->createDirectorySymlink(fs::proximate(metadata_path, fs::path(path_to_metadata_symlink).parent_path()), path_to_metadata_symlink);
         }
         catch (...)
         {

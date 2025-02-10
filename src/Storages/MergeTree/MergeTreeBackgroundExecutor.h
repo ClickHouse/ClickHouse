@@ -106,7 +106,7 @@ public:
 
     [[noreturn]] void updatePolicy(std::string_view)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy is not implemented");
     }
 
     static constexpr std::string_view name = "round_robin";
@@ -151,7 +151,7 @@ public:
 
     [[noreturn]] void updatePolicy(std::string_view)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy is not implemented");
     }
 
     static constexpr std::string_view name = "shortest_task_first";

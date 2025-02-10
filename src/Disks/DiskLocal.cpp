@@ -445,7 +445,7 @@ bool DiskLocal::isSymlinkNoThrow(const String & path) const
     return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
 }
 
-void DiskLocal::createDirectoriesSymlink(const String & target, const String & link)
+void DiskLocal::createDirectorySymlink(const String & target, const String & link)
 {
     fs::create_directory_symlink(fs::path(disk_path) / target, fs::path(disk_path) / link);
 }
