@@ -248,7 +248,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         if (!keyword)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No prefix keyword for table engine of kind {}", toString(target.kind));
         ostr << " " << (s.hilite ? hilite_keyword : "") << toStringView(*keyword) << (s.hilite ? hilite_none : "");
-        target.inner_engine->formatImpl(ostr, s, state, frame);
+        target.inner_engine->format(ostr, s, state, frame);
     }
 }
 

@@ -1,0 +1,1216 @@
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 10, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 12, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 13, column_name: C, result_type: UInt8, source_id: 3
+  SETTINGS optimize_extract_common_expressions=0
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.A AND __table1.B) OR (__table1.A AND __table1.C)
+SETTINGS optimize_extract_common_expressions = 0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+  SETTINGS optimize_extract_common_expressions=1
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.B OR __table1.C)
+SETTINGS optimize_extract_common_expressions = 1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND __table1.B AND __table1.C
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+-8476148063717219538	1	1	1	1	1	1
+-8387418414841552371	1	1	1	1	0	1
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+-8476148063717219538	1	1	1	1	1	1
+-8387418414841552371	1	1	1	1	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
+          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+-8476148063717219538	1	1	1	1	1	1
+-8387418414841552371	1	1	1	1	0	1
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+-8476148063717219538	1	1	1	1	1	1
+-8387418414841552371	1	1	1	1	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: F, result_type: UInt8, source_id: 3
+          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.E OR __table1.F) AND __table1.B AND __table1.C
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9121738304623869295	1	1	0	0	1	0
+-9114056182077943575	1	1	1	1	0	1
+-9001504240784412840	1	1	0	0	1	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8757579268243194545	1	1	0	1	0	0
+-8753962234239378281	1	1	0	1	0	0
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9121738304623869295	1	1	0	0	1	0
+-9114056182077943575	1	1	1	1	0	1
+-9001504240784412840	1	1	0	0	1	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8757579268243194545	1	1	0	1	0	0
+-8753962234239378281	1	1	0	1	0	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9121738304623869295	1	1	0	0	1	0
+-9114056182077943575	1	1	1	1	0	1
+-9001504240784412840	1	1	0	0	1	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8757579268243194545	1	1	0	1	0	0
+-8753962234239378281	1	1	0	1	0	0
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9121738304623869295	1	1	0	0	1	0
+-9114056182077943575	1	1	1	1	0	1
+-9001504240784412840	1	1	0	0	1	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8757579268243194545	1	1	0	1	0	0
+-8753962234239378281	1	1	0	1	0	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+          COLUMN id: 12, column_name: B, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND (__table1.C OR __table1.D OR __table1.E) AND __table1.B
+-9217261049539683905	0	1	1	0	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9027896542766292056	0	1	1	1	0	1
+-9016286694578688546	0	1	1	1	0	1
+-9007101892394668722	0	1	1	0	0	1
+-8971956622356473539	0	1	1	1	0	1
+-9217261049539683905	0	1	1	0	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9027896542766292056	0	1	1	1	0	1
+-9016286694578688546	0	1	1	1	0	1
+-9007101892394668722	0	1	1	0	0	1
+-8971956622356473539	0	1	1	1	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND __table1.C
+-9217261049539683905	0	1	1	0	1	1
+-9128210600225023826	0	1	1	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9027896542766292056	0	1	1	1	0	1
+-9016286694578688546	0	1	1	1	0	1
+-9007101892394668722	0	1	1	0	0	1
+-8971956622356473539	0	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8884339606857089357	0	1	1	0	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9128210600225023826	0	1	1	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9027896542766292056	0	1	1	1	0	1
+-9016286694578688546	0	1	1	1	0	1
+-9007101892394668722	0	1	1	0	0	1
+-8971956622356473539	0	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8884339606857089357	0	1	1	0	1	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                COLUMN id: 10, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND __table1.C AND (__table1.E OR __table1.F)
+-9217261049539683905	0	1	1	0	1	1
+-9128210600225023826	0	1	1	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9027896542766292056	0	1	1	1	0	1
+-9016286694578688546	0	1	1	1	0	1
+-9007101892394668722	0	1	1	0	0	1
+-8971956622356473539	0	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8884339606857089357	0	1	1	0	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9128210600225023826	0	1	1	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9027896542766292056	0	1	1	1	0	1
+-9016286694578688546	0	1	1	1	0	1
+-9007101892394668722	0	1	1	0	0	1
+-8971956622356473539	0	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8884339606857089357	0	1	1	0	1	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: C, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 2
+                COLUMN id: 10, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND __table1.C AND (__table1.E OR __table1.F)
+-9217261049539683905	0	1	1	0	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9120901636510510987	0	1	0	1	0	0
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9034436041280906643	0	1	0	1	0	0
+-9032227688076112856	0	1	0	1	0	0
+-9217261049539683905	0	1	1	0	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9120901636510510987	0	1	0	1	0	0
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9034436041280906643	0	1	0	1	0	0
+-9032227688076112856	0	1	0	1	0	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND (__table1.C OR __table1.D OR __table1.E)
+-9217261049539683905	0	1	1	0	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9120901636510510987	0	1	0	1	0	0
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9034436041280906643	0	1	0	1	0	0
+-9032227688076112856	0	1	0	1	0	0
+-9217261049539683905	0	1	1	0	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9120901636510510987	0	1	0	1	0	0
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9034436041280906643	0	1	0	1	0	0
+-9032227688076112856	0	1	0	1	0	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 10, column_name: D, result_type: UInt8, source_id: 3
+                COLUMN id: 11, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND (__table1.C OR __table1.D OR __table1.E)
+-9220160771238933596	1	0	0	0	1	1
+-9154303869107404275	1	0	1	1	1	1
+-9154240572955605594	1	0	0	0	0	1
+-9136706315507142110	1	0	0	0	1	0
+-9136188450553078231	0	1	0	0	0	1
+-9121738304623869295	1	1	0	0	1	0
+-9119049435533988608	1	0	0	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9054835338197246193	1	0	0	0	1	0
+-9220160771238933596	1	0	0	0	1	1
+-9154303869107404275	1	0	1	1	1	1
+-9154240572955605594	1	0	0	0	0	1
+-9136706315507142110	1	0	0	0	1	0
+-9136188450553078231	0	1	0	0	0	1
+-9121738304623869295	1	1	0	0	1	0
+-9119049435533988608	1	0	0	0	1	1
+-9114056182077943575	1	1	1	1	0	1
+-9092546166635132947	0	1	1	1	1	0
+-9054835338197246193	1	0	0	0	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: equals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                FUNCTION id: 8, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 9, nodes: 1
+                      COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+                FUNCTION id: 11, function_name: sipHash64, function_type: ordinary, result_type: UInt64
+                  ARGUMENTS
+                    LIST id: 12, nodes: 1
+                      COLUMN id: 13, column_name: D, result_type: UInt8, source_id: 3
+          FUNCTION id: 14, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 15, nodes: 2
+                COLUMN id: 16, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 17, column_name: B, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (sipHash64(__table1.C) = sipHash64(__table1.D)) AND (__table1.A OR __table1.B)
+-9220160771238933596	1	0	0	0	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9154303869107404275	1	0	1	1	1	1
+-9146648809962620241	0	0	1	1	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9119049435533988608	1	0	0	0	1	1
+-9118603327247981370	0	0	1	1	0	1
+-9220160771238933596	1	0	0	0	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9154303869107404275	1	0	1	1	1	1
+-9146648809962620241	0	0	1	1	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9119049435533988608	1	0	0	0	1	1
+-9118603327247981370	0	0	1	1	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 10, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
+                      COLUMN id: 15, column_name: D, result_type: UInt8, source_id: 3
+                FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
+                      COLUMN id: 19, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.A AND __table1.B) OR ((__table1.C AND __table1.D) OR (__table1.E AND __table1.F))
+-9220160771238933596	1	0	0	0	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9154303869107404275	1	0	1	1	1	1
+-9146648809962620241	0	0	1	1	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9120901636510510987	0	1	0	1	0	0
+-9119049435533988608	1	0	0	0	1	1
+-9220160771238933596	1	0	0	0	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9154303869107404275	1	0	1	1	1	1
+-9146648809962620241	0	0	1	1	1	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9128210600225023826	0	1	1	0	1	1
+-9121738304623869295	1	1	0	0	1	0
+-9120901636510510987	0	1	0	1	0	0
+-9119049435533988608	1	0	0	0	1	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: A, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 10, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 13, nodes: 2
+                      COLUMN id: 14, column_name: B, result_type: UInt8, source_id: 3
+                      COLUMN id: 15, column_name: D, result_type: UInt8, source_id: 3
+                FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 17, nodes: 2
+                      COLUMN id: 18, column_name: E, result_type: UInt8, source_id: 3
+                      COLUMN id: 19, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.A AND __table1.B) OR ((__table1.B AND __table1.D) OR (__table1.E AND __table1.F))
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9121738304623869295	1	1	0	0	1	0
+-9114056182077943575	1	1	1	1	0	1
+-9001504240784412840	1	1	0	0	1	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-9137658153367139416	1	1	1	0	0	0
+-9137309194079040284	1	1	1	0	0	0
+-9121738304623869295	1	1	0	0	1	0
+-9114056182077943575	1	1	1	1	0	1
+-9001504240784412840	1	1	0	0	1	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 3
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 7, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 8, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 9, nodes: 3
+                COLUMN id: 10, column_name: C, result_type: UInt8, source_id: 3
+                FUNCTION id: 11, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 12, nodes: 2
+                      COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
+                      COLUMN id: 14, column_name: E, result_type: UInt8, source_id: 3
+                FUNCTION id: 15, function_name: and, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 16, nodes: 2
+                      COLUMN id: 17, column_name: F, result_type: UInt8, source_id: 3
+                      COLUMN id: 18, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A AND __table1.B AND (__table1.C OR (__table1.E AND __table1.E) OR (__table1.F AND __table1.F))
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8569013057605390975	1	1	0	1	0	1
+-8548886235737406452	1	1	0	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+-9114056182077943575	1	1	1	1	0	1
+-8941493636296671386	1	1	1	1	1	1
+-8816638533025328863	1	1	1	0	1	1
+-8778069835572290074	1	1	1	1	1	1
+-8751975391509985483	1	1	1	0	1	1
+-8699036683208290351	1	1	1	0	0	1
+-8647725213825146240	1	1	1	1	0	1
+-8569013057605390975	1	1	0	1	0	1
+-8548886235737406452	1	1	0	1	0	1
+-8525570993468372516	1	1	1	1	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 4
+          FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: C, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: D, result_type: UInt8, source_id: 3
+          COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 3
+          COLUMN id: 11, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 12, function_name: or, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 13, nodes: 2
+                COLUMN id: 14, column_name: E, result_type: UInt8, source_id: 3
+                COLUMN id: 15, column_name: F, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE (__table1.C OR __table1.D) AND __table1.A AND __table1.B AND (__table1.E OR __table1.F)
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: Nullable(UInt8)
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: B, result_type: UInt8, source_id: 3
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+          CONSTANT id: 10, constant_value: \'Nullable(UInt8)\', constant_value_type: String
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE _CAST(__table1.B AND __table1.C, \'Nullable(UInt8)\')
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: _CAST, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: x, result_type: Int64, source_id: 3
+          CONSTANT id: 7, constant_value: \'UInt8\', constant_value_type: String
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE _CAST(__table1.x, \'UInt8\')
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: Nullable(UInt8)
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: toNullable, function_type: ordinary, result_type: Nullable(UInt8)
+            ARGUMENTS
+              LIST id: 8, nodes: 1
+                COLUMN id: 9, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.B AND toNullable(__table1.C)
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 4, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+          FUNCTION id: 7, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 8, nodes: 2
+                COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+                FUNCTION id: 10, function_name: or, function_type: ordinary, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 11, nodes: 2
+                      FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 13, nodes: 2
+                            COLUMN id: 14, column_name: C, result_type: UInt8, source_id: 3
+                            COLUMN id: 15, column_name: D, result_type: UInt8, source_id: 3
+                      FUNCTION id: 16, function_name: and, function_type: ordinary, result_type: UInt8
+                        ARGUMENTS
+                          LIST id: 17, nodes: 2
+                            COLUMN id: 18, column_name: C, result_type: UInt8, source_id: 3
+                            COLUMN id: 19, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+WHERE __table1.A OR (__table1.B AND ((__table1.C AND __table1.D) OR (__table1.C AND __table1.E)))
+-9222995085389227671	0	0	0	0	0	1	-9212191261079457524	0	0	1	0	1	0
+-9222995085389227671	0	0	0	0	0	1	-9210944775923669427	0	1	1	1	0	0
+-9222995085389227671	0	0	0	0	0	1	-9202601338732071287	0	1	1	1	1	1
+-9222995085389227671	0	0	0	0	0	1	-9185234005543064629	0	1	1	0	1	1
+-9222995085389227671	0	0	0	0	0	1	-9181371158682533758	0	1	1	1	0	0
+-9222995085389227671	0	0	0	0	0	1	-9173688614647112626	0	0	1	0	0	1
+-9222995085389227671	0	0	0	0	0	1	-9130964659455442087	0	1	1	1	1	1
+-9222995085389227671	0	0	0	0	0	1	-9109186410997511387	0	1	1	0	1	1
+-9222995085389227671	0	0	0	0	0	1	-9071619989214493680	0	1	1	0	1	0
+-9222995085389227671	0	0	0	0	0	1	-9071253360041153133	0	1	1	1	0	1
+-9222995085389227671	0	0	0	0	0	1	-9212191261079457524	0	0	1	0	1	0
+-9222995085389227671	0	0	0	0	0	1	-9210944775923669427	0	1	1	1	0	0
+-9222995085389227671	0	0	0	0	0	1	-9202601338732071287	0	1	1	1	1	1
+-9222995085389227671	0	0	0	0	0	1	-9185234005543064629	0	1	1	0	1	1
+-9222995085389227671	0	0	0	0	0	1	-9181371158682533758	0	1	1	1	0	0
+-9222995085389227671	0	0	0	0	0	1	-9173688614647112626	0	0	1	0	0	1
+-9222995085389227671	0	0	0	0	0	1	-9130964659455442087	0	1	1	1	1	1
+-9222995085389227671	0	0	0	0	0	1	-9109186410997511387	0	1	1	0	1	1
+-9222995085389227671	0	0	0	0	0	1	-9071619989214493680	0	1	1	0	1	0
+-9222995085389227671	0	0	0	0	0	1	-9071253360041153133	0	1	1	1	0	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    JOIN id: 3, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: 4, alias: __table1, table_name: default.x
+      RIGHT TABLE EXPRESSION
+        TABLE id: 5, alias: __table2, table_name: default.y
+      JOIN EXPRESSION
+        FUNCTION id: 6, function_name: and, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 7, nodes: 2
+              FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 9, nodes: 2
+                    COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 4
+                    COLUMN id: 11, column_name: A, result_type: UInt8, source_id: 5
+              FUNCTION id: 12, function_name: or, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 13, nodes: 2
+                    FUNCTION id: 14, function_name: equals, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 15, nodes: 2
+                          COLUMN id: 16, column_name: B, result_type: UInt8, source_id: 4
+                          CONSTANT id: 17, constant_value: UInt64_1, constant_value_type: UInt8
+                    FUNCTION id: 18, function_name: equals, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 19, nodes: 2
+                          COLUMN id: 20, column_name: C, result_type: UInt8, source_id: 5
+                          CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+ALL INNER JOIN default.y AS __table2 ON (__table1.A = __table2.A) AND ((__table1.B = 1) OR (__table2.C = 1))
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    JOIN id: 3, strictness: ALL, kind: INNER
+      LEFT TABLE EXPRESSION
+        TABLE id: 4, alias: __table1, table_name: default.x
+      RIGHT TABLE EXPRESSION
+        TABLE id: 5, alias: __table2, table_name: default.y
+      JOIN EXPRESSION
+        FUNCTION id: 6, function_name: or, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 7, nodes: 2
+              FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 9, nodes: 2
+                    COLUMN id: 10, column_name: A, result_type: UInt8, source_id: 4
+                    COLUMN id: 11, column_name: A, result_type: UInt8, source_id: 5
+              FUNCTION id: 12, function_name: and, function_type: ordinary, result_type: UInt8
+                ARGUMENTS
+                  LIST id: 13, nodes: 2
+                    FUNCTION id: 14, function_name: equals, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 15, nodes: 2
+                          COLUMN id: 16, column_name: B, result_type: UInt8, source_id: 4
+                          COLUMN id: 17, column_name: B, result_type: UInt8, source_id: 5
+                    FUNCTION id: 18, function_name: or, function_type: ordinary, result_type: UInt8
+                      ARGUMENTS
+                        LIST id: 19, nodes: 2
+                          FUNCTION id: 20, function_name: and, function_type: ordinary, result_type: UInt8
+                            ARGUMENTS
+                              LIST id: 21, nodes: 2
+                                FUNCTION id: 22, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 23, nodes: 2
+                                      COLUMN id: 24, column_name: C, result_type: UInt8, source_id: 4
+                                      COLUMN id: 25, column_name: C, result_type: UInt8, source_id: 5
+                                FUNCTION id: 26, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 27, nodes: 2
+                                      COLUMN id: 28, column_name: D, result_type: UInt8, source_id: 4
+                                      COLUMN id: 29, column_name: D, result_type: UInt8, source_id: 5
+                          FUNCTION id: 30, function_name: and, function_type: ordinary, result_type: UInt8
+                            ARGUMENTS
+                              LIST id: 31, nodes: 2
+                                FUNCTION id: 32, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 33, nodes: 2
+                                      COLUMN id: 34, column_name: C, result_type: UInt8, source_id: 4
+                                      COLUMN id: 35, column_name: C, result_type: UInt8, source_id: 5
+                                FUNCTION id: 36, function_name: equals, function_type: ordinary, result_type: UInt8
+                                  ARGUMENTS
+                                    LIST id: 37, nodes: 2
+                                      COLUMN id: 38, column_name: E, result_type: UInt8, source_id: 4
+                                      COLUMN id: 39, column_name: E, result_type: UInt8, source_id: 5
+
+SELECT count() AS `count()`
+FROM default.x AS __table1
+ALL INNER JOIN default.y AS __table2 ON (__table1.A = __table2.A) OR ((__table1.B = __table2.B) AND (((__table1.C = __table2.C) AND (__table1.D = __table2.D)) OR ((__table1.C = __table2.C) AND (__table1.E = __table2.E))))
+-9217261049539683905	0	1	1	0	1	1
+-9194298748734675155	0	0	0	1	0	0
+-9154303869107404275	1	0	1	1	1	1
+-9217261049539683905	0	1	1	0	1	1
+-9194298748734675155	0	0	0	1	0	0
+-9154303869107404275	1	0	1	1	1	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    x Int64
+    A UInt8
+    B UInt8
+    C UInt8
+    D UInt8
+    E UInt8
+    F UInt8
+  PROJECTION
+    LIST id: 1, nodes: 7
+      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+      COLUMN id: 4, column_name: A, result_type: UInt8, source_id: 3
+      COLUMN id: 5, column_name: B, result_type: UInt8, source_id: 3
+      COLUMN id: 6, column_name: C, result_type: UInt8, source_id: 3
+      COLUMN id: 7, column_name: D, result_type: UInt8, source_id: 3
+      COLUMN id: 8, column_name: E, result_type: UInt8, source_id: 3
+      COLUMN id: 9, column_name: F, result_type: UInt8, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  WHERE
+    FUNCTION id: 10, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 11, nodes: 2
+          COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+          COLUMN id: 13, column_name: E, result_type: UInt8, source_id: 3
+
+SELECT
+    __table1.x AS x,
+    __table1.A AS A,
+    __table1.B AS B,
+    __table1.C AS C,
+    __table1.D AS D,
+    __table1.E AS E,
+    __table1.F AS F
+FROM default.x AS __table1
+WHERE __table1.C AND __table1.E
+-9154303869107404275	1	0	1
+-9137658153367139416	1	1	1
+-9137309194079040284	1	1	1
+-9121738304623869295	1	1	0
+-9114056182077943575	1	1	1
+-9097647291775228882	1	0	1
+-9038891087920847933	1	0	1
+-9031027738484209035	1	0	1
+-9012321986923892113	1	1	0
+-9001504240784412840	1	1	0
+-9154303869107404275	1	0	1
+-9137658153367139416	1	1	1
+-9137309194079040284	1	1	1
+-9121738304623869295	1	1	0
+-9114056182077943575	1	1	1
+-9097647291775228882	1	0	1
+-9038891087920847933	1	0	1
+-9031027738484209035	1	0	1
+-9012321986923892113	1	1	0
+-9001504240784412840	1	1	0
+QUERY id: 0
+  PROJECTION COLUMNS
+    x Int64
+    mA UInt8
+    mB UInt8
+    mC UInt8
+  PROJECTION
+    LIST id: 1, nodes: 4
+      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+      FUNCTION id: 4, function_name: max, function_type: aggregate, result_type: UInt8
+        ARGUMENTS
+          LIST id: 5, nodes: 1
+            COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+      FUNCTION id: 7, function_name: max, function_type: aggregate, result_type: UInt8
+        ARGUMENTS
+          LIST id: 8, nodes: 1
+            COLUMN id: 9, column_name: B, result_type: UInt8, source_id: 3
+      FUNCTION id: 10, function_name: max, function_type: aggregate, result_type: UInt8
+        ARGUMENTS
+          LIST id: 11, nodes: 1
+            COLUMN id: 12, column_name: C, result_type: UInt8, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  GROUP BY
+    LIST id: 13, nodes: 1
+      COLUMN id: 14, column_name: x, result_type: Int64, source_id: 3
+  HAVING
+    FUNCTION id: 15, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 16, nodes: 2
+          FUNCTION id: 17, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 18, nodes: 2
+                FUNCTION id: 19, function_name: max, function_type: aggregate, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 20, nodes: 1
+                      COLUMN id: 21, column_name: A, result_type: UInt8, source_id: 3
+                FUNCTION id: 22, function_name: max, function_type: aggregate, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 23, nodes: 1
+                      COLUMN id: 24, column_name: B, result_type: UInt8, source_id: 3
+          FUNCTION id: 25, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 26, nodes: 2
+                FUNCTION id: 27, function_name: max, function_type: aggregate, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 28, nodes: 1
+                      COLUMN id: 29, column_name: A, result_type: UInt8, source_id: 3
+                FUNCTION id: 30, function_name: max, function_type: aggregate, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 31, nodes: 1
+                      COLUMN id: 32, column_name: C, result_type: UInt8, source_id: 3
+
+SELECT
+    __table1.x AS x,
+    max(__table1.A) AS mA,
+    max(__table1.B) AS mB,
+    max(__table1.C) AS mC
+FROM default.x AS __table1
+GROUP BY __table1.x
+HAVING (max(__table1.A) AND max(__table1.B)) OR (max(__table1.A) AND max(__table1.C))
+-9220160771238933596	1	1	1
+-9154303869107404275	1	1	1
+-9137658153367139416	1	1	1
+-9137309194079040284	1	1	1
+-9136706315507142110	1	1	1
+-9136188450553078231	1	1	1
+-9121738304623869295	1	1	0
+-9119049435533988608	1	0	1
+-9114056182077943575	1	1	1
+-9097647291775228882	1	1	1
+-9220160771238933596	1	1	1
+-9154303869107404275	1	1	1
+-9137658153367139416	1	1	1
+-9137309194079040284	1	1	1
+-9136706315507142110	1	1	1
+-9136188450553078231	1	1	1
+-9121738304623869295	1	1	0
+-9119049435533988608	1	0	1
+-9114056182077943575	1	1	1
+-9097647291775228882	1	1	1
+QUERY id: 0
+  PROJECTION COLUMNS
+    x Int64
+    mA UInt8
+    mB UInt8
+    mC UInt8
+  PROJECTION
+    LIST id: 1, nodes: 4
+      COLUMN id: 2, column_name: x, result_type: Int64, source_id: 3
+      FUNCTION id: 4, function_name: max, function_type: window, result_type: UInt8
+        ARGUMENTS
+          LIST id: 5, nodes: 1
+            COLUMN id: 6, column_name: A, result_type: UInt8, source_id: 3
+        WINDOW
+          WINDOW id: 7, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+            PARTITION BY
+              LIST id: 8, nodes: 1
+                FUNCTION id: 9, function_name: modulo, function_type: ordinary, result_type: Int32
+                  ARGUMENTS
+                    LIST id: 10, nodes: 2
+                      COLUMN id: 11, column_name: x, result_type: Int64, source_id: 3
+                      CONSTANT id: 12, constant_value: UInt64_1000, constant_value_type: UInt16
+      FUNCTION id: 13, function_name: max, function_type: window, result_type: UInt8
+        ARGUMENTS
+          LIST id: 14, nodes: 1
+            COLUMN id: 15, column_name: B, result_type: UInt8, source_id: 3
+        WINDOW
+          WINDOW id: 16, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+            PARTITION BY
+              LIST id: 17, nodes: 1
+                FUNCTION id: 18, function_name: modulo, function_type: ordinary, result_type: Int32
+                  ARGUMENTS
+                    LIST id: 19, nodes: 2
+                      COLUMN id: 20, column_name: x, result_type: Int64, source_id: 3
+                      CONSTANT id: 21, constant_value: UInt64_1000, constant_value_type: UInt16
+      FUNCTION id: 22, function_name: max, function_type: window, result_type: UInt8
+        ARGUMENTS
+          LIST id: 23, nodes: 1
+            COLUMN id: 24, column_name: C, result_type: UInt8, source_id: 3
+        WINDOW
+          WINDOW id: 25, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+            PARTITION BY
+              LIST id: 26, nodes: 1
+                FUNCTION id: 27, function_name: modulo, function_type: ordinary, result_type: Int32
+                  ARGUMENTS
+                    LIST id: 28, nodes: 2
+                      COLUMN id: 29, column_name: x, result_type: Int64, source_id: 3
+                      CONSTANT id: 30, constant_value: UInt64_1000, constant_value_type: UInt16
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.x
+  QUALIFY
+    FUNCTION id: 31, function_name: or, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 32, nodes: 2
+          FUNCTION id: 33, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 34, nodes: 2
+                FUNCTION id: 35, function_name: max, function_type: window, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 36, nodes: 1
+                      COLUMN id: 37, column_name: A, result_type: UInt8, source_id: 3
+                  WINDOW
+                    WINDOW id: 38, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                      PARTITION BY
+                        LIST id: 39, nodes: 1
+                          FUNCTION id: 40, function_name: modulo, function_type: ordinary, result_type: Int32
+                            ARGUMENTS
+                              LIST id: 41, nodes: 2
+                                COLUMN id: 42, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 43, constant_value: UInt64_1000, constant_value_type: UInt16
+                FUNCTION id: 44, function_name: max, function_type: window, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 45, nodes: 1
+                      COLUMN id: 46, column_name: B, result_type: UInt8, source_id: 3
+                  WINDOW
+                    WINDOW id: 47, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                      PARTITION BY
+                        LIST id: 48, nodes: 1
+                          FUNCTION id: 49, function_name: modulo, function_type: ordinary, result_type: Int32
+                            ARGUMENTS
+                              LIST id: 50, nodes: 2
+                                COLUMN id: 51, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 52, constant_value: UInt64_1000, constant_value_type: UInt16
+          FUNCTION id: 53, function_name: and, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 54, nodes: 2
+                FUNCTION id: 55, function_name: max, function_type: window, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 56, nodes: 1
+                      COLUMN id: 57, column_name: A, result_type: UInt8, source_id: 3
+                  WINDOW
+                    WINDOW id: 58, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                      PARTITION BY
+                        LIST id: 59, nodes: 1
+                          FUNCTION id: 60, function_name: modulo, function_type: ordinary, result_type: Int32
+                            ARGUMENTS
+                              LIST id: 61, nodes: 2
+                                COLUMN id: 62, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 63, constant_value: UInt64_1000, constant_value_type: UInt16
+                FUNCTION id: 64, function_name: max, function_type: window, result_type: UInt8
+                  ARGUMENTS
+                    LIST id: 65, nodes: 1
+                      COLUMN id: 66, column_name: C, result_type: UInt8, source_id: 3
+                  WINDOW
+                    WINDOW id: 67, frame_type: RANGE, frame_begin_type: unbounded preceding, frame_end_type: current
+                      PARTITION BY
+                        LIST id: 68, nodes: 1
+                          FUNCTION id: 69, function_name: modulo, function_type: ordinary, result_type: Int32
+                            ARGUMENTS
+                              LIST id: 70, nodes: 2
+                                COLUMN id: 71, column_name: x, result_type: Int64, source_id: 3
+                                CONSTANT id: 72, constant_value: UInt64_1000, constant_value_type: UInt16
+
+SELECT
+    __table1.x AS x,
+    max(__table1.A) OVER (PARTITION BY __table1.x % 1000) AS mA,
+    max(__table1.B) OVER (PARTITION BY __table1.x % 1000) AS mB,
+    max(__table1.C) OVER (PARTITION BY __table1.x % 1000) AS mC
+FROM default.x AS __table1
+QUALIFY (max(__table1.A) OVER (PARTITION BY (__table1.x % 1000)) AND max(__table1.B) OVER (PARTITION BY (__table1.x % 1000))) OR (max(__table1.A) OVER (PARTITION BY (__table1.x % 1000)) AND max(__table1.C) OVER (PARTITION BY (__table1.x % 1000)))

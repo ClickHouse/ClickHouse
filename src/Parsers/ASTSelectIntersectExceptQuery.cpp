@@ -32,7 +32,7 @@ void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatS
                           << settings.nl_or_ws;
         }
 
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 }
 

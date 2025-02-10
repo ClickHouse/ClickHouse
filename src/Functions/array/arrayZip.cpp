@@ -2,6 +2,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -174,7 +175,7 @@ REGISTER_FUNCTION(ArrayZip)
         {.description = R"(
 Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 )",
-         .categories{"String"}});
+         .category{"Arrays"}});
 
     factory.registerFunction<FunctionArrayZip<true>>(
         {.description = R"(
@@ -182,7 +183,7 @@ Combines multiple arrays into a single array, allowing for unaligned arrays. The
 
 If the arrays have different sizes, the shorter arrays will be padded with `null` values.
 )",
-         .categories{"String"}}
+         .category{"Arrays"}}
 
     );
 }

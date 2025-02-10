@@ -386,13 +386,13 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                 return false;
             }
 
-            if (action == "DROP" && target == "ALL PROFILES")
+            if (action == "DROP" && target == "ALL PROFILES" && !drop_all_profiles)
             {
                 drop_all_profiles = true;
                 return true;
             }
 
-            if (action == "DROP" && target == "ALL SETTINGS")
+            if (action == "DROP" && target == "ALL SETTINGS" && !drop_all_settings)
             {
                 drop_all_settings = true;
                 return true;

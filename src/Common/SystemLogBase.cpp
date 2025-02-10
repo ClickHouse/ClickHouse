@@ -2,6 +2,7 @@
 #include <Interpreters/CrashLog.h>
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -208,13 +209,19 @@ typename SystemLogQueue<LogElement>::PopResult SystemLogQueue<LogElement>::pop()
         if (is_shutdown)
             return PopResult{.is_shutdown = true};
 
-        queue_front_index += queue.size();
+        const auto queue_size = queue.size();
+        queue_front_index += queue_size;
         prev_ignored_logs = ignored_logs;
         ignored_logs = 0;
 
         result.last_log_index = queue_front_index;
-        result.logs.swap(queue);
+        if (!queue.empty())
+            result.logs.swap(queue);
         result.create_table_force = requested_prepare_tables > prepared_tables;
+
+        /// Preallocate same amount of memory for the next batch to minimize reallocations.
+        if (queue_size > queue.capacity())
+            queue.reserve(std::max(settings.reserved_size_rows, queue_size));
     }
 
     if (prev_ignored_logs)

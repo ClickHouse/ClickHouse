@@ -42,14 +42,14 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         WriteBufferFromOwnString temp_buf;
         FormatSettings tmp_settings(settings.one_line);
         FormatState tmp_state;
-        second->formatImpl(temp_buf, tmp_settings, tmp_state, frame);
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
 
         maskURIPassword(&temp_buf.str());
         ostr << temp_buf.str();
     }
     else
     {
-        second->formatImpl(ostr, settings, state, frame);
+        second->format(ostr, settings, state, frame);
     }
 
     if (second_with_brackets)
@@ -98,7 +98,7 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
-    elements->formatImpl(ostr, settings, state, frame);
+    elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
     ostr << (settings.hilite ? hilite_none : "");
 }

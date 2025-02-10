@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS t;
-CREATE TABLE t (x UInt8, PROJECTION p (SELECT x GROUP BY x)) ENGINE = MergeTree ORDER BY () SETTINGS allow_experimental_block_number_column=true;
+CREATE TABLE t (x UInt8, PROJECTION p (SELECT x GROUP BY x)) ENGINE = MergeTree ORDER BY ()  SETTINGS enable_block_number_column = 1;
+
 INSERT INTO t VALUES (0);
 INSERT INTO t VALUES (1),(1);
 INSERT INTO t VALUES (2),(3);

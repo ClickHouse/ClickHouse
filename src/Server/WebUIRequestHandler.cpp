@@ -27,12 +27,6 @@ INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 namespace DB
 {
 
-PlayWebUIRequestHandler::PlayWebUIRequestHandler(IServer & server_) : server(server_) {}
-DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : server(server_) {}
-BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
-MergesWebUIRequestHandler::MergesWebUIRequestHandler(IServer & server_) : server(server_) {}
-JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
-
 static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
     response.setContentType("text/html; charset=UTF-8");

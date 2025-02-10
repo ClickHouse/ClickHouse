@@ -90,7 +90,7 @@ alphaTokens
 and
 appendTrailingCharIfAbsent
 array
-arrayAUC
+arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -124,10 +124,10 @@ arrayMax
 arrayMin
 arrayPopBack
 arrayPopFront
-arrayPrAUC
 arrayProduct
 arrayPushBack
 arrayPushFront
+arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -310,6 +310,7 @@ fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
 fromUnixTimestamp64Nano
+fromUnixTimestamp64Second
 fromUnixTimestampInJodaSyntax
 fuzzBits
 gccMurmurHash
@@ -320,7 +321,6 @@ geohashDecode
 geohashEncode
 geohashesInBox
 getMacro
-getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSizeOfEnumType

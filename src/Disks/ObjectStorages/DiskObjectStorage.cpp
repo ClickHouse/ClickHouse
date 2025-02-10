@@ -732,6 +732,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
             reader,
             read_settings,
             buffer_size,
+            read_settings.remote_read_min_bytes_for_seek, /// Modified in private repo.
             global_context->getAsyncReadCounters(),
             global_context->getFilesystemReadPrefetchesLog());
 
@@ -775,6 +776,11 @@ Strings DiskObjectStorage::getBlobPath(const String & path) const
     if (!objects_namespace.empty())
         res.emplace_back(objects_namespace);
     return res;
+}
+
+bool DiskObjectStorage::areBlobPathsRandom() const
+{
+    return object_storage->areObjectKeysRandom();
 }
 
 void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)

@@ -84,8 +84,14 @@ public:
     /// Must be called after all @joinBlock calls.
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
+
+    void onBuildPhaseFinish() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+
+    void forceSpill() { force_spill = true; }
 
 private:
     void initBuckets();
@@ -144,6 +150,7 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
+    std::atomic<bool> force_spill = false;
 };
 
 }

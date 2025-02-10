@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnNullable.h>
@@ -9,11 +10,6 @@
 #include <Columns/ColumnDynamic.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-
-#if USE_EMBEDDED_COMPILER
-#    include <DataTypes/Native.h>
-#    include <llvm/IR/IRBuilder.h>
-#endif
 
 
 namespace DB
@@ -111,21 +107,6 @@ public:
         /// a zero-filled null map.
         return DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
     }
-
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & arguments, const DataTypePtr &) const override { return canBeNativeType(arguments[0]); }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & /*result_type*/) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        if (arguments[0].type->isNullable())
-            return b.CreateExtractValue(arguments[0].value, {1});
-        else
-            return b.getInt8(0);
-    }
-#endif
-
 
 private:
     bool use_analyzer;

@@ -27,16 +27,16 @@ Samples must belong to continuous, one-dimensional probability distributions.
 - `alternative` — alternative hypothesis. (Optional, default: `'two-sided'`.) [String](../../../sql-reference/data-types/string.md).
     Let F(x) and G(x) be the CDFs of the first and second distributions respectively.
     - `'two-sided'`
-        The null hypothesis is that samples come from the same distribution, e.g. F(x) = G(x) for all x.
+        The null hypothesis is that samples come from the same distribution, e.g. `F(x) = G(x)` for all x.
         And the alternative is that the distributions are not identical.
     - `'greater'`
         The null hypothesis is that values in the first sample are *stochastically smaller* than those in the second one,
         e.g. the CDF of first distribution lies above and hence to the left of that for the second one.
-        Which in fact means that F(x) >= G(x) for all x. And the alternative in this case is that F(x) < G(x) for at least one x.
+        Which in fact means that `F(x) >= G(x)` for all x. And the alternative in this case is that `F(x) < G(x)` for at least one x.
     - `'less'`.
         The null hypothesis is that values in the first sample are *stochastically greater* than those in the second one,
         e.g. the CDF of first distribution lies below and hence to the right of that for the second one.
-        Which in fact means that F(x) <= G(x) for all x. And the alternative in this case is that F(x) > G(x) for at least one x.
+        Which in fact means that `F(x) <= G(x)` for all x. And the alternative in this case is that `F(x) > G(x)` for at least one x.
 - `computation_method` — the method used to compute p-value. (Optional, default: `'auto'`.) [String](../../../sql-reference/data-types/string.md).
     - `'exact'` - calculation is performed using precise probability distribution of the test statistics. Compute intensive and wasteful except for small samples.
     - `'asymp'` (`'asymptotic'`) - calculation is performed using an approximation. For large sample sizes, the exact and asymptotic p-values are very similar.

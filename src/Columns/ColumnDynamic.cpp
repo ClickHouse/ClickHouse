@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -293,6 +294,8 @@ void ColumnDynamic::get(size_t n, Field & res) const
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
     {
         variant_col.get(n, res);
+        if (!res.isNull())
+            res = convertFieldToType(res, *getTypeAt(n));
         return;
     }
 
@@ -304,6 +307,22 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
+std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
+{
+    const auto & variant_col = getVariantColumn();
+    /// Check if value is not in shared variant.
+    if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
+        return variant_col.getValueNameAndType(n);
+
+    /// We should deeserialize value from shared variant.
+    const auto & shared_variant = getSharedVariant();
+    auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
+    ReadBufferFromMemory buf(value_data.data, value_data.size);
+    auto type = decodeDataType(buf);
+    const auto col = type->createColumn();
+    type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
+    return col->getValueNameAndType(0);
+}
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnDynamic::insertFrom(const IColumn & src_, size_t n)
@@ -991,9 +1010,9 @@ void ColumnDynamic::updatePermutation(IColumn::PermutationSortDirection directio
         updatePermutationImpl(limit, res, equal_ranges, ComparatorDescendingStable(*this, nan_direction_hint), comparator_equal, DefaultSort(), DefaultPartialSort());
 }
 
-ColumnPtr ColumnDynamic::compress() const
+ColumnPtr ColumnDynamic::compress(bool force_compression) const
 {
-    ColumnPtr variant_compressed = variant_column_ptr->compress();
+    ColumnPtr variant_compressed = variant_column_ptr->compress(force_compression);
     size_t byte_size = variant_compressed->byteSize();
     return ColumnCompressed::create(size(), byte_size,
         [my_variant_compressed = std::move(variant_compressed), my_variant_info = variant_info, my_max_dynamic_types = max_dynamic_types, my_global_max_dynamic_types = global_max_dynamic_types, my_statistics = statistics]() mutable
@@ -1067,6 +1086,23 @@ String ColumnDynamic::getTypeNameAt(size_t row_num) const
     }
 
     return variant_info.variant_names[discr];
+}
+
+DataTypePtr ColumnDynamic::getTypeAt(size_t row_num) const
+{
+    const auto & variant_col = getVariantColumn();
+    const size_t discr = variant_col.globalDiscriminatorAt(row_num);
+    if (discr == ColumnVariant::NULL_DISCRIMINATOR)
+        return nullptr;
+
+    if (discr == getSharedVariantDiscriminator())
+    {
+        const auto value = getSharedVariant().getDataAt(variant_col.offsetAt(row_num));
+        ReadBufferFromMemory buf(value.data, value.size);
+        return decodeDataType(buf);
+    }
+
+    return assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants()[discr];
 }
 
 void ColumnDynamic::getAllTypeNamesInto(std::unordered_set<String> & names) const
@@ -1147,6 +1183,13 @@ void ColumnDynamic::prepareVariantsForSquashing(const Columns & source_columns)
 
     /// Add variants from this dynamic column.
     add_variants(*this);
+
+    /// It might happen that current max_dynamic_types is less then global_max_dynamic_types
+    /// but the SharedVariant is empty. For example if this block was deserialized from Native format.
+    /// In this case we should set max_dynamic_types = global_max_dynamic_types, so during squashing we
+    /// will insert new types to SharedVariant only when the global limit is reached.
+    if (getSharedVariant().empty())
+        max_dynamic_types = global_max_dynamic_types;
 
     DataTypePtr result_variant_type;
     /// Check if the number of all variants exceeds the limit.

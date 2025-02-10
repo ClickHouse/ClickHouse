@@ -69,7 +69,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
     if (!table && !database_and_tables && database)
     {
-        database->formatImpl(ostr, settings, state, frame);
+        database->format(ostr, settings, state, frame);
     }
     else if (database_and_tables)
     {
@@ -85,25 +85,25 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
 
             if (auto db = identifier->getDatabase())
             {
-                db->formatImpl(ostr, settings, state, frame);
+                db->format(ostr, settings, state, frame);
                 ostr << '.';
             }
 
             auto tb = identifier->getTable();
             chassert(tb);
-            tb->formatImpl(ostr, settings, state, frame);
+            tb->format(ostr, settings, state, frame);
         }
     }
     else
     {
         if (database)
         {
-            database->formatImpl(ostr, settings, state, frame);
+            database->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(ostr, settings, state, frame);
+        table->format(ostr, settings, state, frame);
     }
 
     formatOnCluster(ostr, settings);

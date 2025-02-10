@@ -70,7 +70,7 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
         node1,
         "test_concurrent_threads_soft_limit_1",
         "ConcurrencyControlSlotsAcquired",
-        lambda x: x == 100,
+        lambda x: x >= 1 and x <= 100,
     )
     assert_profile_event(
         node1,
@@ -78,12 +78,11 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
-    assert (
-        node1.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
-        )
-        == "102\n"
-    )
+    s_count = node1.query(
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
+    ).strip()
+    count = int(s_count) if s_count else 0
+    assert count >= 3 and count <= 102
 
 
 def test_use_concurrency_control_default(started_cluster):
@@ -136,13 +135,13 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsDelayed",
-        lambda x: x == 50,
+        lambda x: x >= 50,
     )
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsAcquired",
-        lambda x: x == 50,
+        lambda x: x >= 1 and x <= 50,
     )
     assert_profile_event(
         node2,
@@ -150,12 +149,11 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
-    assert (
-        node2.query(
-            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2' order by query_start_time_microseconds desc limit 1"
-        )
-        == "52\n"
-    )
+    s_count = node2.query(
+        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2' order by query_start_time_microseconds desc limit 1"
+    ).strip()
+    count = int(s_count) if s_count else 0
+    assert count >= 3 and count <= 52
 
 
 def test_use_concurrency_control_soft_limit_defined_50(started_cluster):

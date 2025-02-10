@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/COW.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -92,7 +91,7 @@ public:
     struct ISubcolumnCreator
     {
         virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
-        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
+        virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
         virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
         virtual ~ISubcolumnCreator() = default;
     };
@@ -467,6 +466,7 @@ public:
     static bool isDynamicSubcolumn(const SubstreamPath & path, size_t prefix_len);
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
+    static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>
