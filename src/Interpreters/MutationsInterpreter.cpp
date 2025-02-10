@@ -335,6 +335,11 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     return dynamic_cast<const MergeTreeData *>(storage.get());
 }
 
+MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
+{
+    return part;
+}
+
 bool MutationsInterpreter::Source::supportsLightweightDelete() const
 {
     if (part)
@@ -938,16 +943,22 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
-            /// Check if there are projections that have this column in the primary key.
-            /// We should rebuild such projections.
-            for (const auto & projection : metadata_snapshot->getProjections())
+            /// Check if the type of this column is changed and there are projections that
+            /// have this column in the primary key. We should rebuild such projections.
+            if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
-                const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
-                if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                if (!merge_tree_data_part->getColumn(command.column_name).type->equals(*command.data_type))
                 {
-                    for (const auto & column : projection.required_columns)
-                        dependencies.emplace(column, ColumnDependency::PROJECTION);
-                    materialized_projections.insert(projection.name);
+                    for (const auto & projection : metadata_snapshot->getProjections())
+                    {
+                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        {
+                            for (const auto & col : projection.required_columns)
+                                dependencies.emplace(col, ColumnDependency::PROJECTION);
+                            materialized_projections.insert(projection.name);
+                        }
+                    }
                 }
             }
         }
