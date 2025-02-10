@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-debug, no-tsan, no-msan, no-asan, no-ubsan, no-stress
+-- ^ the bag won't reproduce if not enough rows
 -- https://github.com/ClickHouse/ClickHouse/issues/75247
+
 CREATE TABLE a (x LowCardinality(String)) ENGINE=Memory;
 CREATE TABLE b (x LowCardinality(String), y Float64) ENGINE=Memory;
 
