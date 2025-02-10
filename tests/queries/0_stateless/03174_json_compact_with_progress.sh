@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
+# ^ there is a bug: when using parallel replicas, rows_before_limit_at_least is always output, while it shouldn't.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
