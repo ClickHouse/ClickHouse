@@ -37,6 +37,8 @@ private:
 
     bool isRunning();
 
+    void resetThreadLocalLoop();
+
     UVLoop loop;
     LoggerPtr log;
 
