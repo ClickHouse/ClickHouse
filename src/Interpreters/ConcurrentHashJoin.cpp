@@ -169,11 +169,20 @@ ConcurrentHashJoin::ConcurrentHashJoin(
 
     try
     {
-        for (size_t ind = 0; ind < slots; ++ind)
+        for (size_t i = 0; i < slots; ++i)
         {
             pool->scheduleOrThrow(
-                [&, i = ind]()
+                [&, i, thread_group = CurrentThread::getGroup()]()
                 {
+                    SCOPE_EXIT_SAFE({
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    });
+
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    setThreadName("ConcurrentJoin");
+
                     /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
                     const size_t reserve_size = 0;
 
