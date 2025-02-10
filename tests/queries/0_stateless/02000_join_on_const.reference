@@ -69,3 +69,21 @@ SELECT * FROM (SELECT 1 as a) as t1 ANTI JOIN  ( SELECT ('b', 256) as b ) AS t2 
 4	2	Nullable(UInt64)	UInt8
 4	2	UInt64	Nullable(UInt8)
 4	2	Nullable(UInt64)	Nullable(UInt8)
+1	\N
+2	\N
+1	\N
+2	\N
+1	\N
+2	\N
+1	\N
+2	\N
+\N	1
+\N	2
+\N	1
+\N	2
+\N	1
+\N	2
+\N	1
+\N	2
+- empty -
+- empty -

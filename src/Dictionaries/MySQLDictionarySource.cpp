@@ -264,6 +264,7 @@ bool MySQLDictionarySource::isModified() const
 {
     if (!configuration.invalidate_query.empty())
     {
+        LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
         if (response == invalidate_query_response)
             return false;

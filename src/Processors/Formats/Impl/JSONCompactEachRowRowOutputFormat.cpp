@@ -13,13 +13,11 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         const Block & header_,
         const FormatSettings & settings_,
         bool with_names_,
-        bool with_types_,
-        bool yield_strings_)
+        bool with_types_)
     : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
     , with_names(with_names_)
     , with_types(with_types_)
-    , yield_strings(yield_strings_)
 {
     ostr = RowOutputFormatWithExceptionHandlerAdaptor::getWriteBufferPtr();
 }
@@ -27,7 +25,7 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
 
 void JSONCompactEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    if (yield_strings)
+    if (settings.json.serialize_as_strings)
     {
         WriteBufferFromOwnString buf;
 
@@ -97,12 +95,6 @@ void JSONCompactEachRowRowOutputFormat::writePrefix()
         writeLine(JSONUtils::makeNamesValidJSONStrings(header.getDataTypeNames(), settings, settings.json.validate_utf8));
 }
 
-void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)
-{
-    if (with_names)
-        IRowOutputFormat::consumeTotals(std::move(chunk));
-}
-
 void JSONCompactEachRowRowOutputFormat::writeSuffix()
 {
     if (!exception_message.empty())
@@ -133,7 +125,10 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
                 const Block & sample,
                 const FormatSettings & format_settings)
             {
-                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, format_settings, with_names, with_types, yield_strings);
+                FormatSettings settings = format_settings;
+                settings.json.serialize_as_strings = yield_strings;
+
+                return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, settings, with_names, with_types);
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
