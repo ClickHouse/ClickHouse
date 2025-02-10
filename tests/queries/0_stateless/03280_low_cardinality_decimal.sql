@@ -1,14 +1,21 @@
 SET allow_suspicious_low_cardinality_types = 0;
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal32(1))) ENGINE = MergeTree ORDER BY x; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY}
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal64(1))) ENGINE = MergeTree ORDER BY x; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY}
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal128(1))) ENGINE = MergeTree ORDER BY x;
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal256(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE IF EXISTS x;
+CREATE TABLE x (x LowCardinality(Decimal32(1))) ENGINE = MergeTree ORDER BY x; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY}
+CREATE TABLE x (x LowCardinality(Decimal64(1))) ENGINE = MergeTree ORDER BY x; -- { serverError SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY}
+CREATE TABLE x (x LowCardinality(Decimal128(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE x;
+CREATE TABLE x (x LowCardinality(Decimal256(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE x;
 
 SET allow_suspicious_low_cardinality_types = 1;
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal32(1))) ENGINE = MergeTree ORDER BY x;
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal64(1))) ENGINE = MergeTree ORDER BY x;
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal128(1))) ENGINE = MergeTree ORDER BY x;
-CREATE OR REPLACE TABLE x (x LowCardinality(Decimal256(1))) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE x (x LowCardinality(Decimal32(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE x;
+CREATE TABLE x (x LowCardinality(Decimal64(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE x;
+CREATE TABLE x (x LowCardinality(Decimal128(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE x;
+CREATE TABLE x (x LowCardinality(Decimal256(1))) ENGINE = MergeTree ORDER BY x;
+DROP TABLE x;
 
 -- Test for low cardinality decimal
 SET allow_suspicious_low_cardinality_types = 1;
