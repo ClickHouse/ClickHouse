@@ -1348,7 +1348,8 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
             pt,
             fmt::format(
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
-                "system.query_log WHERE used_privileges = [] ORDER BY event_time_microseconds DESC LIMIT 1;",
+                "system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC "
+                "LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
@@ -1382,6 +1383,15 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
     String buf;
     String replaced;
+
+    if (std::remove(fc.fuzz_out.generic_string().c_str()) && errno != ENOENT)
+    {
+        char buffer[1024];
+
+        strerror_r(errno, buffer, sizeof(buffer));
+        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        return;
+    }
     if (fc.processServerQuery(fmt::format(
             "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
             fc.fuzz_out.generic_string())))
