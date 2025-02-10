@@ -43,7 +43,7 @@ void FunctionNameNormalizer::visit(IAST * ast)
     for (auto & child : ast->children)
         visit(child.get());
 
-    if (auto ttl_elem = ast->as<ASTTTLElement>())
+    if (auto * ttl_elem = ast->as<ASTTTLElement>())
     {
         for (const auto & a : ttl_elem->group_by_key)
             visit(a.get());
