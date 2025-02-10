@@ -1879,7 +1879,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         std::optional<Settings> old_settings;
         SCOPE_EXIT_SAFE({
             if (old_settings)
+            {
                 client_context->setSettings(*old_settings);
+                connection->setFormatSettings(getFormatSettings(client_context));
+            }
         });
 
         auto apply_query_settings = [&](const IAST & settings_ast)
@@ -1888,6 +1891,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 old_settings.emplace(client_context->getSettingsRef());
             client_context->applySettingsChanges(settings_ast.as<ASTSetQuery>()->changes);
             client_context->resetSettingsToDefaultValue(settings_ast.as<ASTSetQuery>()->default_settings);
+            connection->setFormatSettings(getFormatSettings(client_context));
         };
 
         const auto * insert = parsed_query->as<ASTInsertQuery>();

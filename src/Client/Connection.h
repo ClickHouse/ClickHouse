@@ -164,6 +164,11 @@ public:
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
 
+    void setFormatSettings(const FormatSettings & settings) override
+    {
+        format_settings = settings;
+    }
+
 private:
     String host;
     UInt16 port;
@@ -266,6 +271,8 @@ private:
     LoggerWrapper log_wrapper;
 
     AsyncCallback async_callback = {};
+
+    std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();

@@ -2095,7 +2095,8 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
-            client_tcp_protocol_version);
+            client_tcp_protocol_version,
+            getFormatSettings(state.query_context));
     }
 }
 
@@ -2142,7 +2143,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
+            getFormatSettings(state.query_context),
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
@@ -2157,7 +2158,7 @@ void TCPHandler::initProfileEventsBlockOutput(const Block & block)
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
+            getFormatSettings(state.query_context),
             !query_settings.low_cardinality_allow_in_native_format);
     }
 }
