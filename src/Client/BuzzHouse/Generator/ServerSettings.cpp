@@ -368,6 +368,16 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"keeper_map_strict_mode", CHSetting(trueOrFalse, {}, false)},
     {"legacy_column_name_of_tuple_literal", CHSetting(trueOrFalse, {}, false)},
     /// {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)}, FINAL queries don't cover these
+    {"load_balancing",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {
+                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"},
+         false)},
     {"load_marks_asynchronously", CHSetting(trueOrFalse, {}, false)},
     {"local_filesystem_read_method",
      CHSetting(

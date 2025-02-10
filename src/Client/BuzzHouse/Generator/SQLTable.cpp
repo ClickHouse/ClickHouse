@@ -106,6 +106,21 @@ void StatementGenerator::flatTableColumnPath(const uint32_t flags, const SQLTabl
     }
 }
 
+void StatementGenerator::addViewRelation(const String & rel_name, const SQLView & v)
+{
+    SQLRelation rel(rel_name);
+
+    for (uint32_t i = 0; i < v.ncols; i++)
+    {
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
+    }
+    if (rel_name.empty())
+    {
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+    }
+    this->levels[this->current_level].rels.emplace_back(rel);
+}
+
 void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow_internal_cols, const String & rel_name, const SQLTable & t)
 {
     SQLRelation rel(rel_name);

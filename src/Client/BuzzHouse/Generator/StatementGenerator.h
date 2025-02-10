@@ -250,6 +250,7 @@ public:
 private:
     void columnPathRef(const ColumnPathChain & entry, Expr * expr) const;
     void columnPathRef(const ColumnPathChain & entry, ColumnPath * cp) const;
+    void addViewRelation(const String & rel_name, const SQLView & v);
     void addTableRelation(RandomGenerator & rg, bool allow_internal_cols, const String & rel_name, const SQLTable & t);
     String strAppendAnyValue(RandomGenerator & rg, SQLType * tp);
     void flatTableColumnPath(uint32_t flags, const SQLTable & t, std::function<bool(const SQLColumn & c)> col_filter);
