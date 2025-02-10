@@ -10,6 +10,7 @@ set engine_file_truncate_on_insert = 1;
 set optimize_or_like_chain = 0;
 set max_block_size = 100000;
 set max_insert_threads = 1;
+set max_execution_time = 300;
 
 SET session_timezone = 'UTC';
 
