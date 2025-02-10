@@ -14,89 +14,91 @@ All format names are case-insensitive.
 The supported formats are:
 
 | Format                                                                                    | Input | Output |
-|-------------------------------------------------------------------------------------------|------|-------|
-| [TabSeparated](#tabseparated)                                                             | ✔    | ✔     |
-| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔    | ✔     |
-| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔    | ✔     |
-| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔    | ✔     |
-| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔    | ✔     |
-| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔    | ✔     |
-| [Template](#format-template)                                                              | ✔    | ✔     |
-| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔    | ✗     |
-| [CSV](#csv)                                                                               | ✔    | ✔     |
-| [CSVWithNames](#csvwithnames)                                                             | ✔    | ✔     |
-| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔    | ✔     |
-| [CustomSeparated](#format-customseparated)                                                | ✔    | ✔     |
-| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔    | ✔     |
-| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔    | ✔     |
-| [SQLInsert](#sqlinsert)                                                                   | ✗    | ✔     |
-| [Values](#data-format-values)                                                             | ✔    | ✔     |
-| [Vertical](#vertical)                                                                     | ✗    | ✔     |
-| [JSON](#json)                                                                             | ✔    | ✔     |
-| [JSONAsString](#jsonasstring)                                                             | ✔    | ✗     |
-| [JSONAsObject](#jsonasobject)                                                             | ✔    | ✗     |
-| [JSONStrings](#jsonstrings)                                                               | ✔    | ✔     |
-| [JSONColumns](#jsoncolumns)                                                               | ✔    | ✔     |
-| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock)                                          | ✔    | ✔     |
-| [JSONCompact](#jsoncompact)                                                               | ✔    | ✔     |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗    | ✔     |
-| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔    | ✔     |
-| [JSONEachRow](#jsoneachrow)                                                               | ✔    | ✔     |
-| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗    | ✔     |
-| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗    | ✔     |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔    | ✔     |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗    | ✔     |
-| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔    | ✔     |
-| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔    | ✔     |
-| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔    | ✔     |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔    | ✔     |
-| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔    | ✔     |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔    | ✔     |
-| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔    | ✔     |
-| [BSONEachRow](#bsoneachrow)                                                               | ✔    | ✔     |
-| [TSKV](#tskv)                                                                             | ✔    | ✔     |
-| [Pretty](#pretty)                                                                         | ✗    | ✔     |
-| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗    | ✔     |
-| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗    | ✔     |
-| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗    | ✔     |
-| [PrettyCompact](#prettycompact)                                                           | ✗    | ✔     |
-| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗    | ✔     |
-| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗    | ✔     |
-| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗    | ✔     |
-| [PrettySpace](#prettyspace)                                                               | ✗    | ✔     |
-| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗    | ✔     |
-| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗    | ✔     |
-| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗    | ✔     |
-| [Prometheus](#prometheus)                                                                 | ✗    | ✔     |
-| [Protobuf](#protobuf)                                                                     | ✔    | ✔     |
-| [ProtobufSingle](#protobufsingle)                                                         | ✔    | ✔     |
-| [ProtobufList](#protobuflist)								                                                     | ✔    | ✔     |
-| [Avro](#data-format-avro)                                                                 | ✔    | ✔     |
-| [AvroConfluent](#data-format-avro-confluent)                                              | ✔    | ✗     |
-| [Parquet](#data-format-parquet)                                                           | ✔    | ✔     |
-| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔    | ✗     |
-| [ParquetKeyValueMetadata](#data-format-parquet-kv-metadata)                               | ✔    | ✗     |
-| [Arrow](#data-format-arrow)                                                               | ✔    | ✔     |
-| [ArrowStream](#data-format-arrow-stream)                                                  | ✔    | ✔     |
-| [ORC](#data-format-orc)                                                                   | ✔    | ✔     |
-| [One](#data-format-one)                                                                   | ✔    | ✗     |
-| [Npy](#data-format-npy)                                                                   | ✔    | ✔     |
-| [RowBinary](#rowbinary)                                                                   | ✔    | ✔     |
-| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔    | ✔     |
-| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔    | ✔     |
-| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔    | ✗     |
-| [Native](#native)                                                                         | ✔    | ✔     |
-| [Null](#null)                                                                             | ✗    | ✔     |
-| [XML](#xml)                                                                               | ✗    | ✔     |
-| [CapnProto](#capnproto)                                                                   | ✔    | ✔     |
-| [LineAsString](#lineasstring)                                                             | ✔    | ✔     |
-| [Regexp](#data-format-regexp)                                                             | ✔    | ✗     |
-| [RawBLOB](#rawblob)                                                                       | ✔    | ✔     |
-| [MsgPack](#msgpack)                                                                       | ✔    | ✔     |
-| [MySQLDump](#mysqldump)                                                                   | ✔    | ✗     |
-| [DWARF](#dwarf)                                                                           | ✔    | ✗     |
-| [Markdown](#markdown)                                                                     | ✗    | ✔     |
-| [Form](#form)                                                                             | ✔    | ✗     |
+|-------------------------------------------------------------------------------------------|-----|-------|
+| [TabSeparated](#tabseparated)                                                             | ✔   | ✔     |
+| [TabSeparatedRaw](#tabseparatedraw)                                                       | ✔   | ✔     |
+| [TabSeparatedWithNames](#tabseparatedwithnames)                                           | ✔   | ✔     |
+| [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                           | ✔   | ✔     |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                     | ✔   | ✔     |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                     | ✔   | ✔     |
+| [Template](#format-template)                                                              | ✔   | ✔     |
+| [TemplateIgnoreSpaces](#templateignorespaces)                                             | ✔   | ✗     |
+| [CSV](#csv)                                                                               | ✔   | ✔     |
+| [CSVWithNames](#csvwithnames)                                                             | ✔   | ✔     |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                             | ✔   | ✔     |
+| [CustomSeparated](#format-customseparated)                                                | ✔   | ✔     |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                     | ✔   | ✔     |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                     | ✔   | ✔     |
+| [SQLInsert](#sqlinsert)                                                                   | ✗   | ✔     |
+| [Values](#data-format-values)                                                             | ✔   | ✔     |
+| [Vertical](#vertical)                                                                     | ✗   | ✔     |
+| [JSON](#json)                                                                             | ✔   | ✔     |
+| [JSONAsString](#jsonasstring)                                                             | ✔   | ✗     |
+| [JSONAsObject](#jsonasobject)                                                             | ✔   | ✗     |
+| [JSONStrings](#jsonstrings)                                                               | ✔   | ✔     |
+| [JSONColumns](#jsoncolumns)                                                               | ✔   | ✔     |
+| [JSONColumnsWithMetadata](#jsoncolumnsmonoblock)                                          | ✔   | ✔     |
+| [JSONCompact](#jsoncompact)                                                               | ✔   | ✔     |
+| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗   | ✔     |
+| [JSONCompactColumns](#jsoncompactcolumns)                                                 | ✔   | ✔     |
+| [JSONEachRow](#jsoneachrow)                                                               | ✔   | ✔     |
+| [PrettyJSONEachRow](#prettyjsoneachrow)                                                   | ✗   | ✔     |
+| [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                       | ✗   | ✔     |
+| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔   | ✔     |
+| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗   | ✔     |
+| [JSONCompactEachRow](#jsoncompacteachrow)                                                 | ✔   | ✔     |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)                               | ✔   | ✔     |
+| [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)               | ✔   | ✔     |
+| [JSONCompactEachRowWithProgress](#jsoncompacteachrow)                                     | ✗    | ✔     |
+| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔   | ✔     |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames)                 | ✔   | ✔     |
+| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔   | ✔     |
+| [JSONCompactStringsEachRowWithProgress](#jsoncompactstringseachrowwithnamesandtypes)      | ✗   | ✔     |
+| [JSONObjectEachRow](#jsonobjecteachrow)                                                   | ✔   | ✔     |
+| [BSONEachRow](#bsoneachrow)                                                               | ✔   | ✔     |
+| [TSKV](#tskv)                                                                             | ✔   | ✔     |
+| [Pretty](#pretty)                                                                         | ✗   | ✔     |
+| [PrettyNoEscapes](#prettynoescapes)                                                       | ✗   | ✔     |
+| [PrettyMonoBlock](#prettymonoblock)                                                       | ✗   | ✔     |
+| [PrettyNoEscapesMonoBlock](#prettynoescapesmonoblock)                                     | ✗   | ✔     |
+| [PrettyCompact](#prettycompact)                                                           | ✗   | ✔     |
+| [PrettyCompactNoEscapes](#prettycompactnoescapes)                                         | ✗   | ✔     |
+| [PrettyCompactMonoBlock](#prettycompactmonoblock)                                         | ✗   | ✔     |
+| [PrettyCompactNoEscapesMonoBlock](#prettycompactnoescapesmonoblock)                       | ✗   | ✔     |
+| [PrettySpace](#prettyspace)                                                               | ✗   | ✔     |
+| [PrettySpaceNoEscapes](#prettyspacenoescapes)                                             | ✗   | ✔     |
+| [PrettySpaceMonoBlock](#prettyspacemonoblock)                                             | ✗   | ✔     |
+| [PrettySpaceNoEscapesMonoBlock](#prettyspacenoescapesmonoblock)                           | ✗   | ✔     |
+| [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
+| [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
+| [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
+| [ProtobufList](#protobuflist)								                                                     | ✔   | ✔     |
+| [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
+| [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
+| [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |
+| [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔   | ✗     |
+| [ParquetKeyValueMetadata](#data-format-parquet-kv-metadata)                               | ✔   | ✗     |
+| [Arrow](#data-format-arrow)                                                               | ✔   | ✔     |
+| [ArrowStream](#data-format-arrow-stream)                                                  | ✔   | ✔     |
+| [ORC](#data-format-orc)                                                                   | ✔   | ✔     |
+| [One](#data-format-one)                                                                   | ✔   | ✗     |
+| [Npy](#data-format-npy)                                                                   | ✔   | ✔     |
+| [RowBinary](#rowbinary)                                                                   | ✔   | ✔     |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                                         | ✔   | ✔     |
+| [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                                 | ✔   | ✔     |
+| [RowBinaryWithDefaults](#rowbinarywithdefaults)                                           | ✔   | ✗     |
+| [Native](#native)                                                                         | ✔   | ✔     |
+| [Null](#null)                                                                             | ✗   | ✔     |
+| [XML](#xml)                                                                               | ✗   | ✔     |
+| [CapnProto](#capnproto)                                                                   | ✔   | ✔     |
+| [LineAsString](#lineasstring)                                                             | ✔   | ✔     |
+| [Regexp](#data-format-regexp)                                                             | ✔   | ✗     |
+| [RawBLOB](#rawblob)                                                                       | ✔   | ✔     |
+| [MsgPack](#msgpack)                                                                       | ✔   | ✔     |
+| [MySQLDump](#mysqldump)                                                                   | ✔   | ✗     |
+| [DWARF](#dwarf)                                                                           | ✔   | ✗     |
+| [Markdown](#markdown)                                                                     | ✗   | ✔     |
+| [Form](#form)                                                                             | ✔   | ✗     |
 
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
@@ -236,6 +238,10 @@ See [JSONCompactEachRowWithNames](formats/JSON/JSONCompactEachRowWithNames.md)
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
 See [JSONCompactEachRowWithNamesAndTypes](formats/JSON/JSONCompactEachRowWithNamesAndTypes.md)
+
+## JSONCompactEachRowWithProgress
+
+Similar to `JSONEachRowWithProgress` but outputs `row` events in a compact form, like in the `JSONCompactEachRow` format. 
 
 ## JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
 
