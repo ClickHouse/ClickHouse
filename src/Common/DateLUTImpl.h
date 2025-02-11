@@ -1300,7 +1300,6 @@ public:
 
     TimeComponents toTimeComponents(Time t) const
     {
-
         TimeComponents res;
 
         if (unlikely(t < 0))
@@ -1315,6 +1314,9 @@ public:
             res.minute = t / 60 % 60;
             res.hour = t / 3600;
         }
+
+        if (unlikely(res.hour > 999))
+            res.hour = 999;
 
         return res;
     }

@@ -9,7 +9,6 @@
 
 #include <type_traits>
 
-#include "Common/logger_useful.h"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -26,10 +25,6 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-
-#include <Common/intExp.h>
-#include "Functions/DateTimeTransforms.h"
-
 #include <Common/exp10_i32.h>
 
 #include <Formats/FormatSettings.h>
@@ -1375,7 +1370,6 @@ inline void readTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl 
 
 inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    StackTrace trace;
     readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
 }
 

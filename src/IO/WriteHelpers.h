@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <bit>
 
-#include "Common/logger_useful.h"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -777,8 +776,8 @@ inline void writeDateTime64FractionalText(typename DecimalType::NativeType fract
     char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
     static_assert(sizeof(data) >= MaxScale);
 
-    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= 10)
-        data[pos] += fractional % 10;
+    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
+        data[pos] += fractional % DateTime64(10);
 
     if constexpr (cut_trailing_zeros_align_to_groups_of_thousands)
     {
@@ -1015,6 +1014,36 @@ inline void writeDateTimeUnixTimestamp(DateTime64 datetime64, UInt32 scale, Writ
     }
 }
 
+template <typename DecimalType, bool cut_trailing_zeros_align_to_groups_of_thousands = false>
+inline void writeTime64FractionalText(typename DecimalType::NativeType fractional, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::max_precision<DecimalType>;
+
+    char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+    static_assert(sizeof(data) >= MaxScale);
+
+    for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= 10)
+        data[pos] += fractional % 10;
+
+    if constexpr (cut_trailing_zeros_align_to_groups_of_thousands)
+    {
+        UInt32 last_non_zero_pos = 0;
+        for (UInt32 pos = 0; pos < scale; ++pos)
+        {
+            if (data[pos] != '0')
+            {
+                last_non_zero_pos = pos;
+            }
+        }
+        size_t new_scale = (last_non_zero_pos >= 3) ? 6 : 3;
+        writeString(&data[0], new_scale, buf);
+    }
+    else
+    {
+        writeString(&data[0], static_cast<size_t>(scale), buf);
+    }
+}
+
 template <
     char delimiter1 = ':',
     char delimiter2 = ':',
@@ -1040,7 +1069,7 @@ inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & b
     if (scale > 0)
     {
         buf.write(fractional_delimiter);
-        writeDateTime64FractionalText<Time64, cut_trailing_zeros_align_to_groups_of_thousands>(
+        writeTime64FractionalText<Time64, cut_trailing_zeros_align_to_groups_of_thousands>(
             components.fractional, scale, buf);
     }
 }
@@ -1091,6 +1120,18 @@ inline void writeTimeText(time_t time, WriteBuffer & buf, const DateLUTImpl & ti
 {
     writeTimeText<time_delimiter>(LocalTime(time, time_zone), buf);
 }
+
+inline void writeTimeTextISO(time_t time, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+{
+    writeTimeText<':'>(time, buf, utc_time_zone);
+    buf.write('Z');
+}
+
+// inline void writeTimeTextISO(DateTime64 time64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+// {
+//     writeTimeText<':'>(time64, scale, buf, utc_time_zone);
+//     buf.write('Z');
+// }
 
 inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, UInt32 scale, WriteBuffer & buf, [[maybe_unused]]const DateLUTImpl & time_zone = DateLUT::instance())
 {

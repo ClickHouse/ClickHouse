@@ -313,7 +313,7 @@ void SerializationTime::serializeText(const IColumn & column, size_t row_num, Wr
             writeIntText(value, ostr);
             return;
         case FormatSettings::DateTimeOutputFormat::ISO:
-            writeDateTimeTextISO(value, ostr, utc_time_zone); ///TODO
+            writeTimeTextISO(value, ostr, utc_time_zone);
             return;
     }
 }

@@ -179,7 +179,7 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                 return BinaryTypeIndex::DateTimeWithTimezone;
             return BinaryTypeIndex::DateTimeUTC;
         case TypeIndex::Time64:
-            if (assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone())
+            if (assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone()) // TODO
                 return BinaryTypeIndex::DateTime64WithTimezone;
             return BinaryTypeIndex::DateTime64UTC;
         case TypeIndex::String:

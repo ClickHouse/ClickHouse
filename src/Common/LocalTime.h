@@ -8,7 +8,7 @@
 
 /**
  * Stores time in a broken-down format (hours, minutes, seconds).
- * Can be initialized from a time in text form like "HHHH:MM:SS" or from a `time_t` value.
+ * Can be initialized from a time in text form like "HHH:MM:SS" or from a `time_t` value.
  * Can be implicitly cast to `time_t`, but remember that `time_t` usually includes a date component.
  * NOTE: Transforming between `time_t` and `LocalTime` is done in the local time zone!
  *
@@ -109,7 +109,7 @@ public:
     /**
      * Constructor from a string.
      *
-     * @param s String in the format "HHHH:MM:SS".
+     * @param s String in the format "HHH:MM:SS".
      */
     explicit LocalTime(const std::string & s)
     {
@@ -183,5 +183,3 @@ public:
         return !(*this == other);
     }
 };
-
-// static_assert(sizeof(LocalTime) == 8, "LocalTime must be 8 bytes in size.");

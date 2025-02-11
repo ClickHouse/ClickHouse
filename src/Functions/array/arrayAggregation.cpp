@@ -18,7 +18,6 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include "DataTypes/IDataType.h"
 #include "FunctionArrayMapped.h"
 
 
