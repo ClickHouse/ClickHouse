@@ -121,7 +121,7 @@ private:
 
     static std::string getColumnPhysicalName(const ffi::CStringMap * metadata)
     {
-        auto raw_value = ffi::get_from_map(
+        auto raw_value = ffi::get_from_string_map(
             metadata,
             KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
             KernelUtils::allocateString);

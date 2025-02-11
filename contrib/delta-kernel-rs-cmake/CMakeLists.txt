@@ -32,7 +32,7 @@ set(SOURCES "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp")
 
 add_library(_delta_kernel_rs STATIC ${SOURCES})
 
-set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/target4)
+set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/target6)
 
 if(ARCH_AMD64)
     if(OS_DARWIN)
@@ -80,7 +80,7 @@ ExternalProject_Add(
   _delta_kernel_rs_target
   CONFIGURE_COMMAND ""
   GIT_REPOSITORY "file://${DELTA_KERNEL_RS_SOURCE_DIR}"
-  GIT_TAG f3459b4759cbc5200275b1cd626eb9ed6f9c65a2
+  GIT_TAG 7254023ab8d58eddbb70fb065f7b5996455bcfc9
   GIT_REMOTE_UPDATE_STRATEGY CHECKOUT
   UPDATE_COMMAND ""
   BUILD_IN_SOURCE 1
@@ -88,7 +88,6 @@ ExternalProject_Add(
       ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH} OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME} OPENSSL_STATIC=1 OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/ OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY}
       cargo build --verbose
       --package delta_kernel_ffi
-      --workspace
       --all-features
       --verbose
       --target-dir "${DELTA_KERNEL_TARGET_PATH}"

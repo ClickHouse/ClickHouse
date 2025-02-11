@@ -60,9 +60,10 @@ public:
     static void visitData(
         void * engine_context,
         ffi::ExclusiveEngineData * engine_data,
-        const struct ffi::KernelBoolSlice selection_vec)
+        const struct ffi::KernelBoolSlice selection_vec,
+        const ffi::CTransforms *transforms)
     {
-        ffi::visit_scan_data(engine_data, selection_vec, engine_context, Iterator::scanCallback);
+        ffi::visit_scan_data(engine_data, selection_vec, transforms, engine_context, Iterator::scanCallback);
     }
 
     static void scanCallback(
@@ -80,7 +81,7 @@ public:
         DB::ObjectInfoWithParitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & name_and_type : context->schema)
         {
-            auto raw_value = ffi::get_from_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), KernelUtils::allocateString);
+            auto * raw_value = ffi::get_from_string_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), KernelUtils::allocateString);
             auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
             if (value)
                 partitions_info.emplace_back(name_and_type, DB::parseFieldFromString(*value, name_and_type.type));
