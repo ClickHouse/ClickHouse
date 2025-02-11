@@ -253,11 +253,11 @@ public:
 
     bool isFreezeAlter() const;
 
+    bool isUnlockSnapshot() const;
+
     bool isAttachAlter() const;
 
     bool isFetchAlter() const;
-
-    bool isUnlockSnapshot() const;
 
     bool isDropPartitionAlter() const;
 
