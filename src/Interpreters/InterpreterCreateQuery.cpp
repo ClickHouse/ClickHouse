@@ -833,7 +833,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             /// not be copied.
             const auto & indices = as_storage_metadata->getSecondaryIndices();
             for (const auto & index : indices)
-                if (!index.is_implicitly_added)
+                if (!index.isImplicitlyCreated())
                     properties.indices.push_back(index);
 
             /// Copy projections.

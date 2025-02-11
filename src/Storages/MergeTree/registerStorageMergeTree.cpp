@@ -752,7 +752,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
                 index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
                 auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
-                new_index.is_implicitly_added = true;
                 metadata.secondary_indices.push_back(std::move(new_index));
             }
         }

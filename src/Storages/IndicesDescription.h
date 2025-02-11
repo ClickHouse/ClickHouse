@@ -47,9 +47,6 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
-    /// True if the index was implicitly created, see MergeTree settings 'add_minmax_index_for_numeric_columns' and 'add_minmax_index_for_string_columns'
-    bool is_implicitly_added = false;
-
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 
@@ -63,6 +60,8 @@ struct IndexDescription
     /// Recalculate index with new columns because index expression may change
     /// if something change in columns.
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
+
+    bool isImplicitlyCreated() const { return name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX); }
 };
 
 /// All secondary indices in storage

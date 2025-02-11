@@ -40,7 +40,6 @@ IndexDescription::IndexDescription(const IndexDescription & other)
     , data_types(other.data_types)
     , sample_block(other.sample_block)
     , granularity(other.granularity)
-    , is_implicitly_added(other.is_implicitly_added)
 {
     if (other.expression)
         expression = other.expression->clone();
@@ -75,7 +74,6 @@ IndexDescription & IndexDescription::operator=(const IndexDescription & other)
     data_types = other.data_types;
     sample_block = other.sample_block;
     granularity = other.granularity;
-    is_implicitly_added = other.is_implicitly_added;
     return *this;
 }
 
@@ -100,7 +98,6 @@ IndexDescription IndexDescription::getIndexFromAST(const ASTPtr & definition_ast
     result.name = index_definition->name;
     result.type = Poco::toLower(index_type->name);
     result.granularity = index_definition->granularity;
-    result.is_implicitly_added = index_definition->name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX);
 
     ASTPtr expr_list;
     if (auto index_expression = index_definition->getExpression())
