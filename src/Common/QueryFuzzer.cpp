@@ -51,6 +51,14 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
+#if USE_BUZZHOUSE
+#    include <Client/BuzzHouse/Generator/RandomGenerator.h>
+namespace BuzzHouse
+{
+extern std::unordered_map<String, CHSetting> performanceSettings;
+}
+#endif
+
 namespace DB
 {
 
@@ -58,6 +66,51 @@ namespace ErrorCodes
 {
 extern const int TOO_DEEP_RECURSION;
 }
+
+#if USE_BUZZHOUSE
+static const String & pickKeyRandomlyFromMap(pcg64 & rand, const std::unordered_map<String, BuzzHouse::CHSetting> & vals)
+{
+    std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+    auto it = vals.begin();
+    std::advance(it, d(rand));
+    return it->first;
+}
+
+static String pickRandomlyFromSet(pcg64 & rand, const std::unordered_set<String> & vals)
+{
+    std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+    auto it = vals.begin();
+    std::advance(it, d(rand));
+    return *it;
+}
+#endif
+
+ASTPtr QueryFuzzer::getRandomSettings()
+{
+#if USE_BUZZHOUSE
+    if (fuzz_rand() % 30 == 0)
+    {
+        const uint64_t nsettings = (fuzz_rand() % 5) + UINT64_C(1);
+        auto settings_query = std::make_shared<ASTSetQuery>();
+        SettingsChanges settings_changes;
+
+        for (uint64_t i = 0; i < nsettings; i++)
+        {
+            const String & setting = pickKeyRandomlyFromMap(fuzz_rand, BuzzHouse::performanceSettings);
+            String value = pickRandomlyFromSet(fuzz_rand, BuzzHouse::performanceSettings.at(setting).oracle_values);
+
+            value.erase(std::remove(value.begin(), value.end(), '\''), value.end());
+            settings_changes.setSetting(setting, value);
+        }
+        settings_query->changes = std::move(settings_changes);
+        settings_query->is_standalone = true;
+
+        return settings_query;
+    }
+#endif
+    return nullptr;
+}
+
 
 Field QueryFuzzer::getRandomField(int type)
 {

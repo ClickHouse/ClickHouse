@@ -248,4 +248,22 @@ public:
     String nextIPv6();
 };
 
+struct CHSetting
+{
+public:
+    const std::function<String(RandomGenerator &)> random_func;
+    const std::unordered_set<String> oracle_values;
+    const bool changes_behavior;
+
+    CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
+        : random_func(rf)
+        , oracle_values(ov)
+        , changes_behavior(cb)
+    {
+    }
+
+    constexpr CHSetting(const CHSetting & rhs) = default;
+    constexpr CHSetting(CHSetting && rhs) = default;
+};
+
 }

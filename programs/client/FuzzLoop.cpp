@@ -193,6 +193,7 @@ bool Client::processWithFuzzing(const String & full_query)
 #endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
+        ASTPtr new_set_query;
         ASTPtr ast_to_process;
         try
         {
@@ -283,6 +284,13 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
+            /// Sometimes change settings
+            if ((new_set_query = fuzzer.getRandomSettings()))
+            {
+                String qstr = new_set_query->formatForErrorMessage();
+                if (auto res = processFuzzingStep(qstr, new_set_query, true))
+                    return *res;
+            }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))

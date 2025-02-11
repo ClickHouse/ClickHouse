@@ -12,24 +12,6 @@
 namespace BuzzHouse
 {
 
-struct CHSetting
-{
-public:
-    const std::function<String(RandomGenerator &)> random_func;
-    const std::unordered_set<String> oracle_values;
-    const bool changes_behavior;
-
-    CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
-        : random_func(rf)
-        , oracle_values(ov)
-        , changes_behavior(cb)
-    {
-    }
-
-    constexpr CHSetting(const CHSetting & rhs) = default;
-    constexpr CHSetting(CHSetting && rhs) = default;
-};
-
 const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
 
 const std::function<String(RandomGenerator &)> zeroOneTwo
@@ -37,6 +19,8 @@ const std::function<String(RandomGenerator &)> zeroOneTwo
 
 const std::function<String(RandomGenerator &)> zeroToThree
     = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
+
+extern std::unordered_map<String, CHSetting> performanceSettings;
 
 extern std::unordered_map<String, CHSetting> serverSettings;
 

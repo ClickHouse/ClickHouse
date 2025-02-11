@@ -38,7 +38,8 @@ class QueryFuzzer
 {
 public:
     explicit QueryFuzzer(pcg64 fuzz_rand_ = randomSeed(), std::ostream * out_stream_ = nullptr, std::ostream * debug_stream_ = nullptr)
-        : fuzz_rand(fuzz_rand_)
+        : seed(0)
+        , fuzz_rand(fuzz_rand_)
         , out_stream(out_stream_)
         , debug_stream(debug_stream_)
     {
@@ -55,7 +56,19 @@ public:
 
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
+    UInt64 getSeed() { return seed; }
+
+    void setSeed(const UInt64 new_seed)
+    {
+        seed = new_seed;
+        fuzz_rand = pcg64(seed);
+    }
+
+    /// When measuring performance, sometimes change settings
+    ASTPtr getRandomSettings();
+
 private:
+    UInt64 seed;
     pcg64 fuzz_rand;
 
     std::ostream * out_stream = nullptr;
