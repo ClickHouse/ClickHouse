@@ -109,16 +109,24 @@
             font-weight: bold;
         }
 
+        #status-container .json-value a,
         .json-value {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
+            text-decoration: none;
+            color: inherit;
+            font-size: inherit;
         }
+
+        #status-container .json-value-small a,
         .json-value-small {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
             font-size: 0.75rem;
+            text-decoration: none;
+            color: inherit;
         }
         .dropdown-value {
             width: 100px;
@@ -401,7 +409,7 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null) {
+    function addKeyValueToStatus(key, value, { options = null, link = null } = {}) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -444,7 +452,17 @@
             } else {
                 valueElement.className = "json-value-small";
             }
-            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
+
+            value = value || 'N/A'; // Display 'N/A' if value is null
+            if (link) {
+                const textLink = document.createElement('a');
+                textLink.href = link;
+                textLink.textContent = value;
+                textLink.target = '_blank';
+                valueElement.appendChild(textLink);
+            } else {
+                valueElement.textContent = value;
+            }
         }
 
         keyValuePair.appendChild(keyElement);
@@ -981,8 +999,6 @@
             a.target = '_blank';
             footer.appendChild(a);
         }
-        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
-        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
         if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
         const result = getTargetResults(nameParams)
         let i = 1;
@@ -1020,11 +1036,11 @@
         }
         // Status and info
         if (PR > 0) {
-            addKeyValueToStatus("PR", PR);
+            addKeyValueToStatus("PR", PR, { link: runtimeCache.prLink });
         }
         let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
-        addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
-        addKeyValueToStatus("", current_sha);
+        addKeyValueToStatus("sha", sha || "latest", { options: runtimeCache.commits.concat(["latest"]) });
+        addKeyValueToStatus("", current_sha, { link: runtimeCache.commitLink });
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
