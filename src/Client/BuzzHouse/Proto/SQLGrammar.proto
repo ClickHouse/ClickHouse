@@ -2870,16 +2870,18 @@ enum IndexType {
     IDX_minmax = 2;
     IDX_hypothesis = 3;
     IDX_bloom_filter = 4;
-    IDX_ngrambf_v1 = 5;
-    IDX_tokenbf_v1 = 6;
-    IDX_full_text = 7;
-    IDX_inverted = 8;
+    IDX_vector_similarity = 5;
+    IDX_ngrambf_v1 = 6;
+    IDX_tokenbf_v1 = 7;
+    IDX_full_text = 8;
+    IDX_inverted = 9;
 }
 
 message IndexParam {
     oneof param_oneof {
         double dval = 1;
         uint32 ival = 2;
+        string sval = 3;
     }
 }
 

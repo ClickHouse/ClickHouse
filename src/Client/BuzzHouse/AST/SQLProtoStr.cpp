@@ -2495,6 +2495,12 @@ CONV_FN(IndexParam, ip)
     {
         ret += std::to_string(ip.dval());
     }
+    else if (ip.has_sval())
+    {
+        ret += "'";
+        ret += ip.sval();
+        ret += "'";
+    }
     else
     {
         ret += "0";

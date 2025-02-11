@@ -12,13 +12,7 @@ public:
     const bool support_nulls_clause;
     const uint32_t fnum, min_args, max_args, min_params, max_params;
 
-    CHAggregate(
-        const uint32_t f,
-        const uint32_t min_p,
-        const uint32_t max_p,
-        const uint32_t min_a,
-        const uint32_t m_args,
-        const bool snc)
+    CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
         , fnum(f)
         , min_args(min_a)

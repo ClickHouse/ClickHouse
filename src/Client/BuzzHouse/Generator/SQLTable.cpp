@@ -1149,7 +1149,8 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     SQLIndex idx;
     const uint32_t iname = t.idx_counter++;
     Expr * expr = idef->mutable_expr();
-    const IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IndexType_MAX)) + 1);
+    /// Inverted index is deprecated
+    const IndexType itpe = static_cast<IndexType>((rg.nextRandomUInt32() % static_cast<uint32_t>(IDX_full_text)) + 1);
     auto & to_add = staged ? t.staged_idxs : t.idxs;
 
     idx.iname = iname;
@@ -1160,7 +1161,12 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         flatTableColumnPath(
             flat_tuple | flat_nested | flat_json | skip_nested_node,
             t,
-            [&itpe](const SQLColumn & c) { return itpe < IndexType::IDX_ngrambf_v1 || hasType<StringType>(true, true, true, c.tp); });
+            [&itpe](const SQLColumn & c)
+            {
+                return itpe < IndexType::IDX_vector_similarity
+                    || (itpe == IndexType::IDX_vector_similarity && hasType<FloatType>(true, true, true, c.tp))
+                    || (itpe > IndexType::IDX_vector_similarity && hasType<StringType>(true, true, true, c.tp));
+            });
     }
     if (!entries.empty())
     {
@@ -1198,22 +1204,24 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
     switch (itpe)
     {
-        case IndexType::IDX_set:
-            if (rg.nextSmallNumber() < 7)
+        case IndexType::IDX_set: {
+            uint32_t param = 0;
+
+            if (rg.nextSmallNumber() > 6)
             {
-                idef->add_params()->set_ival(0);
+                std::uniform_int_distribution<uint32_t> next_dist(1, 8192);
+                param = next_dist(rg.generator);
             }
-            else
-            {
-                std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
-                idef->add_params()->set_ival(next_dist(rg.generator));
-            }
-            break;
-        case IndexType::IDX_bloom_filter: {
-            std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
-            idef->add_params()->set_dval(static_cast<double>(next_dist(rg.generator)) / static_cast<double>(1000));
+            idef->add_params()->set_ival(param);
         }
         break;
+        case IndexType::IDX_bloom_filter:
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(1, 8192);
+                idef->add_params()->set_dval(static_cast<double>(next_dist(rg.generator)) / static_cast<double>(8192));
+            }
+            break;
         case IndexType::IDX_ngrambf_v1:
         case IndexType::IDX_tokenbf_v1: {
             std::uniform_int_distribution<uint32_t> next_dist1(1, 1000);
@@ -1229,19 +1237,53 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
         }
         break;
         case IndexType::IDX_full_text:
-        case IndexType::IDX_inverted: {
-            std::uniform_int_distribution<uint32_t> next_dist(0, 10);
-            idef->add_params()->set_ival(next_dist(rg.generator));
-        }
-        break;
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, 10);
+
+                idef->add_params()->set_ival(next_dist(rg.generator));
+                if (rg.nextBool())
+                {
+                    std::uniform_int_distribution<uint32_t> next_dist2(8192, 4194304);
+                    idef->add_params()->set_ival(next_dist2(rg.generator));
+                }
+            }
+            break;
+        case IndexType::IDX_vector_similarity:
+            idef->add_params()->set_sval("hnsw");
+            idef->add_params()->set_sval(rg.nextBool() ? "cosineDistance" : "L2Distance");
+            if (rg.nextBool())
+            {
+                std::uniform_int_distribution<uint32_t> next_dist(0, 4194304);
+                static const DB::Strings quantitization_vals = {"f64", "f32", "f16", "bf16", "i8"};
+
+                idef->add_params()->set_sval(rg.pickRandomlyFromVector(quantitization_vals));
+                idef->add_params()->set_ival(next_dist(rg.generator));
+                idef->add_params()->set_ival(next_dist(rg.generator));
+            }
+            break;
         case IndexType::IDX_minmax:
         case IndexType::IDX_hypothesis:
+            break;
+        case IndexType::IDX_inverted:
+            chassert(0);
             break;
     }
     if (rg.nextSmallNumber() < 7)
     {
-        std::uniform_int_distribution<uint32_t> next_dist(1, 1000);
-        idef->set_granularity(next_dist(rg.generator));
+        uint32_t granularity = 0;
+        const uint32_t next_opt = rg.nextSmallNumber();
+
+        if (next_opt < 4)
+        {
+            std::uniform_int_distribution<uint32_t> next_dist(1, 4194304);
+            granularity = next_dist(rg.generator);
+        }
+        else if (next_opt < 10)
+        {
+            granularity = UINT32_C(1) << (rg.nextLargeNumber() % 21);
+        }
+        idef->set_granularity(granularity);
     }
     to_add[iname] = std::move(idx);
 }
