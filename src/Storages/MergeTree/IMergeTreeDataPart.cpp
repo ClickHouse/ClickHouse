@@ -2556,8 +2556,6 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         ValueSizeMap{},
         ReadBufferFromFileBase::ProfileCallback{});
 
-    LOG_DEBUG(getLogger("IMergeTreeDataPart"), "getColumnSample for {} in {}", column.name, getDataPartStorage().getFullPath());
-
     Columns result;
     result.resize(1);
     reader->readRows(0, total_mark, false, 0, result);
