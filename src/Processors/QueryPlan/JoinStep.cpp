@@ -110,9 +110,17 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
-        joined_pipeline->resize(max_streams);
+        if (join_by_layers_prefix)
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByLayers(
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+        }
+        else
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+            joined_pipeline->resize(max_streams);
+        }
     }
     else if (join_by_layers_prefix)
     {

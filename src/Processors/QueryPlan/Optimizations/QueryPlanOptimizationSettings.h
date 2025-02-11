@@ -59,6 +59,7 @@ struct QueryPlanOptimizationSettings
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool optimize_join_read_by_layers;
+    bool optimize_full_sorting_merge_join_by_layers;
 
     /// ------------------------------------------------------
 

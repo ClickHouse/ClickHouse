@@ -15,6 +15,7 @@ public:
     {
         Full,
         FinishSorting,
+        PartitionedFinishSorting,
         MergingSorted,
     };
 
@@ -92,6 +93,8 @@ public:
 
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
+
+    void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,

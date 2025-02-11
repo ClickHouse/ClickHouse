@@ -381,6 +381,49 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByLayers(
+    std::unique_ptr<QueryPipelineBuilder> left,
+    std::unique_ptr<QueryPipelineBuilder> right,
+    JoinPtr join,
+    const Block & out_header,
+    size_t max_block_size,
+    Processors * collected_processors)
+{
+    left->checkInitializedAndNotCompleted();
+    right->checkInitializedAndNotCompleted();
+
+    left->pipe.dropExtremes();
+    right->pipe.dropExtremes();
+
+    if (left->getNumStreams() != right->getNumStreams())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join by layers is supported only for pipelines equal number of output ports, got {} and {}", left->getNumStreams(), right->getNumStreams());
+
+    if (left->hasTotals() || right->hasTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Current join algorithm is supported only for pipelines without totals");
+
+    Blocks inputs = {left->getHeader(), right->getHeader()};
+    size_t num_streams = left->getNumStreams();
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto joining = std::make_shared<MergeJoinTransform>(join->clone(std::make_shared<TableJoin>(join->getTableJoin()), left->getHeader(), right->getHeader()), inputs, out_header, max_block_size);
+        connect(*left->pipe.output_ports[i], joining->getInputs().front());
+        connect(*right->pipe.output_ports[i], joining->getInputs().back());
+        left->pipe.output_ports[i] = &joining->getOutputPort();
+
+        if (collected_processors)
+            collected_processors->emplace_back(joining);
+
+        left->pipe.processors->emplace_back(std::move(joining));
+    }
+
+    left->pipe.processors->insert(left->pipe.processors->end(), right->pipe.processors->begin(), right->pipe.processors->end());
+    left->pipe.header = left->pipe.output_ports.front()->getHeader();
+    left->pipe.max_parallel_streams = std::max(left->pipe.max_parallel_streams, right->pipe.max_parallel_streams);
+    left->resources = std::move(right->resources);
+    return left;
+}
+
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLeft(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,

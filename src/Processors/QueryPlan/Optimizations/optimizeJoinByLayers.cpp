@@ -9,21 +9,23 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/SortingStep.h>
 
 namespace DB
 {
 namespace QueryPlanOptimizations
 {
 
-ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
+ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node, bool allow_full_sorting_join)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
         if (reading->isQueryWithFinal())
             return nullptr;
-        if (reading->readsInOrder())
+        if (!allow_full_sorting_join && reading->readsInOrder())
             return nullptr;
 
         return reading;
@@ -45,6 +47,8 @@ bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 {
     if (node.children.size() != 1)
         return false;
+
+    // std::cerr << "============ Update for " << node.step->getName() << std::endl;
 
     IQueryPlanStep * step = node.step.get();
 
@@ -156,6 +160,7 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
 {
     std::list<JoinStep *> joins;
     std::list<ReadFromMergeTree *> sources;
+    std::list<SortingStep *> sortings;
     size_t common_prefix = std::numeric_limits<size_t>::max();
 };
 
@@ -221,9 +226,12 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
     for (const auto & join_step : data.joins)
         join_step->enableJoinByLayers(data.common_prefix);
+
+    for (const auto & sorting_step : data.sortings)
+        sorting_step->convertToPartitionedFinishSorting();
 }
 
-void optimizeJoinByLayers(QueryPlan::Node & root)
+void optimizeJoinByLayers(QueryPlan::Node & root, bool allow_full_sorting_join)
 {
     struct Result
     {
@@ -269,7 +277,8 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
 
             auto * hash_join = typeid_cast<HashJoin *>(join.get());
             auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
-            bool is_algo_supported = hash_join || concurrent_hash_join;
+            auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
+            bool is_algo_supported = hash_join || concurrent_hash_join || (allow_full_sorting_join && full_sorting_merge_join);
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;
@@ -306,6 +315,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
                 result->joins.joins.emplace_back(join_step);
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
+                result->joins.sortings.splice(result->joins.sortings.end(), std::move(frame.results.back()->joins.sortings));
 
                 /// Here we choose the minimal common prefix.
                 /// Applying optimization to more joins is potentially better.
@@ -325,11 +335,19 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
         {
             result = std::move(frame.results.front());
         }
-        else if (auto * source = findReadingStep(*frame.node))
+        else if (auto * source = findReadingStep(*frame.node, allow_full_sorting_join))
         {
             result.emplace();
             result->joins.sources.emplace_back(source);
             result->dag = makeSourceDAG(*source);
+        }
+        else if (auto * sorting = typeid_cast<SortingStep *>(frame.node->step.get());
+            sorting && allow_full_sorting_join &&
+            sorting->isSortingForMergeJoin() && sorting->getType() == SortingStep::Type::FinishSorting)
+        {
+            // std::cerr << "============ Apply for sorting\n";
+            result = std::move(frame.results[0]);
+            result->joins.sortings.push_back(sorting);
         }
         else if (frame.results.size() == 1 && frame.results[0])
         {

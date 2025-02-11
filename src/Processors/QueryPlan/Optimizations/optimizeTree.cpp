@@ -238,7 +238,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     applyOrder(optimization_settings, root);
 
     if (optimization_settings.optimize_join_read_by_layers)
-        optimizeJoinByLayers(root);
+        optimizeJoinByLayers(root, optimization_settings.optimize_full_sorting_merge_join_by_layers);
 }
 
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
