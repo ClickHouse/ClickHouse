@@ -1,5 +1,6 @@
 #pragma once
 
+#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 

@@ -319,7 +319,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 }
                 else
                 {
-                    processTask(*task, zookeeper, /*internal_query=*/ false);
+                    processTask(*task, zookeeper);
                 }
                 ++task_it;
             }
@@ -443,12 +443,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
-                processTask(saved_task, zookeeper, /*internal_query=*/ false);
+                processTask(saved_task, zookeeper);
             });
         }
         else
         {
-            processTask(saved_task, zookeeper, /*internal_query=*/ false);
+            processTask(saved_task, zookeeper);
         }
     }
 }
@@ -477,7 +477,7 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal)
+bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -505,7 +505,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope.emplace(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -571,7 +571,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     }
 }
 
-void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query)
+void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 {
     LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
@@ -669,7 +669,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, 
             else
             {
                 storage.reset();
-                tryExecuteQuery(task, zookeeper, internal_query);
+                tryExecuteQuery(task, zookeeper);
             }
         }
         catch (const Coordination::Exception &)
@@ -864,7 +864,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
-            if (tryExecuteQuery(task, zookeeper, /*internal=*/ false))
+            if (tryExecuteQuery(task, zookeeper))
             {
                 executed_by_us = true;
                 break;

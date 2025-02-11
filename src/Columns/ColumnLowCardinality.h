@@ -58,10 +58,6 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        return getDictionary().getValueNameAndType(getIndexes().getUInt(n));
-    }
 
     StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
 
@@ -185,16 +181,7 @@ public:
     size_t byteSizeAt(size_t n) const override { return getDictionary().byteSizeAt(getIndexes().getUInt(n)); }
     size_t allocatedBytes() const override { return idx.getPositions()->allocatedBytes() + getDictionary().allocatedBytes(); }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
-    {
-        callback(idx.getPositionsPtr());
-
-        /// Column doesn't own dictionary if it's shared.
-        if (!dictionary.isShared())
-            callback(dictionary.getColumnUniquePtr());
-    }
-
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(idx.getPositionsPtr());
 
@@ -223,16 +210,16 @@ public:
         }
     }
 
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*idx.getPositionsPtr());
-        idx.getPositionsPtr()->forEachMutableSubcolumnRecursively(callback);
+        idx.getPositionsPtr()->forEachSubcolumnRecursively(callback);
 
         /// Column doesn't own dictionary if it's shared.
         if (!dictionary.isShared())
         {
             callback(*dictionary.getColumnUniquePtr());
-            dictionary.getColumnUniquePtr()->forEachMutableSubcolumnRecursively(callback);
+            dictionary.getColumnUniquePtr()->forEachSubcolumnRecursively(callback);
         }
     }
 

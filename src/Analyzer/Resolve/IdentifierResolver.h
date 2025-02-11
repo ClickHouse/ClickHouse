@@ -131,14 +131,7 @@ public:
         const QueryTreeNodePtr & resolved_expression,
         IdentifierResolveScope & scope);
 
-    QueryTreeNodePtr tryResolveExpressionFromArrayJoinNestedExpression(
-        const QueryTreeNodePtr & resolved_expression,
-        IdentifierResolveScope & scope,
-        ColumnNode & array_join_column_expression_typed,
-        QueryTreeNodePtr & array_join_column_inner_expression);
-
-    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(
-        const QueryTreeNodePtr & resolved_expression,
+    QueryTreeNodePtr tryResolveExpressionFromArrayJoinExpressions(const QueryTreeNodePtr & resolved_expression,
         const QueryTreeNodePtr & table_expression_node,
         IdentifierResolveScope & scope);
 

@@ -1,7 +1,6 @@
 #include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 

@@ -1,15 +1,15 @@
 #pragma once
 
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
-#include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Common/SettingsChanges.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
-#include <Common/NamePrompter.h>
-#include <Common/SettingsChanges.h>
 
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>

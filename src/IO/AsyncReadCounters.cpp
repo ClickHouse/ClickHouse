@@ -1,5 +1,4 @@
 #include <IO/AsyncReadCounters.h>
-#include <Columns/ColumnTuple.h>
 
 namespace DB
 {

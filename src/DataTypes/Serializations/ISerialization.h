@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
+#include <Common/COW.h>
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>

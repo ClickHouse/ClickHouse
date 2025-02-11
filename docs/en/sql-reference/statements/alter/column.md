@@ -23,7 +23,7 @@ The following actions are supported:
 - [RENAME COLUMN](#rename-column) — Renames an existing column.
 - [CLEAR COLUMN](#clear-column) — Resets column values.
 - [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#modify-column) — Changes column's type, default expression, TTL, and column settings.
+- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression, TTL, and column settings.
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 - [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
@@ -38,7 +38,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after 
 
 Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
 
-If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
+If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
 Adding a column just changes the table structure, without performing any actions with data. The data does not appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md)).
 
@@ -72,12 +72,12 @@ Added3  UInt32
 DROP COLUMN [IF EXISTS] name
 ```
 
-Deletes the column with the name `name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+Deletes the column with the name `name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 :::tip
-You can't delete a column if it is referenced by [materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
+You can’t delete a column if it is referenced by [materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
 :::
 
 Example:
@@ -92,7 +92,7 @@ ALTER TABLE visits DROP COLUMN browser
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
-Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
 
 **NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.
 
@@ -110,7 +110,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 
 Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](../alter/partition.md/#how-to-set-partition-expression).
 
-If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Example:
 
@@ -124,7 +124,7 @@ ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
-Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
@@ -161,7 +161,7 @@ For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-e
 
 For examples of column-level settings modifying, see [Column-level Settings](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#column-level-settings).
 
-If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 When changing the type, values are converted as if the [toType](/docs/en/sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
 
@@ -272,7 +272,7 @@ ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_bloc
 
 ## MATERIALIZE COLUMN
 
-Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data). Note that materializing a column in the sort key is an invalid operation because it could break the sort order.
+Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
 Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 For columns with a new or updated `MATERIALIZED` value expression, all existing rows are rewritten.

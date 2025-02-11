@@ -157,7 +157,7 @@ private:
 
     static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
+    static void checkDuplicateTableNamesOrAlias(const QueryTreeNodePtr & join_node, QueryTreeNodePtr & left_table_expr, QueryTreeNodePtr & right_table_expr, IdentifierResolveScope & scope);
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
 
@@ -244,8 +244,6 @@ private:
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
     void resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
-
-    void resolveCrossJoin(QueryTreeNodePtr & cross_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 
     void resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor);
 

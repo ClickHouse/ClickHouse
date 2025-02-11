@@ -5,10 +5,8 @@
 
 #include <algorithm>
 
-#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -29,7 +27,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -135,7 +132,7 @@ namespace
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings(context, CompileExpressions::yes));
+            ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -222,8 +219,7 @@ namespace
         };
 
         /// We're going to prepare two blocks - one for the "data" table, and one for the "tags" table.
-        Block data_block;
-        Block tags_block;
+        Block data_block, tags_block;
 
         auto make_column_for_data_block = [&](const ColumnDescription & column_description) -> IColumn &
         {

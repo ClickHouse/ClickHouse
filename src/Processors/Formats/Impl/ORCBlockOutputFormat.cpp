@@ -568,7 +568,6 @@ void ORCBlockOutputFormat::prepareWriter()
     options.setCompression(getORCCompression(format_settings.orc.output_compression_method));
     options.setRowIndexStride(format_settings.orc.output_row_index_stride);
     options.setDictionaryKeySizeThreshold(format_settings.orc.output_dictionary_key_size_threshold);
-    options.setTimezoneName(format_settings.orc.writer_time_zone_name);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
         schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i])));
@@ -586,7 +585,6 @@ void registerOutputFormatORC(FormatFactory & factory)
     });
     factory.markFormatHasNoAppendSupport("ORC");
     factory.markOutputFormatPrefersLargeBlocks("ORC");
-    factory.markOutputFormatNotTTYFriendly("ORC");
 }
 
 }
