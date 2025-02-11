@@ -27,13 +27,15 @@ ConfigReloader::ConfigReloader(
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
-        Updater && updater_)
+        Updater && updater_,
+        bool load_encryption_codecs_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
+    , load_encryption_codecs(load_encryption_codecs_)
 {
     auto config = reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 
@@ -130,7 +132,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         try
         {
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
-            if (loaded_config.has_zk_includes)
+            if (!loaded_config.nodes_with_from_zk_attribute.empty())
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
                     zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
         }
@@ -160,6 +162,9 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             return std::nullopt;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
+#ifdef USE_SSL
+        config_processor.decryptEncryptedElements(loaded_config, load_encryption_codecs);
+#endif
 
         /** We should remember last modification time if and only if config was successfully loaded
          * Otherwise a race condition could occur during config files update:

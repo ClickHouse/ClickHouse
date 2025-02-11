@@ -64,7 +64,8 @@ public:
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
         const zkutil::EventPtr & zk_changed_event = nullptr,
-        bool is_config_changed = true);
+        bool is_config_changed = true,
+        std::unordered_set<std::string> * nodes_with_from_zk_attribute = nullptr);
 
     XMLDocumentPtr parseConfig(const std::string & config_path);
 
@@ -84,6 +85,7 @@ public:
         bool loaded_from_preprocessed;
         XMLDocumentPtr preprocessed_xml;
         std::string config_path;
+        std::unordered_set<std::string> nodes_with_from_zk_attribute;
     };
 
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
@@ -114,6 +116,9 @@ public:
     static bool isPreprocessedFile(const std::string & config_path);
 
 #if USE_SSL
+    /// Decrypt elements in config with specified encryption attributes
+    void decryptEncryptedElements(LoadedConfig & loaded_config, bool load_encryption_codecs = true, bool decrypt_encrypted_values = true);
+
     /// Encrypt text value
     static std::string encryptValue(const std::string & codec_name, const std::string & value);
 
@@ -141,9 +146,6 @@ private:
 
 #if USE_SSL
     void decryptRecursive(Poco::XML::Node * config_root);
-
-    /// Decrypt elements in config with specified encryption attributes
-    void decryptEncryptedElements(LoadedConfig & loaded_config);
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);
@@ -161,7 +163,8 @@ private:
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             const zkutil::EventPtr & zk_changed_event,
-            std::unordered_set<std::string> & contributing_zk_paths);
+            std::unordered_set<std::string> & contributing_zk_paths,
+            std::unordered_set<std::string> * nodes_with_from_zk_attribute);
 };
 
 }

@@ -35,7 +35,8 @@ public:
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        Updater && updater);
+        Updater && updater,
+        bool load_encryption_codecs_ = true);
 
     ~ConfigReloader();
 
@@ -78,6 +79,8 @@ private:
     zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
+
+    bool load_encryption_codecs;
 
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread;

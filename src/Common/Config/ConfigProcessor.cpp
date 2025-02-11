@@ -386,7 +386,8 @@ void ConfigProcessor::doIncludesRecursive(
         Node * node,
         zkutil::ZooKeeperNodeCache * zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        std::unordered_set<std::string> & contributing_zk_paths)
+        std::unordered_set<std::string> & contributing_zk_paths,
+        std::unordered_set<std::string> * nodes_with_from_zk_attribute)
 {
     if (node->nodeType() == Node::TEXT_NODE)
     {
@@ -535,6 +536,9 @@ void ConfigProcessor::doIncludesRecursive(
             throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
 
         contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
+        // insert grandchild node name of current node
+        if (nodes_with_from_zk_attribute && node->parentNode() != nullptr && node->parentNode()->parentNode() != nullptr)
+            nodes_with_from_zk_attribute->insert(node->parentNode()->parentNode()->nodeName());
 
         if (zk_node_cache)
         {
@@ -576,7 +580,7 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     if (included_something)
-        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
     else
     {
         NodeListPtr children = node->childNodes();
@@ -584,7 +588,7 @@ void ConfigProcessor::doIncludesRecursive(
         for (Node * child = children->item(0); child; child = next_child)
         {
             next_child = child->nextSibling();
-            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
+            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
         }
     }
 }
@@ -674,7 +678,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
     const zkutil::EventPtr & zk_changed_event,
-    bool is_config_changed)
+    bool is_config_changed,
+    std::unordered_set<std::string> * nodes_with_from_zk_attribute)
 {
     if (is_config_changed)
         LOG_DEBUG(log, "Processing configuration file '{}'.", path);
@@ -740,7 +745,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         if (node)
         {
             /// if we include_from env or zk.
-            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
+            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
             include_from_path = node->innerText();
         }
         else
@@ -757,7 +762,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             contributing_files.push_back(include_from_path);
         }
 
-        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
     }
     catch (Exception & e)
     {
@@ -799,14 +804,15 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes, bool is_config_changed)
 {
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed);
+    std::unordered_set<std::string> nodes_with_from_zk_attribute;
+    XMLDocumentPtr config_xml = processConfig(&has_zk_includes, nullptr, nullptr, is_config_changed, &nodes_with_from_zk_attribute);
 
     if (has_zk_includes && !allow_zk_includes)
         throw Poco::Exception("Error while loading config '" + path + "': from_zk includes are not allowed!");
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path};
+    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path, nodes_with_from_zk_attribute};
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
@@ -817,11 +823,12 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 {
     XMLDocumentPtr config_xml;
     bool has_zk_includes;
+    std::unordered_set<std::string> nodes_with_from_zk_attribute;
     bool processed_successfully = false;
     try
     {
         zk_node_cache.sync();
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed, &nodes_with_from_zk_attribute);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -840,17 +847,22 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
+    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path, nodes_with_from_zk_attribute};
 }
 
 #if USE_SSL
 
-void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
+void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config, bool load_encryption_codecs, bool decrypt_encrypted_values)
 {
-    CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
-    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
-    decryptRecursive(config_root);
-    loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
+    if (load_encryption_codecs)
+        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+
+    if (decrypt_encrypted_values)
+    {
+        Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+        decryptRecursive(config_root);
+        loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
+    }
 }
 
 #endif
@@ -929,12 +941,6 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
-
-#if USE_SSL
-    std::string preprocessed_file_name = fs::path(preprocessed_path).filename();
-    if (preprocessed_file_name == "config.xml" || preprocessed_file_name == std::format("config{}.xml", PREPROCESSED_SUFFIX))
-        decryptEncryptedElements(loaded_config);
-#endif
 }
 
 void ConfigProcessor::setConfigPath(const std::string & config_path)
