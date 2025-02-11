@@ -6,6 +6,7 @@
 #    include <Columns/ColumnTuple.h>
 #    include <Core/NamesAndTypes.h>
 #    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeString.h>
 #    include <Formats/FormatFactory.h>
 #    include <Processors/Formats/Impl/Parquet/ParquetMetadataReader.h>
 #    include <arrow/api.h>
