@@ -2061,8 +2061,17 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_err
 
 DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
     const String & prefix,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const StorageMetadataPtr & metadata_snapshot,
     const DiskTransactionPtr & disk_transaction) const
+{
+    return makeCloneInDetached(prefix, metadata_snapshot, disk_transaction, isReplicatedZeroCopy());
+}
+
+DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
+    const String & prefix,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const DiskTransactionPtr & disk_transaction,
+    const bool copy_instead_of_hardlink) const
 {
     /// Avoid unneeded duplicates of broken parts if we try to detach the same broken part multiple times.
     /// Otherwise it may pollute detached/ with dirs with _tryN suffix and we will fail to remove broken part after 10 attempts.
@@ -2074,12 +2083,9 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
     /// In case of zero-copy replication we copy directory instead of hardlinks
     /// because hardlinks tracking doesn't work for detached parts.
     auto storage_settings = storage.getSettings();
-
-    // Using hardlinks instead of copying for S3 helps repair errors related to corrupted data.
-    // For local disks, using hardlinks instead of copying is also appropriate.
     IDataPartStorage::ClonePartParams params
     {
-        .copy_instead_of_hardlink = false,
+        .copy_instead_of_hardlink = copy_instead_of_hardlink,
         .keep_metadata_version = prefix == "covered-by-broken",
         .make_source_readonly = true,
         .external_transaction = disk_transaction
@@ -2092,6 +2098,12 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},
         params);
+}
+
+bool IMergeTreeDataPart::isReplicatedZeroCopy() const
+{
+    return isStoredOnRemoteDiskWithZeroCopySupport() && storage.supportsReplication()
+        && (*storage.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication];
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(
