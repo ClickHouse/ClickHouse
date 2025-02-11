@@ -58,6 +58,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Common/logger_useful.h"
 
 #include <absl/container/inlined_vector.h>
 
