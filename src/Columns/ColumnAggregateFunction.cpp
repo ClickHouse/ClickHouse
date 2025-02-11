@@ -173,7 +173,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     };
 
     callback(*res);
-    res->forEachSubcolumnRecursively(callback);
+    res->forEachMutableSubcolumnRecursively(callback);
 
     for (auto * val : data)
         func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());

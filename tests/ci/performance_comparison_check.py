@@ -256,7 +256,6 @@ def main():
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=[v for _, v in paths.items()] + image_files,
-        check_name=check_name_with_group,
     ).dump()
 
     if status != SUCCESS:

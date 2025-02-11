@@ -57,9 +57,11 @@
 #include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Poco/String.h>
 
 namespace DB
 {
