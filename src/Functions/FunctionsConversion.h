@@ -2133,11 +2133,7 @@ inline bool isDateTime64(const ColumnsWithTypeAndName & arguments)
     return false;
 }
 
-template <
-    typename ToDataType,
-    typename Name,
-    typename MonotonicityImpl,
-    FormatSettings::DateTimeOverflowBehavior template_date_time_overflow_behavior = default_date_time_overflow_behavior>
+template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert : public IFunction
 {
 public:
@@ -2147,8 +2143,21 @@ public:
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
-    explicit FunctionConvert(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionConvert>(context, default_date_time_overflow_behavior);
+    }
+
+    static FunctionPtr createWithOverflow(ContextPtr context, FormatSettings::DateTimeOverflowBehavior _datetime_overflow_behavior)
+    {
+        return std::make_shared<FunctionConvert>(context, _datetime_overflow_behavior);
+    }
+
+    explicit FunctionConvert(ContextPtr context_, FormatSettings::DateTimeOverflowBehavior _datetime_overflow_behavior)
+        : context(context_)
+        , datetime_overflow_behavior(_datetime_overflow_behavior)
+    {
+    }
 
     String getName() const override
     {
@@ -2339,6 +2348,7 @@ public:
 
 private:
     ContextPtr context;
+    FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior;
     mutable bool checked_return_type = false;
     mutable bool to_nullable = false;
 
@@ -2353,10 +2363,10 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = template_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
+            context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         if (isDynamic(from_type))
         {
@@ -2390,7 +2400,7 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                switch (date_time_overflow_behavior)
+                switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
@@ -2406,7 +2416,7 @@ private:
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                switch (date_time_overflow_behavior)
+                switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
@@ -2427,7 +2437,7 @@ private:
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
             arguments, result_type, input_rows_count, from_string_tag); \
         break;
-                switch (date_time_overflow_behavior)
+                switch (context_datetime_overflow_behavior)
                 {
                     GENERATE_OVERFLOW_MODE_CASE(Throw)
                     GENERATE_OVERFLOW_MODE_CASE(Ignore)
@@ -3081,20 +3091,10 @@ template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat1
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDate, date_time_overflow_behavior> { using Type = FunctionToDate; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDate32, date_time_overflow_behavior> { using Type = FunctionToDate32; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDateTime, date_time_overflow_behavior>
-{
-    using Type = FunctionConvert<DataTypeDateTime, NameToDateTime, ToDateTimeMonotonicity, date_time_overflow_behavior>;
-};
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDateTime64, date_time_overflow_behavior> { using Type = FunctionToDateTime64; };
+template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; };
+template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
@@ -3523,13 +3523,7 @@ private:
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
             {
-                FunctionPtr function;
-                if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    function = FunctionTo<DataTypeDateTime, FormatSettings::DateTimeOverflowBehavior::Saturate>::Type::create(context);
-                else if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                    function = FunctionTo<DataTypeDateTime, FormatSettings::DateTimeOverflowBehavior::Throw>::Type::create(context);
-                else
-                    function = FunctionTo<DataTypeDateTime, FormatSettings::DateTimeOverflowBehavior::Ignore>::Type::create(context);
+                FunctionPtr function = FunctionTo<DataTypeDateTime>::Type::createWithOverflow(context, date_time_overflow_behavior);
                 return createFunctionAdaptor(function, from_type);
             }
             else
@@ -3705,7 +3699,7 @@ private:
 
 #define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
             case IntervalKind::Kind::INTERVAL_KIND: \
-                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(context), from_type);
+                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::createWithOverflow(context, function_date_time_overflow_behavior), from_type);
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
     {
