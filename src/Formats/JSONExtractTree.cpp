@@ -1504,7 +1504,7 @@ public:
         auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
         if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
-            type = makeNullableRecursively(type);
+            type = makeNullableRecursively(type, format_settings);
         return type;
     }
 

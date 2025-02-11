@@ -3213,3 +3213,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+JSONCompactEachRowWithProgress
+JSONCompactStringsEachRowWithProgress
