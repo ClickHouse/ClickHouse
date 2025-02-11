@@ -418,6 +418,7 @@ struct ContextSharedPart : boost::noncopyable
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
+    String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -1923,7 +1924,13 @@ UInt64 Context::getConcurrentThreadsSoftLimitRatioToCores() const
     return shared->concurrent_threads_soft_limit_ratio_to_cores;
 }
 
-UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
+String Context::getConcurrentThreadsScheduler() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_scheduler;
+}
+
+std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler)
 {
     std::lock_guard lock(shared->mutex);
     SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
@@ -1935,10 +1942,12 @@ UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
         if (value > 0 && value < concurrent_threads_soft_limit)
             concurrent_threads_soft_limit = value;
     }
+    ConcurrencyControl::instance().setScheduler(scheduler);
     ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
     shared->concurrent_threads_soft_limit_num = num;
     shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
-    return concurrent_threads_soft_limit;
+    shared->concurrent_threads_scheduler = scheduler;
+    return { concurrent_threads_soft_limit, ConcurrencyControl::instance().getScheduler() };
 }
 
 
