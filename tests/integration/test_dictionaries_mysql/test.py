@@ -458,7 +458,7 @@ def test_background_dictionary_reconnect(started_cluster):
     )
 
     port_forward = PortForward()
-    port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port), 3336)
+    port = port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port))
 
     @contextmanager
     def port_forward_manager():
@@ -486,7 +486,7 @@ def test_background_dictionary_reconnect(started_cluster):
             DB 'test'
             QUERY $doc$SELECT * FROM test.dict;$doc$
             BACKGROUND_RECONNECT 'true'
-            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT 3336 PRIORITY 1)))
+            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT {port} PRIORITY 1)))
         """
         )
 
@@ -514,7 +514,7 @@ def test_background_dictionary_reconnect(started_cluster):
         time.sleep(5)
 
         # Restore connection to mysql server
-        port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port), 3336)
+        port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port), port)
 
         time.sleep(5)
 

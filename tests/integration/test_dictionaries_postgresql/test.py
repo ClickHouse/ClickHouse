@@ -611,7 +611,7 @@ def test_background_dictionary_reconnect(started_cluster):
     postgres_conn.cursor().execute("INSERT INTO dict VALUES (1, 'Value_1')")
 
     port_forward = PortForward()
-    port_forward.start((started_cluster.postgres_ip, started_cluster.postgres_port), 5532)
+    port = port_forward.start((started_cluster.postgres_ip, started_cluster.postgres_port))
 
     @contextmanager
     def port_forward_manager():
@@ -639,7 +639,7 @@ def test_background_dictionary_reconnect(started_cluster):
             DB 'postgres_database'
             QUERY $doc$SELECT * FROM dict;$doc$
             BACKGROUND_RECONNECT 'true'
-            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT 5532 PRIORITY 1)))
+            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT {port} PRIORITY 1)))
         """
         )
 
@@ -667,7 +667,7 @@ def test_background_dictionary_reconnect(started_cluster):
         time.sleep(5)
 
         # Restore connection to postgresql server
-        port_forward.start((started_cluster.postgres_ip, started_cluster.postgres_port), 5532)
+        port_forward.start((started_cluster.postgres_ip, started_cluster.postgres_port), port)
 
         time.sleep(5)
 
