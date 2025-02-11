@@ -2309,7 +2309,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
-    if (!are_columns_and_secondary_indices_sizes_calculated)
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     /// For some types of parts columns_size maybe not calculated
@@ -2323,7 +2323,7 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
 ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
 {
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
-    if (!are_columns_and_secondary_indices_sizes_calculated)
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
         calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     return total_columns_size;

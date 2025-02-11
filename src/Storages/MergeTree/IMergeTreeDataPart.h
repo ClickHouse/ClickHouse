@@ -484,6 +484,7 @@ public:
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
+    bool areChecksumsLoaded() const { return !checksums.empty(); }
 
     void setBrokenReason(const String & message, int code) const;
 
