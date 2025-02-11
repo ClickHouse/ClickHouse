@@ -47,4 +47,10 @@ runs:
           echo "127.0.0.1 $fqdn" | sudo tee -a /etc/hosts
           resolvectl flush-caches
           resolvectl query "$fqdn"
-          host "$fqdn"
+          # Sometimes it tries to resolve the address using NSes:
+          #
+          #     ip-172-31-33-98.ec2.internal has address 127.0.0.1
+          #     Host ip-172-31-33-98.ec2.internal not found: 3(NXDOMAIN)
+          #
+          # So let's ignore the error
+          host "$fqdn" || true

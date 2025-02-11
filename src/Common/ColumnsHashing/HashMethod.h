@@ -2,7 +2,15 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
+#include <Interpreters/AggregationCommon.h>
+
+namespace DB
+{
+using Sizes = std::vector<size_t>;
+}
 
 namespace DB::ColumnsHashing
 {
