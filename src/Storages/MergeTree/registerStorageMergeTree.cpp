@@ -712,14 +712,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.query.columns_list && args.query.columns_list->indices)
         {
-            for (const auto &index: args.query.columns_list->indices->children)
+            for (const auto & index : args.query.columns_list->indices->children)
             {
-                auto index_name = index->as<ASTIndexDeclaration>()->name;
-
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
 
+                auto index_name = index->as<ASTIndexDeclaration>()->name;
                 if (((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
-                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
+                    || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
                     && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
@@ -735,7 +734,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 bool minmax_index_exists = false;
 
-                for (const auto &index: metadata.secondary_indices)
+                for (const auto & index : metadata.secondary_indices)
                 {
                     if (index.column_names.front() == column.name && index.type == "minmax")
                     {
@@ -753,11 +752,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                         IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
                 index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
                 auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
-                new_index.is_auto_generated = true;
+                new_index.is_implicitly_added = true;
                 metadata.secondary_indices.push_back(std::move(new_index));
             }
         }
-
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)

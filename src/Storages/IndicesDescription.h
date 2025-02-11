@@ -9,6 +9,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/NamePrompter.h>
 
+constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
+
 namespace DB
 {
 
@@ -45,8 +47,8 @@ struct IndexDescription
     /// Index granularity, make sense for skip indices
     size_t granularity;
 
-    /// Used for auto generated secondary minmax indices
-    bool is_auto_generated = false;
+    /// True if the index was implicitly created, see MergeTree settings 'add_minmax_index_for_numeric_columns' and 'add_minmax_index_for_string_columns'
+    bool is_implicitly_added = false;
 
     /// Parse index from definition AST
     static IndexDescription getIndexFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);

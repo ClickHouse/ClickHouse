@@ -552,8 +552,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
                 index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
                 auto new_index = IndexDescription::getIndexFromAST(index_ast, metadata.columns, context);
-                new_index.is_auto_generated = true;
-                metadata.secondary_indices.push_back(std::move(new_index));
+                metadata.secondary_indices.push_back(new_index);
             }
         }
     }
