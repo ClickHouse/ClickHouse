@@ -48,7 +48,7 @@ struct BackupFileInfo
     /// This is used for plain backups.
     Strings data_file_copies;
 
-    /// Only used for lightweight snapshot on cloud.
+    /// if this file uses lightwegith backup, we only store object key in the metafile.
     String object_key;
 
     struct LessByFileName
