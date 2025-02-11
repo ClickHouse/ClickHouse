@@ -654,6 +654,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
             {"columns_and_secondary_indices_sizes_lazy_calculation", true, true, "New setting to calculate columns and indices sizes lazily"}
+            {"table_disk", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
