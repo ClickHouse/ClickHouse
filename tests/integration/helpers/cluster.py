@@ -3341,7 +3341,7 @@ class ClickHouseInstance:
         with_installed_binary=False,
         external_dirs=None,
         tmpfs=None,
-        mem_limit=None,
+        mem_limit="10g",
         config_root_name="clickhouse",
         extra_configs=[],
         randomize_settings=True,
