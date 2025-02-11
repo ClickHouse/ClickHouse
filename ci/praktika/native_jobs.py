@@ -32,6 +32,7 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
+    timeout=600,
 )
 
 _docker_build_job = Job.Config(
