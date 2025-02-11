@@ -11,15 +11,10 @@
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
-#include "Common/Exception.h"
 #include <Common/CurrentThread.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include "Columns/IColumn.h"
-#include "Core/PostgreSQLProtocol.h"
-#include "Interpreters/Context_fwd.h"
-#include "Parsers/ParserPreparedStatement.h"
 #include <Core/Settings.h>
 
 #if USE_SSL

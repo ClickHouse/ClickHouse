@@ -6,12 +6,10 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
-#include "Common/Exception.h"
 #include <Common/logger_useful.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
-#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -27,6 +25,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TYPE;
     extern const int LOGICAL_ERROR;
+    extern const int LIMIT_EXCEEDED;
 }
 
 
@@ -662,7 +661,7 @@ public:
             String current_param(sz_param, '0');
             Int32 readed = static_cast<Int32>(in.read(current_param.data(), sz_param));
             if (readed != sz_param)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not matched readed size in bind");
+                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Not matched readed size in bind");
 
             parameters.push_back(current_param);
         }
@@ -727,14 +726,14 @@ public:
 class ExecuteQuery : FrontMessage
 {
 public:
-    String function_name;
+    String portal_name;
     Int32 max_rows;
 
     void deserialize(ReadBuffer & in) override
     {
         Int32 sz;
         readBinaryBigEndian(sz, in);
-        readNullTerminated(function_name, in);
+        readNullTerminated(portal_name, in);
         readBinaryBigEndian(max_rows, in);
     }
 
@@ -1156,7 +1155,7 @@ public:
     void addStatement(ASTPreparedStatement * statement)
     {
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Statements limit exceeded");
+            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
         statements[statement->function_name] = statement->function_body;
     }
@@ -1178,7 +1177,7 @@ public:
     void attachBindQuery(std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query)
     {
         if (bind_query)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query is already binded");
+            throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Query is already binded");
 
         bind_query = std::move(query);
     }
