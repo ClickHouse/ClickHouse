@@ -269,8 +269,12 @@ void BaseDaemon::initialize(Application & self)
 
 #if USE_SSL
     // Decrypt encrypted elements in config
-    bool has_encryption_codecs_with_keys_from_zk = loaded_config.nodes_with_from_zk_attribute.find("encryption_codecs") != loaded_config.nodes_with_from_zk_attribute.end();
     /// We don't support codecs with keys loaded from ZK at this stage
+    bool has_encryption_codecs_with_keys_from_zk = std::find_if(loaded_config.nodes_with_from_zk_attribute.begin(), loaded_config.nodes_with_from_zk_attribute.end(),
+        [](const auto& node_name)
+        {
+            return node_name.find(".encryption_codecs.") != std::string::npos;
+        }) != loaded_config.nodes_with_from_zk_attribute.end();
     bool load_encryption_codecs = !has_encryption_codecs_with_keys_from_zk;
     bool decrypt_encrypted_values = load_encryption_codecs;
     ConfigProcessor(config_path).decryptEncryptedElements(loaded_config, load_encryption_codecs, decrypt_encrypted_values);

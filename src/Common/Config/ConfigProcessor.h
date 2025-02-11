@@ -164,6 +164,7 @@ private:
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             const zkutil::EventPtr & zk_changed_event,
             std::unordered_set<std::string> & contributing_zk_paths,
+            std::string & current_path,
             std::unordered_set<std::string> * nodes_with_from_zk_attribute);
 };
 

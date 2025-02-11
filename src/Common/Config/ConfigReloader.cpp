@@ -132,7 +132,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         try
         {
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true, is_config_changed);
-            if (!loaded_config.nodes_with_from_zk_attribute.empty())
+            if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
                     zk_node_cache, zk_changed_event, fallback_to_preprocessed, is_config_changed);
         }

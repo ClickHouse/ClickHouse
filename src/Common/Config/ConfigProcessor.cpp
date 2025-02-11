@@ -387,6 +387,7 @@ void ConfigProcessor::doIncludesRecursive(
         zkutil::ZooKeeperNodeCache * zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
         std::unordered_set<std::string> & contributing_zk_paths,
+        std::string & current_path,
         std::unordered_set<std::string> * nodes_with_from_zk_attribute)
 {
     if (node->nodeType() == Node::TEXT_NODE)
@@ -529,6 +530,10 @@ void ConfigProcessor::doIncludesRecursive(
         process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
     }
 
+    if (!current_path.empty())
+        current_path += ".";
+    current_path += node->nodeName();
+
     if (attr_nodes["from_zk"]) /// we have zookeeper subst
     {
         /// only allow substitution for nodes with no value and without "replace"
@@ -536,9 +541,9 @@ void ConfigProcessor::doIncludesRecursive(
             throw Poco::Exception("Element <" + node->nodeName() + "> has value and does not have 'replace' attribute, can't process from_zk substitution");
 
         contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
-        // insert grandchild node name of current node
-        if (nodes_with_from_zk_attribute && node->parentNode() != nullptr && node->parentNode()->parentNode() != nullptr)
-            nodes_with_from_zk_attribute->insert(node->parentNode()->parentNode()->nodeName());
+        // insert current node full path if it has from_zk attribute
+        if (nodes_with_from_zk_attribute)
+            nodes_with_from_zk_attribute->insert(current_path);
 
         if (zk_node_cache)
         {
@@ -580,7 +585,7 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     if (included_something)
-        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
+        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths, current_path, nodes_with_from_zk_attribute);
     else
     {
         NodeListPtr children = node->childNodes();
@@ -588,7 +593,9 @@ void ConfigProcessor::doIncludesRecursive(
         for (Node * child = children->item(0); child; child = next_child)
         {
             next_child = child->nextSibling();
-            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
+            auto prev_path = current_path;
+            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths, current_path, nodes_with_from_zk_attribute);
+            current_path = prev_path;
         }
     }
 }
@@ -742,10 +749,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
         XMLDocumentPtr include_from;
         std::string include_from_path;
+        std::string current_path;
         if (node)
         {
             /// if we include_from env or zk.
-            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
+            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths, current_path, nodes_with_from_zk_attribute);
             include_from_path = node->innerText();
         }
         else
@@ -762,7 +770,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             contributing_files.push_back(include_from_path);
         }
 
-        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths, nodes_with_from_zk_attribute);
+        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths, current_path, nodes_with_from_zk_attribute);
     }
     catch (Exception & e)
     {
