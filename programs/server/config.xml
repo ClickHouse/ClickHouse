@@ -1261,6 +1261,8 @@
 
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
+
+        NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
         <!--
