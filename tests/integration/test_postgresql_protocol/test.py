@@ -6,6 +6,7 @@ import logging
 import os
 import uuid
 
+import psycopg
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
@@ -187,12 +188,11 @@ def test_python_client(started_cluster):
 def test_prepared_statement(started_cluster):
     node = started_cluster.instances["node"]
 
-    ch = psycopg2.connect(
+    ch = psycopg.connect(
         host=node.ip_address,
         port=server_port,
         user="default",
         password="123",
-        database="",
     )
     cur = ch.cursor()
     cur.execute("drop table if exists test;")
@@ -204,6 +204,9 @@ def test_prepared_statement(started_cluster):
     )
 
     cur.execute("INSERT INTO test (id) VALUES (1), (2), (3);")
+
+    cur.execute("SELECT * FROM test WHERE id > %s;", ('2',), prepare=True)
+    assert cur.fetchall() == [(3,)]
 
     cur.execute("PREPARE select_test AS SELECT * FROM test WHERE id = $1;")
     cur.execute("EXECUTE select_test(1);")

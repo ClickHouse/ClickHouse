@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <utility>
 
+#include <iostream>
+
 namespace DB
 {
 
@@ -65,6 +67,7 @@ enum class MessageType : Int32
     PARAMETER_STATUS = 5,
     READY_FOR_QUERY = 6,
     SYNC = 7,
+    SYNC_COMPLETE = 7,
     TERMINATE = 8,
 
 // start up and authentication
@@ -635,7 +638,7 @@ public:
     String portal_name;
     String function_name;
     std::vector<String> parameters;
-    Int32 num_params;
+    Int16 num_params;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -648,15 +651,19 @@ public:
         readBinaryBigEndian(num_format_params, in);
         Int16 format_param;
         for (Int16 i = 0; i < num_format_params; ++i)
+        {
             readBinaryBigEndian(format_param, in);
-
+        }
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
         {
             Int32 sz_param;
             readBinaryBigEndian(sz_param, in);
-            String current_param;
-            readNullTerminated(current_param, in);
+            String current_param(sz_param, '0');
+            Int32 readed = static_cast<Int32>(in.read(current_param.data(), sz_param));
+            if (readed != sz_param)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Not matched readed size in bind");
+
             parameters.push_back(current_param);
         }
 
@@ -693,6 +700,28 @@ public:
     {
         return MessageType::BIND_COMPLETE;
     }
+};
+
+class DescribeQuery : FrontMessage
+{
+public:
+    String function_name;
+    Int32 max_rows;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        Int8 is_prepared_statement;
+        readBinaryBigEndian(is_prepared_statement, in);
+        readNullTerminated(function_name, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::DESCRIBE;
+    }
+
 };
 
 class ExecuteQuery : FrontMessage
@@ -740,6 +769,61 @@ enum class FormatCode : Int16
 {
     TEXT = 0,
     BINARY = 1,
+};
+
+class CloseQuery : FrontMessage
+{
+public:
+    String function_name;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+        Int8 byte;
+        readBinaryBigEndian(byte, in);
+        readNullTerminated(function_name, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::CLOSE;
+    }
+};
+
+class CloseQueryComplete : BackendMessage
+{
+public:
+    void serialize(WriteBuffer & out) const override
+    {
+        out.write('C');
+        writeBinaryBigEndian(size(), out);
+    }
+
+    Int32 size() const override
+    {
+        return 4;
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::CLOSE_COMPLETE;
+    }
+};
+
+class SyncQuery : FrontMessage
+{
+public:
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz;
+        readBinaryBigEndian(sz, in);
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::SYNC;
+    }
 };
 
 class FieldDescription : ISerializable
@@ -1103,8 +1187,13 @@ public:
     {
         auto result = getStatement(bind_query->function_name, bind_query->parameters);
 
-        bind_query.reset();
         return result;
+    }
+
+    void resetBindQuery(const String& function_name)
+    {
+        statements.erase(function_name);
+        bind_query.reset();
     }
 
 private:

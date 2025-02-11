@@ -158,7 +158,8 @@ void PostgreSQLHandler::run()
 
         while (tcp_server.isOpen())
         {
-            message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
+            if (!is_query_in_progress)
+                message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
 
             constexpr size_t connection_check_timeout = 1; // 1 second
             while (!in->poll(1000000 * connection_check_timeout))
@@ -177,10 +178,12 @@ void PostgreSQLHandler::run()
                     LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
+                    is_query_in_progress = true;
                     processParseQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
+                    is_query_in_progress = true;
                     processBindQuery();
                     message_transport->flush();
                     break;
@@ -188,10 +191,15 @@ void PostgreSQLHandler::run()
                     processExecuteQuery();
                     message_transport->flush();
                     break;
-                case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
+                    is_query_in_progress = false;
+                    processSyncQuery();
+                    message_transport->flush();
+                    break;
+                case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
+                    processDescribeQuery();
+                    break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::FLUSH:
-                case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
                     message_transport->send(
                         PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR,
@@ -200,6 +208,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Client tried to access via extended query protocol");
                     message_transport->dropMessage();
+                    break;
+                case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
+                    processCloseQuery();
+                    message_transport->flush();
                     break;
                 default:
                     message_transport->send(
@@ -542,10 +554,25 @@ void PostgreSQLHandler::processBindQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::BindQuery>();
 
-        auto statement = std::make_shared<ASTPreparedStatement>();
-        statement->function_name = query->function_name;
-        prepared_statements_manager.addStatement(statement.get());
+        prepared_statements_manager.attachBindQuery(std::move(query));
         message_transport->send(PostgreSQLProtocol::Messaging::BindQueryComplete(), true);
+    }
+    catch (const Exception & e)
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+            true);
+        throw;
+    }
+}
+
+void PostgreSQLHandler::processDescribeQuery()
+{
+    try
+    {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
     }
     catch (const Exception & e)
     {
@@ -576,7 +603,7 @@ void PostgreSQLHandler::processExecuteQuery()
         ReadBufferFromString read_buf(sql_query);
         executeQuery(read_buf, *out, false, query_context, {});
 
-        PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::EXECUTE;
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command = PostgreSQLProtocol::Messaging::CommandComplete::Command::SELECT;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
     }
     catch (const Exception & e)
@@ -589,6 +616,41 @@ void PostgreSQLHandler::processExecuteQuery()
     }
 }
 
+void PostgreSQLHandler::processCloseQuery()
+{
+    try
+    {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::CloseQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::CloseQuery>();
+
+        prepared_statements_manager.resetBindQuery(query->function_name);
+    }
+    catch (const Exception & e)
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+            true);
+        throw;
+    }
+}
+
+void PostgreSQLHandler::processSyncQuery()
+{
+    try
+    {
+        std::unique_ptr<PostgreSQLProtocol::Messaging::SyncQuery> query =
+            message_transport->receive<PostgreSQLProtocol::Messaging::SyncQuery>();
+    }
+    catch (const Exception & e)
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+            true);
+        throw;
+    }
+}
 
 bool PostgreSQLHandler::isEmptyQuery(const String & query)
 {

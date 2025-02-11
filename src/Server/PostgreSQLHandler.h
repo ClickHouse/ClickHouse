@@ -65,6 +65,8 @@ private:
     Int32 connection_id = 0;
     Int32 secret_key = 0;
 
+    bool is_query_in_progress = false;
+
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
@@ -98,8 +100,11 @@ private:
     bool processDeallocate(const String & query);
 
     void processParseQuery();
+    void processDescribeQuery();
     void processBindQuery();
     void processExecuteQuery();
+    void processCloseQuery();
+    void processSyncQuery();
 
     static bool isEmptyQuery(const String & query);
 };
