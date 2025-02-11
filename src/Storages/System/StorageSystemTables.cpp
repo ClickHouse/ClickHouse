@@ -23,6 +23,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageView.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/StringUtils.h>
@@ -257,25 +258,27 @@ protected:
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
     }
 
-    void FillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index, size_t & src_index)
+    void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index, size_t & src_index)
     {
         if (src_index == 14 && columns_mask[src_index++])
         {
-            if (table)
+            if (table && table->isView() && table->as<StorageView>()->isParameterizedView())
             {
                 StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
 
-                NameToNameMap query_params = getSelectParamters(metadata_snapshot);
-                if (!query_params.empty())
+                NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
+                if (!query_parameters_array.empty())
                 {
                     Array changes;
-                    for (const auto & [key, value] : query_params)
+                    for (const auto & [key, value] : query_parameters_array)
                         changes.push_back(Tuple{key, value});
                     columns[res_index++]->insert(changes);
                 }
                 else
                     columns[res_index++]->insertDefault();
             }
+            else
+                columns[res_index++]->insertDefault();
         }
     }
 
@@ -383,7 +386,7 @@ protected:
                         while (src_index < columns_mask.size())
                         {
                             // parametrized view parameters
-                            FillParametralizedViewData(res_columns, table.second, res_index, src_index);
+                            fillParametralizedViewData(res_columns, table.second, res_index, src_index);
 
                             // total_rows
                             if (src_index == 20 && columns_mask[src_index])
@@ -588,7 +591,7 @@ protected:
                     src_index += 3;
 
                 // parametrized view parameters
-                FillParametralizedViewData(res_columns, table, res_index, src_index);
+                fillParametralizedViewData(res_columns, table, res_index, src_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
