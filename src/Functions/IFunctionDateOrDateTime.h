@@ -18,7 +18,6 @@
 #include <Interpreters/Context.h>
 
 
-
 namespace DB
 {
 
