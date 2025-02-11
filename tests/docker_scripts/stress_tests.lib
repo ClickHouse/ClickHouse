@@ -194,6 +194,7 @@ function stop_server()
       kill -TERM "$(pidof gdb)" ||:
 
       # If gdb run was fast we could have a false detection of hung check so to remove noise we add sleep just in case
+      kill -s CONT "$pid" ||:
       kill -s 0 "$pid" && sleep 60 
 
       # The server could finally stop while we were terminating gdb, let's recheck if it's still running
