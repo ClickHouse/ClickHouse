@@ -1196,7 +1196,7 @@ protected:
 private:
     /// Columns and secondary indices sizes can be calculated lazily.
     mutable std::mutex columns_and_secondary_inices_sizes_mutex;
-    mutable bool are_columns_and_secondary_inices_sizes_calculated;
+    mutable bool are_columns_and_secondary_inices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.

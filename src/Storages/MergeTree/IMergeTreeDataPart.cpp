@@ -1245,7 +1245,7 @@ void IMergeTreeDataPart::removeMetadataVersion()
     getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
 }
 
-CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec()
+CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 

@@ -751,7 +751,7 @@ private:
 
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
-    CompressionCodecPtr detectDefaultCompressionCodec();
+    CompressionCodecPtr detectDefaultCompressionCodec() const;
 
     void incrementStateMetric(MergeTreeDataPartState state) const;
     void decrementStateMetric(MergeTreeDataPartState state) const;
