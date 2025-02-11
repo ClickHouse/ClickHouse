@@ -200,7 +200,7 @@ For queries that are completed quickly because of a LIMIT, you can set a lower â
 
 The smaller the `max_threads` value, the less memory is consumed.
 )", 0) \
-    DECLARE(Bool, use_concurrency_control, false, R"(
+    DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
 )", 0) \
     DECLARE(MaxThreads, max_download_threads, 4, R"(
