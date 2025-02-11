@@ -211,7 +211,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const cha
     }
 }
 
-ThreadGroupSwitcher::~ThreadGroupSwitcher() noexcept
+ThreadGroupSwitcher::~ThreadGroupSwitcher()
 {
     if (!thread_group)
         return;
