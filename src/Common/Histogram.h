@@ -1,28 +1,26 @@
 #pragma once
 
+#include <base/types.h>
+#include <Common/SipHash.h>
+
 #include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
-#include "Common/SipHash.h"
-#include "base/types.h"
+
 
 namespace Histogram
 {
     using Value = Int64;
-    using Counter = UInt64;
-    using AtomicCounter = std::atomic<Counter>;
-    using AtomicCounters = std::vector<AtomicCounter>;
-    using Sum = Value;
-    using AtomicSum = std::atomic<Value>;
     using Buckets = std::vector<Value>;
-    using Label = String;
-    using LabelValue = String;
-    using Labels = std::vector<Label>;
-    using LabelValues = std::vector<LabelValue>;
+    using Labels = std::vector<String>;
+    using LabelValues = std::vector<String>;
 
     struct Metric
     {
+        using Counter = UInt64;
+        using Sum = Value;
+
         explicit Metric(const Buckets & buckets_) : buckets(buckets_), counters(buckets.size() + 1), sum() {}
 
         void observe(Value value)
@@ -46,6 +44,9 @@ namespace Histogram
         }
 
     private:
+        using AtomicCounters = std::vector<std::atomic<Counter>>;
+        using AtomicSum = std::atomic<Value>;
+
         const Buckets & buckets;
         AtomicCounters counters;
         AtomicSum sum;
@@ -109,7 +110,7 @@ namespace Histogram
     struct MetricRecord
     {
         MetricRecord(String name_, String documentation_, Buckets buckets, Labels labels)
-        : name(name_), documentation(documentation_), family(std::move(buckets), std::move(labels)) {}
+        : name(std::move(name_)), documentation(std::move(documentation_)), family(std::move(buckets), std::move(labels)) {}
 
         String name;
         String documentation;
@@ -131,7 +132,7 @@ namespace Histogram
         {
             std::lock_guard lock(mutex);
             registry.push_back(
-                std::make_shared<MetricRecord>(name, documentation, std::move(buckets), std::move(labels))
+                std::make_shared<MetricRecord>(std::move(name), std::move(documentation), std::move(buckets), std::move(labels))
             );
             return registry.back()->family;
         }
