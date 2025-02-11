@@ -1,4 +1,4 @@
-#include <Disks/DiskFomAST.h>
+#include <Disks/DiskFromAST.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
@@ -122,7 +122,7 @@ public:
 };
 
 
-std::string DiskFomAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach)
+std::string DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast, ContextPtr context, bool attach)
 {
     if (!isDiskFunction(disk_function_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a disk function");
@@ -136,7 +136,7 @@ std::string DiskFomAST::createCustomDisk(const ASTPtr & disk_function_ast, Conte
     return assert_cast<const ASTLiteral &>(*ast).value.safeGet<String>();
 }
 
-void DiskFomAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)
+void DiskFromAST::ensureDiskIsNotCustom(const std::string & disk_name, ContextPtr context)
 {
     auto disk = context->getDisk(disk_name);
 
