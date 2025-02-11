@@ -224,6 +224,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"backup_restore_keeper_max_retries_while_initializing", 0, 20, "New setting."},
             {"backup_restore_keeper_max_retries_while_handling_error", 0, 20, "New setting."},
             {"backup_restore_finish_timeout_after_error_sec", 0, 180, "New setting."},
+            {"use_concurrency_control", true, false, "Disable concurrency control by default to avoid unfair CPU distribution between SELECTs and INSERTS."},
         });
         addSettingsChanges(settings_changes_history, "24.9",
         {
