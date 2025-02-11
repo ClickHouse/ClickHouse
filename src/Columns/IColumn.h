@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
 #include <Common/COW.h>
@@ -34,6 +35,10 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -47,8 +52,6 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
-using EqualRanges = std::vector<EqualRange>;
-
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -59,9 +62,6 @@ struct ColumnCheckpoint
     explicit ColumnCheckpoint(size_t size_) : size(size_) {}
     virtual ~ColumnCheckpoint() = default;
 };
-
-using ColumnCheckpointPtr = std::shared_ptr<ColumnCheckpoint>;
-using ColumnCheckpoints = std::vector<ColumnCheckpointPtr>;
 
 struct ColumnCheckpointWithNested : public ColumnCheckpoint
 {
@@ -143,6 +143,8 @@ public:
 
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
+
+    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -348,7 +350,7 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-    using Filter = PaddedPODArray<UInt8>;
+    using Filter = IColumnFilter;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
@@ -361,7 +363,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = PaddedPODArray<size_t>;
+    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -558,22 +560,22 @@ public:
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback) {}
+    virtual void forEachMutableSubcolumn(MutableColumnCallback) {}
 
-    /// Default implementation calls the mutable overload using const_cast.
+    /// Note: If you implement forEachSubcolumn(Recursively), you must also implement forEachMutableSubcolumn(Recursively), and vice versa
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
     using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
+    virtual void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback) {}
 
     /// Default implementation calls the mutable overload using const_cast.
     using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
@@ -630,7 +632,7 @@ public:
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
+        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 
@@ -751,13 +753,6 @@ private:
     }
 #endif
 };
-
-using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr = IColumn::MutablePtr;
-using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutableColumnPtr>;
-
-using ColumnRawPtrs = std::vector<const IColumn *>;
 
 
 template <typename ... Args>

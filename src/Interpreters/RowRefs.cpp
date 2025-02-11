@@ -1,7 +1,9 @@
 #include <Interpreters/RowRefs.h>
 
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>

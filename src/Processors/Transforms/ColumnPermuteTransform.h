@@ -1,11 +1,9 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
-#include <vector>
+#include <Core/Names.h>
 #include <Processors/ISimpleTransform.h>
-#include <Poco/Logger.h>
-#include <Interpreters/Set.h>
+
+#include <vector>
 
 namespace DB
 {
