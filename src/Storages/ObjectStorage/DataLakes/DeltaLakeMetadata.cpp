@@ -6,9 +6,9 @@
 #if USE_PARQUET
 
 #include <Common/logger_useful.h>
-#include <Columns/ColumnString.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
