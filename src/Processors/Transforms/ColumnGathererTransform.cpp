@@ -21,6 +21,13 @@ namespace ErrorCodes
     extern const int RECEIVED_EMPTY_DATA;
 }
 
+void ColumnGathererStream::Source::update(ColumnPtr column_)
+{
+    column = std::move(column_);
+    size = column->size();
+    pos = 0;
+}
+
 ColumnGathererStream::ColumnGathererStream(
     size_t num_inputs,
     ReadBuffer & row_sources_buf_,

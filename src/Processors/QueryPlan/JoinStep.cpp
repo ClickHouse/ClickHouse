@@ -1,4 +1,5 @@
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/JoinStep.h>
