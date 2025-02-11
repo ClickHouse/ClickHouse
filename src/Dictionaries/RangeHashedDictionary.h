@@ -31,7 +31,6 @@
 
 #include <Columns/ColumnNullable.h>
 
-#include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB
