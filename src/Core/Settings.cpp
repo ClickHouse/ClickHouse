@@ -2481,16 +2481,12 @@ See also:
 - [Join table engine](../../engines/table-engines/special/join.md)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, JoinAlgorithm::DEFAULT, R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
 Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
 Possible values:
-
-- default
-
- This is the equivalent of `hash`, `parallel_hash` or `direct`, if possible (same as `direct,parallel_hash,hash`)
 
 - grace_hash
 
@@ -2537,6 +2533,12 @@ Possible values:
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+
+- default (deprecated)
+
+ Legacy value, please don't use anymore.
+ Same as `direct,hash`, i.e. try to use direct join and hash join join (in this order).
+
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.

@@ -73,6 +73,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
             {"use_concurrency_control", false, true, "Enable concurrency control by default"},
+            {"join_algorithm", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"},
             /// Release closed. Please use 25.1
         }
     },
