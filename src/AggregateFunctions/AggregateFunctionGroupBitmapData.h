@@ -1,11 +1,10 @@
 #pragma once
 
-#include <algorithm>
 #include <memory>
-#include <boost/noncopyable.hpp>
-#include <base/sort.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <base/sort.h>
+#include <boost/noncopyable.hpp>
 #include <Common/HashTable/SmallTable.h>
 #include <Common/PODArray.h>
 
@@ -22,10 +21,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int INCORRECT_DATA;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
+extern const int TOO_LARGE_ARRAY_SIZE;
+extern const int INCORRECT_DATA;
+extern const int NOT_IMPLEMENTED;
+extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 enum BitmapKind
@@ -128,8 +128,7 @@ public:
             if (size == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect size (0) in groupBitmap.");
             if (size > max_size)
-                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                                "Too large array size in groupBitmap (maximum: {})", max_size);
+                throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in groupBitmap (maximum: {})", max_size);
 
             /// TODO: this is unnecessary copying - it will be better to read and deserialize in one pass.
             std::unique_ptr<char[]> buf(new char[size]);
@@ -582,10 +581,10 @@ public:
             UInt64 count = 0;
             UInt64 offset_count = 0;
             auto it = small.begin();
-            for (;it != small.end() && offset_count < offset; ++it)
+            for (; it != small.end() && offset_count < offset; ++it)
                 ++offset_count;
 
-            for (;it != small.end() && count < limit; ++it, ++count)
+            for (; it != small.end() && count < limit; ++it, ++count)
                 r1.add(it->getValue());
             return count;
         }
@@ -656,11 +655,11 @@ public:
         }
     }
 
-    inline UInt16 containerToUInt32Array(const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> & ans) const
+    inline UInt16 containerToUInt32Array(const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> & res) const
     {
         if (sizeof(T) >= 8)
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupport Roaring64Map");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported Roaring64Map");
         }
         if (isSmall())
         {
@@ -670,19 +669,19 @@ public:
                     values.insert((x.getValue() & 0xFFFFULL) + base);
             UInt16 num_added = 0;
             for (auto & value : values)
-                ans[num_added++] = value;
+                res[num_added++] = value;
             return num_added;
         }
         else
         {
-            if (ans.size() < 65536)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PaddedPODArray<UInt32> ans size must >= 65536");
-            auto * rb32 = reinterpret_cast<roaring::Roaring*>(roaring_bitmap.get());
+            if (res.size() < 65536)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "PaddedPODArray<UInt32> res size must >= 65536");
+            auto * rb32 = reinterpret_cast<roaring::Roaring *>(roaring_bitmap.get());
             auto * ra = &rb32->roaring.high_low_container;
             int idx = roaring::internal::ra_get_index(ra, container_id);
             if (idx < 0)
                 return 0;
-            UInt16 num_added = roaring::internal::container_to_uint32_array(ans.data(), ra->containers[idx], ra->typecodes[idx], base);
+            UInt16 num_added = roaring::internal::container_to_uint32_array(res.data(), ra->containers[idx], ra->typecodes[idx], base);
             return num_added;
         }
     }
@@ -691,7 +690,7 @@ public:
     {
         if (sizeof(T) >= 8)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport Roaring64Map");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         }
         if (isSmall())
         {
@@ -705,10 +704,11 @@ public:
         }
         else
         {
-            auto *rb32 = reinterpret_cast<roaring::Roaring*>(roaring_bitmap.get());
-            auto *ra = &rb32->roaring.high_low_container;
+            auto * rb32 = reinterpret_cast<roaring::Roaring *>(roaring_bitmap.get());
+            auto * ra = &rb32->roaring.high_low_container;
             int idx = roaring::internal::ra_get_index(ra, container_id);
-            if (idx < 0) return 0;
+            if (idx < 0)
+                return 0;
             return roaring::internal::container_get_cardinality(ra->containers[idx], ra->typecodes[idx]);
         }
     }
@@ -717,7 +717,7 @@ public:
     {
         if (sizeof(T) >= 8)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport Roaring64Map");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         }
         std::set<UInt16> container_ids;
         if (isSmall())
@@ -727,8 +727,8 @@ public:
         }
         else
         {
-            auto *rb32 = reinterpret_cast<roaring::Roaring*>(roaring_bitmap.get());
-            auto *ra = &rb32->roaring.high_low_container;
+            auto * rb32 = reinterpret_cast<roaring::Roaring *>(roaring_bitmap.get());
+            auto * ra = &rb32->roaring.high_low_container;
             for (int i = 0; i < ra->size; ++i)
             {
                 container_ids.insert(ra->keys[i]);
@@ -741,33 +741,36 @@ public:
     {
         if (sizeof(T) >= 8)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport Roaring64Map");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         }
         if (isSmall())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport SmallSet in raGetContainer");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported SmallSet in raGetContainer");
         }
         else
         {
-            auto * rb32 = reinterpret_cast<roaring::Roaring*>(roaring_bitmap.get());
+            auto * rb32 = reinterpret_cast<roaring::Roaring *>(roaring_bitmap.get());
             auto * ra = &rb32->roaring.high_low_container;
             int idx = roaring::internal::ra_get_index(ra, container_id);
-            if (idx < 0) return nullptr;
+            if (idx < 0)
+                return nullptr;
             return roaring::internal::ra_get_container_at_index(ra, idx, typecode);
         }
     }
 
-    inline roaring::internal::container_t * containerAnd(
-        const  RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
-        const UInt16 & container_id, uint8_t * result_type) const
+    inline roaring::internal::container_t *
+    containerAnd(const RoaringBitmapWithSmallSet<T, small_set_size> * rhs, const UInt16 & container_id, uint8_t * result_type) const
     {
         if (isSmall() || rhs->isSmall())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport SmallSet");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported SmallSet");
         uint8_t type1;
         uint8_t type2;
         roaring::internal::container_t * c1 = this->raGetContainer(container_id, &type1);
         roaring::internal::container_t * c2 = rhs->raGetContainer(container_id, &type2);
-        if (!c1 || !c2) { return nullptr; }
+        if (!c1 || !c2)
+        {
+            return nullptr;
+        }
         roaring::internal::container_t * c = roaring::internal::container_and(c1, type1, c2, type2, result_type);
         if (roaring::internal::container_nonzero_cardinality(c, *result_type))
         {
@@ -779,8 +782,10 @@ public:
 
     // low significant
     inline UInt16 twoSmallSetContainerAndToUInt32Array(
-        const RoaringBitmapWithSmallSet<T, small_set_size> * rhs, const UInt16 & container_id,
-        const UInt32 & base, PaddedPODArray<UInt32> * output) const
+        const RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
+        const UInt16 & container_id,
+        const UInt32 & base,
+        PaddedPODArray<UInt32> * output) const
     {
         if (!this->isSmall() || !rhs->isSmall())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "this and mask must be small set.");
@@ -798,8 +803,10 @@ public:
 
     // low significant
     inline UInt16 smallSetAndRbContainerToUInt32Array(
-        const RoaringBitmapWithSmallSet<T, small_set_size> * rhs, const UInt16 & container_id,
-        const UInt32 & base, PaddedPODArray<UInt32> * output) const
+        const RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
+        const UInt16 & container_id,
+        const UInt32 & base,
+        PaddedPODArray<UInt32> * output) const
     {
         if (!(this->isSmall() ^ rhs->isSmall()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "this and rhs must has one and only one small set");
@@ -808,11 +815,13 @@ public:
 
         uint8_t rhs_c_typecode;
         roaring::internal::container_t * rhs_c = rhs->raGetContainer(container_id, &rhs_c_typecode);
-        if (!rhs_c) return 0;
+        if (!rhs_c)
+            return 0;
         int num_added = 0;
         for (const auto lhs_value : this->small)
         {
-            if (static_cast<UInt32>(lhs_value.getValue()) >> 16 == container_id && roaring::internal::container_contains(rhs_c, lhs_value.getValue() & 0xFFFFULL, rhs_c_typecode))
+            if (static_cast<UInt32>(lhs_value.getValue()) >> 16 == container_id
+                && roaring::internal::container_contains(rhs_c, lhs_value.getValue() & 0xFFFFULL, rhs_c_typecode))
                 (*output)[num_added++] = lhs_value.getValue() & 0xFFFFULL + base;
         }
         return num_added;
@@ -820,12 +829,15 @@ public:
 
     // low significant
     inline UInt16 towRbContainerAndToUInt32Array(
-        const RoaringBitmapWithSmallSet<T, small_set_size> * rhs, const UInt16 & container_id,
-        const UInt32 & base, PaddedPODArray<UInt32> * output) const
+        const RoaringBitmapWithSmallSet<T, small_set_size> * rhs,
+        const UInt16 & container_id,
+        const UInt32 & base,
+        PaddedPODArray<UInt32> * output) const
     {
         uint8_t result_type;
         roaring::internal::container_t * c = this->containerAnd(rhs, container_id, &result_type);
-        if (!c) return 0;
+        if (!c)
+            return 0;
         UInt16 result_size = roaring::internal::container_to_uint32_array(output->data(), c, result_type, base);
         roaring::internal::container_free(c, result_type);
         return result_size;
@@ -833,8 +845,7 @@ public:
 
     // low significant
     inline UInt16 containerAndToUInt32Array(
-        const RoaringBitmapWithSmallSet * rhs, const UInt16 & container_id,
-        const UInt32 & base, PaddedPODArray<UInt32> * output) const
+        const RoaringBitmapWithSmallSet * rhs, const UInt16 & container_id, const UInt32 & base, PaddedPODArray<UInt32> * output) const
     {
         if (output->size() < 65536)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "PaddedPODArray<UInt32> * output size must >= 65536");
@@ -849,26 +860,30 @@ public:
     inline void raSetContainer(roaring::internal::container_t * ctn, const UInt16 & container_id, const uint8_t & type)
     {
         if (sizeof(T) >= 8)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupport Roaring64Map");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported Roaring64Map");
         if (isSmall())
             toLarge();
 
-        auto *rb32 = reinterpret_cast<roaring::Roaring*>(roaring_bitmap.get());
+        auto * rb32 = reinterpret_cast<roaring::Roaring *>(roaring_bitmap.get());
         auto ctn_idx = roaring::internal::ra_get_index(&rb32->roaring.high_low_container, container_id);
 
-        UInt32 card = type == ARRAY_CONTAINER_TYPE ? reinterpret_cast<roaring::internal::array_container_t*>(ctn)->cardinality :
-                reinterpret_cast<roaring::internal::bitset_container_t*>(ctn)->cardinality;
-        if (card == 0) {
-            if (ctn_idx >= 0) {
+        UInt32 card = type == ARRAY_CONTAINER_TYPE ? reinterpret_cast<roaring::internal::array_container_t *>(ctn)->cardinality
+                                                   : reinterpret_cast<roaring::internal::bitset_container_t *>(ctn)->cardinality;
+        if (card == 0)
+        {
+            if (ctn_idx >= 0)
+            {
                 roaring::internal::ra_remove_at_index_and_free(&rb32->roaring.high_low_container, ctn_idx);
             }
             roaring::internal::container_free(ctn, type);
             return;
         }
-        if (type == ARRAY_CONTAINER_TYPE) {
-            array_container_shrink_to_fit(reinterpret_cast<roaring::internal::array_container_t*>(ctn));
+        if (type == ARRAY_CONTAINER_TYPE)
+        {
+            array_container_shrink_to_fit(reinterpret_cast<roaring::internal::array_container_t *>(ctn));
         }
-        if (ctn_idx >= 0) {
+        if (ctn_idx >= 0)
+        {
             uint8_t old_type = 0;
             auto * c = roaring::internal::ra_get_container_at_index(&rb32->roaring.high_low_container, ctn_idx, &old_type);
             roaring::internal::container_free(c, old_type);
@@ -877,7 +892,6 @@ public:
         }
         roaring::internal::ra_insert_new_key_value_at(&rb32->roaring.high_low_container, -ctn_idx - 1, container_id, ctn, type);
     }
-
 };
 
 template <typename T>

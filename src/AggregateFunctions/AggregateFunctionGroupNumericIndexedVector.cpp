@@ -15,6 +15,8 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -131,7 +133,7 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupport first parameter of AggregateFunction {}", name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported first parameter of AggregateFunction {}", name);
     }
 
     if (!res)
