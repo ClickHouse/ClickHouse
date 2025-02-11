@@ -12,6 +12,8 @@ using FinalizeCallback = std::function<void(size_t bytes_count)>;
 
 /// Stores data in S3/HDFS and adds the object path and object size to metadata file on local FS.
 /// Optimization to avoid unnecessary request to objects storage: if do_not_write_empty_ is true and the file is empty it is not written.
+/// NOTE: this optimizations depends on the disk type so the caller decides if it is safe to use it.
+/// E.g. DiskS3 with metadata in local files and the data in ObjectStorage can have empty list of blobs in metadata file.
 class WriteBufferWithFinalizeCallback final : public WriteBufferFromFileDecorator
 {
 public:
