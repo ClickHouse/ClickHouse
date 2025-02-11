@@ -22,7 +22,7 @@ cffi==1.16.0
 charset-normalizer==3.3.2
 click==8.1.7
 confluent-kafka==2.3.0
-cryptography==42.0.0
+cryptography==44.0.1
 datacompy==0.7.3
 dbus-python==1.2.18
 delta-spark==2.3.0
