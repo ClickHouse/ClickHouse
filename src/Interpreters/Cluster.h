@@ -134,7 +134,7 @@ public:
 
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
-        
+
         String bind_host;
 
         Priority priority{1};

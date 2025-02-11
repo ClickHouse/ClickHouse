@@ -156,7 +156,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
-                if(!bind_host.empty()) {
+                if (!bind_host.empty()) {
                     Poco::Net::SocketAddress socket_address(bind_host, 0);
 
                     static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
