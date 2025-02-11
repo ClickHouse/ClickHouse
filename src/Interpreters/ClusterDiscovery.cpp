@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 
 namespace FailPoints
@@ -110,6 +111,54 @@ private:
     bool stop_flag = false;
 };
 
+template <typename T>
+class ClusterDiscovery::Flags
+{
+public:
+    void set(const T & key, bool value = true)
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        flags[key] = value;
+        any_need_update |= value;
+        cv.notify_one();
+    }
+
+    void remove(const T & key)
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        flags.erase(key);
+    }
+
+    std::unordered_map<T, bool> wait(std::chrono::milliseconds timeout, bool & finished)
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait_for(lk, timeout, [this]() -> bool { return any_need_update || stop_flag; });
+        finished = stop_flag;
+
+        any_need_update = false;
+        auto res = flags;
+        for (auto & f : flags)
+            f.second = false;
+        return res;
+    }
+
+    void stop()
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        stop_flag = true;
+        cv.notify_one();
+    }
+
+private:
+    std::condition_variable cv;
+    std::mutex mu;
+
+    /// flag indicates that update is required
+    std::unordered_map<T, bool> flags;
+    bool any_need_update = true;
+    bool stop_flag = false;
+};
+
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
     ContextPtr context_,
@@ -123,22 +172,59 @@ ClusterDiscovery::ClusterDiscovery(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
+    multicluster_discovery_paths = std::make_shared<std::vector<std::shared_ptr<MulticlusterDiscovery>>>();
+
     for (const auto & key : config_keys)
     {
         String cluster_config_prefix = config_prefix + "." + key + ".discovery";
         if (!config.has(cluster_config_prefix))
             continue;
 
-        String zk_name_and_root = config.getString(cluster_config_prefix + ".path");
-        if (zk_name_and_root.empty())
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "ZooKeeper path for cluster '{}' is empty", key);
-        String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
-        String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
+        String zk_name_and_root = config.getString(cluster_config_prefix + ".path", "");
+        String zk_multicluster_name_and_root = config.getString(cluster_config_prefix + ".multicluster_root_path", "");
+        bool is_observer = ConfigHelper::getBool(config, cluster_config_prefix + ".observer");
 
         const auto & password = config.getString(cluster_config_prefix + ".password", "");
         const auto & cluster_secret = config.getString(cluster_config_prefix + ".secret", "");
         if (!password.empty() && !cluster_secret.empty())
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Both 'password' and 'secret' are specified for cluster '{}', only one option can be used at the same time", key);
+
+        if (!zk_multicluster_name_and_root.empty())
+        {
+            if (!zk_name_and_root.empty())
+                throw Exception(
+                    ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
+                    "Autodiscovery cluster node {} has 'path' and 'multicluster_root_path' subnodes simultaneously",
+                    key);
+            if (!is_observer)
+                throw Exception(
+                    ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+                    "Autodiscovery cluster node {} must be in observer mode",
+                    key);
+
+            String zk_root = zkutil::extractZooKeeperPath(zk_multicluster_name_and_root, true);
+            String zk_name = zkutil::extractZooKeeperName(zk_multicluster_name_and_root);
+
+            auto mcd = std::make_shared<MulticlusterDiscovery>(
+                    /* zk_name */ zk_name,
+                    /* zk_path */ zk_root,
+                    /* is_secure_connection */ config.getBool(cluster_config_prefix + ".secure", false),
+                    /* username */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
+                    /* password */ password, 
+                    /* cluster_secret */ cluster_secret
+                );
+
+            multicluster_discovery_paths->push_back(
+                mcd
+            );
+            continue;
+        }
+
+        if (zk_name_and_root.empty())
+            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "ZooKeeper path for cluster '{}' is empty", key);
+
+        String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
+        String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
         clusters_info.emplace(
             key,
@@ -153,7 +239,7 @@ ClusterDiscovery::ClusterDiscovery(
                 /* port= */ context->getTCPPort(),
                 /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
                 /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
-                /* observer_mode= */ ConfigHelper::getBool(config, cluster_config_prefix + ".observer"),
+                /* observer_mode= */ is_observer,
                 /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
             )
         );
@@ -165,7 +251,8 @@ ClusterDiscovery::ClusterDiscovery(
         clusters_info_names.emplace_back(e.first);
 
     LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
-    clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
+    clusters_to_update = std::make_shared<UpdateConcurrentFlags>(clusters_info_names.begin(), clusters_info_names.end());
+    dynamic_clusters_to_update = std::make_shared<UpdateFlags>();
 
     /// Init get_nodes_callbacks after init clusters_to_update.
     for (const auto & e : clusters_info)
@@ -181,10 +268,33 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        const String & zk_root,
                                        const String & cluster_name,
                                        int * version,
-                                       bool set_callback)
+                                       bool set_callback,
+                                       size_t zk_root_index)
 {
     Coordination::Stat stat;
-    Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? get_nodes_callbacks[cluster_name] : Coordination::WatchCallbackPtr{});
+    Strings nodes;
+    if (zk_root_index != 0)
+    {
+        auto dynamic_callback = get_dynamic_nodes_callbacks.find(cluster_name);
+        if (dynamic_callback == get_dynamic_nodes_callbacks.end())
+        {
+            auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
+                cluster_name,
+                zk_root_index,
+                my_clusters_to_update = dynamic_clusters_to_update,
+                my_discovery_paths = multicluster_discovery_paths
+                ](auto)
+                {
+                    (*my_discovery_paths)[zk_root_index - 1]->need_update = true;
+                    my_clusters_to_update->set(cluster_name);
+                });
+            auto res = get_dynamic_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
+            dynamic_callback = res.first;
+        }
+        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? *(dynamic_callback->second) : Coordination::WatchCallback{});
+    }
+    else
+        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? get_nodes_callbacks[cluster_name] : Coordination::WatchCallbackPtr{});
     if (version)
         *version = stat.cversion;
     return nodes;
@@ -293,21 +403,20 @@ static bool contains(const Strings & list, const String & value)
 
 /// Reads data from zookeeper and tries to update cluster.
 /// Returns true on success (or no update required).
-bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
+bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 {
     LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
 
     auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
 
     int start_version;
-    Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
+    Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.zk_root_index);
     auto & nodes_info = cluster_info.nodes_info;
-
     auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
     {
         /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
         int current_version;
-        getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true);
+        getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.zk_root_index);
 
         if (current_version != start_version)
         {
@@ -339,22 +448,34 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     }
 
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
-    if (nodes_info.empty())
-    {
-        LOG_WARNING(log, "Can't get nodes info for '{}'", cluster_info.name);
-        return false;
-    }
 
     if (bool ok = on_exit(); !ok)
         return false;
 
     LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
-    auto cluster = makeCluster(cluster_info);
-
-    std::lock_guard lock(mutex);
-    cluster_impls[cluster_info.name] = cluster;
+    if (nodes_info.empty())
+    {
+        removeCluster(cluster_info.name);
+    }
+    else
+    {
+        auto cluster = makeCluster(cluster_info);
+        std::lock_guard lock(mutex);
+        cluster_impls[cluster_info.name] = cluster;
+    }
     return true;
+}
+
+void ClusterDiscovery::removeCluster(const String & name)
+{
+    {
+        std::lock_guard lock(mutex);
+        cluster_impls.erase(name);
+    }
+    dynamic_clusters_info.erase(name);
+    dynamic_clusters_to_update->remove(name);
+    LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
 }
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
@@ -394,19 +515,123 @@ void ClusterDiscovery::initialUpdate()
     {
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
         registerInZk(zk, info);
-        if (!updateCluster(info))
+        if (!upsertCluster(info))
         {
             LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", info.name);
             clusters_to_update->set(info.name);
         }
     }
+
+    for (auto & path : (*multicluster_discovery_paths))
+    {
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(path->zk_name);
+
+        zk->createAncestors(path->zk_path);
+        zk->createIfNotExists(path->zk_path, "");
+
+        auto watch_callback = [&path](auto) { path->need_update = true; };
+        zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
+    }
+
+    findDynamicClusters(dynamic_clusters_info);
+
+    for (auto & [_, info] : dynamic_clusters_info)
+    {
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
+        if (!upsertCluster(info))
+        {
+            LOG_WARNING(log, "Error on initial dynamic cluster '{}' update, will retry in background", info.name);
+            dynamic_clusters_to_update->set(info.name);
+        }
+        else
+            dynamic_clusters_to_update->set(info.name, false);
+    }
+
     LOG_DEBUG(log, "Initialized");
     is_initialized = true;
 }
 
+void ClusterDiscovery::findDynamicClusters(
+    std::unordered_map<String, ClusterDiscovery::ClusterInfo> & info,
+    std::unordered_set<size_t> * unchanged_roots)
+{
+    using namespace std::chrono_literals;
+
+    constexpr auto force_update_interval = 2min;
+
+    size_t zk_root_index = 0;
+    
+    for (auto & path : (*multicluster_discovery_paths))
+    {
+        ++zk_root_index;
+
+        if (unchanged_roots)
+        {
+            if (!path->need_update.exchange(false))
+            {
+                /// force updating periodically
+                bool force_update = path->watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
+                if (!force_update)
+                {
+                    unchanged_roots->insert(zk_root_index);
+                    continue;
+                }
+            }
+        }
+
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(path->zk_name);
+
+        auto clusters = zk->getChildren(path->zk_path);
+
+        for (const auto & cluster : clusters)
+        {
+            if (clusters_info.count(cluster))
+            { /// Not a warning - node can register itsefs in one cluster and discover other clusters
+                LOG_TRACE(log, "Found dynamic duplicate of cluster '{}' in config and Keeper, skipped", cluster);
+                continue;
+            }
+
+            if (info.count(cluster))
+            { /// Possible with several root paths, it's a configuration error
+                LOG_WARNING(log, "Found dynamic duplicate of cluster '{}' in Keeper, skipped record by path {}:{}",
+                    cluster, path->zk_name, path->zk_path);
+                continue;
+            }
+
+            auto shards = zk->getChildren(getShardsListPath(path->zk_path + "/" + cluster));
+            if (shards.empty())
+            { /// When node suddenly goes off (crush, etc), ephemeral record in Keeper is removed, but root for cluster is not
+                LOG_TRACE(log, "Empty cluster '{}' in Keeper, skipped", cluster);
+                continue;
+            }
+
+            info.emplace(
+                cluster,
+                ClusterInfo(
+                    /* name_= */ cluster,
+                    /* zk_name_= */ path->zk_name,
+                    /* zk_root_= */ path->zk_path + "/" + cluster,
+                    /* host_name= */ "",
+                    /* username= */ path->username,
+                    /* password= */ path->password,
+                    /* cluster_secret= */ path->cluster_secret,
+                    /* port= */ context->getTCPPort(),
+                    /* secure= */ path->is_secure_connection,
+                    /* shard_id= */ 0,
+                    /* observer_mode= */ true,
+                    /* invisible= */ false,
+                    /* zk_root_index= */ zk_root_index
+                )
+            );
+        }
+
+        path->watch.restart();
+    }
+}
+
 void ClusterDiscovery::start()
 {
-    if (clusters_info.empty())
+    if (clusters_info.empty() && multicluster_discovery_paths->empty())
     {
         LOG_DEBUG(log, "No defined clusters for discovery");
         return;
@@ -467,36 +692,130 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     while (!finished)
     {
         bool all_up_to_date = true;
-        auto & clusters = clusters_to_update->wait(5s, finished);
-        for (auto & [cluster_name, need_update] : clusters)
+
+        if (!multicluster_discovery_paths->empty())
         {
-            auto cluster_info_it = clusters_info.find(cluster_name);
-            if (cluster_info_it == clusters_info.end())
-            {
-                LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
-                continue;
-            }
-            auto & cluster_info = cluster_info_it->second;
+            std::unordered_map<String, ClusterInfo> new_dynamic_clusters_info;
+            std::unordered_set<size_t> unchanged_roots;
+            findDynamicClusters(new_dynamic_clusters_info, &unchanged_roots);
 
-            if (!need_update.exchange(false))
+            std::unordered_set<String> clusters_to_insert;
+            std::unordered_set<String> clusters_to_remove;
+
+            for (const auto & [cluster_name, info] : dynamic_clusters_info)
             {
-                /// force updating periodically
-                bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
-                if (!force_update)
+                auto p = new_dynamic_clusters_info.find(cluster_name);
+                if (p != new_dynamic_clusters_info.end())
+                    new_dynamic_clusters_info.erase(p);
+                else
+                {
+                    if (!unchanged_roots.count(info.zk_root_index))
+                        clusters_to_remove.insert(cluster_name);
+                }
+            }
+            /// new_dynamic_clusters_info now contains only new clusters
+
+            for (const auto & [cluster_name, _] : new_dynamic_clusters_info)
+                clusters_to_insert.insert(cluster_name);
+
+            for (const auto & cluster_name : clusters_to_remove)
+                removeCluster(cluster_name);
+
+            dynamic_clusters_info.merge(new_dynamic_clusters_info);
+
+            auto clusters = dynamic_clusters_to_update->wait(5s, finished);
+            for (auto & [cluster_name, need_update] : clusters)
+            {
+                auto cluster_info_it = clusters_info.find(cluster_name);
+                if (cluster_info_it == clusters_info.end())
+                {
+                    cluster_info_it = dynamic_clusters_info.find(cluster_name);
+                    if (cluster_info_it == dynamic_clusters_info.end())
+                    {
+                        LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
+                        continue;
+                    }
+                }
+                auto & cluster_info = cluster_info_it->second;
+
+                if (!need_update)
+                {
+                    /// force updating periodically
+                    bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
+                    if (!force_update)
+                        continue;
+                }
+
+                if (upsertCluster(cluster_info))
+                {
+                    cluster_info.watch.restart();
+                }
+                else
+                {
+                    all_up_to_date = false;
+                }
+            }
+
+            for (const auto & cluster_name : clusters_to_insert)
+            {
+                auto cluster_info_it = dynamic_clusters_info.find(cluster_name);
+                if (cluster_info_it == dynamic_clusters_info.end())
+                {
+                    LOG_ERROR(log, "Unknown dynamic cluster '{}'", cluster_name);
                     continue;
+                }
+                auto & cluster_info = cluster_info_it->second;
+                if (upsertCluster(cluster_info))
+                {
+                    cluster_info.watch.restart();
+                    LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
+                }
+                else
+                {
+                    all_up_to_date = false;
+                    /// no need to trigger convar, will retry after timeout in `wait`
+                    clusters_to_update->set(cluster_name);
+                    LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
+                }
             }
+        }
 
-            if (updateCluster(cluster_info))
+        {
+            auto & clusters = clusters_to_update->wait(5s, finished);
+            for (auto & [cluster_name, need_update] : clusters)
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
-            }
-            else
-            {
-                all_up_to_date = false;
-                /// no need to trigger convar, will retry after timeout in `wait`
-                need_update = true;
-                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                auto cluster_info_it = clusters_info.find(cluster_name);
+                if (cluster_info_it == clusters_info.end())
+                {
+                    cluster_info_it = dynamic_clusters_info.find(cluster_name);
+                    if (cluster_info_it == dynamic_clusters_info.end())
+                    {
+                        LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
+                        continue;
+                    }
+                }
+                auto & cluster_info = cluster_info_it->second;
+
+                if (!need_update.exchange(false))
+                {
+                    /// force updating periodically
+                    bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
+                    if (!force_update)
+                        continue;
+                }
+
+                if (upsertCluster(cluster_info))
+                {
+                    cluster_info.watch.restart();
+                    LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+                }
+                else
+                {
+                    all_up_to_date = false;
+                    /// no need to trigger convar, will retry after timeout in `wait`
+                    need_update = true;
+                    LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                }
             }
         }
 
