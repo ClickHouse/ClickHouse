@@ -1813,6 +1813,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
     }
+
 }
 
 }

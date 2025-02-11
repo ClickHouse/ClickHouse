@@ -37,8 +37,11 @@ private:
     };
 
     DetachedPartsStats detached_parts_stats{};
+    UInt64 stuck_mutation_stats;
+    UInt64 pending_mutation_stats;
 
     void updateDetachedPartsStats();
+    void updateMutationStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 
