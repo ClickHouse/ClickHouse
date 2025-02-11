@@ -8,6 +8,7 @@ insert into test select '2149-06-06' from numbers(100);
 
 optimize table test final;
 
+-- { echoOn }
 -- implicit toDateTime (always saturate)
 select count() from test where stamp >= parseDateTimeBestEffort('2024-11-01');
 
