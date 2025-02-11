@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 disk_name="s3_cache_02933"
-$CLICKHOUSE_CLIENT --query "DESCRIBE FILESYSTEM CACHE '${disk_name}'"
+$CLICKHOUSE_CLIENT --query "select background_download_threads, background_download_queue_size_limit from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 config_path_tmp=$config_path.tmp
