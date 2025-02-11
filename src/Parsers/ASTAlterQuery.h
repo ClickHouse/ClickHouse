@@ -82,6 +82,8 @@ public:
 
         MODIFY_COMMENT,
         MODIFY_SQL_SECURITY,
+
+        UNLOCK_SNAPSHOT,
     };
 
     Type type = NO_TYPE;
@@ -254,6 +256,8 @@ public:
     bool isAttachAlter() const;
 
     bool isFetchAlter() const;
+
+    bool isUnlockSnapshot() const;
 
     bool isDropPartitionAlter() const;
 

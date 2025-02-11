@@ -48,6 +48,9 @@ struct BackupFileInfo
     /// This is used for plain backups.
     Strings data_file_copies;
 
+    /// Only used for lightweight snapshot on cloud.
+    String object_key;
+
     struct LessByFileName
     {
         bool operator()(const BackupFileInfo & lhs, const BackupFileInfo & rhs) const { return (lhs.file_name < rhs.file_name); }
