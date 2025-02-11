@@ -33,6 +33,34 @@ def restore_table(backup_name):
 
 
 def test_backup_log():
+    def get_system_backup_log_records(backup_id: int):
+        return instance.query(
+            f"""
+                SELECT
+                    status,
+                    if(status = 'BACKUP_CREATED', throwIf(start_time > end_time), 0),
+                    if(status = 'CREATING_BACKUP', throwIf(end_time != '1970-01-01 00:00:00.000000'), 0),
+                    throwIf(start_time == '1970-01-01 00:00:00.000000'),
+                    error
+                FROM system.backup_log WHERE id='{backup_id}'
+                ORDER BY event_date, event_time_microseconds
+            """
+        )
+
+    def get_system_restore_logs_records(restore_id: int):
+        return instance.query(
+            f"""
+                SELECT
+                    status,
+                    if(status = 'RESTORED', throwIf(start_time > end_time), 0),
+                    if(status = 'RESTORING', throwIf(end_time != '1970-01-01 00:00:00.000000'), 0),
+                    throwIf(start_time == '1970-01-01 00:00:00.000000'),
+                    error
+                FROM system.backup_log
+                WHERE id='{restore_id}'
+                ORDER BY event_date, event_time_microseconds"""
+        )
+
     instance.query("SYSTEM FLUSH LOGS")
     instance.query("drop table system.backup_log")
 
@@ -41,23 +69,23 @@ def test_backup_log():
 
     backup_id = backup_table(backup_name)
     instance.query("SYSTEM FLUSH LOGS")
-    assert instance.query(
-        f"SELECT status, error FROM system.backup_log WHERE id='{backup_id}' ORDER BY event_date, event_time_microseconds"
-    ) == TSV([["CREATING_BACKUP", ""], ["BACKUP_CREATED", ""]])
+    assert get_system_backup_log_records(backup_id) == TSV(
+        [["CREATING_BACKUP", 0, 0, 0, ""], ["BACKUP_CREATED", 0, 0, 0, ""]]
+    )
 
     instance.query("DROP TABLE test.table SYNC")
 
     restore_id = restore_table(backup_name)
     instance.query("SYSTEM FLUSH LOGS")
-    assert instance.query(
-        f"SELECT status, error FROM system.backup_log WHERE id='{restore_id}' ORDER BY event_date, event_time_microseconds"
-    ) == TSV([["RESTORING", ""], ["RESTORED", ""]])
+    assert get_system_restore_logs_records(restore_id) == TSV(
+        [["RESTORING", 0, 0, 0, ""], ["RESTORED", 0, 0, 0, ""]]
+    )
 
     instance.restart_clickhouse()
 
-    assert instance.query(
-        f"SELECT status, error FROM system.backup_log WHERE id='{backup_id}' ORDER BY event_date, event_time_microseconds"
-    ) == TSV([["CREATING_BACKUP", ""], ["BACKUP_CREATED", ""]])
-    assert instance.query(
-        f"SELECT status, error FROM system.backup_log WHERE id='{restore_id}' ORDER BY event_date, event_time_microseconds"
-    ) == TSV([["RESTORING", ""], ["RESTORED", ""]])
+    assert get_system_backup_log_records(backup_id) == TSV(
+        [["CREATING_BACKUP", 0, 0, 0, ""], ["BACKUP_CREATED", 0, 0, 0, ""]]
+    )
+    assert get_system_restore_logs_records(restore_id) == TSV(
+        [["RESTORING", 0, 0, 0, ""], ["RESTORED", 0, 0, 0, ""]]
+    )
