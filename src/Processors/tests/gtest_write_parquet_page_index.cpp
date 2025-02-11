@@ -10,6 +10,7 @@
 #    include <Processors/Executors/PipelineExecutor.h>
 #    include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
 #    include <Processors/ISource.h>
+#    include <Processors/Sources/SourceFromChunks.h>
 #    include <QueryPipeline/QueryPipelineBuilder.h>
 
 #    include <DataTypes/DataTypeNullable.h>

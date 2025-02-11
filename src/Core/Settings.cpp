@@ -6047,6 +6047,9 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
+Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+)", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
@@ -6318,6 +6321,10 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 
             /// If this setting was changed manually, we don't change it
             if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
+                continue;
+
+            /// Don't mark as changed if the value isn't really changed
+            if (get(final_name) == change.previous_value)
                 continue;
 
             BaseSettings::set(final_name, change.previous_value);
