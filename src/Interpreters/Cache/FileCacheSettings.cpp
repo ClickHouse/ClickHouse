@@ -5,6 +5,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/logger_useful.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,7 +13,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <Common/logger_useful.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
