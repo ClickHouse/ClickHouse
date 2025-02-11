@@ -184,7 +184,6 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual std::string getNamespaceType() const { return "namespace"; }
 
-    virtual S3::URI getURL() const { return {}; }
     virtual std::string getEndpoint() const { return {}; }
     virtual Path getFullPath() const { return ""; }
     virtual Path getPath() const = 0;
