@@ -501,6 +501,9 @@ public:
         void applyDelta(const Delta & delta, uint64_t * digest);
         void rollbackDelta(const Delta & delta);
 
+        /// Update digest with new nodes
+        UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
+
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
         void forEachAuthInSession(int64_t session_id, std::function<void(const AuthID &)> func) const;
@@ -562,7 +565,7 @@ public:
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_commit);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise

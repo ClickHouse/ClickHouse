@@ -710,6 +710,10 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
         }
     }
 
+    /// if it's the first time we see that node in the transaction
+    /// we need to subtract it's digest from the point before
+    /// we started the transaction
+    /// at the end of transaction, we add new node digests in updateNodesDigest
     std::visit(
         [&]<typename DeltaType>(const DeltaType & operation)
         {
@@ -722,38 +726,32 @@ void KeeperStorage<Container>::UncommittedState::applyDelta(const Delta & delta,
                 node->copyStats(operation.stat);
                 node->setData(operation.data);
                 acls = operation.acls;
-                if (digest)
-                    *digest += node->getDigest(delta.path);
             }
             else if constexpr (std::same_as<DeltaType, RemoveNodeDelta>)
             {
-                if (digest)
+                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
                     *digest -= node->getDigest(delta.path);
+
                 chassert(node);
                 node = nullptr;
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeStatDelta>)
             {
-                if (digest)
+                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
                     *digest -= node->getDigest(delta.path);
 
                 chassert(node);
                 node->invalidateDigestCache();
                 node->stats = operation.new_stats;
-
-                if (digest)
-                    *digest += node->getDigest(delta.path);
             }
             else if constexpr (std::same_as<DeltaType, UpdateNodeDataDelta>)
             {
-                if (digest)
+                if (digest && !zxid_to_nodes[delta.zxid].contains(node_it))
                     *digest -= node->getDigest(delta.path);
-                assert(node);
+
+                chassert(node);
                 node->invalidateDigestCache();
                 node->setData(operation.new_data);
-
-                if (digest)
-                    *digest += node->getDigest(delta.path);
             }
             else if constexpr (std::same_as<DeltaType, SetACLDelta>)
             {
@@ -856,6 +854,29 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
             zxid_to_nodes.erase(delta.zxid);
         },
         delta.operation);
+}
+
+template <typename Container>
+UInt64 KeeperStorage<Container>::UncommittedState::updateNodesDigest(UInt64 current_digest, UInt64 zxid) const
+{
+    if (!storage.keeper_context->digestEnabled())
+        return current_digest;
+
+    auto nodes_it = zxid_to_nodes.find(zxid);
+    if (nodes_it == zxid_to_nodes.end())
+        return current_digest;
+
+    for (const auto node_it : nodes_it->second)
+    {
+        const auto & [path, uncommitted_node] = *node_it;
+        if (uncommitted_node.node)
+        {
+            uncommitted_node.node->invalidateDigestCache();
+            current_digest += uncommitted_node.node->getDigest(path);
+        }
+    }
+
+    return current_digest;
 }
 
 template<typename Container>
@@ -1130,7 +1151,7 @@ void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int6
         if (!zxids_to_apply.contains(it->zxid))
             continue;
 
-        other.uncommitted_state.applyDelta(*it, nullptr);
+        other.uncommitted_state.applyDelta(*it, /*digest=*/nullptr);
         other.uncommitted_state.deltas.push_back(*it);
     }
 }
@@ -1138,7 +1159,7 @@ void KeeperStorage<Container>::applyUncommittedState(KeeperStorage & other, int6
 template<typename Container>
 Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRange deltas)
 {
-    auto digest_on_commit = keeper_context->digestEnabledOnCommit();
+    auto digest_on_commit = keeper_context->digestEnabled() && keeper_context->digestEnabledOnCommit();
     for (const auto & delta : deltas)
     {
         auto result = std::visit(
@@ -2610,6 +2631,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     const auto & subrequests = zk_request.requests;
     response_errors.reserve(subrequests.size());
 
+    /// we cannot use `digest` directly in case we need to rollback Multi request
     uint64_t current_digest = 0;
     uint64_t * current_digest_ptr = nullptr;
     if (digest)
@@ -2624,7 +2646,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         auto new_subdeltas = callOnConcreteRequestType(
             *subrequests[i],
             [&](const auto & subrequest)
-            { return preprocess(subrequest, storage, zxid, session_id, time, digest, keeper_context); });
+            { return preprocess(subrequest, storage, zxid, session_id, time, /*digest=*/nullptr, keeper_context); });
 
         if (!new_subdeltas.empty())
         {
@@ -3042,6 +3064,9 @@ void KeeperStorage<Container>::preprocessRequest(
         uncommitted_state.addDeltas(std::move(new_deltas));
 
         if (keeper_context->digestEnabled())
+            new_digest = uncommitted_state.updateNodesDigest(new_digest, new_last_zxid);
+
+        if (keeper_context->digestEnabled())
             // if the version of digest we got from the leader is the same as the one this instances has, we can simply copy the value
             // and just check the digest on the commit
             // a mistake can happen while applying the changes to the uncommitted_state so for now let's just recalculate the digest here also
@@ -3420,18 +3445,14 @@ KeeperDigest KeeperStorageBase::getNodesDigest(bool committed, bool lock_transac
 template<typename Container>
 void KeeperStorage<Container>::removeDigest(const Node & node, const std::string_view path)
 {
-    if (keeper_context->digestEnabled())
-        nodes_digest -= node.getDigest(path);
+    nodes_digest -= node.getDigest(path);
 }
 
 template<typename Container>
 void KeeperStorage<Container>::addDigest(const Node & node, const std::string_view path)
 {
-    if (keeper_context->digestEnabled())
-    {
-        node.invalidateDigestCache();
-        nodes_digest += node.getDigest(path);
-    }
+    node.invalidateDigestCache();
+    nodes_digest += node.getDigest(path);
 }
 
 /// Allocate new session id with the specified timeouts
