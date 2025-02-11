@@ -13,6 +13,7 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
