@@ -271,7 +271,7 @@ public:
 private:
     ConcurrencyControlState state;
 
-    enum class Scheduler : uint8_t { RoundRobin , FairRoundRobin };
+    enum class Scheduler : uint8_t { RoundRobin, FairRoundRobin };
     Scheduler scheduler = Scheduler::RoundRobin;
     ConcurrencyControlRoundRobinScheduler round_robin;
     ConcurrencyControlFairRoundRobinScheduler fair_round_robin;
