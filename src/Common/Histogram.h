@@ -8,7 +8,6 @@
 #include <mutex>
 #include <vector>
 
-
 namespace Histogram
 {
     using Value = Int64;
@@ -21,27 +20,10 @@ namespace Histogram
         using Counter = UInt64;
         using Sum = Value;
 
-        explicit Metric(const Buckets & buckets_) : buckets(buckets_), counters(buckets.size() + 1), sum() {}
-
-        void observe(Value value)
-        {
-            const size_t bucket_idx = std::distance(
-                buckets.begin(),
-                std::lower_bound(buckets.begin(), buckets.end(), value)
-            );
-            counters[bucket_idx].fetch_add(1, std::memory_order_relaxed);
-            sum.fetch_add(value, std::memory_order_relaxed);
-        }
-
-        Counter getCounter(size_t idx) const
-        {
-            return counters[idx].load(std::memory_order_relaxed);
-        }
-
-        Sum getSum() const
-        {
-            return sum.load(std::memory_order_relaxed);
-        }
+        explicit Metric(const Buckets & buckets_);
+        void observe(Value value);
+        Counter getCounter(size_t idx) const;
+        Sum getSum() const;
 
     private:
         using AtomicCounters = std::vector<std::atomic<Counter>>;
@@ -55,52 +37,21 @@ namespace Histogram
     struct MetricFamily
     {
     private:
-        struct LabelValuesHash;
+        struct LabelValuesHash
+        {
+            size_t operator()(const LabelValues & label_values) const;
+        };
+        
         using MetricsMap = std::unordered_map<LabelValues, std::shared_ptr<Metric>, LabelValuesHash>;
 
     public:
-
-        explicit MetricFamily(Buckets buckets_, Labels labels_) : buckets(std::move(buckets_)), labels(std::move(labels_)) {}
-
-        Metric & withLabels(LabelValues label_values)
-        {
-            assert(label_values.size() == labels.size());
-            std::lock_guard lock(mutex);
-            auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_shared<Metric>(buckets));
-            return *it->second;
-        }
-
-        MetricsMap getMetrics() const
-        {
-            std::lock_guard lock(mutex);
-            return metrics;
-        }
-
-        const Buckets & getBuckets() const
-        {
-            return buckets;
-        }
-
-        const Labels & getLabels() const
-        {
-            return labels;
-        }
+        explicit MetricFamily(Buckets buckets_, Labels labels_);
+        Metric & withLabels(LabelValues label_values);
+        MetricsMap getMetrics() const;
+        const Buckets & getBuckets() const;
+        const Labels & getLabels() const;
 
     private:
-        struct LabelValuesHash
-        {
-            size_t operator()(const LabelValues & label_values) const
-            {
-                SipHash hash;
-                hash.update(label_values.size());
-                for (const String & label_value : label_values)
-                {
-                    hash.update(label_value);
-                }
-                return hash.get64();
-            }
-        };
-
         mutable std::mutex mutex;
         MetricsMap metrics TSA_GUARDED_BY(mutex);
         const Buckets buckets;
@@ -109,42 +60,24 @@ namespace Histogram
 
     struct MetricRecord
     {
-        MetricRecord(String name_, String documentation_, Buckets buckets, Labels labels)
-        : name(std::move(name_)), documentation(std::move(documentation_)), family(std::move(buckets), std::move(labels)) {}
-
+        MetricRecord(String name_, String documentation_, Buckets buckets, Labels labels);
         String name;
         String documentation;
         MetricFamily family;
     };
+    
     using MetricRecordPtr = std::shared_ptr<MetricRecord>;
     using MetricRecords = std::vector<MetricRecordPtr>;
 
     class Factory
     {
     public:
-        static Factory & instance()
-        {
-            static Factory factory;
-            return factory;
-        }
-
-        MetricFamily & registerMetric(String name, String documentation, Buckets buckets, Labels labels)
-        {
-            std::lock_guard lock(mutex);
-            registry.push_back(
-                std::make_shared<MetricRecord>(std::move(name), std::move(documentation), std::move(buckets), std::move(labels))
-            );
-            return registry.back()->family;
-        }
-
-        MetricRecords getRecords() const
-        {
-            std::lock_guard lock(mutex);
-            return registry;
-        }
+        static Factory & instance();
+        MetricFamily & registerMetric(String name, String documentation, Buckets buckets, Labels labels);
+        MetricRecords getRecords() const;
 
     private:
         mutable std::mutex mutex;
         MetricRecords registry TSA_GUARDED_BY(mutex);
     };
-};
+}
