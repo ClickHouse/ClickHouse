@@ -18,10 +18,11 @@ def start_cluster():
         cluster.shutdown()
 
 
-def test_cow_policy(start_cluster):
+@pytest.mark.parametrize("storage_policy", ["cow_policy_multi_disk", "cow_policy_multi_volume"])
+def test_cow_policy(start_cluster, storage_policy):
     try:
         node.query_with_retry(
-            """
+            f"""
             ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
             (
                 price UInt32,
@@ -41,7 +42,7 @@ def test_cow_policy(start_cluster):
             )
             ENGINE = MergeTree
             ORDER BY (postcode1, postcode2, addr1, addr2)
-            SETTINGS storage_policy = 'cow_policy'
+            SETTINGS storage_policy = '{storage_policy}'
             """
         )
         prev_count = int(node.query("SELECT count() FROM uk_price_paid"))
@@ -51,4 +52,4 @@ def test_cow_policy(start_cluster):
         new_count = int(node.query("SELECT count() FROM uk_price_paid"))
         assert new_count == prev_count + 10
     finally:
-        node.query("DROP TABLE IF EXISTS uk_price_paid")
+        node.query("DROP TABLE IF EXISTS uk_price_paid SYNC")
