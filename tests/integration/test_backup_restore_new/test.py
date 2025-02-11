@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import glob
 import os.path
 import random
@@ -118,10 +119,19 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
     return result
 
 
-BackupInfo = namedtuple(
-    "BackupInfo",
-    "name id status error num_files total_size num_entries uncompressed_size compressed_size files_read bytes_read",
-)
+@dataclass
+class BackupInfo:
+    name: str
+    id: int
+    status: str
+    error: str
+    num_files: int
+    total_size: int
+    num_entries: int
+    uncompressed_size: int
+    compressed_size: int
+    files_read: int
+    bytes_read: int
 
 
 def get_backup_info_from_system_backups(by_id=None, by_name=None):
