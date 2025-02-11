@@ -88,6 +88,10 @@ class Info:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
         return self.workflow.get_secret(name)
 
+    def get_job_report_url(self, latest=False):
+        url = self.get_report_url(latest=latest)
+        return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
+
     def get_report_url(self, latest=False):
         sha = self.env.SHA
         if latest:
