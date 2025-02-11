@@ -14,6 +14,7 @@ class Info:
         from ._environment import _Environment
 
         self.env = _Environment.get()
+        self.workflow = None
 
     @property
     def sha(self):
@@ -78,6 +79,14 @@ class Info:
     @property
     def is_local_run(self):
         return self.env.LOCAL_RUN
+
+    # TODO: Consider defining secrets outside of workflow as it project data in most of the cases
+    def get_secret(self, name):
+        from praktika.mangle import _get_workflows
+
+        if not self.workflow:
+            self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
+        return self.workflow.get_secret(name)
 
     def get_job_report_url(self, latest=False):
         url = self.get_report_url(latest=latest)
