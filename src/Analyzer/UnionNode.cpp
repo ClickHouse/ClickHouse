@@ -1,7 +1,7 @@
 #include <Analyzer/UnionNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
