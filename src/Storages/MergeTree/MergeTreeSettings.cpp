@@ -4,7 +4,7 @@
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/SettingsChangesHistory.h>
-#include <Disks/DiskFomAST.h>
+#include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -15,6 +15,8 @@
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -234,6 +236,7 @@ namespace ErrorCodes
     DECLARE(Float, zero_copy_concurrent_part_removal_max_postpone_ratio, static_cast<Float32>(0.05), "Max percentage of top level parts to postpone removal in order to get smaller independent ranges (highly not recommended to change)", 0) \
     DECLARE(String, storage_policy, "default", "Name of storage disk policy", 0) \
     DECLARE(String, disk, "", "Name of storage disk. Can be specified instead of storage policy.", 0) \
+    DECLARE(Bool, table_disk, false, "This is table disk, the path/endpoint should point to the table data, not to the database data. Can be set only for s3_plain/s3_plain_rewritable/web.", 0) \
     DECLARE(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
     DECLARE(Bool, remove_empty_parts, true, "Remove empty parts after they were pruned by TTL, mutation, or collapsing merge algorithm.", 0) \
     DECLARE(Bool, assign_part_uuids, false, "When enabled, a unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.", 0) \
@@ -345,6 +348,17 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta) const;
 };
 
+static void validateTableDisk(const DiskPtr & disk)
+{
+    if (!disk)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` requires `disk` setting.");
+    const auto * disk_object_storage = dynamic_cast<const DiskObjectStorage *>(disk.get());
+    if (!disk_object_storage)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for non-ObjectStorage disks");
+    if (!(disk_object_storage->isReadOnly() || disk_object_storage->isPlain()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "MergeTree settings `table_disk` is not supported for {}", disk_object_storage->getStructure());
+}
+
 IMPLEMENT_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS)
 
 void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_attach)
@@ -355,6 +369,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
         {
             bool found_disk_setting = false;
             bool found_storage_policy_setting = false;
+            bool table_disk = false;
+            DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
             for (auto & [name, value] : changes)
@@ -368,14 +384,15 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 
                     if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
                     {
-                        auto disk_name = DiskFomAST::createCustomDisk(value_as_custom_ast, context, is_attach);
+                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_attach);
                         LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
                         value = disk_name;
                     }
                     else
                     {
-                        DiskFomAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
+                        DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
                     }
+                    disk = context->getDisk(value.safeGet<String>());
 
                     if (has("storage_policy"))
                         resetToDefault("storage_policy");
@@ -384,6 +401,8 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 }
                 else if (name == "storage_policy")
                     found_storage_policy_setting = true;
+                else if (name == "table_disk")
+                    table_disk = value.safeGet<bool>();
 
                 if (!is_attach && found_disk_setting && found_storage_policy_setting)
                 {
@@ -393,6 +412,9 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
                 }
 
             }
+
+            if (table_disk)
+                validateTableDisk(disk);
 
             applyChanges(changes);
         }
@@ -649,7 +671,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
-            set(final_name, change.previous_value);
+            if (get(final_name) != change.previous_value)
+                set(final_name, change.previous_value);
         }
     }
 }
@@ -812,8 +835,13 @@ std::string_view MergeTreeSettings::resolveName(std::string_view name)
 
 bool MergeTreeSettings::isReadonlySetting(const String & name)
 {
-    return name == "index_granularity" || name == "index_granularity_bytes" || name == "enable_mixed_granularity_parts"
-           || name == "add_minmax_index_for_numeric_columns" || name == "add_minmax_index_for_string_columns";
+    return name == "index_granularity"
+        || name == "index_granularity_bytes"
+        || name == "enable_mixed_granularity_parts"
+        || name == "add_minmax_index_for_numeric_columns"
+        || name == "add_minmax_index_for_string_columns"
+        || name == "table_disk"
+    ;
 }
 
 /// Cloud only

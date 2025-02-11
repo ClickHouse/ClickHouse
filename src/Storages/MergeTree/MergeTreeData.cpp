@@ -203,6 +203,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
+    extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
@@ -345,14 +346,21 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
 
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
-    relative_data_path = relative_data_path_;
+    auto settings = getSettings();
+    if ((*settings)[MergeTreeSetting::table_disk])
+    {
+        LOG_TRACE(log, "Table is located directly on disk (without database layer)");
+    }
+    else
+    {
+        relative_data_path = relative_data_path_;
+        if (relative_data_path.empty())
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "MergeTree storages require data path");
+    }
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (date_column_name.empty())
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-
-    if (relative_data_path.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "MergeTree storages require data path");
 
     const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
     std::optional<UInt32> read_format_version;
