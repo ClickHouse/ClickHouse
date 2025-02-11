@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>

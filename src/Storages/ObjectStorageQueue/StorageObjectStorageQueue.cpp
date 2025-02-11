@@ -1,6 +1,7 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -37,9 +38,13 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCommitRequests;
+    extern const Event ObjectStorageQueueSuccessfulCommits;
+    extern const Event ObjectStorageQueueUnsuccessfulCommits;
     extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueInsertIterations;
+    extern const Event ObjectStorageQueueProcessedRows;
 }
+
 
 namespace DB
 {
@@ -49,6 +54,11 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_fail_commit[];
 }
 
 namespace ServerSetting
@@ -88,6 +98,7 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace
@@ -634,6 +645,8 @@ void StorageObjectStorageQueue::commit(
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     const std::string & exception_message) const
 {
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
+
     Coordination::Requests requests;
     StoredObjects successful_objects;
     for (auto & source : sources)
@@ -645,23 +658,32 @@ void StorageObjectStorageQueue::commit(
         return;
     }
 
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
+
     if (!successful_objects.empty()
         && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
         object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects);
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
     }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests);
 
     auto zk_client = getZooKeeper();
     Coordination::Responses responses;
 
+    fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to commit processed files");
+    });
+
     auto code = zk_client->tryMulti(requests, responses);
     if (code != Coordination::Error::ZOK)
+    {
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
         throw zkutil::KeeperMultiException(code, requests, responses);
+    }
+
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
 
     for (auto & source : sources)
         source->finalizeCommit(insert_succeeded, exception_message);

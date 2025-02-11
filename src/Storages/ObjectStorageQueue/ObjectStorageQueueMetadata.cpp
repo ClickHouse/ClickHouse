@@ -1,5 +1,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/SipHash.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
@@ -853,9 +854,12 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
         return;
 
     std::unique_lock lock(active_servers_mutex);
+
+    CurrentMetrics::sub(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
+
     active_servers = registered_set;
 
-    CurrentMetrics::set(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
+    CurrentMetrics::add(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
 
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.

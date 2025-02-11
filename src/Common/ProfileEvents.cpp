@@ -333,6 +333,8 @@
     M(StorageBufferLayerLockReadersWaitMilliseconds, "Time for waiting for Buffer layer during reading.", ValueType::Milliseconds) \
     M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers).", ValueType::Milliseconds) \
     \
+    M(SystemLogErrorOnFlush, "Number of times any of the system logs have failed to flush to the corresponding system table. Attempts to flush are repeated.", ValueType::Number) \
+    \
     M(DictCacheKeysRequested, "Number of keys requested from the data source for the dictionaries of 'cache' types.", ValueType::Number) \
     M(DictCacheKeysRequestedMiss, "Number of keys requested from the data source for dictionaries of 'cache' types but not found in the data source.", ValueType::Number) \
     M(DictCacheKeysRequestedFound, "Number of keys requested from the data source for dictionaries of 'cache' types and found in the data source.", ValueType::Number) \
@@ -755,6 +757,10 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number)\
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number)\
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number)\
+    M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number)\
+    M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number)\
+    M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number)\
+    M(ObjectStorageQueueProcessedRows, "Number of processed rows in StorageS3(Azure)Queue", ValueType::Number)\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \

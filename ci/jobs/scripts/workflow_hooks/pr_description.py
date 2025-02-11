@@ -189,7 +189,7 @@ def check_labels(category, info):
     if pr_labels_to_add:
         print(f"Add labels [{pr_labels_to_add}]")
         for label in pr_labels_to_add:
-            cmd += f" --add-label {label}"
+            cmd += f" --add-label '{label}'"
             if label in info.pr_labels:
                 info.pr_labels.append(label)
             info.dump()
@@ -197,7 +197,7 @@ def check_labels(category, info):
     if pr_labels_to_remove:
         print(f"Remove labels [{pr_labels_to_remove}]")
         for label in pr_labels_to_remove:
-            cmd += f" --remove-label {label}"
+            cmd += f" --remove-label '{label}'"
             if label in info.pr_labels:
                 info.pr_labels.remove(label)
             info.dump()

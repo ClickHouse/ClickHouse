@@ -66,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
         });
@@ -85,7 +86,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
+            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
+            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
+            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"use_hive_partitioning", false, true, "Enabled the setting by default."},
             {"query_plan_try_use_vector_search", false, true, "New setting."},
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
@@ -648,6 +653,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            {"table_disk", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
