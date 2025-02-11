@@ -139,10 +139,10 @@ class HtmlRunnerHooks:
         summary_result.set_info(
             f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
             if info.pr_number
-            else f"{info.git_branch}  |  {info.git_sha}"
+            else f"{info.git_branch}  |  {Shell.get_output('git log -1 --pretty=%s | head -n1')}  |  {info.git_sha}"
         )
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = Info().get_report_url(latest=True)
+        page_url = Info().get_report_url(latest=bool(info.pr_number))
         print(f"CI Status page url [{page_url}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
@@ -273,5 +273,5 @@ class HtmlRunnerHooks:
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=True),
+                url=Info().get_report_url(latest=bool(Info().pr_number)),
             )

@@ -132,14 +132,14 @@ def assert_took(took, should_take):
 
 
 @pytest.mark.parametrize(
-    "policy,backup_name,mode,setting,value,should_take",
+    "policy,backup_storage,mode,setting,value,should_take",
     [
         #
         # Local -> Local
         #
         pytest.param(
             "default",
-            next_backup_name("local"),
+            "local",
             None,
             None,
             None,
@@ -149,7 +149,7 @@ def assert_took(took, should_take):
         # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "default",
-            next_backup_name("local"),
+            "local",
             "user",
             "max_backup_bandwidth",
             "1M",
@@ -159,7 +159,7 @@ def assert_took(took, should_take):
         # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "default",
-            next_backup_name("local"),
+            "local",
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
@@ -171,7 +171,7 @@ def assert_took(took, should_take):
         #
         pytest.param(
             "s3",
-            next_backup_name("local"),
+            "local",
             None,
             None,
             None,
@@ -181,7 +181,7 @@ def assert_took(took, should_take):
         # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "s3",
-            next_backup_name("local"),
+            "local",
             "user",
             "max_backup_bandwidth",
             "1M",
@@ -191,7 +191,7 @@ def assert_took(took, should_take):
         # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "s3",
-            next_backup_name("local"),
+            "local",
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
@@ -203,7 +203,7 @@ def assert_took(took, should_take):
         #
         pytest.param(
             "s3",
-            next_backup_name("remote"),
+            "remote",
             None,
             None,
             None,
@@ -213,7 +213,7 @@ def assert_took(took, should_take):
         # No throttling for S3-to-S3, uses native copy
         pytest.param(
             "s3",
-            next_backup_name("remote"),
+            "remote",
             "user",
             "max_backup_bandwidth",
             "1M",
@@ -223,7 +223,7 @@ def assert_took(took, should_take):
         # No throttling for S3-to-S3, uses native copy
         pytest.param(
             "s3",
-            next_backup_name("remote"),
+            "remote",
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
@@ -242,7 +242,7 @@ def assert_took(took, should_take):
         # BUT: only in case of HTTP, HTTPS will not require this.
         pytest.param(
             "default",
-            next_backup_name("remote"),
+            "remote",
             None,
             None,
             None,
@@ -252,7 +252,7 @@ def assert_took(took, should_take):
         # reading 1e6*8 bytes with 1M default bandwidth should take (8-1)/1=7 seconds
         pytest.param(
             "default",
-            next_backup_name("remote"),
+            "remote",
             "user",
             "max_backup_bandwidth",
             "1M",
@@ -262,7 +262,7 @@ def assert_took(took, should_take):
         # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
         pytest.param(
             "default",
-            next_backup_name("remote"),
+            "remote",
             "server",
             "max_backup_bandwidth_for_server",
             "2M",
@@ -271,7 +271,7 @@ def assert_took(took, should_take):
         ),
     ],
 )
-def test_backup_throttling(policy, backup_name, mode, setting, value, should_take):
+def test_backup_throttling(policy, backup_storage, mode, setting, value, should_take):
     node_update_config(mode, setting, value)
     node.query(
         f"""
@@ -280,7 +280,7 @@ def test_backup_throttling(policy, backup_name, mode, setting, value, should_tak
         insert into data select * from numbers(1e6);
     """
     )
-    _, took = elapsed(node.query, f"backup table data to {backup_name}")
+    _, took = elapsed(node.query, f"backup table data to {next_backup_name(backup_storage)}")
     assert_took(took, should_take)
 
 
