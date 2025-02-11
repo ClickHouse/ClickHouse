@@ -49,6 +49,9 @@ public:
     /// Passed values are deltas, that must be summarized.
     virtual void onProgress(const Progress & progress);
 
+    /// Set initial progress values on initialization of the format, before it starts writing the data.
+    void setProgress(Progress progress);
+
     /// Content-Type to set when sending HTTP response.
     virtual std::string getContentType() const { return "text/plain; charset=UTF-8"; }
 
@@ -65,12 +68,14 @@ public:
 
     void setTotals(const Block & totals)
     {
+        std::lock_guard lock(writing_mutex);
         writeSuffixIfNeeded();
         consumeTotals(Chunk(totals.getColumns(), totals.rows()));
         are_totals_written = true;
     }
     void setExtremes(const Block & extremes)
     {
+        std::lock_guard lock(writing_mutex);
         writeSuffixIfNeeded();
         consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
     }
@@ -226,7 +231,7 @@ private:
     size_t result_bytes = 0;
 
     UInt64 progress_write_frequency_us = 0;
-    UInt64 prev_progress_write_ns = 0;
+    std::atomic<UInt64> prev_progress_write_ns = 0;
 };
 
 }

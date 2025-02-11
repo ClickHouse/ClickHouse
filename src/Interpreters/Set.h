@@ -19,6 +19,7 @@ struct Range;
 class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+using Sizes = std::vector<size_t>;
 
 class Chunk;
 

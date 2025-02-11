@@ -43,6 +43,8 @@ private:
 
     Memory<> encrypted_buffer;
     FileEncryption::Encryptor encryptor;
+
+    LoggerPtr log;
 };
 
 }
