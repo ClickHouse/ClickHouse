@@ -655,6 +655,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            {"table_disk", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {

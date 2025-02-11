@@ -2,9 +2,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>

@@ -6,7 +6,8 @@
 namespace DB
 {
 
-namespace DiskFomAST
+namespace DiskFromAST
+
 {
     void ensureDiskIsNotCustom(const std::string & name, ContextPtr context);
     std::string createCustomDisk(const ASTPtr & disk_function, ContextPtr context, bool attach);
