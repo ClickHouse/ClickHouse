@@ -20,7 +20,13 @@ public:
         const uint32_t m_args,
         const bool sd,
         const bool snc)
-        : support_distinct(sd), support_nulls_clause(snc), fnum(f), min_args(min_a), max_args(m_args), min_params(min_p), max_params(max_p)
+        : support_distinct(sd)
+        , support_nulls_clause(snc)
+        , fnum(f)
+        , min_args(min_a)
+        , max_args(m_args)
+        , min_params(min_p)
+        , max_params(max_p)
     {
     }
 };
@@ -31,7 +37,11 @@ public:
     const uint32_t fnum, min_lambda_param, max_lambda_param, min_args, max_args;
 
     CHFunction(const uint32_t f, const uint32_t min_lambda, const uint32_t max_lambda, const uint32_t min_a, const uint32_t m_args)
-        : fnum(f), min_lambda_param(min_lambda), max_lambda_param(max_lambda), min_args(min_a), max_args(m_args)
+        : fnum(f)
+        , min_lambda_param(min_lambda)
+        , max_lambda_param(max_lambda)
+        , min_args(min_a)
+        , max_args(m_args)
     {
     }
 };
@@ -1256,14 +1266,22 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCtransactionOldestSnapshot, 0, 0, 0, 0)};
 
 const std::vector<CHFunction> CHTableFuncs = {
-    // Table Functions
+    /// Table Functions
+    CHFunction(SQLTableFunc::TFcluster, 0, 0, 2, 4),
+    CHFunction(SQLTableFunc::TFclusterAllReplicas, 0, 0, 2, 4),
     CHFunction(SQLTableFunc::TFfile, 0, 0, 1, 5),
+    CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
-    CHFunction(SQLTableFunc::TFremote, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFmerge, 0, 0, 1, 2),
     CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),
     CHFunction(SQLTableFunc::TFpostgresql, 0, 0, 5, 7),
+    CHFunction(SQLTableFunc::TFremote, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFremoteSecure, 0, 0, 1, 6),
+    CHFunction(SQLTableFunc::TFS3, 0, 0, 1, 8),
+    CHFunction(SQLTableFunc::TFS3Cluster, 0, 0, 2, 9),
     CHFunction(SQLTableFunc::TFsqlite, 0, 0, 2, 2),
-    CHFunction(SQLTableFunc::TFS3, 0, 0, 1, 8)};
+    CHFunction(SQLTableFunc::TFurl, 0, 0, 1, 4),
+    CHFunction(SQLTableFunc::TFurlCluster, 0, 0, 4, 4)};
 
 }
