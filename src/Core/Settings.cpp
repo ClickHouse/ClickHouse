@@ -5779,6 +5779,9 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_for_queries_with_multiple_tables, true, R"(
+If true, parallel replicas will be disabled for queries with multiple tables in FROM statement
+)", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.

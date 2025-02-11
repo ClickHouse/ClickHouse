@@ -114,6 +114,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
 }
 
 namespace ErrorCodes
@@ -2211,6 +2212,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         prepareBuildQueryPlanForTableExpression(table_expression, planner_context);
     }
+
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && table_expressions_stack_size > 1)
+        planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
 
     /// disable parallel replicas for n-way join with FULL JOIN involved
     if (joins_count > 1 && is_full_join)

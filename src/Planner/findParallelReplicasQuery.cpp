@@ -23,6 +23,7 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include "mysqlxx/Query.h"
 
 namespace DB
 {
@@ -30,6 +31,7 @@ namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
 }
 
 namespace ErrorCodes
@@ -62,6 +64,8 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
 std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
+
     std::vector<const QueryNode *> res;
 
     while (query_tree_node)
@@ -113,6 +117,9 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
             }
             case QueryTreeNodeType::JOIN:
             {
+                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+                    return {};
+
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
@@ -370,6 +377,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
 
 static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
+    const auto & settings = context->getSettingsRef();
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
     {
@@ -427,6 +435,9 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             }
             case QueryTreeNodeType::JOIN:
             {
+                if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+                    return nullptr;
+
                 const auto & join_node = query_tree_node->as<JoinNode &>();
                 const auto join_kind = join_node.getKind();
                 const auto join_strictness = join_node.getStrictness();
