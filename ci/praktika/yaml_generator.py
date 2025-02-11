@@ -31,7 +31,6 @@ jobs:
 {JOBS}\
 """
         TEMPLATE_GH_TOKEN_PERMISSIONS = """\
-
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all\
 """

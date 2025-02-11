@@ -53,7 +53,6 @@ from report import (
     JOB_STARTED_TEST_NAME,
     OK,
     PENDING,
-    SKIPPED,
     SUCCESS,
     BuildResult,
     JobReport,
@@ -1433,28 +1432,15 @@ def main() -> int:
             gh = GitHub(get_best_robot_token(), per_page=100)
             commit = get_commit(gh, pr_info.sha)
             if not job_report.dummy:
-                if (
-                    job_report.status not in (SUCCESS, SKIPPED)
-                    and not CI.is_build_job(check_name)
-                ) or "style" in check_name.lower():
-                    # create and post statuses only for not success jobs or for style check as it required for sync
-                    check_url = upload_result_helper.upload_results(
-                        s3,
-                        pr_info.number,
-                        pr_info.sha,
-                        pr_info.head_ref,
-                        job_report.test_results,
-                        job_report.additional_files,
-                        check_name,
-                    )
+                if "style" in check_name.lower() and job_report.status == "success":
+                    # style status required for sync ...
                     post_commit_status(
                         commit,
                         job_report.status,
-                        check_url,
-                        format_description(job_report.description),
+                        "",
+                        "",
                         check_name,
                         pr_info,
-                        dump_to_file=True,
                     )
             else:
                 print("ERROR: Job was killed - generate evidence")
@@ -1473,27 +1459,6 @@ def main() -> int:
                     error_description + f" after {int(job_report.duration)}s",
                     job_name=_get_ext_check_name(args.job_name),
                 )
-
-                check_url = ""
-                if job_report.test_results or job_report.additional_files:
-                    check_url = upload_result_helper.upload_results(
-                        s3,
-                        pr_info.number,
-                        pr_info.sha,
-                        pr_info.head_ref,
-                        job_report.test_results,
-                        job_report.additional_files,
-                        check_name,  # TODO: make with batch,
-                    )
-                    post_commit_status(
-                        commit,
-                        ERROR,
-                        check_url,
-                        "Error: " + error_description,
-                        check_name,  # TODO: make with batch
-                        pr_info,
-                        dump_to_file=True,
-                    )
         except Exception:
             traceback.print_exc()
             print("Post failed")
