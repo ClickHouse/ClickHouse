@@ -34,6 +34,7 @@ workflow = Workflow.Config(
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
+    enable_commit_status_on_failure=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
