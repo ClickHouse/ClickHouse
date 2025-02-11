@@ -823,7 +823,7 @@ Pipe ReadFromMergeTree::readByLayers(const RangesInDataParts & parts_with_ranges
             info.use_uncompressed_cache);
     };
 
-    auto pipes = ::readByLayers(std::move(split_parts), storage_snapshot->metadata->getPrimaryKey(), reading_step_getter, context);
+    auto pipes = ::readByLayers(std::move(split_parts), storage_snapshot->metadata->getPrimaryKey(), reading_step_getter, false, context);
     return Pipe::unitePipes(std::move(pipes));
 }
 

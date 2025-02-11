@@ -49,12 +49,14 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
     RangesInDataParts ranges_in_data_parts,
     size_t max_layers,
     size_t max_columns_in_index,
+    bool in_reverse_order,
     const LoggerPtr & logger);
 
 Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
+    bool in_reverse_order,
     ContextPtr context);
 
 }
