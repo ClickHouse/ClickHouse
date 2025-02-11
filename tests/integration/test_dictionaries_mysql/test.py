@@ -486,7 +486,7 @@ def test_background_dictionary_reconnect(started_cluster):
             DB 'test'
             QUERY $doc$SELECT * FROM test.dict;$doc$
             BACKGROUND_RECONNECT 'true'
-            REPLICA(HOST '{socket.gethostname()}' PORT 3336 PRIORITY 1)))
+            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT 3336 PRIORITY 1)))
         """
         )
 

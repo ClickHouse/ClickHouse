@@ -639,7 +639,7 @@ def test_background_dictionary_reconnect(started_cluster):
             DB 'postgres_database'
             QUERY $doc$SELECT * FROM dict;$doc$
             BACKGROUND_RECONNECT 'true'
-            REPLICA(HOST '{socket.gethostname()}' PORT 5532 PRIORITY 1)))
+            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT 5532 PRIORITY 1)))
         """
         )
 
