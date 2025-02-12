@@ -150,6 +150,11 @@ def test_logs_with_disks(started_cluster):
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
+        node_logs.wait_for_log_line(
+            "Removed changelog changelog_25_27.bin because of compaction",
+            look_behind_lines=1000,
+        )
+
         stop_zk(node_zk)
 
         previous_log_files = get_local_logs(node_logs)
@@ -161,6 +166,11 @@ def test_logs_with_disks(started_cluster):
             "<latest_log_storage_disk>log_local<\\/latest_log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
             cleanup_disks=False,
+        )
+
+        node_logs.wait_for_log_line(
+            "KeeperLogStore: Continue to write into changelog_34_36.bin",
+            look_behind_lines=1000,
         )
 
         # all but the latest log should be on S3
