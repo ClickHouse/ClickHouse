@@ -258,18 +258,9 @@ public:
 
     void print(llvm::Module & module)
     {
-        //static int index = 0;
-        //std::error_code errorCode;
-        //llvm::raw_fd_ostream outputFileStream("/tmp/18.s" + std::to_string(index), errorCode);
-        //++index;
-        //if (errorCode) {
-        //    throw std::runtime_error("Failed to open output file: " + errorCode.message());
-        //}
-
         llvm::legacy::PassManager pass_manager;
         target_machine.Options.MCOptions.AsmVerbose = true;
         if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::AssemblyFile))
-        //if (target_machine.addPassesToEmitFile(pass_manager, outputFileStream, nullptr, llvm::CodeGenFileType::AssemblyFile))
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
         pass_manager.run(module);
@@ -277,6 +268,14 @@ public:
 private:
     llvm::TargetMachine & target_machine;
 };
+
+static std::string DumpModuleIR(const llvm::Module& module)
+{
+    std::string ir;
+    llvm::raw_string_ostream stream(ir);
+    module.print(stream, nullptr);
+    return ir;
+}
 
 #endif
 
@@ -492,18 +491,6 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
     return mangled_name;
 }
 
-#ifndef NDEBUG
-
-static std::string DumpModuleIR(const llvm::Module& module)
-{
-    std::string ir;
-    llvm::raw_string_ostream stream(ir);
-    module.print(stream, nullptr);
-    return ir;
-}
-
-#endif
-
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
     const char *argv[] =
@@ -542,7 +529,7 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
     mpm.run(module, mam);
 
-    #ifndef NDEBUG
+    #ifdef PRINT_ASSEMBLY
     DumpModuleIR(module);
     #endif
 }
