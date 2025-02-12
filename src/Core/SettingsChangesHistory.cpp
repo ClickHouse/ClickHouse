@@ -71,7 +71,8 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"http_response_headers", "", "", "New setting."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"use_concurrency_control", false, true, "Enable concurrency control by default"},
+            /// Release closed. Please use 25.1
         }
     },
     {"24.11",
@@ -103,6 +104,7 @@ static std::initializer_list<std::pair<ClickHouseVersion, SettingsChangesHistory
             {"enable_variant_type", false, false, "Add alias to allow_experimental_variant_type"},
             {"enable_dynamic_type", false, false, "Add alias to allow_experimental_dynamic_type"},
             {"enable_json_type", false, false, "Add alias to allow_experimental_json_type"},
+            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
         }
     },
     {"24.10",
