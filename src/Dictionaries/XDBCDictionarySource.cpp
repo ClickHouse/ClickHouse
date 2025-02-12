@@ -14,7 +14,6 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
-#include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>

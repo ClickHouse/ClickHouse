@@ -113,6 +113,7 @@
 #    if defined(DEBUG_OR_SANITIZER_BUILD)
         // clang-format off
         #include <base/types.h>
+        #include <stdlib.h>
         namespace DB
         {
             [[noreturn]] void abortOnFailedAssertion(const String & description);

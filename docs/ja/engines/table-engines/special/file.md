@@ -96,8 +96,8 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## 仮想カラム {#virtual-columns}
 
-- `_path` — ファイルへのパス。型: `LowCardinalty(String)`。
-- `_file` — ファイルの名前。型: `LowCardinalty(String)`。
+- `_path` — ファイルへのパス。型: `LowCardinality(String)`。
+- `_file` — ファイルの名前。型: `LowCardinality(String)`。
 - `_size` — ファイルサイズ（バイト）。型: `Nullable(UInt64)`。サイズが不明な場合は値は`NULL`。
 - `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合は値は`NULL`。
 
