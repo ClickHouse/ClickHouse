@@ -1630,7 +1630,19 @@ void IMergeTreeDataPart::loadColumns(bool require)
     int32_t loaded_metadata_version;
     if (auto in = readFileIfExists(METADATA_VERSION_FILE_NAME))
     {
-        readIntText(loaded_metadata_version, *in);
+        /// If zero copy replication is enabled, blobs of metadata version file can be removed by other replicas when part is attached.
+        /// If read error is not ignored here, the part will be marked as broken and fetched from other replica.
+        try
+        {
+            readIntText(loaded_metadata_version, *in);
+        }
+        catch (...)
+        {
+            LOG_WARNING(storage.log, "Failed to read metadata version, file {} is probably broken. Deleting the file.", METADATA_VERSION_FILE_NAME);
+            loaded_metadata_version = metadata_snapshot->getMetadataVersion();
+            old_part_with_no_metadata_version_on_disk = true;
+            getDataPartStorage().removeFile(METADATA_VERSION_FILE_NAME);
+        }
     }
     else
     {
