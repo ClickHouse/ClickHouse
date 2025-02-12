@@ -237,10 +237,8 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        LOG_TRACE(getLogger("QueryCache"), "visit");
         if (auto * table_expression = ast->as<ASTTableIdentifier>())
         {
-            LOG_TRACE(getLogger("QueryCache"), "remove table alias");
             if (table_expression->alias.starts_with("__table")) {
                 table_expression->setAlias("");
             }
@@ -248,7 +246,6 @@ public:
         else if (auto * identifier = ast->as<ASTIdentifier>())
         {
             if (identifier->compound() && identifier->name_parts[0].starts_with("__table")) {
-                LOG_TRACE(getLogger("QueryCache"), "remove table matcher: {} {} {}", identifier->compound(), identifier->name_parts[0], identifier->name_parts[1]);
                 identifier->setShortName(identifier->name_parts[1]);
             }
         }
@@ -266,29 +263,6 @@ ASTPtr removeTableAliases(ASTPtr ast)
 
     return transformed_ast;
 }
-
-// ASTPtr removeASTSubquery(ASTPtr ast)
-// {
-//     ASTPtr transformed_ast = ast->clone();
-
-//     if (auto * subquery = transformed_ast->as<ASTSubquery>())
-//         transformed_ast = subquery->children[0];
-
-//     return transformed_ast;
-// }
-
-// ASTPtr removeASTSelectWithUnionQuery(ASTPtr ast)
-// {
-//     ASTPtr transformed_ast = ast->clone();
-
-//     if (auto * select_with_union_query = transformed_ast->as<ASTSelectWithUnionQuery>()) {
-//         auto & select_lists = select_with_union_query->list_of_selects->as<ASTExpressionList &>();
-//         if (select_lists.children.size() == 1)
-//             transformed_ast = select_lists.children[0];
-//     }
-
-//     return transformed_ast;
-// }
 
 IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
@@ -503,7 +477,7 @@ void QueryCache::Writer::finalizeWrite()
     if (skip_insert)
         return;
 
-    if (was_finalized)
+    if (was_finalized.exchange(true))
         return;
         
     std::lock_guard lock(mutex);
@@ -611,8 +585,6 @@ void QueryCache::Writer::finalizeWrite()
     cache.set(key, query_result);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
-
-    was_finalized = true;
 }
 
 /// Creates a source processor which serves result chunks stored in the query cache, and separate sources for optional totals/extremes.
