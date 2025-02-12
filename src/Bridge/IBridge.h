@@ -35,6 +35,7 @@ protected:
     virtual HandlerFactoryPtr getHandlerFactoryPtr(ContextPtr context) const = 0;
 
     size_t keep_alive_timeout;
+    std::string libraries_path;
 
 private:
     void handleHelp(const std::string &, const std::string &);
