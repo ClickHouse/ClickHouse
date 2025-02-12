@@ -1220,7 +1220,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             return identifier && !identifier->shortName().empty();
         });
 
-    if (!tids.empty() && !colids.empty() && fuzz_rand() % 50 == 0)
+    if (!tids.empty() && !colids.empty())
     {
         static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
         static const std::vector<JoinStrictness> all_strictness_values
