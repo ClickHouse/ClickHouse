@@ -2051,11 +2051,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 UInt64 hashed_zk_path = sipHash64(txn->getTaskZooKeeperPath());
                 return getHexUIntLowercase(hashed_zk_path);
             }
-            if (!current_context->getCurrentQueryId().empty())
-            {
-                const UInt32 hashed_query_id = static_cast<UInt32>(sipHash64(current_context->getCurrentQueryId()));
-                return getRandomASCIIString(/*length=*/8) + getHexUIntLowercase(hashed_query_id);
-            }
             return getRandomASCIIString(/*length=*/16);
         }();
 
