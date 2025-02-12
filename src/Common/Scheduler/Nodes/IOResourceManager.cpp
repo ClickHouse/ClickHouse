@@ -218,6 +218,7 @@ IOResourceManager::Workload::~Workload()
     catch (...)
     {
         tryLogCurrentException("Workload");
+        chassert(false);
     }
 }
 
