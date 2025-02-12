@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 
 namespace DB
