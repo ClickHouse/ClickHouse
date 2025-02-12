@@ -56,7 +56,7 @@ public:
 
     static bool isSuitableForFuzzing(const ASTCreateQuery & create);
 
-    UInt64 getSeed() { return seed; }
+    UInt64 getSeed() const { return seed; }
 
     void setSeed(const UInt64 new_seed)
     {
