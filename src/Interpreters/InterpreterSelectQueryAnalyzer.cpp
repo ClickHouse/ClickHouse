@@ -132,6 +132,14 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+static QueryTreeNodePtr replaceStorageIfNeeded(QueryTreeNodePtr query_tree, const ContextPtr & context, const StoragePtr & storage)
+{
+    if (storage)
+        replaceStorageInQueryTree(query_tree, context, storage);
+
+    return query_tree;
+}
+
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
@@ -150,10 +158,7 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     else
         query_tree_pass_manager.run(query_tree);
 
-    if (storage)
-        replaceStorageInQueryTree(query_tree, context, storage);
-
-    return query_tree;
+    return replaceStorageIfNeeded(std::move(query_tree), context, storage);
 }
 
 
@@ -187,11 +192,12 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_,
     const ContextPtr & context_,
+    const StoragePtr & storage_,
     const SelectQueryOptions & select_query_options_)
     : query(query_tree_->toAST())
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(query_tree_)
+    , query_tree(replaceStorageIfNeeded(query_tree_, context, storage_))
     , planner(query_tree_, select_query_options)
 {
 }
@@ -213,7 +219,7 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
 {
     auto select_query_options_copy = select_query_options;
     select_query_options_copy.only_analyze = true;
-    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options_copy);
+    InterpreterSelectQueryAnalyzer interpreter(query_tree, context, nullptr, select_query_options_copy);
 
     return interpreter.getSampleBlockAndPlannerContext();
 }

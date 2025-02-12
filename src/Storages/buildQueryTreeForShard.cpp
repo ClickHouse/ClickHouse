@@ -261,7 +261,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto context_copy = Context::createCopy(mutable_context);
     updateContextForSubqueryExecution(context_copy);
 
-    InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, subquery_options);
+    InterpreterSelectQueryAnalyzer interpreter(subquery_node, context_copy, nullptr, subquery_options);
     auto & query_plan = interpreter.getQueryPlan();
 
     auto sample_block_with_unique_names = query_plan.getCurrentHeader();

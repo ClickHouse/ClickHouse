@@ -183,7 +183,7 @@ private:
         const auto & recursive_table_name = recursive_cte_union_node->as<UnionNode &>().getCTEName();
         recursive_query_context->addOrUpdateExternalTable(recursive_table_name, working_temporary_table_holder);
 
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, select_query_options);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_to_execute, recursive_query_context, nullptr, select_query_options);
         auto pipeline_builder = interpreter->buildQueryPipeline();
 
         pipeline_builder.addSimpleTransform([&](const Block & in_header)

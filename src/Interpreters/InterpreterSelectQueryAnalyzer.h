@@ -34,6 +34,7 @@ public:
       */
     InterpreterSelectQueryAnalyzer(const QueryTreeNodePtr & query_tree_,
         const ContextPtr & context_,
+        const StoragePtr & storage_,
         const SelectQueryOptions & select_query_options_);
 
     ContextPtr getContext() const
