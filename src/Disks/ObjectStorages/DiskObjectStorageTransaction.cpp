@@ -796,7 +796,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
                 if (do_not_write_empty_blob && count == 0)
+                {
+                    LoggerPtr logger = getLogger("DiskObjectStorageTransaction");
+                    LOG_TRACE(logger, "Skipping writing empty blob for path {}, key {}", path, key_.serialize());
                     tx->metadata_transaction->createEmptyMetadataFile(path);
+                }
                 else
                     tx->metadata_transaction->createMetadataFile(path, key_, count);
             }
@@ -837,7 +841,11 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                     }
 
                     if (do_not_write_empty_blob && count == 0)
+                    {
+                        LoggerPtr logger = getLogger("DiskObjectStorageTransaction");
+                        LOG_TRACE(logger, "Skipping writing empty blob for path {}, key {}", path, key_.serialize());
                         tx->createEmptyMetadataFile(path);
+                    }
                     else
                         tx->createMetadataFile(path, key_, count);
                 }
