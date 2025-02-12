@@ -3,6 +3,11 @@
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+namespace parquet
+{
+class RowGroupPageIndexReader;
+}
+
 namespace DB
 {
 class ParquetReader;
@@ -85,6 +90,7 @@ struct RowGroupContext
     std::vector<String> filter_columns;
     RowGroupPrefetchPtr prefetch_conditions;
     RowGroupPrefetchPtr prefetch;
+    std::shared_ptr<parquet::RowGroupPageIndexReader> row_group_index_reader;
 };
 
 arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_metadata);
@@ -129,5 +135,6 @@ private:
     std::unique_ptr<SelectConditions> selectConditions;
     RowGroupContext context;
     std::unique_ptr<ColumnReaderBuilder> builder;
+    std::shared_ptr<parquet::RowGroupPageIndexReader> row_group_index_reader;
 };
 }

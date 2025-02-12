@@ -80,6 +80,7 @@ ParquetReader::ParquetReader(
     chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
     //    if (!io_pool)
     //    {
+    // TODO add settings for io pool
     io_pool = std::make_shared<ThreadPool>(
         CurrentMetrics::ParquetDecoderIOThreads,
         CurrentMetrics::ParquetDecoderIOThreadsActive,
@@ -95,6 +96,12 @@ Block ParquetReader::read()
         return header.cloneEmpty();
     return header.cloneWithColumns(chunk.detachColumns());
 }
+
+void ParquetReader::setSourceArrowFile(std::shared_ptr<arrow::io::RandomAccessFile> arrow_file_)
+{
+    this->arrow_file = arrow_file_;
+}
+
 void ParquetReader::addFilter(const String & column_name, const ColumnFilterPtr filter)
 {
     //    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;

@@ -565,6 +565,11 @@ ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::pageR
     return *this;
 }
 
+ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::columnChunkMeta(
+    std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta){
+    column_chunk_meta_ = std::move(column_chunk_meta);
+    return *this;
+}
 
 SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
 {
@@ -812,11 +817,13 @@ SelectiveColumnReaderPtr ParquetColumnReaderFactory::Builder::build()
             magic_enum::enum_name(converted_type),
             magic_enum::enum_name(target_type));
     }
+    leaf_reader->setColumnChunkMeta(std::move(column_chunk_meta_));
     if (nullable_)
         return std::make_shared<OptionalColumnReader>(scan_spec, leaf_reader, is_optional_);
     else
         return leaf_reader;
 }
+
 ParquetColumnReaderFactory::Builder ParquetColumnReaderFactory::builder()
 {
     return ParquetColumnReaderFactory::Builder();
@@ -900,7 +907,8 @@ ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePt
             row_group_prefetch = context.prefetch_conditions;
         else
             row_group_prefetch = context.prefetch;
-        auto column_range = getColumnRange(*context.row_group_meta->ColumnChunk(column_idx));
+        auto column_chunk_meta = context.row_group_meta->ColumnChunk(column_idx);
+        auto column_range = getColumnRange(*column_chunk_meta);
         row_group_prefetch->prefetchRange(column_range);
         PageReaderCreator creator = [&, conditions, column_idx, column_range]
         {
@@ -920,15 +928,16 @@ ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePt
                 std::make_unique<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
                 context.parquet_reader->readerProperties(),
                 context.row_group_meta->num_rows(),
-                context.row_group_meta->ColumnChunk(column_idx)->compression());
+                context.row_group_meta->ColumnChunk(column_idx)->compression(),
+                column_range.offset);
             ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, time.elapsedMicroseconds());
             return page_reader;
         };
         const auto * column_desc = context.parquet_reader->metaData().schema()->Column(column_idx);
 
         // in some case, dictionary is not set in column chunk, but set in encoding
-        bool dictionary = context.row_group_meta->ColumnChunk(column_idx)->has_dictionary_page();
-        auto encodings = context.row_group_meta->ColumnChunk(column_idx)->encodings();
+        bool dictionary = column_chunk_meta->has_dictionary_page();
+        auto encodings = column_chunk_meta->encodings();
         for (const auto encoding : encodings)
         {
             if (encoding == parquet::Encoding::PLAIN_DICTIONARY || encoding == parquet::Encoding::RLE_DICTIONARY)
@@ -943,7 +952,17 @@ ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePt
                   .pageReader(creator)
                   .targetType(target_type)
                   .filter(inplace_filter_mapping.contains(full_name) ? inplace_filter_mapping.at(full_name) : nullptr)
+                  .columnChunkMeta(std::move(column_chunk_meta))
                   .build();
+        if (context.row_group_index_reader)
+        {
+            // TODO set index to nested type
+            if (column_idx >= 0)
+            {
+                leaf_reader->setColumnIndex(context.row_group_index_reader->GetColumnIndex(column_idx));
+                leaf_reader->setOffsetIndex(context.row_group_index_reader->GetOffsetIndex(column_idx));
+            }
+        }
         return leaf_reader;
     }
     else if (node->converted_type() == parquet::ConvertedType::LIST)

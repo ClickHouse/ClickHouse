@@ -657,6 +657,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             metadata,
             io_pool
         );
+        new_native_reader->setSourceArrowFile(arrow_file);
         if (filter.has_value())
             pushFilterToParquetReader(filter.value(), *new_native_reader);
     }

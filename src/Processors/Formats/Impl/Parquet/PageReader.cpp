@@ -24,8 +24,6 @@ bool LazyPageReader::hasNext()
 {
     Stopwatch time;
     parquet::ThriftDeserializer deserializer(properties);
-    if (seen_num_values >= total_num_values)
-        return false;
     uint32_t header_size = 0;
     uint32_t allowed_header_size = DEFAULT_PAGE_HEADER_SIZE;
     while (true)
@@ -228,5 +226,10 @@ void LazyPageReader::skipNextPage()
 const parquet::format::PageHeader & LazyPageReader::peekNextPageHeader()
 {
     return current_page_header;
+}
+
+void LazyPageReader::seekFileOffset(size_t offset)
+{
+    stream->seek(offset - offset_in_file, SEEK_SET);
 }
 }

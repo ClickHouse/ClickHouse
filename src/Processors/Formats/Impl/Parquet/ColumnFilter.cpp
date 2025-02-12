@@ -418,7 +418,8 @@ OptionalFilter BigIntRangeFilter::create(const ActionsDAG::Node & node)
         return std::nullopt;
     const auto * input_node = getInputNode(node);
     auto name = input_node->result_name;
-    if (!isInt64(input_node->result_type) && !isInt32(input_node->result_type) && !isInt16(input_node->result_type))
+    auto input_type = removeNullable(input_node->result_type);
+    if (!isInt64(input_type) && !isInt32(input_type) && !isInt16(input_type))
         return std::nullopt;
     auto constant_nodes = getConstantNode(node);
     auto func_name = node.function_base->getName();

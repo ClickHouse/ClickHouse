@@ -7,6 +7,7 @@
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <arrow/io/util_internal.h>
+#include <parquet/page_index.h>
 #include <Common/Stopwatch.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -41,6 +42,25 @@ RowGroupChunkReader::RowGroupChunkReader(
     remain_rows = row_group_meta->num_rows();
     builder = std::make_unique<ColumnReaderBuilder>(
         parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
+
+    auto page_index_reader
+        = parquet::PageIndexReader::Make(parquetReader->arrow_file.get(), parquetReader->meta_data, parquetReader->properties);
+    if (page_index_reader)
+    {
+        Int32 rg_idx = static_cast<int>(row_group_idx);
+//        std::vector<Int32> column_indices;
+//        for (const auto & item : parquet_reader->parquet_columns)
+//        {
+//            int column_idx = parquet_reader->metaData().schema()->ColumnIndex(*parquet_reader->parquet_columns.at(item.first));
+//            /// nested column node will get -1
+//            if (column_idx < 0) continue;
+//            column_indices.push_back(column_idx);
+//        }
+//        static const parquet::PageIndexSelection ALL_INDEX = {true, true};
+//        page_index_reader->WillNeed({rg_idx}, column_indices, ALL_INDEX);
+        row_group_index_reader = page_index_reader->RowGroup(rg_idx);
+        context.row_group_index_reader = row_group_index_reader;
+    }
 
     for (const auto & col_with_name : parquet_reader->header)
     {

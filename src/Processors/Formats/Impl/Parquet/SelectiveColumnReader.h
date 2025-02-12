@@ -12,12 +12,14 @@
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
 #include <Processors/Formats/Impl/Parquet/PageReader.h>
+#include <Processors/Formats/Impl/Parquet/DecoderHelper.h>
 #include <arrow/util/bit_stream_utils.h>
 #include <arrow/util/decimal.h>
 #include <arrow/util/rle_encoding.h>
 #include <parquet/column_page.h>
 #include <parquet/column_reader.h>
 #include <parquet/file_reader.h>
+#include <parquet/page_index.h>
 #include <Common/PODArray.h>
 
 namespace parquet
@@ -77,57 +79,6 @@ private:
     bool value_null = false;
 };
 
-struct ParquetData
-{
-    // raw page data
-    const uint8_t * buffer = nullptr;
-    // size of raw page data
-    size_t buffer_size = 0;
-
-    void checkSize(size_t size) const
-    {
-        if (size > buffer_size) [[unlikely]]
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "ParquetData: buffer size is not enough, {} > {}", size, buffer_size);
-    }
-
-    // before consume, should check size first
-    void consume(size_t size)
-    {
-        buffer += size;
-        buffer_size -= size;
-    }
-
-    void checkAndConsume(size_t size)
-    {
-        checkSize(size);
-        consume(size);
-    }
-};
-
-struct PageOffsets
-{
-    size_t remain_rows = 0;
-    size_t levels_offset = 0;
-
-    void consume(size_t rows)
-    {
-        if (!rows)
-            return;
-        if (rows > remain_rows)
-        {
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "read too many rows: {} > {}", rows, remain_rows);
-        }
-        remain_rows -= rows;
-        levels_offset += rows;
-    }
-
-    void reset(size_t rows)
-    {
-        remain_rows = rows;
-        levels_offset = 0;
-    }
-};
-
 struct ScanState
 {
     std::shared_ptr<parquet::Page> page;
@@ -143,250 +94,75 @@ struct ScanState
 
     // current column chunk available rows
     PageOffsets offsets;
+
+    // next page position in the column chunk
+    Int32 page_position = 0;
+
+    Int32 getCurrentPagePosition()
+    {
+        if (offsets.remain_rows)
+            return std::max(page_position - 1, 0);
+        else
+            return page_position;
+    }
 };
 
 Int32 loadLength(const uint8_t * data);
 
-using ValueConverter = std::function<void(const uint8_t *, const size_t, uint8_t *)>;
 
-template <typename Type, int datetime_scale = 0>
-struct ValueConverterImpl
+
+template <typename T>
+void computeRowSetPlainSpace(
+    const T * start, OptionalRowSet & row_set, const ColumnFilterPtr & filter, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
 {
-    static void convert(const uint8_t *, const size_t, uint8_t *)
+    if (!filter || !row_set.has_value())
+        return;
+    int count = 0;
+    auto & sets = row_set.value();
+    for (size_t i = 0; i < rows_to_read; i++)
     {
-        throw Exception(
-            ErrorCodes::PARQUET_EXCEPTION, "Unsupported convert value, type: {}, datetime_scale {}", typeid(Type).name(), datetime_scale);
-    }
-};
-
-template <int datetime_scale>
-struct ValueConverterImpl<DateTime64, datetime_scale>
-{
-    static void convert(const uint8_t * src, const size_t, uint8_t * dst)
-    {
-        const parquet::Int96 * tmp = reinterpret_cast<const parquet::Int96 *>(src);
-        static const int max_scale_num = 9;
-        static const UInt64 pow10[max_scale_num + 1] = {1000000000, 100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1};
-        static const UInt64 spd = 60 * 60 * 24;
-        static const UInt64 scaled_day[max_scale_num + 1]
-            = {spd,
-               10 * spd,
-               100 * spd,
-               1000 * spd,
-               10000 * spd,
-               100000 * spd,
-               1000000 * spd,
-               10000000 * spd,
-               100000000 * spd,
-               1000000000 * spd};
-
-        auto decoded = parquet::DecodeInt96Timestamp(*tmp);
-
-        uint64_t scaled_nano = decoded.nanoseconds / pow10[datetime_scale];
-        DateTime64 * result = reinterpret_cast<DateTime64 *>(dst);
-        *result = static_cast<Int64>((decoded.days_since_epoch * scaled_day[datetime_scale]) + scaled_nano);
-    }
-};
-
-/// TODO handle big endian machine
-template <>
-struct ValueConverterImpl<Decimal32>
-{
-    static void convert(const uint8_t * src, const size_t, uint8_t * dst)
-    {
-        *reinterpret_cast<Decimal<Int32> *>(dst) = std::byteswap(*reinterpret_cast<const int32_t *>(src));
-    }
-};
-
-template <>
-struct ValueConverterImpl<Decimal64>
-{
-    static void convert(const uint8_t * src, const size_t, uint8_t * dst)
-    {
-        *reinterpret_cast<Decimal<Int64> *>(dst) = std::byteswap(*reinterpret_cast<const int64_t *>(src));
-    }
-};
-
-template <>
-struct ValueConverterImpl<Int64>
-{
-    static void convert(const uint8_t * src, const size_t, uint8_t * dst) { memcpySmallAllowReadWriteOverflow15(dst, src, 8); }
-};
-
-template <>
-struct ValueConverterImpl<Decimal128>
-{
-    static void convert(const uint8_t * src, const size_t len, uint8_t * dst)
-    {
-        auto status = arrow::Decimal128::FromBigEndian(src, static_cast<int32_t>(len));
-        assert(status.ok());
-        status.ValueUnsafe().ToBytes(dst);
-    }
-};
-
-template <>
-struct ValueConverterImpl<Decimal256>
-{
-    static void convert(const uint8_t * src, const size_t len, uint8_t * dst)
-    {
-        auto status = arrow::Decimal256::FromBigEndian(src, static_cast<int32_t>(len));
-        assert(status.ok());
-        status.ValueUnsafe().ToBytes(dst);
-    }
-};
-
-
-class PlainDecoder
-{
-public:
-    PlainDecoder(ParquetData & data_, PageOffsets & offsets_) : page_data(data_), offsets(offsets_) { }
-
-    template <typename T, typename S>
-    void decodeFixedValue(PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    void decodeBoolean(PaddedPODArray<UInt8> & data, PaddedPODArray<UInt8> & src, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    void decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n);
-
-    template <typename T>
-    void decodeFixedLengthData(
-        PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t element_size, ValueConverter value_converter);
-
-    void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    template <typename T, typename S>
-    void
-    decodeFixedValueSpace(PaddedPODArray<T> & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
-
-    void decodeBooleanSpace(
-        PaddedPODArray<UInt8> & data,
-        PaddedPODArray<UInt8> & src,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
-
-    void decodeFixedStringSpace(
-        ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n);
-
-    template <typename T>
-    void decodeFixedLengthDataSpace(
-        PaddedPODArray<T> & data,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read,
-        size_t element_size,
-        ValueConverter value_converter);
-
-    void decodeStringSpace(
-        ColumnString::Chars & chars,
-        ColumnString::Offsets & offsets,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
-
-    size_t calculateStringTotalSize(const ParquetData & data, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    size_t calculateStringTotalSizeSpace(
-        const ParquetData & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
-
-private:
-    void addOneString(bool null, const ParquetData & data, size_t & offset, const OptionalRowSet & row_set, size_t row, size_t & total_size)
-    {
-        if (row_set.has_value())
+        if (null_map[i])
         {
-            const auto & sets = row_set.value();
-            if (null)
-            {
-                if (sets.get(row))
-                    total_size++;
-                return;
-            }
-            data.checkSize(offset + 4);
-            auto len = loadLength(data.buffer + offset);
-            offset += 4 + len;
-            data.checkSize(offset);
-            if (sets.get(row))
-                total_size += len + 1;
+            sets.set(i, filter->testNull());
         }
         else
         {
-            if (null)
-            {
-                total_size++;
-                return;
-            }
-            data.checkSize(offset + 4);
-            auto len = loadLength(data.buffer + offset);
-            offset += 4 + len;
-            data.checkSize(offset);
-            total_size += len + 1;
+            if constexpr (std::is_same_v<T, Int64>)
+                sets.set(i, filter->testInt64(start[count]));
+            else if constexpr (std::is_same_v<T, Int32>)
+                sets.set(i, filter->testInt32(start[count]));
+            else if constexpr (std::is_same_v<T, Int16>)
+                sets.set(i, filter->testInt16(start[count]));
+            else if constexpr (std::is_same_v<T, Float32>)
+                sets.set(i, filter->testFloat32(start[count]));
+            else if constexpr (std::is_same_v<T, Float64>)
+                sets.set(i, filter->testFloat64(start[count]));
+            else
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
+            count++;
         }
     }
+}
 
-    ParquetData & page_data;
-    PageOffsets & offsets;
-};
-
-class DictDecoder
+template <typename T>
+void computeRowSetPlain(const T * start, OptionalRowSet & row_set, const ColumnFilterPtr & filter, size_t rows_to_read)
 {
-public:
-    DictDecoder(PaddedPODArray<Int32> & idx_buffer_, PageOffsets & offsets_) : idx_buffer(idx_buffer_), offsets(offsets_) { }
-
-    template <class DictValueType>
-    void decodeFixedValue(
-        PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    void
-    decodeFixedString(PaddedPODArray<String> & dict, ColumnFixedString::Chars & chars, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    template <class DictValueType>
-    void decodeFixedLengthData(
-        PaddedPODArray<DictValueType> & dict, PaddedPODArray<DictValueType> & data, const OptionalRowSet & row_set, size_t rows_to_read);
-
-    void decodeString(
-        std::vector<String> & dict,
-        ColumnString::Chars & chars,
-        ColumnString::Offsets & offsets,
-        const OptionalRowSet & row_set,
-        size_t rows_to_read);
-
-    template <class DictValueType>
-    void decodeFixedValueSpace(
-        PaddedPODArray<DictValueType> & dict,
-        PaddedPODArray<DictValueType> & data,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
-
-    void decodeStringSpace(
-        std::vector<String> & dict,
-        ColumnString::Chars & chars,
-        ColumnString::Offsets & offsets,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
-
-    void decodeFixedStringSpace(
-        PaddedPODArray<String> & dict,
-        ColumnFixedString::Chars & chars,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read,
-        size_t element_size);
-
-    template <class DictValueType>
-    void decodeFixedLengthDataSpace(
-        PaddedPODArray<DictValueType> & dict,
-        PaddedPODArray<DictValueType> & data,
-        const OptionalRowSet & row_set,
-        PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
-
-private:
-    PaddedPODArray<Int32> & idx_buffer;
-    PageOffsets & offsets;
-};
-
+    if (filter && row_set.has_value())
+    {
+        if constexpr (std::is_same_v<T, Int64>)
+            filter->testInt64Values(row_set.value(), rows_to_read, start);
+        else if constexpr (std::is_same_v<T, Int32>)
+            filter->testInt32Values(row_set.value(), rows_to_read, start);
+        else if constexpr (std::is_same_v<T, Int16>)
+            filter->testInt16Values(row_set.value(), rows_to_read, start);
+        else if constexpr (std::is_same_v<T, Float32>)
+            filter->testFloat32Values(row_set.value(), rows_to_read, start);
+        else if constexpr (std::is_same_v<T, Float64>)
+            filter->testFloat64Values(row_set.value(), rows_to_read, start);
+        else
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
+    }
+}
 
 class SelectiveColumnReader
 {
@@ -438,6 +214,7 @@ public:
     /// read next page
     void readAndDecodePage()
     {
+        loadDictPageIfNeeded();
         readPageIfNeeded();
         if (!page_reader)
         {
@@ -496,15 +273,33 @@ public:
         }
     }
 
+    void setColumnChunkMeta(std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta_)
+    {
+        column_chunk_meta = std::move(column_chunk_meta_);
+    }
+
+    virtual void setColumnIndex(std::shared_ptr<parquet::ColumnIndex> column_index_)
+    {
+        column_index = std::move(column_index_);
+    }
+
+    virtual void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_)
+    {
+        offset_index = std::move(offset_index_);
+    }
+
 protected:
     void decodePage();
-    void initDataPageDecoder(const parquet::Encoding::type encoding);
+    void initDataPageDecoder(parquet::Encoding::type encoding);
     virtual void skipPageIfNeed();
+    void skipPageByOffsetIndexIfNeed();
+    void loadDictPageIfNeeded();
     bool readPage();
     void readDataPageV1(const parquet::DataPageV1 & page);
     void readDataPageV2(const parquet::DataPageV2 & page);
 
     // for dictionary reader
+    virtual bool needReadDictPage() { return false; }
     virtual void readDictPage(const parquet::DictionaryPage &) { }
     virtual void initIndexDecoderIfNeeded() { }
     virtual void createDictDecoder() { }
@@ -514,11 +309,15 @@ protected:
     std::unique_ptr<LazyPageReader> page_reader;
     ScanState state;
     ScanSpec scan_spec;
+    std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta;
     std::unique_ptr<PlainDecoder> plain_decoder;
     bool plain = true;
     SelectiveColumnReader * parent = nullptr;
     int16_t parent_rl = 0;
     int16_t parent_dl = 0;
+
+    std::shared_ptr<parquet::ColumnIndex> column_index;
+    std::shared_ptr<parquet::OffsetIndex> offset_index;
 };
 
 class BooleanColumnReader : public SelectiveColumnReader
@@ -548,6 +347,36 @@ private:
     PaddedPODArray<UInt8> buffer;
     std::unique_ptr<arrow::bit_util::BitReader> bit_reader;
 };
+
+template <typename SerializedType>
+struct IndexTypeTraits
+{
+};
+
+template <>
+struct IndexTypeTraits<Int32>
+{
+    using IndexType = parquet::Int32ColumnIndex;
+};
+
+template <>
+struct IndexTypeTraits<Int64>
+{
+    using IndexType = parquet::Int64ColumnIndex;
+};
+
+template <>
+struct IndexTypeTraits<Float32>
+{
+    using IndexType = parquet::FloatColumnIndex;
+};
+
+template <>
+struct IndexTypeTraits<Float64>
+{
+    using IndexType = parquet::DoubleColumnIndex;
+};
+
 
 template <typename DataType, typename SerializedType>
 class NumberColumnDirectReader : public SelectiveColumnReader
@@ -610,6 +439,7 @@ public:
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
 protected:
+    bool needReadDictPage() override { return !dict_page_read; }
     void readDictPage(const parquet::DictionaryPage & page) override;
     void initIndexDecoderIfNeeded() override
     {
@@ -628,6 +458,7 @@ private:
     DataTypePtr datatype;
     arrow::util::RleDecoder idx_decoder;
     std::unique_ptr<DictDecoder> dict_decoder;
+    bool dict_page_read = false;
     PaddedPODArray<typename DataType::FieldType> dict;
     PaddedPODArray<typename DataType::FieldType> batch_buffer;
 };
@@ -678,6 +509,7 @@ public:
     ValueConverter getConverter();
 
 protected:
+    bool needReadDictPage() override { return !dict_page_read; }
     void readDictPage(const parquet::DictionaryPage & page) override;
     void initIndexDecoderIfNeeded() override
     {
@@ -699,6 +531,8 @@ private:
     arrow::util::RleDecoder idx_decoder;
     std::unique_ptr<DictDecoder> dict_decoder;
     PaddedPODArray<DictValueType> dict;
+    // mark dict page has read
+    bool dict_page_read;
 };
 
 void computeRowSetPlainString(const uint8_t * start, OptionalRowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read);
@@ -772,6 +606,8 @@ public:
     size_t skipValuesInCurrentPage(size_t rows_to_skip) override;
 
 protected:
+    bool needReadDictPage() override { return !dict_page_read; }
+
     void readDictPage(const parquet::DictionaryPage & page) override;
 
     void initIndexDecoderIfNeeded() override;
@@ -787,6 +623,7 @@ private:
     std::vector<String> dict;
     std::unique_ptr<DictDecoder> dict_decoder;
     arrow::util::RleDecoder idx_decoder;
+    bool dict_page_read = false;
 };
 
 class OptionalColumnReader : public SelectiveColumnReader
@@ -821,6 +658,15 @@ public:
         SelectiveColumnReader::setParent(parent_);
         child->setParent(this);
     }
+    void setColumnIndex(std::shared_ptr<parquet::ColumnIndex> column_index_) override
+    {
+        child->setColumnIndex(column_index_);
+    }
+
+    void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_) override
+    {
+        child->setOffsetIndex(offset_index_);
+    }
 
 private:
     void applyLazySkip();
@@ -842,8 +688,10 @@ private:
     int def_level = 0;
     int rep_level = 0;
 
-    /// when false, only adapt to nullable type
-    const bool has_null = false;
+    /// There are two scenarios in which an `OptionalColumnReader` is created:
+    /// 1. The data within the Parquet file is optional.
+    /// 2. There are nullable fields in the nested types of the header, but the data is required. In this case, additional handling is needed because Repeat Level (RL) data does not exist.
+    const bool has_null;
 };
 
 class ListColumnReader : public SelectiveColumnReader

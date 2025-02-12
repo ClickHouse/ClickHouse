@@ -2,6 +2,7 @@
 #include <ostream>
 #include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
 #include <DataTypes/IDataType.h>
+#include <parquet/metadata.h>
 
 namespace parquet
 {
@@ -35,6 +36,7 @@ public:
         Builder& filter(const ColumnFilterPtr & filter);
         Builder& targetType(const DataTypePtr & target_type);
         Builder& pageReader(PageReaderCreator page_reader_creator);
+        Builder& columnChunkMeta(std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta);
         SelectiveColumnReaderPtr build();
     private:
         bool dictionary_ = false;
@@ -46,6 +48,7 @@ public:
         PageReaderCreator page_reader_creator = nullptr;
         std::unique_ptr<LazyPageReader> page_reader_;
         ColumnFilterPtr filter_ = nullptr;
+        std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta_ = nullptr;
     };
 
     static Builder builder();

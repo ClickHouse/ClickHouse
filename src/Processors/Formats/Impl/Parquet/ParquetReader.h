@@ -56,6 +56,7 @@ public:
         std::shared_ptr<ThreadPool> io_pool_ = nullptr);
 
     Block read();
+    void setSourceArrowFile(std::shared_ptr<arrow::io::RandomAccessFile> arrow_file_);
     void pushDownFilter(FilterSplitResultPtr filter_split_result);
     std::unique_ptr<RowGroupChunkReader>
     getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch);
@@ -70,6 +71,8 @@ private:
     std::unique_ptr<parquet::ParquetFileReader> file_reader;
     std::mutex file_mutex;
     SeekableReadBuffer & file;
+    // for read page index
+    std::shared_ptr<arrow::io::RandomAccessFile> arrow_file = nullptr;
     parquet::ArrowReaderProperties arrow_properties;
     Block header;
     std::unique_ptr<SubRowGroupRangeReader> chunk_reader;
