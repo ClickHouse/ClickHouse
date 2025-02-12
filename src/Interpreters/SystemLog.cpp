@@ -206,7 +206,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine = "ENGINE = MergeTree";
 
         /// PARTITION expr is not necessary.
-        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+        String partition_by = config.getString(config_prefix + ".partition_by", TSystemLog::getDefaultPartitionBy());
         if (!partition_by.empty())
             log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
