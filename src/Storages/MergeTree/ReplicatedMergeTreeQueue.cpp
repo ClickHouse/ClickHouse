@@ -23,12 +23,6 @@
 #include <ranges>
 #include <Poco/Timestamp.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
-
 namespace DB
 {
 
@@ -62,11 +56,6 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     log = getLogger(logger_name);
 }
 
-ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
-{
-    clear();
-}
-
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
@@ -78,10 +67,6 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
-
     num_data_mutations_to_apply = 0;
     num_metadata_mutations_to_apply = 0;
 }
@@ -2088,6 +2073,18 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     }
 
     return res;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
