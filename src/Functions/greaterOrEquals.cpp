@@ -22,10 +22,10 @@ ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTup
 {
 
     FunctionOverloadResolverPtr greater
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(check_decimal_overflow, allow_not_comparable_types));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(params));
 
     FunctionOverloadResolverPtr greater_or_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreaterOrEquals>(check_decimal_overflow, allow_not_comparable_types));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreaterOrEquals>(params));
 
     FunctionOverloadResolverPtr func_builder_or
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
@@ -34,7 +34,7 @@ ColumnPtr FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTup
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     FunctionOverloadResolverPtr func_builder_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(check_decimal_overflow, allow_not_comparable_types));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     return executeTupleLessGreaterImpl(
         greater,

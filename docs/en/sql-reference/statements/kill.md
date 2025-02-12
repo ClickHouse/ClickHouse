@@ -71,9 +71,9 @@ The response contains the `kill_status` column, which can take the following val
 
 1.  `finished` – The query was terminated successfully.
 2.  `waiting` – Waiting for the query to end after sending it a signal to terminate.
-3.  The other values ​​explain why the query can’t be stopped.
+3.  The other values ​​explain why the query can't be stopped.
 
-A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
+A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
 
 ## KILL MUTATION
 
@@ -91,7 +91,7 @@ KILL MUTATION
 
 Tries to cancel and remove [mutations](../../sql-reference/statements/alter/index.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
 
-A test query (`TEST`) only checks the user’s rights and displays a list of mutations to stop.
+A test query (`TEST`) only checks the user's rights and displays a list of mutations to stop.
 
 Examples:
 

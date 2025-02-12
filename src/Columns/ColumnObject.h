@@ -8,7 +8,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
-#include <Formats/FormatSettings.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/WeakHash.h>
 
@@ -167,9 +166,13 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+
+    void forEachSubcolumn(ColumnCallback callback) const override;
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -177,6 +180,7 @@ public:
 
     void finalize() override;
     bool isFinalized() const override;
+    bool canBeInsideNullable() const override { return true; }
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;

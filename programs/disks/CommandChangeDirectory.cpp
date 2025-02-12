@@ -10,7 +10,7 @@ namespace DB
 class CommandChangeDirectory final : public ICommand
 {
 public:
-    explicit CommandChangeDirectory() : ICommand()
+    explicit CommandChangeDirectory() : ICommand("CommandChangeDirectory")
     {
         command_name = "cd";
         description = "Change directory (makes sense only in interactive mode)";

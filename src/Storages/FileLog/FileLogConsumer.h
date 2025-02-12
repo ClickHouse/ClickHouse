@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
 
@@ -69,7 +69,7 @@ private:
     Records records;
     Records::const_iterator current;
 
-    using TaskThread = BackgroundSchedulePool::TaskHolder;
+    using TaskThread = BackgroundSchedulePoolTaskHolder;
 
     Records pollBatch(size_t batch_size_);
 
