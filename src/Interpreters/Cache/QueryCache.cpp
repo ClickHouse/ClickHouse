@@ -1,4 +1,5 @@
 #include "Interpreters/Cache/QueryCache.h"
+#include <algorithm>
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -21,6 +22,7 @@
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include "IO/WriteHelpers.h"
+#include "Parsers/ASTTablesInSelectQuery.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -226,34 +228,74 @@ ASTPtr removeQueryCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-ASTPtr removeASTSubquery(ASTPtr ast)
+class RemoveTableAliasMatcher
 {
-    ASTPtr transformed_ast = ast->clone();
+public:
+    struct Data {};
 
-    if (auto * subquery = transformed_ast->as<ASTSubquery>())
-        transformed_ast = subquery->children[0];
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
 
-    return transformed_ast;
-}
-
-ASTPtr removeASTSelectWithUnionQuery(ASTPtr ast)
-{
-    ASTPtr transformed_ast = ast->clone();
-
-    if (auto * select_with_union_query = transformed_ast->as<ASTSelectWithUnionQuery>()) {
-        auto & select_lists = select_with_union_query->list_of_selects->as<ASTExpressionList &>();
-        if (select_lists.children.size() == 1)
-            transformed_ast = select_lists.children[0];
+    static void visit(ASTPtr & ast, Data &)
+    {
+        LOG_TRACE(getLogger("QueryCache"), "visit");
+        if (auto * table_expression = ast->as<ASTTableIdentifier>())
+        {
+            LOG_TRACE(getLogger("QueryCache"), "remove table alias");
+            if (table_expression->alias.starts_with("__table")) {
+                table_expression->setAlias("");
+            }
+        }
+        else if (auto * identifier = ast->as<ASTIdentifier>())
+        {
+            if (identifier->compound() && identifier->name_parts[0].starts_with("__table")) {
+                LOG_TRACE(getLogger("QueryCache"), "remove table matcher: {} {} {}", identifier->compound(), identifier->name_parts[0], identifier->name_parts[1]);
+                identifier->setShortName(identifier->name_parts[1]);
+            }
+        }
     }
+};
+
+using RemoveTableAliasVisitor = InDepthNodeVisitor<RemoveTableAliasMatcher, true>;
+
+ASTPtr removeTableAliases(ASTPtr ast)
+{
+    ASTPtr transformed_ast = ast->clone();
+
+    RemoveTableAliasVisitor::Data visitor_data;
+    RemoveTableAliasVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
 }
+
+// ASTPtr removeASTSubquery(ASTPtr ast)
+// {
+//     ASTPtr transformed_ast = ast->clone();
+
+//     if (auto * subquery = transformed_ast->as<ASTSubquery>())
+//         transformed_ast = subquery->children[0];
+
+//     return transformed_ast;
+// }
+
+// ASTPtr removeASTSelectWithUnionQuery(ASTPtr ast)
+// {
+//     ASTPtr transformed_ast = ast->clone();
+
+//     if (auto * select_with_union_query = transformed_ast->as<ASTSelectWithUnionQuery>()) {
+//         auto & select_lists = select_with_union_query->list_of_selects->as<ASTExpressionList &>();
+//         if (select_lists.children.size() == 1)
+//             transformed_ast = select_lists.children[0];
+//     }
+
+//     return transformed_ast;
+// }
 
 IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
     ast = removeQueryCacheSettings(ast);
-    ast = removeASTSubquery(ast);
-    ast = removeASTSelectWithUnionQuery(ast);
+    ast = removeTableAliases(ast);
+    // ast = removeASTSubquery(ast);
+    // ast = removeASTSelectWithUnionQuery(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -276,7 +318,7 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryCacheRelatedSetting(name) || !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+        if (!isQueryCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
         else
             LOG_TRACE(getLogger("QueryCache"), "unused setting: {} {}", change.name, change.value);
