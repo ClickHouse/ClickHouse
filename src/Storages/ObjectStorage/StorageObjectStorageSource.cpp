@@ -614,7 +614,8 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
     std::function<void(FileProgress)> file_progress_callback_)
-    : object_storage(object_storage_)
+    : WithContext(context_)
+    , object_storage(object_storage_)
     , configuration(configuration_)
     , virtual_columns(virtual_columns_)
     , throw_on_zero_files_match(throw_on_zero_files_match_)
