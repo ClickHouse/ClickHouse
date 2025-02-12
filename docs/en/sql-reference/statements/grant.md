@@ -178,8 +178,6 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `ALTER VIEW REFRESH`
         - `ALTER VIEW MODIFY QUERY`
         - `ALTER VIEW MODIFY SQL SECURITY`
-    - `ALTER USER`
-    - `ALTER ROLE`
     - `ALTER PROJECTION`
         - `ALTER ADD PROJECTION`
         - `ALTER DROP PROJECTION`
@@ -190,7 +188,6 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `ALTER SETTINGS PROFILE`
 - [`CLUSTER`](#cluster)
 - [`CREATE`](#create)
-    - `CREATE USER` 
     - `CREATE DATABASE`
     - `CREATE TABLE`
         - `CREATE ARBITRARY TEMPORARY TABLE`
@@ -209,10 +206,6 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `DROP WORKLOAD`
     - `DROP RESOURCE`
     - `DROP NAMED COLLECTION`
-    - `DROP USER`
-    - `DROP ROLE`
-    - `DROP ROW POLICY`
-    - `DROP QUOTA`
     - `DROP SETTINGS PROFILE`
 - [`UNDROP`](undrop.md)
 - [`TRUNCATE`](#truncate)
