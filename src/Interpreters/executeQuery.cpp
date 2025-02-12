@@ -224,7 +224,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
         LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
-            client_info.current_address.toString(),
+            client_info.current_address->toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
@@ -282,7 +282,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
-                        context->getClientInfo().current_address.toString(),
+                        context->getClientInfo().current_address->toString(),
                         comment,
                         line_info,
                         toOneLineQuery(elem.query));
@@ -290,7 +290,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
         message.text = fmt::format(
             "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
-            context->getClientInfo().current_address.toString(),
+            context->getClientInfo().current_address->toString(),
             comment,
             line_info,
             toOneLineQuery(elem.query),
