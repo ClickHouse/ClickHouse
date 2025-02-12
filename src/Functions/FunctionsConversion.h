@@ -1295,7 +1295,7 @@ struct ConvertThroughParsing
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
-                    if constexpr (to_datetime64 || to_time64) /// TODO
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
@@ -2292,7 +2292,6 @@ struct ConvertImpl
                     || ((std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
                         && (std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)))
                 {
-                    LOG_TRACE(getLogger("DEBUGGING TIME TO DATE CONVERSION"), "-=-===-=-=-=-124");
                     vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
                 }
                 else

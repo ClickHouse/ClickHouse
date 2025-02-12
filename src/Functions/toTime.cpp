@@ -6,7 +6,7 @@
 namespace DB
 {
 
-using FunctionToTimeWithFixedDate = FunctionDateOrDateTimeToSomething<DataTypeTime, ToTimeWithFixedDateImpl>;
+using FunctionToTimeWithFixedDate = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeWithFixedDateImpl>;
 
 REGISTER_FUNCTION(ToTimeWithFixedDate)
 {
