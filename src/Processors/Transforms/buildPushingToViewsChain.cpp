@@ -4,6 +4,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/CountingTransform.h>
