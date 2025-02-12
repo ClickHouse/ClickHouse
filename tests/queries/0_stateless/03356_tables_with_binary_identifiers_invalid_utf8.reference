@@ -1,0 +1,4 @@
+CREATE TABLE default.test\n(\n    `ÿ\\0Ð¿Ñ€Ð¸Ð²ÐµÑ‚ª»Ì` UInt8\n)\nENGINE = MergeTree\nORDER BY `ÿ\\0Ð¿Ñ€Ð¸Ð²ÐµÑ‚ª»Ì`\nSETTINGS index_granularity = 8192\nCOMMENT \'\\0\'
+123
+CREATE TABLE default.test\n(\n    `ÿ\\0Ð¿Ñ€Ð¸Ð²ÐµÑ‚ª»Ì` UInt8\n)\nENGINE = MergeTree\nORDER BY `ÿ\\0Ð¿Ñ€Ð¸Ð²ÐµÑ‚ª»Ì`\nSETTINGS index_granularity = 8192\nCOMMENT \'\\0\'
+123
