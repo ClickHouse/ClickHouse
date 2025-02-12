@@ -23,8 +23,8 @@ TEST(PocoJSON, roundtrip)
       */
     try
     {
-        std::string source_str   ("{\"hello\0упячка\\\"\": \"world\\n\\t\\rфейхоа\xFFwtf\xAA\xBB\xCC\xDD\"}"sv);
-        std::string formatted_str("{\"hello\\u0000упячка\\\"\":\"world\\n\\t\\rфейхоа\xFFwtf\xAA\xBB\xCC\xDD\"}"sv);
+        std::string source_str("{\"hello\0ʏᑫᘈᶆᴋᾰ\\\"\": \"world\\n\\t\\rᖴᘍ᎐᙮ᗝᾴ\xFFwtf\xAA\xBB\xCC\xDD\"}"sv);
+        std::string formatted_str("{\"hello\\u0000ʏᑫᘈᶆᴋᾰ\\\"\":\"world\\n\\t\\rᖴᘍ᎐᙮ᗝᾴ\xFFwtf\xAA\xBB\xCC\xDD\"}"sv);
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var res_json = parser.parse(source_str);
