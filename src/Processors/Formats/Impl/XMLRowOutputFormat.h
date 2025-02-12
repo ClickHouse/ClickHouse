@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>

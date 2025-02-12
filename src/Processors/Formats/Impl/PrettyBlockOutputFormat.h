@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>

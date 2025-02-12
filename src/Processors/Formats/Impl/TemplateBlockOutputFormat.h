@@ -8,6 +8,10 @@
 namespace DB
 {
 
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
+
 class TemplateBlockOutputFormat : public IOutputFormat
 {
     using EscapingRule = FormatSettings::EscapingRule;

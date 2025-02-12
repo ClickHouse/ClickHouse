@@ -4,6 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Processors/ISource.h>
+#include <Processors/Port.h>
 #include <Core/ExternalResultDescription.h>
 #include <Core/PostgreSQL/insertPostgreSQLValue.h>
 #include <Core/PostgreSQL/ConnectionHolder.h>

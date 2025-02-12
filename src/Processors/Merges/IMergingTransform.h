@@ -32,7 +32,7 @@ public:
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
-    OutputPort & getOutputPort() { return outputs.front(); }
+    OutputPort & getOutputPort();
 
     /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
     void addInput();

@@ -1,8 +1,8 @@
 #pragma once
 #include "config.h"
 #if USE_AVRO
-#include <unordered_map>
 
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>

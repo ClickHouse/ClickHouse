@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
-#include <IO/WriteBuffer.h>
-#include <Processors/Formats/IRowOutputFormat.h>
+#include <Core/NamesAndTypes.h>
 #include <Formats/BSONTypes.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 
 namespace DB
 {

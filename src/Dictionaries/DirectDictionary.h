@@ -12,6 +12,8 @@
 namespace DB
 {
 
+struct Settings;
+
 template <DictionaryKeyType dictionary_key_type>
 class DirectDictionary final : public IDictionary
 {
