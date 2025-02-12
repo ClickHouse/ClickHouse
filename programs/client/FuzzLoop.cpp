@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <base/scope_guard.h>
 #include "Client.h"
 #include "Parsers/formatAST.h"
@@ -288,6 +289,8 @@ bool Client::processWithFuzzing(const String & full_query)
             if ((new_set_query = fuzzer.getRandomSettings()))
             {
                 String qstr = new_set_query->formatForErrorMessage();
+
+                fmt::print(stdout, "Running set query: {}\n", qstr);
                 if (auto res = processFuzzingStep(qstr, new_set_query, true))
                     return *res;
             }
