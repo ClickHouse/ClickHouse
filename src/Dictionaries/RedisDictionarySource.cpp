@@ -2,6 +2,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Util/AbstractConfiguration.h>
