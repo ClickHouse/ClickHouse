@@ -55,7 +55,7 @@ def zk_rmr_with_retries(zk, path):
 
 
 def grep_log(node, s):
-    return node.exec_in_container(
+    return s in node.exec_in_container(
         ["bash", "-c", f"grep '{s}' /var/log/clickhouse-server/clickhouse-server.log"]
     )
 
@@ -90,11 +90,12 @@ def test_blobs_deleted_on_part_reattach(started_cluster):
     assert "all_0_0_0\n" == q(ch2, "SELECT name FROM system.parts WHERE table='test'")
 
     q(ch2, "SYSTEM RESTORE REPLICA test")
+    q(ch2, "SYSTEM SYNC REPLICA test")
 
     # When replica on ch2 is restored, metadata_version.txt file in part has reference on deleted blob.
     # If read exception from file is not ignored, part will be detached as broken and fetched from other replica.
     assert "" == q(ch2, "SELECT name FROM system.detached_parts WHERE table='test'")
+    assert grep_log(ch2, "Failed to read metadata version")
 
-    assert grep_log(ch2, "Failed to read metadata version") == "1213"
-
-    q(ch1, f"DROP TABLE test ON CLUSTER cluster")
+    q(ch1, f"DROP TABLE test ON CLUSTER cluster SYNC")
+    q(ch1, f"DROP DATABASE {DATABASE_NAME} ON CLUSTER cluster SYNC")
