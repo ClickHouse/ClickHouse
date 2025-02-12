@@ -125,6 +125,7 @@ private:
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
+    ASTPtr addJoinClause();
     ASTPtr generatePredicate();
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
