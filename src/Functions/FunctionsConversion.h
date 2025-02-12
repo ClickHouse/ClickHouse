@@ -629,7 +629,6 @@ struct ToTime64TransformUnsigned
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
     {
-        LOG_TRACE(getLogger("TIme64 debugging"), "--------==----3");
         const auto converted = time_zone.toTime(from);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -656,7 +655,6 @@ struct ToTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
     {
-        LOG_TRACE(getLogger("TIme64 debugging"), "--------==----2");
         auto converted = time_zone.toTime(from);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -683,7 +681,6 @@ struct ToTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        LOG_TRACE(getLogger("TIme64 debugging"), "--------==----1");
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
@@ -1600,7 +1597,6 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
-            LOG_TRACE(getLogger("here ----"), "here --------------");
             if (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
@@ -1683,6 +1679,88 @@ struct ConvertImpl
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
+                        && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            using ToFieldType = typename ToDataType::FieldType;
+            using ColVecFrom = typename FromDataType::ColumnType;
+            using ColVecTo = typename ToDataType::ColumnType;
+
+            const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
+            typename ColVecTo::MutablePtr col_to = nullptr;
+
+            const DateLUTImpl * time_zone = nullptr;
+
+            UInt32 scale;
+
+            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
+                        || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                scale = additions.scale;
+            else
+                scale = additions;
+
+            col_to = ColVecTo::create(0, scale);
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
+            vec_to.resize(input_rows_count);
+
+            ColumnUInt8::MutablePtr col_null_map_to;
+            ColumnUInt8::Container * vec_null_map_to = nullptr;
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+            {
+                col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+                vec_null_map_to = &col_null_map_to->getData();
+            }
+
+            if (!time_zone && arguments.size() <= 2)
+                time_zone = &DateLUT::instance();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).toString().empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
+
+                if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                {
+                    ToFieldType result;
+                    bool convert_result = false;
+
+                    convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
+
+                    if (convert_result)
+                        vec_to[i] = result;
+                    else
+                    {
+                        vec_to[i] = static_cast<ToFieldType>(0);
+                        (*vec_null_map_to)[i] = true;
+                    }
+                }
+                else
+                {
+                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                }
+
+                auto scale_mult = DecimalUtils::scaleMultiplier<Time64>(col_to->getScale());
+
+                // Get the UTC seconds (the integer part) from the input value
+                auto utc_seconds = vec_to[i] / scale_mult;
+                auto fraction = vec_to[i] % scale_mult;
+
+                // Get the timezone offset (in seconds) for the target timezone at this moment
+                UInt64 offset = time_zone->timezoneOffset(utc_seconds);
+
+                // Compute local time-of-day in seconds
+                UInt64 local_seconds = (utc_seconds + offset) % 86400;
+
+                // Reassemble the result
+                vec_to[i] = local_seconds * scale_mult + fraction;
+            }
+
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
+            else
+                return col_to;
         }
         else if constexpr (IsDataTypeDateOrDateTimeOrTime<FromDataType>
             && std::is_same_v<ToDataType, DataTypeString>)
