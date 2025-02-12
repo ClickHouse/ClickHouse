@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <variant>
 #include <vector>
 
 #include <Dictionaries/DictionaryStructure.h>
