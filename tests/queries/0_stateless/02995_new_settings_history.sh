@@ -8,9 +8,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Ignore settings that, for historic reasons, have different values in Cloud
 IGNORED_SETTINGS_FOR_CLOUD="1 = 1"
+IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="1 = 1"
 if [[ $($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'") -eq 1 ]];
 then
   IGNORED_SETTINGS_FOR_CLOUD="name NOT IN ('max_table_size_to_drop', 'max_partition_size_to_drop')"
+  IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="name NOT IN ('allow_remote_fs_zero_copy_replication', 'min_bytes_for_wide_part')"
 fi
 
 IGNORE_SETTINGS_FOR_SANITIZERS="1=1"
@@ -85,7 +87,7 @@ $CLICKHOUSE_LOCAL --query "
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
                 WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
-            ))
+            )) AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
         )
     )
 "
