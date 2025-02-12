@@ -217,8 +217,7 @@ IOResourceManager::Workload::~Workload()
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
-            getCurrentExceptionMessage(/* with_stacktrace = */ true));
+        tryLogCurrentException("Workload");
     }
 }
 
