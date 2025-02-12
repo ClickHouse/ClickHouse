@@ -296,7 +296,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(QueryState & state, const Block & block);    /// Write a block to the network.
+    void sendData(QueryState & state, const Block & block_); /// Write a block to the network.
     void sendLogData(QueryState & state, const Block & block);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
@@ -320,6 +320,7 @@ private:
     void initBlockOutput(QueryState & state, const Block & block);
     void initLogsBlockOutput(QueryState & state, const Block & block);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
+    static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);
 
     /// This function is called from different threads.
     void updateProgress(QueryState & state, const Progress & value);
