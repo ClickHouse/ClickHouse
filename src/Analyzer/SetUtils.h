@@ -9,7 +9,7 @@ namespace DB
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-
+class Field;
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 

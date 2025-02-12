@@ -4,7 +4,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 #include <base/StringRef.h>
 
 #include <initializer_list>
@@ -17,6 +16,11 @@ class SipHash;
 
 namespace DB
 {
+
+class ISerialization;
+class SerializationInfoByName;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 /** Container for set of columns for bunch of rows in memory.
   * This is unit of data processing.

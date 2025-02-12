@@ -3,6 +3,8 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 
+#include <map>
+
 
 namespace DB
 {

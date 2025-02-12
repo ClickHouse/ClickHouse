@@ -1,5 +1,6 @@
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
+#include <Common/typeid_cast.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
@@ -1042,6 +1043,18 @@ void ExpressionActionsChain::finalize()
             && columns_from_previous > steps[i]->getRequiredColumns().size())
             steps[i]->prependProjectInput();
     }
+}
+
+ExpressionActionsChainSteps::ExpressionActionsStep * ExpressionActionsChain::getLastExpressionStep(bool allow_empty)
+{
+    if (steps.empty())
+    {
+        if (allow_empty)
+            return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+    }
+
+    return typeid_cast<ExpressionActionsChainSteps::ExpressionActionsStep *>(steps.back().get());
 }
 
 std::string ExpressionActionsChain::dumpChain() const

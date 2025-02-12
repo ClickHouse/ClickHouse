@@ -261,17 +261,7 @@ struct ExpressionActionsChain : WithContext
         steps.clear();
     }
 
-    ExpressionActionsChainSteps::ExpressionActionsStep * getLastExpressionStep(bool allow_empty = false)
-    {
-        if (steps.empty())
-        {
-            if (allow_empty)
-                return {};
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
-        }
-
-        return typeid_cast<ExpressionActionsChainSteps::ExpressionActionsStep *>(steps.back().get());
-    }
+    ExpressionActionsChainSteps::ExpressionActionsStep * getLastExpressionStep(bool allow_empty = false);
 
     ActionsAndProjectInputsFlagPtr getLastActions(bool allow_empty = false)
     {

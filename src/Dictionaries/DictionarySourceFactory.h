@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <unordered_map>
+#include <boost/noncopyable.hpp>
 
 namespace Poco
 {
