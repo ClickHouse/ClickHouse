@@ -7,7 +7,6 @@
 #include <base/StringRef.h>
 
 #include <initializer_list>
-#include <list>
 #include <set>
 #include <vector>
 #include <sparsehash/dense_hash_map>
@@ -192,10 +191,6 @@ private:
     friend class ActionsDAG;
 };
 
-using BlockPtr = std::shared_ptr<Block>;
-using Blocks = std::vector<Block>;
-using BlocksList = std::list<Block>;
-using BlocksPtr = std::shared_ptr<Blocks>;
 
 /// Extends block with extra data in derived classes
 struct ExtraBlock
@@ -204,8 +199,6 @@ struct ExtraBlock
 
     bool empty() const { return !block; }
 };
-
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);

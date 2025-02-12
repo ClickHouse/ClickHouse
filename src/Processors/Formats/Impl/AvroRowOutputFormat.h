@@ -3,7 +3,6 @@
 #if USE_AVRO
 #include <unordered_map>
 
-#include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
@@ -16,6 +15,7 @@
 
 namespace DB
 {
+class Block;
 class WriteBuffer;
 
 class AvroSerializerTraits;

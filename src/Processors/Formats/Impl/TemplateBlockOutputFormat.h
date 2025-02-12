@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Stopwatch.h>
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/ParsedTemplateFormatString.h>

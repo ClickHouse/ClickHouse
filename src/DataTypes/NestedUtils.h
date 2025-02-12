@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/NamesAndTypes.h>
 
 #include <map>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/ColumnsWithTypeAndName.h>
 
 #include <memory>
 

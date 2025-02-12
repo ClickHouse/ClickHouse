@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
@@ -8,6 +7,8 @@
 
 namespace DB
 {
+
+class Block;
 
 /*
  * Class for formatting data in BSON format.

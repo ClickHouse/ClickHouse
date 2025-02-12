@@ -1,7 +1,6 @@
 #pragma once
 
 #include "IDictionarySource.h"
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <unordered_map>
@@ -20,6 +19,7 @@ class Logger;
 namespace DB
 {
 
+class Block;
 struct DictionaryStructure;
 
 /// creates IDictionarySource instance from config and DictionaryStructure

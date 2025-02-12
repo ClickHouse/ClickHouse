@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+
+#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
