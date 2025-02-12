@@ -4,12 +4,10 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <base/StringRef.h>
 
 #include <initializer_list>
-#include <set>
 #include <vector>
-#include <sparsehash/dense_hash_map>
+
 
 class SipHash;
 
@@ -105,8 +103,8 @@ public:
     Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
-    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
-    NameMap getNamesToIndexesMap() const;
+
+    const IndexByName & getIndexByName() const { return index_by_name; }
 
     Serializations getSerializations() const;
     Serializations getSerializations(const SerializationInfoByName & hints) const;

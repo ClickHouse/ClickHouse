@@ -751,17 +751,6 @@ Names Block::getDataTypeNames() const
     return res;
 }
 
-
-Block::NameMap Block::getNamesToIndexesMap() const
-{
-    NameMap res(index_by_name.size());
-    res.set_empty_key(StringRef{});
-    for (const auto & [name, index] : index_by_name)
-        res[name] = index;
-    return res;
-}
-
-
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
     return checkBlockStructure<bool>(lhs, rhs, "", false);
