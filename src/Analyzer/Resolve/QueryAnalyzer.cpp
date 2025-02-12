@@ -1,6 +1,5 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
-#include "Parsers/queryToString.h"
 
 #include <Columns/ColumnNullable.h>
 
