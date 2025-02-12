@@ -14,9 +14,8 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
-
     <!--
-        Custom prompt settings for clickhouse-client. See also <connections_credentials>.
+        It's a custom prompt settings for the clickhouse-client
 
         Possible macros:
             {host}
@@ -25,22 +24,18 @@
             {display_name}
 
         You can also use colored prompt, like in [1].
+
           [1]: https://misc.flogisoft.com/bash/tip_colors_and_formatting
 
         But note, that ClickHouse does not use readline anymore, instead it uses
         replxx. This means that you don't need the following:
         - RL_PROMPT_START_IGNORE (\001)
         - RL_PROMPT_END_IGNORE   (\002)
-
-        If defined, the prompt takes precedence over the prompt defined in <prompt_by_server_display_name>.
     -->
-    <!-- <prompt></prompt> -->
-
-    <!-- Custom prompt according to the display_name of the server -->
     <prompt_by_server_display_name>
-        <default>{display_name}</default> <!-- default prompt, used if none of below patterns match -->
-        <test>\e[1;32m{display_name}\e[0m</test> <!-- if the server display name contains "test" -->
-        <production>\e[1;31m{display_name}\e[0m</production> <!-- if the server display name contains "production" -->
+        <default>{display_name} :) </default>
+        <test>{display_name} \e[1;32m:)\e[0m </test> <!-- if it matched to the substring "test" in the server display name - -->
+        <production>{display_name} \e[1;31m:)\e[0m </production> <!-- if it matched to the substring "production" in the server display name -->
     </prompt_by_server_display_name>
 
     <!-- Chunked capabilities for native protocol by client.
@@ -106,7 +101,6 @@
             <database></database>
             <!-- '~' is expanded to HOME, like in any shell -->
             <history_file></history_file>
-            <prompt></prompt>
         </connection>
     </connections_credentials>
     ]]>

@@ -92,7 +92,6 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             ("level", po::value<int>(), "compression level for codecs specified via flags")
             ("threads", po::value<size_t>()->default_value(1), "number of threads for parallel compression")
             ("none", "use no compression instead of LZ4")
-            ("no-checksum-validation", "disable checksum validation")
             ("stat", "print block statistics of compressed data")
             ("stacktrace", "print stacktrace of exception")
         ;
@@ -190,16 +189,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             if (offset_in_compressed_file || offset_in_decompressed_block)
             {
                 CompressedReadBufferFromFile compressed_file(std::move(rb));
-                if (options.count("no-checksum-validation"))
-                    compressed_file.disableChecksumming();
                 compressed_file.seek(offset_in_compressed_file, offset_in_decompressed_block);
                 copyData(compressed_file, *wb);
             }
             else
             {
                 CompressedReadBuffer from(*rb);
-                if (options.count("no-checksum-validation"))
-                    from.disableChecksumming();
                 copyData(from, *wb);
             }
         }

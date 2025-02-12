@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/asynchronous_metrics
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # asynchronous_metrics
-
-<SystemTableCloud/>
 
 Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
 

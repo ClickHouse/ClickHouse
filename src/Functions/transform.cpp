@@ -9,7 +9,6 @@
 #include <Common/SipHash.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>

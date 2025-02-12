@@ -32,7 +32,6 @@ public:
     {
         READ,
         WRITE,
-        UNLOCK, /// unlock a lightweight backup
     };
 
     /// Returns whether the backup was opened for reading or writing.

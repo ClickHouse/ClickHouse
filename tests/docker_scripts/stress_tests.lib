@@ -78,6 +78,9 @@ function configure()
         randomize_config_boolean_value use_xid_64 zookeeper
     fi
 
+    randomize_config_boolean_value enable_block_number_column block_number
+    randomize_config_boolean_value enable_block_offset_column block_number
+
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client
@@ -119,7 +122,6 @@ EOL
 <clickhouse>
     <profiles>
         <default>
-            <database_replicated_allow_replicated_engine_arguments>1</database_replicated_allow_replicated_engine_arguments>
             <max_execution_time>60</max_execution_time>
             <max_memory_usage>10G</max_memory_usage>
             <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
@@ -182,16 +184,9 @@ function stop_server()
     # Preserve the pid, since the server can hung after the PID will be deleted.
     pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid)"
 
-    # FIXME: workaround for slow shutdown of Distributed tables (due to
-    # sequential tables shutdown), since flush_on_detach=0 will not help if the
-    # send is already in progress.
-    #
+    # FIXME: workaround for slow shutdown of Distributed tables (due to sequential tables shutdown)
     # Refs: https://github.com/ClickHouse/ClickHouse/issues/72557
-    for i in {1..30}; do
-        if clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS"; then
-            break
-        fi
-    done
+    clickhouse client -q "SYSTEM STOP DISTRIBUTED SENDS" ||:
     clickhouse stop --max-tries "$max_tries" --do-not-kill && return
 
     if [ "$check_hang" == true ]

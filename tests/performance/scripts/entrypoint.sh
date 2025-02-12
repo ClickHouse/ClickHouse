@@ -65,7 +65,8 @@ function find_reference_sha
         unset found
         declare -a urls_to_try=(
             "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
-            "$S3_URL/REFs/master/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
         do

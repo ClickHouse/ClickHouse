@@ -1,0 +1,1 @@
+${time:Escaped} [error]  client: ${ip:CSV}, server: ${host:CSV} ${request:JSON}
