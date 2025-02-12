@@ -64,7 +64,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     return std::make_shared<StorageObjectStorage>(
         configuration,
         configuration->createObjectStorage(context, /* is_readonly */ false),
-        context,
+        args.getContext(), /// Use global context.
         args.table_id,
         args.columns,
         args.constraints,
