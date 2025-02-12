@@ -1,16 +1,18 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
-#include <Columns/ColumnsNumber.h>
-#include <unordered_set>
 
 namespace DB
 {
+
+class IColumn;
 
 class SerializationBool final : public SerializationWrapper
 {
 public:
     explicit SerializationBool(const SerializationPtr & nested_);
+
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 

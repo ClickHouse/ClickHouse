@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -826,7 +827,7 @@ namespace DB
     )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
-    DECLARE(Bool, format_alter_operations_with_parentheses, false, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
+    DECLARE(Bool, format_alter_operations_with_parentheses, true, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 
@@ -882,6 +883,9 @@ namespace DB
     DECLARE(UInt64, memory_worker_period_ms, 0, R"(
     Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source
     )", 0) \
+    DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
+    Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
+    )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
     )", 0) \
@@ -900,7 +904,7 @@ namespace DB
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
-    DECLARE(Bool, send_settings_to_client, true, R"(
+    DECLARE(Bool, send_settings_to_client, false, R"(
     Send user settings from server configuration to clients (in the server Hello message).
     )", 0) \
     \

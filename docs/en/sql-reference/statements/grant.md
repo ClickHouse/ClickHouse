@@ -66,7 +66,7 @@ It means that `john` has the permission to execute:
 - `SELECT x FROM db.table`.
 - `SELECT y FROM db.table`.
 
-`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
+`john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
@@ -319,7 +319,7 @@ Consider the following privilege:
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT
 
@@ -640,7 +640,7 @@ Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve sim
 
 ### NONE
 
-Doesn’t grant any privileges.
+Doesn't grant any privileges.
 
 ### ADMIN OPTION
 
