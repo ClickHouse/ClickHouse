@@ -863,6 +863,10 @@ void Client::processOptions(
             }
         }
 #endif
+        if (query_fuzzer_runs)
+        {
+            fmt::print(stdout, "Using seed {} for AST fuzzer\n", fuzzer.getSeed());
+        }
     }
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
