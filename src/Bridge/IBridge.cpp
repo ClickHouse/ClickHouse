@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <boost/algorithm/string.hpp>
 
 #include "config.h"
 
@@ -119,7 +120,7 @@ void IBridge::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("stderr-path", "", "stderr log path, default console").argument("stderr-path").binding("logger.stderr"));
 
     options.addOption(
-        Poco::Util::Option("libraries-path", "", "A path from where we allow to load libraries. Subdirectories are also included. For security, this path should not be accessible for writing by user-controlled applications.").argument("libraries-path").binding("libraries-path"));
+        Poco::Util::Option("libraries-path", "", "A colon-separated (:) lists of paths from where we allow to load libraries. Subdirectories are also included. For security, this path should not be accessible for writing by user-controlled applications.").argument("libraries-path").binding("libraries-path"));
 
     using Me = std::decay_t<decltype(*this)>;
 
@@ -175,7 +176,10 @@ void IBridge::initialize(Application & self)
     max_server_connections = config().getUInt("max-server-connections", 1024);
     keep_alive_timeout = config().getUInt64("keep-alive-timeout", DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT);
     http_max_field_value_size = config().getUInt64("http-max-field-value-size", 128 * 1024);
-    libraries_path = std::filesystem::canonical(config().getString("libraries-path", "/usr/lib/"));
+
+    boost::split(libraries_paths, config().getString("libraries-path", "/usr/lib/"), [](char c){ return c == ':'; });
+    for (auto & path : libraries_paths)
+        path = std::filesystem::canonical(path);
 
     struct rlimit limit;
     const UInt64 gb = 1024 * 1024 * 1024;

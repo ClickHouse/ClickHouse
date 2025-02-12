@@ -95,6 +95,24 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
         cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
     }
 
+    std::string allowed_paths;
+    if (config.has("dictionaries_lib_path"))
+    {
+        allowed_paths += config.getString("dictionaries_lib_path");
+    }
+    if (config.has("catboost_lib_path"))
+    {
+        if (!allowed_paths.empty())
+            allowed_paths += ":";
+        allowed_paths += config.getString("catboost_lib_path");
+    }
+
+    if (!allowed_paths.empty())
+    {
+        cmd_args.push_back("--libraries-path");
+        cmd_args.push_back(allowed_paths);
+    }
+
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());
 
     /// We will terminate it with the KILL signal instead of the TERM signal,

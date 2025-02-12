@@ -18,7 +18,7 @@ namespace DB
 class ExternalDictionaryLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_, std::string libraries_path_);
+    explicit ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_, std::vector<std::string> libraries_paths_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -26,7 +26,7 @@ private:
     static constexpr auto FORMAT = "RowBinary";
 
     LoggerPtr log;
-    std::string libraries_path;
+    std::vector<std::string> libraries_paths;
 };
 
 
@@ -62,13 +62,13 @@ private:
 class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit CatBoostLibraryBridgeRequestHandler(ContextPtr context_, std::string libraries_path_);
+    explicit CatBoostLibraryBridgeRequestHandler(ContextPtr context_, std::vector<std::string> libraries_paths_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     LoggerPtr log;
-    std::string libraries_path;
+    std::vector<std::string> libraries_paths;
 };
 
 

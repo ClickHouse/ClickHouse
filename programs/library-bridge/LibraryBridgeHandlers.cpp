@@ -86,8 +86,8 @@ static void writeData(Block data, OutputFormatPtr format)
 }
 
 
-ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_, std::string libraries_path_)
-    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler")), libraries_path(libraries_path_)
+ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_, std::vector<std::string> libraries_paths_)
+    : WithContext(context_), log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler")), libraries_paths(std::move(libraries_paths_))
 {
 }
 
@@ -175,7 +175,17 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
             const String & library_path = params.get("library_path");
 
             auto library_absolute_path = std::filesystem::canonical(library_path);
-            if (!library_absolute_path.string().starts_with(libraries_path))
+
+            bool path_allowed = false;
+            for (const auto & prefix : libraries_paths)
+            {
+                if (library_absolute_path.string().starts_with(prefix))
+                {
+                    path_allowed = true;
+                    break;
+                }
+            }
+            if (!path_allowed)
             {
                 processError(response, "The provided library path is not inside the allowed prefix 'libraries-path' from the configuration.");
                 return;
@@ -412,8 +422,8 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 }
 
 
-CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(ContextPtr context_, std::string libraries_path_)
-    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeRequestHandler")), libraries_path(libraries_path_)
+CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(ContextPtr context_, std::vector<std::string> libraries_paths_)
+    : WithContext(context_), log(getLogger("CatBoostLibraryBridgeRequestHandler")), libraries_paths(std::move(libraries_paths_))
 {
 }
 
@@ -520,7 +530,16 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             const String & library_path = params.get("library_path");
 
             auto library_absolute_path = std::filesystem::canonical(library_path);
-            if (!library_absolute_path.string().starts_with(libraries_path))
+            bool path_allowed = false;
+            for (const auto & prefix : libraries_paths)
+            {
+                if (library_absolute_path.string().starts_with(prefix))
+                {
+                    path_allowed = true;
+                    break;
+                }
+            }
+            if (!path_allowed)
             {
                 processError(response, "The provided library path is not inside the allowed prefix 'libraries-path' from the configuration.");
                 return;

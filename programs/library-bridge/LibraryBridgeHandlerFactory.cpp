@@ -10,11 +10,11 @@ namespace DB
 LibraryBridgeHandlerFactory::LibraryBridgeHandlerFactory(
     std::string name_,
     ContextPtr context_,
-    std::string libraries_path_)
+    std::vector<std::string> libraries_paths_)
     : WithContext(context_)
     , log(getLogger(name_))
     , name(name_)
-    , libraries_path(libraries_path_)
+    , libraries_paths(std::move(libraries_paths_))
 {
 }
 
@@ -34,9 +34,9 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
         if (uri.getPath() == "/extdict_request")
-            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(getContext(), libraries_path);
+            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(getContext(), libraries_paths);
         if (uri.getPath() == "/catboost_request")
-            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(getContext(), libraries_path);
+            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(getContext(), libraries_paths);
     }
 
     return nullptr;
