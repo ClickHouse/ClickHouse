@@ -3206,6 +3206,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes are not initialized");
 
     int64_t commit_zxid = 0;
+    uint64_t transaction_digest = 0;
     {
         std::lock_guard lock(transaction_mutex);
         if (new_last_zxid)
@@ -3213,8 +3214,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             if (uncommitted_transactions.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit a ZXID ({}) which was not preprocessed", *new_last_zxid);
 
-            if (auto & front_transaction = uncommitted_transactions.front();
-                front_transaction.zxid != *new_last_zxid)
+            auto & front_transaction = uncommitted_transactions.front();
+            if (front_transaction.zxid != *new_last_zxid)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
                     "Trying to commit a ZXID {} while the next ZXID to commit is {}",
@@ -3222,6 +3223,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                     front_transaction.zxid);
 
             commit_zxid = *new_last_zxid;
+            transaction_digest = front_transaction.nodes_digest.value;
         }
         else
         {
@@ -3261,6 +3263,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         {
             std::lock_guard lock(storage_mutex);
             commit(deltas_range);
+            if (!keeper_context->digestEnabledOnCommit())
+                nodes_digest = transaction_digest;
         }
         {
             std::lock_guard lock(auth_mutex);
@@ -3316,6 +3320,8 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             {
                 std::lock_guard lock(storage_mutex);
                 response = process(concrete_zk_request, *this, deltas_range);
+                if (!keeper_context->digestEnabledOnCommit())
+                    nodes_digest = transaction_digest;
             }
 
             /// Watches for this requests are added to the watches lists
@@ -3375,9 +3381,6 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
         if (new_last_zxid)
         {
-            if (!keeper_context->digestEnabledOnCommit())
-                nodes_digest = uncommitted_transactions.front().nodes_digest.value;
-
             uncommitted_transactions.pop_front();
         }
 
