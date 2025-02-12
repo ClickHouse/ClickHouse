@@ -324,4 +324,4 @@ Each time before launch new clickhouse server, please make sure no background cl
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]
 ```
-By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low <10% for these queries which means cannot demonstrate performance differences.
+By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.
