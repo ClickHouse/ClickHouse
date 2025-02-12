@@ -194,7 +194,6 @@ bool Client::processWithFuzzing(const String & full_query)
 #endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
-        ASTPtr new_set_query;
         ASTPtr ast_to_process;
         try
         {
@@ -268,6 +267,9 @@ bool Client::processWithFuzzing(const String & full_query)
                         auto settings_query = std::make_shared<ASTSetQuery>();
                         SettingsChanges settings_changes;
                         settings_changes.setSetting("log_comment", "measure_performance");
+
+                        /// Sometimes change settings
+                        fuzzer.getRandomSettings(settings_changes);
                         settings_query->changes = std::move(settings_changes);
                         settings_query->is_standalone = false;
                         select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(settings_query));
@@ -277,6 +279,7 @@ bool Client::processWithFuzzing(const String & full_query)
                         auto * set_query = select_query->settings()->as<ASTSetQuery>();
 
                         set_query->changes.setSetting("log_comment", "measure_performance");
+                        fuzzer.getRandomSettings(set_query->changes);
                     }
                 }
                 else
@@ -285,16 +288,6 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
-            /// Sometimes change settings
-            if ((new_set_query = fuzzer.getRandomSettings()))
-            {
-                String qstr = new_set_query->formatForErrorMessage();
-
-                fmt::print(stdout, "Running set query: {}\n", qstr);
-                if (auto res = processFuzzingStep(qstr, new_set_query, true))
-                    return *res;
-            }
-
             query_to_execute = ast_to_process->formatForErrorMessage();
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;

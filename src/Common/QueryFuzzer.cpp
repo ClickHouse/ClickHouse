@@ -85,16 +85,14 @@ static String pickRandomlyFromSet(pcg64 & rand, const std::unordered_set<String>
 }
 #endif
 
-ASTPtr QueryFuzzer::getRandomSettings()
+void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 {
 #if USE_BUZZHOUSE
     if (fuzz_rand() % 30 == 0)
     {
-        const uint64_t nsettings = (fuzz_rand() % 5) + UINT64_C(1);
-        auto settings_query = std::make_shared<ASTSetQuery>();
-        SettingsChanges settings_changes;
+        const size_t nsettings = (fuzz_rand() % std::min(BuzzHouse::performanceSettings.size(), UINT64_C(10))) + UINT64_C(1);
 
-        for (uint64_t i = 0; i < nsettings; i++)
+        for (size_t i = 0; i < nsettings; i++)
         {
             const String & setting = pickKeyRandomlyFromMap(fuzz_rand, BuzzHouse::performanceSettings);
             String value = pickRandomlyFromSet(fuzz_rand, BuzzHouse::performanceSettings.at(setting).oracle_values);
@@ -102,13 +100,10 @@ ASTPtr QueryFuzzer::getRandomSettings()
             value.erase(std::remove(value.begin(), value.end(), '\''), value.end());
             settings_changes.setSetting(setting, value);
         }
-        settings_query->changes = std::move(settings_changes);
-        settings_query->is_standalone = true;
-
-        return settings_query;
     }
+#else
+    UNUSED(settings_changes);
 #endif
-    return nullptr;
 }
 
 

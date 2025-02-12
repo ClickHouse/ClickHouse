@@ -7,6 +7,7 @@
 
 #include <pcg-random/pcg_random.hpp>
 
+#include <Common/SettingsChanges.h>
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -65,7 +66,7 @@ public:
     }
 
     /// When measuring performance, sometimes change settings
-    ASTPtr getRandomSettings();
+    void getRandomSettings(SettingsChanges & settings_changes);
 
 private:
     UInt64 seed;
