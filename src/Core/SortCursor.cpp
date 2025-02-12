@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 void SortCursorImpl::reset(const Block & block, IColumnPermutation * perm)
 {
     if (block.getColumns().empty())

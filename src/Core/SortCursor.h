@@ -36,11 +36,6 @@ namespace DB
 class Block;
 using IColumnPermutation = PaddedPODArray<size_t>;
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.
   * It is used in priority queue.
