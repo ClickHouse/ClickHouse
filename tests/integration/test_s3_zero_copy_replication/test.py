@@ -759,3 +759,61 @@ def test_move_shared_zero_copy_lock_fail(
 
     node1.query(f"DROP TABLE IF EXISTS {test_table} SYNC")
     node2.query(f"DROP TABLE IF EXISTS {test_table} SYNC")
+
+
+# kazoo.delete may throw NotEmptyError on concurrent modifications of the path
+def zk_rmr_with_retries(zk, path):
+    for i in range(1, 10):
+        try:
+            zk.delete(path, recursive=True)
+            return
+        except Exception as ex:
+            print(ex)
+            time.sleep(0.5)
+    assert False
+
+
+def grep_log(node, s):
+    return s in node.exec_in_container(
+        ["bash", "-c", f"grep '{s}' /var/log/clickhouse-server/clickhouse-server.log"]
+    )
+
+
+def test_restore_replica_zero_copy_metadata_version(started_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query(
+        "CREATE TABLE test_meta ON CLUSTER test_cluster ( id UInt32 ) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_meta', '{replica}') ORDER BY id SETTINGS storage_policy='s3';",
+    )
+
+    node1.query("INSERT INTO test_meta SELECT number FROM numbers(100);")
+    node2.query("SYSTEM SYNC REPLICA test_meta")
+
+    assert "all_0_0_0\n" == node1.query("SELECT name FROM system.parts WHERE table='test_meta'")
+
+    node1.query("DETACH TABLE test_meta")
+    node2.query("DETACH TABLE test_meta")
+    node1.query("SYSTEM DROP REPLICA '1' FROM ZKPATH '/clickhouse/tables/test_meta'")
+    node2.query("SYSTEM DROP REPLICA '2' FROM ZKPATH '/clickhouse/tables/test_meta'")
+    # Zero copy locks are not dropping when replica is dropping, part name collision is possible
+    zk_rmr_with_retries(zk, "/clickhouse/zero_copy/zero_copy_s3")
+    node1.query("ATTACH TABLE test_meta")
+    node2.query("ATTACH TABLE test_meta")
+
+    node1.query("SYSTEM RESTORE REPLICA test_meta")
+
+    assert "all_0_0_0\n" == node1.query("SELECT name FROM system.parts WHERE table='test_meta'")
+    assert "all_0_0_0\n" == node2.query("SELECT name FROM system.parts WHERE table='test_meta'")
+
+    node2.query("SYSTEM RESTORE REPLICA test_meta")
+    node2.query("SYSTEM SYNC REPLICA test_meta")
+
+    # When replica on ch2 is restored, metadata_version.txt file in part has reference on deleted blob.
+    # If read exception from file is not ignored, part will be detached as broken and fetched from other replica.
+    assert "" == node2.query("SELECT name FROM system.detached_parts WHERE table='test_meta'")
+    assert grep_log(node2, "Failed to read metadata version")
+
+    node1.query(f"DROP TABLE test_meta ON CLUSTER test_cluster SYNC")
