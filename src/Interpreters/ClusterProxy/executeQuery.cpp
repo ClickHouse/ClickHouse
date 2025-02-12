@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
+    extern const SettingsBool optimize_distinct_in_order;
 }
 
 namespace DistributedSetting
@@ -467,26 +468,9 @@ void executeQuery(
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
 
-
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    const Block & header,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits,
-    QueryPlanStepPtr analyzed_read_from_merge_tree)
+static ContextMutablePtr updateSetttingsForParallelReplicas(const ContextPtr & context)
 {
-    auto logger = getLogger("executeQueryWithParallelReplicas");
-    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
-
     const auto & settings = context->getSettingsRef();
-
-    /// check cluster for parallel replicas
-    auto not_optimized_cluster = context->getClusterForParallelReplicas();
-
     auto new_context = Context::createCopy(context);
 
     /// check hedged connections setting
@@ -511,8 +495,35 @@ void executeQueryWithParallelReplicas(
         new_context->setSetting("use_hedged_requests", Field{false});
     }
 
-    auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
+    /// Avoid applying reading in order optimization for distinct
+    /// since it can lead to different parallel replicas modes between local and remote replicas.
+    /// It'll be not necessary as soon as we'll send plan to remote replicas
+    new_context->setSetting("optimize_distinct_in_order", Field{false});
 
+    return new_context;
+}
+
+void executeQueryWithParallelReplicas(
+    QueryPlan & query_plan,
+    const StorageID & storage_id,
+    const Block & header,
+    QueryProcessingStage::Enum processed_stage,
+    const ASTPtr & query_ast,
+    ContextPtr context,
+    std::shared_ptr<const StorageLimitsList> storage_limits,
+    QueryPlanStepPtr analyzed_read_from_merge_tree)
+{
+    auto logger = getLogger("executeQueryWithParallelReplicas");
+    LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
+        storage_id.getNameForLogs(), header.dumpStructure(), query_ast->formatForLogging(), processed_stage);
+
+    auto new_context = updateSetttingsForParallelReplicas(context);
+    context.reset();
+
+    /// check cluster for parallel replicas
+    auto not_optimized_cluster = new_context->getClusterForParallelReplicas();
+
+    auto scalars = new_context->hasQueryContext() ? new_context->getQueryContext()->getScalars() : Scalars{};
     UInt64 shard_num = 0; /// shard_num is 1-based, so 0 - no shard specified
     const auto it = scalars.find("_shard_num");
     if (it != scalars.end())
@@ -553,6 +564,7 @@ void executeQueryWithParallelReplicas(
                 "`cluster_for_parallel_replicas` setting refers to cluster with several shards. Expected a cluster with one shard");
     }
 
+    const auto & settings = new_context->getSettingsRef();
     const auto & shard = new_cluster->getShardsInfo().at(0);
     size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
     if (max_replicas_to_use > shard.getAllNodeCount())
@@ -640,7 +652,7 @@ void executeQueryWithParallelReplicas(
             return;
         }
 
-        LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
+        LOG_DEBUG(logger, "Local replica number: {}", local_replica_index.value());
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
             query_ast,

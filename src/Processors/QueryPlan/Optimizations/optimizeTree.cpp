@@ -110,12 +110,6 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 bool readingFromParallelReplicas(const QueryPlan::Node * input_node)
 {
-    struct Frame
-    {
-        const QueryPlan::Node * node;
-        size_t next_child = 0;
-    };
-
     std::stack<const QueryPlan::Node*> stack;
     stack.push(input_node);
     while (!stack.empty())

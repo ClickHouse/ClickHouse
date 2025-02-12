@@ -441,6 +441,14 @@ void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAn
 {
     LOG_DEBUG(log, "Initial request: {}", announcement.describe());
 
+    if (announcement.mode != CoordinationMode::Default)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Replica {} decided to read in {} mode, not in {}. This is a bug",
+            announcement.replica_num,
+            magic_enum::enum_name(announcement.mode),
+            magic_enum::enum_name(CoordinationMode::Default));
+
     const auto replica_num = announcement.replica_num;
 
     initializeReadingState(std::move(announcement));
@@ -880,6 +888,11 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 {
     LOG_TRACE(log, "Received an announcement : {}", announcement.describe());
 
+    if (announcement.mode != mode)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Replica {} decided to read in {} mode, not in {}. This is a bug",
+            announcement.replica_num, magic_enum::enum_name(announcement.mode), magic_enum::enum_name(mode));
+
     ++stats[announcement.replica_num].number_of_requests;
 
     size_t new_rows_to_read = 0;
@@ -963,11 +976,6 @@ template <CoordinationMode mode>
 ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest request)
 {
     LOG_TRACE(log, "Got read request: {}", request.describe());
-
-    if (request.mode != mode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Replica {} decided to read in {} mode, not in {}. This is a bug",
-            request.replica_num, magic_enum::enum_name(request.mode), magic_enum::enum_name(mode));
 
     ParallelReadResponse response;
     response.description = request.description;
