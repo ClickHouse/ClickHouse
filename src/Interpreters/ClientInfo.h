@@ -1,13 +1,13 @@
 #pragma once
 
 #include <base/types.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
 
 namespace Poco::Net
 {
     class HTTPRequest;
+    class SocketAddress;
 }
 
 namespace DB
@@ -58,12 +58,12 @@ public:
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
-    Poco::Net::SocketAddress current_address;
+    std::unique_ptr<Poco::Net::SocketAddress> current_address;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
-    Poco::Net::SocketAddress initial_address;
+    std::unique_ptr<Poco::Net::SocketAddress> initial_address;
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
@@ -112,12 +112,7 @@ public:
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
     std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const;
-
-    String getLastForwardedForHost() const
-    {
-        auto addr = getLastForwardedFor();
-        return addr ? addr->host().toString() : "";
-    }
+    String getLastForwardedForHost() const;
 
     /// Common
     String quota_key;
