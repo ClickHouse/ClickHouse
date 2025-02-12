@@ -565,7 +565,7 @@ public:
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
     bool
-    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_commit);
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
