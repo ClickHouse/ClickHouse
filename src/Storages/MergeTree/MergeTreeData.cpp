@@ -3247,6 +3247,8 @@ void MergeTreeData::dropAllData()
     DataPartsVector all_parts;
     for (auto it = data_parts_by_info.begin(); it != data_parts_by_info.end(); ++it)
     {
+        if ((*it)->isStoredOnReadonlyDisk())
+            continue;
         modifyPartState(it, DataPartState::Deleting);
         all_parts.push_back(*it);
     }
@@ -3309,6 +3311,8 @@ void MergeTreeData::dropAllData()
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
+            continue;
+        if (disk->isReadOnly())
             continue;
 
         /// It can naturally happen if we cannot drop table from the first time
