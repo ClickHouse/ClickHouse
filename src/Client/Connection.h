@@ -4,6 +4,7 @@
 
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
+#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -26,6 +27,7 @@ namespace DB
 {
 
 struct Settings;
+struct TimeoutSetter;
 
 class Connection;
 struct ConnectionParameters;
@@ -128,6 +130,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
@@ -166,6 +169,11 @@ public:
     }
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
+    void setFormatSettings(const FormatSettings & settings) override
+    {
+        format_settings = settings;
+    }
 
 private:
     String host;
@@ -276,14 +284,16 @@ private:
 
     AsyncCallback async_callback = {};
 
+    std::optional<FormatSettings> format_settings;
+
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello();
+    void sendHello(const Poco::Timespan & handshake_timeout);
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth();
+    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
 #endif
 
     void sendAddendum();
@@ -311,7 +321,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
 };
 
 template <typename Conn>

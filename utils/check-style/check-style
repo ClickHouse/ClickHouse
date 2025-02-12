@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*.cpp|programs/keeper-bench/example.yaml|base/base/openpty.h'
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # From [1]:
@@ -101,6 +101,7 @@ EXTERN_TYPES_EXCLUDES=(
     ErrorCodes::getName
     ErrorCodes::increment
     ErrorCodes::end
+    ErrorCodes::extendedMessage
     ErrorCodes::values
     ErrorCodes::values[i]
     ErrorCodes::getErrorCodeByName
@@ -315,6 +316,7 @@ std_cerr_cout_excludes=(
     /tests/
     _fuzzer
     # OK
+    base/base/ask.cpp
     src/Common/ProgressIndication.cpp
     src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -329,7 +331,10 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Client/ClientBase.cpp
+    src/Common/ProgressIndication.h
+    src/Client/LineReader.h
     src/Client/LineReader.cpp
+    src/Client/ReplxxLineReader.h
     src/Client/QueryFuzzer.cpp
     src/Client/Suggest.cpp
     src/Client/ClientBase.h
@@ -349,7 +354,7 @@ sources_with_std_cerr_cout=( $(
 ) )
 # Exclude comments
 for src in "${sources_with_std_cerr_cout[@]}"; do
-    # suppress stderr, since it may contain warning for #pargma once in headers
+    # suppress stderr, since it may contain warning for #pragma once in headers
     if gcc -fpreprocessed -dD -E "$src" 2>/dev/null | grep -F -q -e std::cerr -e std::cout; then
         echo "$src: uses std::cerr/std::cout"
     fi
@@ -444,9 +449,6 @@ find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep 
 # If a user is doing dynamic or typeid cast with a pointer, and immediately dereferencing it, it is unsafe.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep --line-number -P '(dynamic|typeid)_cast<[^>]+\*>\([^\(\)]+\)->' | grep -P '.' && echo "It's suspicious when you are doing a dynamic_cast or typeid_cast with a pointer and immediately dereferencing it. Use references instead of pointers or check a pointer to nullptr."
 
-# The stateful directory should only contain the tests that depend on the test dataset (hits or visits).
-find $ROOT_PATH/tests/queries/1_stateful -name '*.sql' -or -name '*.sh' | grep -v '00076_system_columns_bytes' | xargs -I{} bash -c 'grep -q -P "hits|visits" "{}" || echo "The test {} does not depend on the test dataset (hits or visits table) and should be located in the 0_stateless directory. You can also add an exception to the check-style script."'
-
 # Check for bad punctuation: whitespace before comma.
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' | xargs grep -P --line-number '\w ,' | grep -v 'bad punctuation is ok here' && echo "^ There is bad punctuation: whitespace before comma. You should write it like this: 'Hello, world!'"
 
@@ -480,3 +482,9 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 PATTERN="allow_";
 DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | sort -u) <(grep -o -h "\b$PATTERN\w*\b" $ROOT_PATH/src/Databases/enableAllExperimentalSettings.cpp $ROOT_PATH/utils/check-style/experimental_settings_ignore.txt | sort -u));
 [ -n "$DIFF" ] && echo "$DIFF" && echo "^^ Detected 'allow_*' settings that might need to be included in src/Databases/enableAllExperimentalSettings.cpp" && echo "Alternatively, consider adding an exception to utils/check-style/experimental_settings_ignore.txt"
+
+# Don't allow the direct inclusion of magic_enum.hpp and instead point to base/EnumReflection.h
+find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
+do
+    echo "Found the inclusion of magic_enum.hpp in '${line}'. Please use <base/EnumReflection.h> instead"
+done

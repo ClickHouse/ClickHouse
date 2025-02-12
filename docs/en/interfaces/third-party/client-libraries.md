@@ -8,7 +8,7 @@ description: Third-party client libraries
 # Client Libraries from Third-party Developers
 
 :::note
-ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
 :::
 
 ### Python
@@ -75,6 +75,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn’t don
  - [clickhousex](https://github.com/appodeal/clickhousex/)
  - [pillar](https://github.com/sofakingworld/pillar)
  - [ecto_ch](https://github.com/plausible/ecto_ch)
+ - [req_ch](https://github.com/livebook-dev/req_ch)
 ### Nim
  - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 ### Haskell

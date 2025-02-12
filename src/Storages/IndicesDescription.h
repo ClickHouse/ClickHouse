@@ -4,13 +4,15 @@
 
 #include <vector>
 #include <Core/Field.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/NamePrompter.h>
 
 namespace DB
 {
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Description of non-primary index for Storage
 struct IndexDescription

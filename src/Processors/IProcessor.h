@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
 #include <memory>
@@ -69,7 +70,6 @@ using Processors = std::vector<ProcessorPtr>;
   *
   * Simple transformation. Has single input and single output port. Pulls data, transforms it and pushes to output port.
   * Example: expression calculator.
-  * TODO Better to make each function a separate processor. It's better for pipeline analysis. Also keep in mind 'sleep' and 'rand' functions.
   *
   * Squashing or filtering transformation. Pulls data, possibly accumulates it, and sometimes pushes it to output port.
   * Examples: DISTINCT, WHERE, squashing of blocks for INSERT SELECT.
@@ -151,7 +151,7 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will return descriptor.
+        /// You may call 'schedule' method and processor will return a descriptor.
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
@@ -380,10 +380,24 @@ public:
     /// This counter is used to calculate the number of rows right before AggregatingTransform.
     virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
 
+    /// Returns true if processor can spill memory to disk.
+    /// Aggregate, join and sort processors can be spillable.
+    /// For unspillable processors, the memory usage is not tracked.
+    inline bool isSpillable() const { return spillable; }
+
+    virtual ProcessorMemoryStats getMemoryStats()
+    {
+        return {};
+    }
+
+    // If the in-memory data's size is not larger then bytes, it doesn't spill
+    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+
 protected:
     virtual void onCancel() noexcept {}
 
     std::atomic<bool> is_cancelled{false};
+    bool spillable = false;
 
 private:
     /// For:
@@ -412,6 +426,7 @@ private:
     size_t processor_index = 0;
     String plan_step_name;
     String plan_step_description;
+
 };
 
 

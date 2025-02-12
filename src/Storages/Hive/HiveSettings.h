@@ -61,6 +61,8 @@ struct HiveSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
     void loadFromQuery(ASTStorage & storage_def);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<HiveSettingsImpl> impl;
 };

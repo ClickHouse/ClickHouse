@@ -10,6 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -124,6 +125,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
+
+using String = std::string;
 
 namespace
 {
@@ -2125,6 +2128,7 @@ void registerStorageFile(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::FILE,
+        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(

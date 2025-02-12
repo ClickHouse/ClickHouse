@@ -28,6 +28,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
@@ -1646,6 +1648,7 @@ void registerStorageURL(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::URL,
+            .has_builtin_setting_fn = Settings::hasBuiltin,
         });
 }
 

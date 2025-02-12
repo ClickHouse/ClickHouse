@@ -11,6 +11,14 @@ from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_version import CHVersion
 
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
+perf_wd = f"{temp_dir}/perf_wd"
+db_path = f"{perf_wd}/db0/"
+perf_right = f"{perf_wd}/right/"
+perf_left = f"{perf_wd}/left/"
+perf_right_config = f"{perf_right}/config"
+perf_left_config = f"{perf_left}/config"
+
 
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
@@ -42,17 +50,17 @@ class CHServer:
             keeper_port = self.LEFT_SERVER_KEEPER_PORT
             raft_port = self.LEFT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.LEFT_SERVER_INTERSERVER_PORT
-            serever_path = "/tmp/praktika/perf_wd/left"
+            serever_path = f"{temp_dir}/perf_wd/left"
             log_file = f"{serever_path}/server.log"
         else:
             server_port = self.RIGHT_SERVER_PORT
             keeper_port = self.RIGHT_SERVER_KEEPER_PORT
             raft_port = self.RIGHT_SERVER_KEEPER_RAFT_PORT
             inter_server_port = self.RIGHT_SERVER_INTERSERVER_PORT
-            serever_path = "/tmp/praktika/perf_wd/right"
+            serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
-        self.preconfig_start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml -- --path /tmp/praktika/db0 --user_files_path /tmp/praktika/db0/user_files --top_level_domains_path /tmp/praktika/perf_wd/top_level_domains --keeper_server.storage_path /tmp/praktika/coordination0 --tcp_port {server_port}"
+        self.preconfig_start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml -- --path {db_path} --user_files_path {db_path}/user_files --top_level_domains_path {perf_wd}/top_level_domains --keeper_server.storage_path {temp_dir}/coordination0 --tcp_port {server_port}"
         self.log_fd = None
         self.log_file = log_file
         self.port = server_port
@@ -147,7 +155,7 @@ class CHServer:
 
     @classmethod
     def run_test(
-        cls, test_file, runs=7, max_queries=0, results_path="/tmp/praktika/perf_wd/"
+        cls, test_file, runs=7, max_queries=0, results_path=f"{temp_dir}/perf_wd/"
     ):
         test_name = test_file.split("/")[-1].removesuffix(".xml")
         sw = Utils.Stopwatch()
@@ -192,9 +200,7 @@ class CHServer:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Performance Tests Job")
-    parser.add_argument(
-        "--ch-path", help="Path to clickhouse binary", default=f"/tmp/praktika/input"
-    )
+    parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
     parser.add_argument(
         "--test-options",
         help="Comma separated option(s) BATCH_NUM/BTATCH_TOT|?",
@@ -252,15 +258,15 @@ def main():
     assert (
         Path(ch_path + "/clickhouse").is_file()
         or Path(ch_path + "/clickhouse").is_symlink()
-    ), f"clickhouse binary not found under [{ch_path}]"
+    ), f"clickhouse binary not found in [{ch_path}]"
 
     stop_watch = Utils.Stopwatch()
     stages = list(JobStages)
 
     logs_to_attach = []
     report_files = [
-        "/tmp/praktika/perf_wd/report.html",
-        "/tmp/praktika/perf_wd/all-queries.html",
+        f"{temp_dir}/perf_wd/report.html",
+        f"{temp_dir}/perf_wd/all-queries.html",
     ]
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -272,18 +278,12 @@ def main():
         stages.insert(0, stage)
 
     res = True
-    perf_wd = "/tmp/praktika/perf_wd"
-    perf_right = f"{perf_wd}/right/"
-    perf_left = f"{perf_wd}/left/"
-    perf_right_config = f"{perf_right}/config"
-    perf_left_config = f"{perf_left}/config"
     results = []
 
     # Shell.check(f"rm -rf {perf_wd} && mkdir -p {perf_wd}")
 
     # add right CH location to PATH
     Utils.add_to_PATH(perf_right)
-    results_path = "/tmp/praktika/perf_wd/"
     # TODO:
     # Set python output encoding so that we can print queries with non-ASCII letters.
     # export PYTHONIOENCODING=utf-8
@@ -328,7 +328,7 @@ def main():
                 f"mkdir -p {perf_left_config}",
                 f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
                 f"chmod +x {perf_left}/clickhouse",
-                f"cp -r ./tests/performance /tmp/praktika/left/",
+                f"cp -r ./tests/performance {perf_left}/",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-local",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-client",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-server",
@@ -344,7 +344,6 @@ def main():
 
     if res and JobStages.DOWNLOAD_DATASETS in stages:
         print("Download datasets")
-        db_path = "/tmp/praktika/db0/"
 
         if not Path(f"{db_path}/.done").is_file():
             Shell.check(f"mkdir -p {db_path}", verbose=True)
@@ -379,8 +378,8 @@ def main():
             res_ = leftCH.start_preconfig()
             leftCH.terminate()
             # wait for termination
-            time.sleep(2)
-            Shell.check("ps -ef | grep clickhouse")
+            time.sleep(5)
+            Shell.check("ps -ef | grep clickhouse", verbose=True)
             return res_
 
         commands = [
@@ -404,8 +403,8 @@ def main():
             f"rm -rf {db_path}/status",
             f"cp -al {db_path} {perf_left}/db",
             f"cp -al {db_path} {perf_right}/db",
-            f"cp -R /tmp/praktika/coordination0 {perf_left}/coordination",
-            f"cp -R /tmp/praktika/coordination0 {perf_right}/coordination",
+            f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
+            f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
         ]
         results.append(
             Result.from_commands_run(name="Configure", command=commands, with_log=True)
@@ -472,7 +471,7 @@ def main():
                     "./tests/performance/" + test,
                     runs=7,
                     max_queries=10,
-                    results_path=results_path,
+                    results_path=perf_wd,
                 )
             return True
 
@@ -492,10 +491,8 @@ def main():
         left_major, left_minor, left_sha = (
             CHVersion.get_latest_release_major_minor_sha()
         )
-        Shell.check(
-            f"/tmp/praktika/perf_wd/left/clickhouse --version  > {results_path}/left-commit.txt"
-        )
-        Shell.check(f"git log -1 HEAD > {results_path}/right-commit.txt")
+        Shell.check(f"{perf_left}/clickhouse --version  > {perf_wd}/left-commit.txt")
+        Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
 
         commands = [
             f"stage=get_profiles {script_path}",
@@ -505,7 +502,7 @@ def main():
                 name="Report",
                 command=commands,
                 with_log=True,
-                workdir=results_path,
+                workdir=perf_wd,
             )
         )
         res = results[-1].is_ok()
@@ -525,9 +522,7 @@ def main():
         status = ""
         message = ""
         try:
-            with open(
-                "/tmp/praktika/perf_wd/report.html", "r", encoding="utf-8"
-            ) as report_fd:
+            with open(f"{perf_wd}/report.html", "r", encoding="utf-8") as report_fd:
                 report_text = report_fd.read()
                 status_match = re.search("<!--[ ]*status:(.*)-->", report_text)
                 message_match = re.search("<!--[ ]*message:(.*)-->", report_text)
@@ -589,13 +584,13 @@ def main():
             files_to_attach.append(report)
 
     # attach all logs with errors
-    Shell.check("rm -f /tmp/praktika/perf_wd/logs.zip")
+    Shell.check(f"rm -f {perf_wd}/logs.zip")
     Shell.check(
-        'find /tmp/praktika/perf_wd -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -exec zip /tmp/praktika/perf_wd/logs.zip {} +',
+        f'find {perf_wd} -type f \( -name "*err*.log" -o -name "*err*.tsv" \) -exec zip {perf_wd}/logs.zip {{}} +',
         verbose=True,
     )
-    if Path("/tmp/praktika/perf_wd/logs.zip").is_file():
-        files_to_attach.append("/tmp/praktika/perf_wd/logs.zip")
+    if Path(f"{perf_wd}/logs.zip").is_file():
+        files_to_attach.append(f"{perf_wd}/logs.zip")
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=files_to_attach
