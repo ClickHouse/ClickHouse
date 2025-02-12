@@ -262,7 +262,7 @@ protected:
     {
         if (src_index == 14 && columns_mask[src_index++])
         {
-            if (table && table->isView() && table->as<StorageView>()->isParameterizedView())
+            if (table)
             {
                 StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
 
@@ -277,8 +277,6 @@ protected:
                 else
                     columns[res_index++]->insertDefault();
             }
-            else
-                columns[res_index++]->insertDefault();
         }
     }
 
