@@ -176,12 +176,10 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 
             const String & library_path = params.get("library_path");
 
-            auto library_absolute_path = std::filesystem::canonical(library_path);
-
             bool path_allowed = false;
             for (const auto & prefix : libraries_paths)
             {
-                if (fileOrSymlinkPathStartsWith(library_absolute_path, prefix))
+                if (fileOrSymlinkPathStartsWith(library_path, prefix))
                 {
                     path_allowed = true;
                     break;
@@ -190,7 +188,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
             if (!path_allowed)
             {
                 processError(response, fmt::format("The provided library path {} is not inside any of the allowed prefixes {} ('libraries-path') from the configuration.",
-                    library_absolute_path.string(), boost::join(libraries_paths, ", ")));
+                    library_path, boost::join(libraries_paths, ", ")));
                 return;
             }
 
@@ -532,11 +530,10 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
 
             const String & library_path = params.get("library_path");
 
-            auto library_absolute_path = std::filesystem::canonical(library_path);
             bool path_allowed = false;
             for (const auto & prefix : libraries_paths)
             {
-                if (fileOrSymlinkPathStartsWith(library_absolute_path, prefix))
+                if (fileOrSymlinkPathStartsWith(library_path, prefix))
                 {
                     path_allowed = true;
                     break;
@@ -544,7 +541,8 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             }
             if (!path_allowed)
             {
-                processError(response, "The provided library path is not inside the allowed prefix 'libraries-path' from the configuration.");
+                processError(response, fmt::format("The provided library path {} is not inside any of the allowed prefixes {} ('libraries-path') from the configuration.",
+                    library_path, boost::join(libraries_paths, ", ")));
                 return;
             }
 
