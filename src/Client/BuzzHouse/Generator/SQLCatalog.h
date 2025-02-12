@@ -106,12 +106,17 @@ public:
 struct SQLDatabase
 {
 public:
+    std::optional<String> cluster = std::nullopt;
     DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
     uint32_t zoo_path_counter;
 
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
+
+    bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
+
+    std::optional<String> getCluster() const { return cluster; }
 };
 
 struct SQLBase
@@ -120,6 +125,7 @@ public:
     bool is_temp = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
+    std::optional<String> cluster = std::nullopt;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption = std::nullopt;
     TableEngineValues teng = TableEngineValues::Null;
@@ -195,6 +201,15 @@ public:
     bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::SQLite; }
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
+
+    std::optional<String> getCluster() const
+    {
+        if (db && db->cluster.has_value())
+        {
+            return db->cluster;
+        }
+        return cluster;
+    }
 };
 
 struct SQLTable : SQLBase
@@ -243,6 +258,9 @@ struct SQLFunction
 public:
     bool is_deterministic = false;
     uint32_t fname = 0, nargs = 0;
+    std::optional<String> cluster = std::nullopt;
+
+    std::optional<String> getCluster() const { return cluster; }
 };
 
 struct ColumnPathChainEntry

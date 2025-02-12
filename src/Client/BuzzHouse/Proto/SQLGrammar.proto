@@ -1591,6 +1591,10 @@ message Function {
     required string function = 1;
 }
 
+message Cluster {
+    required string cluster = 1;
+}
+
 message Storage {
     enum DataStorage {
         DISK = 1;
@@ -2653,13 +2657,15 @@ message DatabaseEngine {
 message CreateDatabase {
     optional bool if_not_exists = 1;
     required Database database = 2;
-    required DatabaseEngine dengine = 3;
-    optional string comment = 4;
+    optional Cluster cluster = 3;
+    required DatabaseEngine dengine = 4;
+    optional string comment = 5;
 }
 
 message CreateFunction {
     required Function function = 1;
-    required LambdaExpr lexpr = 2;
+    optional Cluster cluster = 2;
+    required LambdaExpr lexpr = 3;
 }
 
 message DecimalN {
@@ -3053,14 +3059,15 @@ message CreateTable {
     optional bool is_temp = 2;
     optional bool if_not_exists = 3;
     required ExprSchemaTable est = 4;
+    optional Cluster cluster = 5;
     oneof create_table_oneof {
-        TableDef table_def = 5;
-        CreateTableAs table_as = 6;
+        TableDef table_def = 6;
+        CreateTableAs table_as = 7;
     }
-    required TableEngine engine = 7;
-    optional TTLExpr ttl_expr = 8;
-    optional Select as_select_stmt = 9;
-    optional string comment = 10;
+    required TableEngine engine = 8;
+    optional TTLExpr ttl_expr = 9;
+    optional Select as_select_stmt = 10;
+    optional string comment = 11;
 }
 
 enum SQLObject {
@@ -3086,8 +3093,9 @@ message Drop {
     optional bool if_empty = 4;
     required SQLObjectName object = 5;
     repeated SQLObjectName other_objects = 6;
-    optional bool sync = 7;
-    optional SettingValues setting_values = 8;
+    optional Cluster cluster = 7;
+    optional bool sync = 8;
+    optional SettingValues setting_values = 9;
 }
 
 message ValuesStatement {
@@ -3141,8 +3149,9 @@ message PartitionExpr {
 message LightDelete {
     required ExprSchemaTable est = 1;
     optional PartitionExpr partition = 2;
-    required WhereStatement where = 3;
-    optional SettingValues setting_values = 4;
+    optional Cluster cluster = 3;
+    required WhereStatement where = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message Truncate {
@@ -3151,8 +3160,9 @@ message Truncate {
         Database all_tables = 2;
         Database database = 3;
     }
-    optional bool sync = 4;
-    optional SettingValues setting_values = 5;
+    optional Cluster cluster = 4;
+    optional bool sync = 5;
+    optional SettingValues setting_values = 6;
 }
 
 
@@ -3200,17 +3210,19 @@ message DeduplicateExpr {
 
 message OptimizeTable {
     required ExprSchemaTable est = 1;
-    optional PartitionExpr partition = 2;
-    optional bool final = 3;
-    optional DeduplicateExpr dedup = 4;
-    optional bool cleanup = 5;
-    optional SettingValues setting_values = 6;
+    optional Cluster cluster = 2;
+    optional PartitionExpr partition = 3;
+    optional bool final = 4;
+    optional DeduplicateExpr dedup = 5;
+    optional bool cleanup = 6;
+    optional SettingValues setting_values = 7;
 }
 
 message ExchangeTables {
     required ExprSchemaTable est1 = 1;
     required ExprSchemaTable est2 = 2;
-    optional SettingValues setting_values = 3;
+    optional Cluster cluster = 3;
+    optional SettingValues setting_values = 4;
 }
 
 message UpdateSet {
@@ -3439,24 +3451,27 @@ message AlterTableItem {
 message AlterTable {
     optional bool is_temp = 1;
     required ExprSchemaTable est = 2;
-    required AlterTableItem alter = 3;
-    repeated AlterTableItem other_alters = 4;
-    optional SettingValues setting_values = 5;
+    optional Cluster cluster = 3;
+    required AlterTableItem alter = 4;
+    repeated AlterTableItem other_alters = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message Attach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
-    optional bool as_replicated = 3;
-    optional SettingValues setting_values = 4;
+    optional Cluster cluster = 3;
+    optional bool as_replicated = 4;
+    optional SettingValues setting_values = 5;
 }
 
 message Detach {
     required SQLObject sobject = 1;
     required SQLObjectName object = 2;
-    optional bool permanently = 3;
-    optional bool sync = 4;
-    optional SettingValues setting_values = 5;
+    optional Cluster cluster = 3;
+    optional bool permanently = 4;
+    optional bool sync = 5;
+    optional SettingValues setting_values = 6;
 }
 
 message SyncReplica {

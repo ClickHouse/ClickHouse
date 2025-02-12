@@ -1018,6 +1018,12 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             }
         }
     }
+    /// Shared and Replicated MergeTree are to be used with cluster
+    /// If the database already has a cluster, don't set on the table
+    if (!fc.clusters.empty() && (!b.db || !b.db->cluster.has_value()) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    {
+        b.cluster = rg.pickRandomlyFromVector(fc.clusters);
+    }
 }
 
 void StatementGenerator::addTableColumn(
@@ -1701,6 +1707,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
             generateNextTTL(rg, next, te, te->mutable_ttl_expr());
         }
         entries.clear();
+    }
+    if (next.cluster.has_value())
+    {
+        ct->mutable_cluster()->set_cluster(next.cluster.value());
     }
 
     chassert(!next.toption.has_value() || next.isMergeTreeFamily() || next.isJoinEngine() || next.isSetEngine());
