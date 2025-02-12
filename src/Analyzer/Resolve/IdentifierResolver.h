@@ -1,14 +1,11 @@
 #pragma once
 
-#include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Resolve/IdentifierLookup.h>
 
 #include <Core/Joins.h>
-#include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/NullsAction.h>
 
 namespace DB
 {
