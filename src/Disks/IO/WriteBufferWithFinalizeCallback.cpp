@@ -15,6 +15,17 @@ WriteBufferWithFinalizeCallback::WriteBufferWithFinalizeCallback(
 {
 }
 
+void WriteBufferWithFinalizeCallback::preFinalize()
+{
+    /// Underlying buffer can initiate write to the storage in its preFinalize.
+    /// So we skip this call if the buffer is empty and do_not_write_empty optimization is enabled.
+    const auto bytes_written = count();
+    if (do_not_write_empty && bytes_written == 0)
+        return;
+
+    WriteBufferFromFileDecorator::preFinalize();
+}
+
 void WriteBufferWithFinalizeCallback::finalizeImpl()
 {
     const auto bytes_written = count();

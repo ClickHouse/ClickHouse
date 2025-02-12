@@ -25,6 +25,8 @@ public:
 
     String getFileName() const override { return remote_path; }
 
+    void preFinalize() override;
+
 private:
     void finalizeImpl() override;
 
