@@ -610,7 +610,10 @@ void KeeperStorage<Container>::initializeSystemNodes()
             {
                 node.stats.increaseNumChildren();
                 if constexpr (!use_rocksdb)
+                {
                     node.addChild(getBaseNodeName(keeper_system_path));
+                    node.invalidateDigestCache();
+                }
             }
         );
         if constexpr (!use_rocksdb)
@@ -1193,6 +1196,9 @@ Coordination::Error KeeperStorage<Container>::commit(KeeperStorageBase::DeltaRan
                             node.stats = operation.new_stats;
                         else
                             node.setData(std::move(operation.new_data));
+
+                        if constexpr (!use_rocksdb)
+                            node.invalidateDigestCache();
                     });
 
                     if constexpr (!use_rocksdb)
@@ -3380,12 +3386,11 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
         std::lock_guard lock(transaction_mutex);
 
         if (new_last_zxid)
-        {
             uncommitted_transactions.pop_front();
-        }
 
         if (commit_zxid < zxid)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to commit smaller ZXID, commit ZXID: {}, current ZXID {}", commit_zxid, zxid);
+
         zxid = commit_zxid;
     }
 
@@ -3454,7 +3459,6 @@ void KeeperStorage<Container>::removeDigest(const Node & node, const std::string
 template<typename Container>
 void KeeperStorage<Container>::addDigest(const Node & node, const std::string_view path)
 {
-    node.invalidateDigestCache();
     nodes_digest += node.getDigest(path);
 }
 
