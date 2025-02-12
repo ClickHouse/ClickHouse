@@ -11,6 +11,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/StorageJoin.h>
 #include <ranges>
 #include <Core/Settings.h>
