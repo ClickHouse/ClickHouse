@@ -53,8 +53,9 @@ public:
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path(context_->getPath()) / "data" / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path(context_->getPath()) / "metadata" / escapeForFileName(name_))
+    , root_path(fs::weakly_canonical(context_->getPath()))
+    , path_to_table_symlinks(root_path / "data" / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(root_path / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -580,7 +581,7 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
         if (!table->storesDataOnDisk())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} doesn't have data path to create symlink", table_name);
 
-        String link = path_to_table_symlinks + escapeForFileName(table_name);
+        String link = path_to_table_symlinks / escapeForFileName(table_name);
         fs::path data = fs::proximate(table->getDataPaths()[0], path_to_table_symlinks);
 
         /// If it already points where needed.
@@ -605,7 +606,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
 
     try
     {
-        String path = path_to_table_symlinks + escapeForFileName(table_name);
+        String path = path_to_table_symlinks / escapeForFileName(table_name);
         db_disk->removeFileIfExists(path);
     }
     catch (...)
@@ -622,10 +623,9 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     /// Symlinks in data/db_name/ directory and metadata/db_name/ are not used by ClickHouse,
     /// it's needed only for convenient introspection.
     chassert(path_to_metadata_symlink != metadata_path);
-    fs::path metadata_symlink(path_to_metadata_symlink);
-    if (db_disk->existsFileOrDirectory(metadata_symlink))
+    if (db_disk->existsFileOrDirectory(path_to_metadata_symlink))
     {
-        if (!db_disk->isSymlink(metadata_symlink))
+        if (!db_disk->isSymlink(path_to_metadata_symlink))
             throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Directory {} already exists", path_to_metadata_symlink);
     }
     else
@@ -633,10 +633,10 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
         try
         {
             /// fs::exists could return false for broken symlink
-            if (db_disk->isSymlinkNoThrow(metadata_symlink))
-                db_disk->removeFileIfExists(metadata_symlink);
+            if (db_disk->isSymlinkNoThrow(path_to_metadata_symlink))
+                db_disk->removeFileIfExists(path_to_metadata_symlink);
 
-            db_disk->createDirectorySymlink(fs::proximate(metadata_path, fs::path(path_to_metadata_symlink).parent_path()), path_to_metadata_symlink);
+            db_disk->createDirectorySymlink(fs::proximate(metadata_path, path_to_metadata_symlink.parent_path()), path_to_metadata_symlink);
         }
         catch (...)
         {
@@ -671,8 +671,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
-    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
-    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
+    auto old_database_metadata_path = root_path / "metadata" / (escapeForFileName(getDatabaseName()) + ".sql");
+    auto new_database_metadata_path = root_path / "metadata" / (new_name_escaped + ".sql");
     db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
@@ -695,9 +695,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             table.second->renameInMemory(table_id);
         }
 
-        path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;
+        path_to_metadata_symlink = root_path / "metadata" / new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = fs::path("data") / new_name_escaped / "";
+        path_to_table_symlinks = root_path / "data" / new_name_escaped / "";
     }
 
     if (db_disk->isSymlinkSupported())
