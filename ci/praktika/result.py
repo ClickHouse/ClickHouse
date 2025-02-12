@@ -2,7 +2,9 @@ import copy
 import dataclasses
 import datetime
 import json
+import random
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -52,6 +54,7 @@ class Result(MetaClasses.Serializable):
     files: List[str] = dataclasses.field(default_factory=list)
     links: List[str] = dataclasses.field(default_factory=list)
     info: str = ""
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
 
     @staticmethod
     def create_from(
@@ -278,7 +281,10 @@ class Result(MetaClasses.Serializable):
             files=[],
             links=[
                 Info().get_specific_report_url(
-                    pr_number=cache_record.pr_number, sha=cache_record.sha
+                    pr_number=cache_record.pr_number,
+                    branch=cache_record.branch,
+                    sha=cache_record.sha,
+                    job_name=name,
                 )
             ],
             info=f"from cache",
@@ -482,10 +488,8 @@ class _ResultS3:
         filename = Path(result.file_name()).name
         file_name_versioned = f"{filename}_{str(version).zfill(3)}"
         env = _Environment.get()
-        s3_path_versioned = (
-            f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/{file_name_versioned}"
-        )
         s3_path = f"{Settings.HTML_S3_PATH}/{env.get_s3_prefix()}/"
+        s3_path_versioned = f"{s3_path}{file_name_versioned}"
         if version == 0:
             S3.clean_s3_directory(s3_path=s3_path, include=f"{filename}*")
         if not S3.put(
@@ -498,65 +502,6 @@ class _ResultS3:
         if not S3.put(s3_path=s3_path, local_path=result.file_name()):
             print("Failed to put non-versioned Result")
         return True
-
-    # @classmethod
-    # def lock(cls, s3_path, level=0):
-    #     env = _Environment.get()
-    #     s3_path_lock = s3_path + f".lock"
-    #     file_path_lock = f"{Settings.TEMP_DIR}/{Path(s3_path_lock).name}"
-    #     assert Shell.check(
-    #         f"echo '''{env.JOB_NAME}''' > {file_path_lock}", verbose=True
-    #     ), "Never"
-    #
-    #     i = 20
-    #     meta = S3.head_object(s3_path_lock)
-    #     while meta:
-    #         locked_by_job = meta.get("Metadata", {"job": ""}).get("job", "")
-    #         if locked_by_job:
-    #             decoded_bytes = base64.b64decode(locked_by_job)
-    #             locked_by_job = decoded_bytes.decode("utf-8")
-    #         print(
-    #             f"WARNING: Failed to acquire lock, meta [{meta}], job [{locked_by_job}] - wait"
-    #         )
-    #         i -= 5
-    #         if i < 0:
-    #             info = f"ERROR: lock acquire failure - unlock forcefully"
-    #             print(info)
-    #             env.add_info(info)
-    #             break
-    #         time.sleep(5)
-    #
-    #     metadata = {"job": Utils.to_base64(env.JOB_NAME)}
-    #     S3.put(
-    #         s3_path=s3_path_lock,
-    #         local_path=file_path_lock,
-    #         metadata=metadata,
-    #         if_none_matched=True,
-    #     )
-    #     time.sleep(1)
-    #     obj = S3.head_object(s3_path_lock)
-    #     if not obj or not obj.has_tags(tags=metadata):
-    #         print(f"WARNING: locked by another job [{obj}]")
-    #         env.add_info("S3 lock file failure")
-    #         cls.lock(s3_path, level=level + 1)
-    #     print("INFO: lock acquired")
-    #
-    # @classmethod
-    # def unlock(cls, s3_path):
-    #     s3_path_lock = s3_path + ".lock"
-    #     env = _Environment.get()
-    #     obj = S3.head_object(s3_path_lock)
-    #     if not obj:
-    #         print("ERROR: lock file is removed")
-    #         assert False  # investigate
-    #     elif not obj.has_tags({"job": Utils.to_base64(env.JOB_NAME)}):
-    #         print("ERROR: lock file was acquired by another job")
-    #         assert False  # investigate
-    #
-    #     if not S3.delete(s3_path_lock):
-    #         print(f"ERROR: File [{s3_path_lock}] delete failure")
-    #     print("INFO: lock released")
-    #     return True
 
     @classmethod
     def upload_result_files_to_s3(
@@ -611,7 +556,7 @@ class _ResultS3:
         prev_status = ""
         new_status = ""
         done = False
-        while attempt < 10:
+        while attempt < 50:
             version = cls.copy_result_from_s3_with_version(
                 Result.file_name_static(workflow_name)
             )
@@ -630,6 +575,9 @@ class _ResultS3:
                 break
             print(f"Attempt [{attempt}] to upload workflow result failed")
             attempt += 1
+            # random delay (0-2s) to reduce contention and minimize race conditions
+            # when multiple concurrent jobs attempt to update the workflow report
+            time.sleep(random.uniform(0, 2))
         assert done
 
         if prev_status != new_status:

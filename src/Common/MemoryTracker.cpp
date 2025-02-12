@@ -254,7 +254,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
       * So, we allow over-allocations.
       */
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
-    Int64 will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
+    Int64 will_be_rss = 0;
+    if (level == VariableContext::Global)
+        will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -328,7 +330,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
                     size,
-                    formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
+                    level == VariableContext::Global ? formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)) : "N/A",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                     overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
                     overcommit_result_ignore ? "" : toDescription(overcommit_result));
@@ -522,14 +524,15 @@ void MemoryTracker::updateRSS(Int64 rss_)
     total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
 }
 
-void MemoryTracker::updateAllocated(Int64 allocated_)
+void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
     Int64 new_amount = allocated_;
-    LOG_INFO(
-        getLogger("MemoryTracker"),
-        "Correcting the value of global memory tracker from {} to {}",
-        ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-        ReadableSize(allocated_));
+    if (log_change)
+        LOG_INFO(
+            getLogger("MemoryTracker"),
+            "Correcting the value of global memory tracker from {} to {}",
+            ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
+            ReadableSize(allocated_));
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);

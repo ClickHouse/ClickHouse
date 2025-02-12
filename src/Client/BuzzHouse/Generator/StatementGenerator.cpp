@@ -261,7 +261,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         else
         {
-            cv->set_populate(rg.nextSmallNumber() < 4);
+            cv->set_populate(!has_to && rg.nextSmallNumber() < 4);
         }
     }
     if ((next.is_deterministic = rg.nextBool()))
@@ -592,9 +592,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 else if (entry.path.size() > 1)
                 {
                     /// Make sure all nested entries have the same number of rows
-                    ArrayType atp(entry.getBottomType());
-
-                    buf += atp.appendRandomRawValue(rg, *this, next_nested_rows);
+                    buf += ArrayType::appendRandomRawValue(rg, *this, entry.getBottomType(), next_nested_rows);
                 }
                 else
                 {
@@ -2825,7 +2823,10 @@ struct ExplainOptValues
     const std::function<uint32_t(RandomGenerator &)> random_func;
 
     ExplainOptValues(const ExplainOption_ExplainOpt & e, const std::function<uint32_t(RandomGenerator &)> & rf)
-        : opt(e), random_func(rf) { }
+        : opt(e)
+        , random_func(rf)
+    {
+    }
 };
 
 static const std::function<uint32_t(RandomGenerator &)> trueOrFalseInt = [](RandomGenerator & rg) { return rg.nextBool() ? 1 : 0; };
@@ -2854,6 +2855,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
 {
     std::optional<ExplainQuery_ExplainValues> val = std::nullopt;
 
+    eq->set_is_explain(true);
     if (rg.nextSmallNumber() < 9)
     {
         val = std::optional<ExplainQuery_ExplainValues>(
@@ -2943,6 +2945,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
+    chassert(this->levels.empty());
     if (start_transaction && nopt < (start_transaction + 1))
     {
         sq.set_start_trans(true);
@@ -2964,7 +2967,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
     }
     else if (run_query)
     {
-        generateNextQuery(rg, sq.mutable_inner_query());
+        generateNextQuery(rg, sq.mutable_explain()->mutable_inner_query());
     }
     else
     {
@@ -3009,15 +3012,15 @@ void StatementGenerator::dropDatabase(const uint32_t dname)
 
 void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success)
 {
-    const SQLQueryInner & query = sq.has_inner_query() ? sq.inner_query() : sq.explain().inner_query();
+    const SQLQueryInner & query = sq.explain().inner_query();
 
     success &= (!ei.getRequiresExternalCallCheck() || ei.getNextExternalCallSucceeded());
 
-    if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_table())
+    if (sq.has_explain() && query.has_create_table())
     {
         const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_table().est().table().table().substr(1)));
 
-        if (sq.has_inner_query() && success)
+        if (!sq.explain().is_explain() && success)
         {
             if (query.create_table().create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace)
             {
@@ -3027,11 +3030,11 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         dropTable(true, !success, tname);
     }
-    else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_view())
+    else if (sq.has_explain() && query.has_create_view())
     {
         const uint32_t tname = static_cast<uint32_t>(std::stoul(query.create_view().est().table().table().substr(1)));
 
-        if (sq.has_inner_query() && success)
+        if (!sq.explain().is_explain() && success)
         {
             if (query.create_view().replace())
             {
@@ -3041,7 +3044,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         }
         this->staged_views.erase(tname);
     }
-    else if (sq.has_inner_query() && query.has_drop() && success)
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_drop() && success)
     {
         const Drop & drp = query.drop();
 
@@ -3062,7 +3065,7 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             this->functions.erase(static_cast<uint32_t>(std::stoul(drp.object().function().function().substr(1))));
         }
     }
-    else if (sq.has_inner_query() && query.has_exchange() && success)
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_exchange() && success)
     {
         const uint32_t tname1 = static_cast<uint32_t>(std::stoul(query.exchange().est1().table().table().substr(1)));
         const uint32_t tname2 = static_cast<uint32_t>(std::stoul(query.exchange().est2().table().table().substr(1)));
@@ -3077,9 +3080,9 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         this->tables[tname2] = std::move(tx);
         this->tables[tname1] = std::move(ty);
     }
-    else if (sq.has_inner_query() && query.has_alter_table())
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_alter_table())
     {
-        const AlterTable & at = sq.inner_query().alter_table();
+        const AlterTable & at = query.alter_table();
         const bool isview = at.est().table().table()[0] == 'v';
         const uint32_t tname = static_cast<uint32_t>(std::stoul(at.est().table().table().substr(1)));
 
@@ -3272,9 +3275,9 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if (sq.has_inner_query() && query.has_attach() && success)
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_attach() && success)
     {
-        const Attach & att = sq.inner_query().attach();
+        const Attach & att = query.attach();
         const bool istable = att.object().has_est() && att.object().est().table().table()[0] == 't';
         const bool isview = att.object().has_est() && att.object().est().table().table()[0] == 'v';
         const bool isdatabase = att.object().has_database();
@@ -3301,9 +3304,9 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if (sq.has_inner_query() && query.has_detach() && success)
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_detach() && success)
     {
-        const Detach & det = sq.inner_query().detach();
+        const Detach & det = query.detach();
         const bool istable = det.object().has_est() && det.object().est().table().table()[0] == 't';
         const bool isview = det.object().has_est() && det.object().est().table().table()[0] == 'v';
         const bool isdatabase = det.object().has_database();
@@ -3333,27 +3336,27 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
         }
     }
-    else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_database())
+    else if (sq.has_explain() && query.has_create_database())
     {
         const uint32_t dname = static_cast<uint32_t>(std::stoul(query.create_database().database().database().substr(1)));
 
-        if (sq.has_inner_query() && success)
+        if (!sq.explain().is_explain() && success)
         {
             this->databases[dname] = std::move(this->staged_databases[dname]);
         }
         this->staged_databases.erase(dname);
     }
-    else if ((sq.has_explain() || sq.has_inner_query()) && query.has_create_function())
+    else if (sq.has_explain() && query.has_create_function())
     {
         const uint32_t fname = static_cast<uint32_t>(std::stoul(query.create_function().function().function().substr(1)));
 
-        if (sq.has_inner_query() && success)
+        if (!sq.explain().is_explain() && success)
         {
             this->functions[fname] = std::move(this->staged_functions[fname]);
         }
         this->staged_functions.erase(fname);
     }
-    else if (sq.has_inner_query() && query.has_trunc() && query.trunc().has_database())
+    else if (sq.has_explain() && !sq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
         dropDatabase(static_cast<uint32_t>(std::stoul(query.trunc().database().database().substr(1))));
     }
