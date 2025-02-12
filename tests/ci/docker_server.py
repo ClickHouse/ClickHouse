@@ -461,7 +461,6 @@ def main():
         docker_login()
 
     logging.info("Following tags will be created: %s", ", ".join(tags))
-    status = SUCCESS
     test_results = []  # type: TestResults
     for os in args.os:
         for tag in tags:
@@ -470,11 +469,15 @@ def main():
                     image, push, repo_urls, os, tag, args.version, direct_urls
                 )
             )
-            if test_results[-1].status != OK:
-                status = FAILURE
+
     pr_info = pr_info or PRInfo()
 
-    test_docker_library(test_results)
+    if not push:
+        # The image is built locally only when we don't push it
+        # See `--output=type=docker`
+        test_docker_library(test_results)
+
+    status = SUCCESS if all(tr.status == OK for tr in test_results) else FAILURE
 
     description = f"Processed tags: {', '.join(tags)}"
     JobReport(
