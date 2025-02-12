@@ -156,7 +156,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     String initial_address_string;
     readBinary(initial_address_string, in);
-    initial_address = std::make_unique<Poco::Net::SocketAddress>(initial_address_string);
+    initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address_string);
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {

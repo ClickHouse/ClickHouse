@@ -58,12 +58,12 @@ public:
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
-    std::unique_ptr<Poco::Net::SocketAddress> current_address;
+    std::shared_ptr<Poco::Net::SocketAddress> current_address;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
-    std::unique_ptr<Poco::Net::SocketAddress> initial_address;
+    std::shared_ptr<Poco::Net::SocketAddress> initial_address;
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
