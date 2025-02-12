@@ -75,6 +75,12 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
     assert_profile_event(
         node1,
         "test_concurrent_threads_soft_limit_1",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 1,
+    )
+    assert_profile_event(
+        node1,
+        "test_concurrent_threads_soft_limit_1",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
@@ -114,6 +120,12 @@ def test_use_concurrency_control_default(started_cluster):
     assert_profile_event(
         node1,
         "test_use_concurrency_control",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 0,
+    )
+    assert_profile_event(
+        node1,
+        "test_use_concurrency_control",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
@@ -135,13 +147,19 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsDelayed",
-        lambda x: x >= 50,
+        lambda x: x >= 49,
     )
     assert_profile_event(
         node2,
         "test_concurrent_threads_soft_limit_2",
         "ConcurrencyControlSlotsAcquired",
         lambda x: x >= 1 and x <= 50,
+    )
+    assert_profile_event(
+        node2,
+        "test_concurrent_threads_soft_limit_2",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 1,
     )
     assert_profile_event(
         node2,
@@ -184,6 +202,12 @@ def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
     assert_profile_event(
         node2,
         "test_use_concurrency_control_2",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 0,
+    )
+    assert_profile_event(
+        node2,
+        "test_use_concurrency_control_2",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
@@ -205,12 +229,18 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
         node3,
         "test_concurrent_threads_soft_limit_3",
         "ConcurrencyControlSlotsDelayed",
-        lambda x: x == 99,
+        lambda x: x == 98,
     )
     assert_profile_event(
         node3,
         "test_concurrent_threads_soft_limit_3",
         "ConcurrencyControlSlotsAcquired",
+        lambda x: x == 1,
+    )
+    assert_profile_event(
+        node3,
+        "test_concurrent_threads_soft_limit_3",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
         lambda x: x == 1,
     )
     assert_profile_event(
@@ -223,7 +253,7 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
         node3.query(
             "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_3' order by query_start_time_microseconds desc limit 1"
         )
-        == "3\n"
+        == "4\n"
     )
 
 
