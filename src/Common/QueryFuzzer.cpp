@@ -90,9 +90,10 @@ void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 #if USE_BUZZHOUSE
     if (fuzz_rand() % 30 == 0)
     {
-        const size_t nsettings = (fuzz_rand() % std::min(BuzzHouse::performanceSettings.size(), UINT64_C(10))) + UINT64_C(1);
+        const uint32_t nsettings
+            = (fuzz_rand() % std::min(static_cast<uint32_t>(BuzzHouse::performanceSettings.size()), UINT32_C(10))) + UINT32_C(1);
 
-        for (size_t i = 0; i < nsettings; i++)
+        for (uint32_t i = 0; i < nsettings; i++)
         {
             const String & setting = pickKeyRandomlyFromMap(fuzz_rand, BuzzHouse::performanceSettings);
             String value = pickRandomlyFromSet(fuzz_rand, BuzzHouse::performanceSettings.at(setting).oracle_values);
@@ -1433,6 +1434,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
         ASTPtr new_join;
+        IAST * sel_tables = select->tables().get();
 
         fuzzColumnLikeExpressionList(select->select().get());
 
@@ -1441,7 +1443,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             select->distinct = !select->distinct;
         }
         /// Add a join only when tables in FROM are already present
-        if (!select->tables()->children.empty() && fuzz_rand() % 50 == 0 && (new_join = addJoinClause()))
+        if (sel_tables && !sel_tables->children.empty() && fuzz_rand() % 50 == 0 && (new_join = addJoinClause()))
         {
             select->refTables()->children.emplace_back(new_join);
         }
