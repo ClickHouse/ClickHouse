@@ -53,6 +53,8 @@ public:
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
+    ClientInfo();
+
     QueryKind query_kind = QueryKind::NO_QUERY;
 
     /// Current values are not serialized, because it is passed separately.

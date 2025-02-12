@@ -22,6 +22,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ClientInfo::ClientInfo()
+{
+    current_address = std::make_shared<Poco::Net::SocketAddress>();
+    initial_address = std::make_shared<Poco::Net::SocketAddress>();
+}
+
 std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
 {
     if (forwarded_for.empty())
