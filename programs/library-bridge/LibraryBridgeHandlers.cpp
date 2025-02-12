@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>
+#include <Common/filesystemHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -25,6 +26,7 @@
 #include <Formats/NativeWriter.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <filesystem>
+#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB
@@ -179,7 +181,7 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
             bool path_allowed = false;
             for (const auto & prefix : libraries_paths)
             {
-                if (library_absolute_path.string().starts_with(prefix))
+                if (fileOrSymlinkPathStartsWith(library_absolute_path, prefix))
                 {
                     path_allowed = true;
                     break;
@@ -187,7 +189,8 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
             }
             if (!path_allowed)
             {
-                processError(response, "The provided library path is not inside the allowed prefix 'libraries-path' from the configuration.");
+                processError(response, fmt::format("The provided library path {} is not inside any of the allowed prefixes {} ('libraries-path') from the configuration.",
+                    library_absolute_path.string(), boost::join(libraries_paths, ", ")));
                 return;
             }
 
@@ -533,7 +536,7 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             bool path_allowed = false;
             for (const auto & prefix : libraries_paths)
             {
-                if (library_absolute_path.string().starts_with(prefix))
+                if (fileOrSymlinkPathStartsWith(library_absolute_path, prefix))
                 {
                     path_allowed = true;
                     break;
