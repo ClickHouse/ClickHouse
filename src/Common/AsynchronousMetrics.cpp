@@ -20,6 +20,8 @@
 #include <chrono>
 #include <string_view>
 
+#include "Interpreters/Context.h"
+
 #include "config.h"
 
 #if USE_JEMALLOC
@@ -71,12 +73,14 @@ AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
-    bool update_rss_)
+    bool update_rss_,
+    const ContextPtr & context_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , update_jemalloc_epoch(update_jemalloc_epoch_)
     , update_rss(update_rss_)
+    , global_context(context_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/cpuinfo", cpuinfo);
@@ -1808,12 +1812,12 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     first_run = false;
 
-    // Finally, update the current metrics.
+    // Finally, update the current metrics and warnings
     {
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
-    }
 
+    }
 }
 
 }

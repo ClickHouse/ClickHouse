@@ -522,7 +522,7 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<Context::Dashboards> dashboards;
 
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-    std::vector<String> warnings TSA_GUARDED_BY(mutex);                           /// Store warning messages about server configuration.
+    std::unordered_map<String, String> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -920,11 +920,25 @@ struct ContextSharedPart : boost::noncopyable
         trace_collector.emplace();
     }
 
-    void addWarningMessage(const String & message) TSA_REQUIRES(mutex)
+    void addWarningMessage(const String & warning, const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
         LOG_WARNING(log, "{}", message);
-        warnings.push_back(message);
+        warnings[warning] = message;
+    }
+
+    void addOrUpdateWarningMessage(const String & warning, const String & message) TSA_REQUIRES(mutex)
+    {
+        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
+        LOG_WARNING(log, "{}", message);
+        warnings[warning] = message;
+    }
+
+    void removeWarningMessage(const String & warning) TSA_REQUIRES(mutex)
+    {
+        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
+        LOG_WARNING(log, "{}", warnings[warning]);
+        warnings.erase(warning);
     }
 
     void configureServerWideThrottling()
@@ -1198,22 +1212,26 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-Strings Context::getWarnings() const
+std::unordered_map<String, String> Context::getWarnings() const
 {
-    Strings common_warnings;
+    std::unordered_map<String, String> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
+            common_warnings["MaxAttachedTables"]
+                = (fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
+            common_warnings["MaxAttachedViews"]
+                = (fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
+            common_warnings["MaxAttachedDictionaries"]
+                = (fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
+            common_warnings["MaxAttachedDatabases"]
+                = (fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
+            common_warnings["MaxActiveParts"] = (fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1235,7 +1253,7 @@ Strings Context::getWarnings() const
         res = res + "]" + (single_element ? " is" : " are")
             + " changed. "
               "Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        common_warnings.emplace_back(res);
+        common_warnings["ObsoleteSettings"] = (res);
     }
 
     return common_warnings;
@@ -1475,14 +1493,14 @@ void Context::setUserScriptsPath(const String & path)
     shared->user_scripts_path = path;
 }
 
-void Context::addWarningMessage(const String & msg) const
+void Context::addWarningMessage(const String & warning, const String & msg) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
 
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
     if (!is_supressed)
-        shared->addWarningMessage(msg);
+        shared->addWarningMessage(warning, msg);
 }
 
 void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
@@ -1505,7 +1523,19 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
 
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
     if (!is_supressed)
-        shared->addWarningMessage(message);
+        shared->addWarningMessage("DeprecatedDatabaseEngineOrdinary", message);
+}
+
+void Context::addOrUpdateWarningMessage(const String & warning, const String & message) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->addOrUpdateWarningMessage(warning, message);
+}
+
+void Context::removeWarningMessage(const String & warning) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->removeWarningMessage(warning);
 }
 
 void Context::setConfig(const ConfigurationPtr & config)

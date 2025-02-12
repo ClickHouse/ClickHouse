@@ -596,7 +596,9 @@ public:
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
-    Strings getWarnings() const;
+    std::unordered_map<String, String> getWarnings() const;
+    void addOrUpdateWarningMessage(const String & warning, const String & message) const;
+    void removeWarningMessage(const String & warning) const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -613,7 +615,7 @@ public:
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
 
-    void addWarningMessage(const String & msg) const;
+    void addWarningMessage(const String & warning, const String & msg) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);

@@ -71,7 +71,8 @@ public:
         unsigned update_period_seconds,
         const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
         bool update_jemalloc_epoch_,
-        bool update_rss_);
+        bool update_rss_,
+        const ContextPtr & context_);
 
     virtual ~AsynchronousMetrics();
 
@@ -120,6 +121,8 @@ private:
 
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
+    ContextPtr global_context;
+
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);

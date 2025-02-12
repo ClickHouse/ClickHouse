@@ -67,7 +67,7 @@ ServerAsynchronousMetrics::ServerAsynchronousMetrics(
     bool update_jemalloc_epoch_,
     bool update_rss_)
     : WithContext(global_context_)
-    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
+    , AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, global_context_)
     , update_heavy_metrics(update_heavy_metrics_)
     , heavy_metric_update_period(heavy_metrics_update_period_seconds)
 {
@@ -475,8 +475,7 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 
 void ServerAsynchronousMetrics::updateMutationStats()
 {
-    size_t stuck_mutations{};
-    size_t pending_mutations{};
+    MutationStats current_mutation_stats{};
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
@@ -495,19 +494,18 @@ void ServerAsynchronousMetrics::updateMutationStats()
                 {
                     if (!mutation_status.is_done)
                     {
-                        ++pending_mutations;
+                        ++current_mutation_stats.pending_mutations;
 
                         auto parts_to_do = mutation_status.parts_to_do_names.size();
                         if (parts_to_do > 0)
-                            ++stuck_mutations;
+                            ++current_mutation_stats.stuck_mutations;
                     }
                 }
             }
         }
     }
 
-    stuck_mutation_stats = stuck_mutations;
-    pending_mutation_stats = pending_mutations;
+    mutation_stats = current_mutation_stats;
 }
 
 void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values)
@@ -554,8 +552,8 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
     new_values["NumberOfDetachedParts"] = { detached_parts_stats.count, "The total number of parts detached from MergeTree tables. A part can be detached by a user with the `ALTER TABLE DETACH` query or by the server itself it the part is broken, unexpected or unneeded. The server does not care about detached parts and they can be removed." };
     new_values["NumberOfDetachedByUserParts"] = { detached_parts_stats.detached_by_user, "The total number of parts detached from MergeTree tables by users with the `ALTER TABLE DETACH` query (as opposed to unexpected, broken or ignored parts). The server does not care about detached parts and they can be removed." };
-    new_values["NumberOfPendingMutations"] = { pending_mutation_stats, "The total number of mutations that are in left to be mutated." };
-    new_values["NumberOfStuckMutations"] = { stuck_mutation_stats, "The total number of mutations which have data part left to be mutated over the last 1 hour." };
+    new_values["NumberOfPendingMutations"] = { mutation_stats.pending_mutations, "The total number of mutations that are in left to be mutated." };
+    new_values["NumberOfStuckMutations"] = { mutation_stats.stuck_mutations, "The total number of mutations which have data part left to be mutated over the last 1 hour." };
 }
 
 }

@@ -36,9 +36,14 @@ private:
         size_t detached_by_user;
     };
 
+    struct MutationStats
+    {
+        size_t stuck_mutations;
+        size_t pending_mutations;
+    };
+
     DetachedPartsStats detached_parts_stats{};
-    UInt64 stuck_mutation_stats;
-    UInt64 pending_mutation_stats;
+    MutationStats mutation_stats{};
 
     void updateDetachedPartsStats();
     void updateMutationStats();
