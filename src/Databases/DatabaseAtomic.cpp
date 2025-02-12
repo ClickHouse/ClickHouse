@@ -53,8 +53,8 @@ public:
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_)
     : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_)
-    , path_to_table_symlinks(fs::path("data") / escapeForFileName(name_) / "")
-    , path_to_metadata_symlink(fs::path("metadata") / escapeForFileName(name_))
+    , path_to_table_symlinks(fs::path(context_->getPath()) / "data" / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path(context_->getPath()) / "metadata" / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
