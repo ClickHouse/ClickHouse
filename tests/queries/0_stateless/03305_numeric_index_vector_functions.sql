@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 -- Basic Aggregate Functions
 select 'TEST groupNumericIndexedVector';
 
@@ -31,7 +33,7 @@ CREATE TABLE uin_value_details
 (
     ds Date,
     uin UInt32,
-    value UInt64
+    value Int64
 )
 ENGINE = MergeTree()
 ORDER BY ds;
@@ -192,6 +194,8 @@ ORDER BY ds;
 
 insert into uin_value_details (ds, uin, value) select '2023-12-26', number, number * number from numbers(100000);
 insert into uin_value_details (ds, uin, value) select '2023-12-27', number, number from numbers(100000);
+insert into uin_value_details (ds, uin, value) select '2023-12-28', number * 3, number * 3 * number * 3 from numbers(100000);
+insert into uin_value_details (ds, uin, value) select '2023-12-29', number * 3, number * 3 from numbers(100000);
 
 with
 (
@@ -202,9 +206,20 @@ with
     select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-27')
     from uin_value_details
 ) as vec_2
+, (
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-28')
+    from uin_value_details
+) as vec_3,
+(
+    select groupNumericIndexedVectorStateIf(uin, value, ds = '2023-12-29')
+    from uin_value_details
+) as vec_4
 select arrayJoin([
     numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(vec_1, vec_2))
+    , numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(vec_3, vec_4))
+    , numericIndexedVectorAllValueSum(numericIndexedVectorPointwiseDivide(vec_1, vec_3))
 ]);
+
 
 -- test insert empty aggregate function
 DROP TABLE IF EXISTS numeric_indexed_vector;

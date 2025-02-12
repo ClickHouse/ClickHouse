@@ -37,6 +37,18 @@ extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 }
 
+namespace
+{
+
+UInt64 Float64ToUInt64(Float64 d)
+{
+    if (d >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(d);
+}
+
+}
+
 
 #define FOR_NUMERIC_INDEXED_VECTOR_INDEX_TYPES(M) \
     M(UInt8) \
@@ -526,7 +538,7 @@ public:
         Float64 ratio = static_cast<Float64>(1ULL << vector.fraction_bit_num);
         for (size_t i = 0; i < length; ++i)
         {
-            buffer[i] = static_cast<UInt64>(values[i] * ratio);
+            buffer[i] = Float64ToUInt64(values[i] * ratio);
             buffer[i] &= mask;
         }
 
@@ -582,7 +594,7 @@ public:
         nonzero_cnt = 0;
         for (size_t i = 0; i < length; ++i)
         {
-            UInt64 tmp = static_cast<UInt64>(values[i] * ratio);
+            UInt64 tmp = Float64ToUInt64(values[i] * ratio);
             tmp &= mask;
             buffer[i] = tmp;
             number_of_1s += __builtin_popcountll(tmp);
@@ -737,10 +749,7 @@ public:
                     UInt64 p = bit_buffer[i][j];
                     // ASM optimized
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
-                    // ctn->words[tmp_offset] |= 1ULL << (p & 0x3f);
-                    UInt64 load = ctn->words[tmp_offset];
-                    load |= (1ULL << p);
-                    ctn->words[tmp_offset] = load;
+                    ctn->words[tmp_offset] |= 1ULL << (p & 0x3f);
                 }
                 ctn->cardinality += cnt[i];
             }
@@ -1318,6 +1327,31 @@ public:
         return total_bm.size();
     }
 
+
+    // Converts the internal bit-level representation into an index-to-value mapping.
+    // The mapping is then stored into the provided `indexes_pod` and `values_pod` arrays.
+    //
+    // @param indexes_pod    [out] Array that will be filled with the indexes.
+    // @param values_pod     [out] Array that will be filled with the corresponding values.
+    // @return               The number of unique indexes in the mapping.
+    //
+    // Processing logic:
+    // 1. Unsigned integer path:
+    //    - Iterate through all bits (0 to total_bit_num-1)
+    //    - Merge bit information into index2value map
+    //    - Apply precision scaling using fraction_bit_num
+    //
+    // 2. Signed integer/float path:
+    //    - Uses highest bit (total_bit_num-1) as sign bit
+    //    - Separates processing for positive/negative indices:
+    //      * Positive values: Direct bit merging
+    //      * Negative values: Two's complement handling with sign adjustment
+    //    - Final values include sign correction and precision scaling
+    //
+    // Implementation notes:
+    // - Uses Roaring bitmap library for efficient bit set operations
+    // - fraction_bit_num controls fixed-point precision scaling
+    // - Result values are statically cast to target type
     UInt64 toIndexValueMap(PaddedPODArray<IndexType> & indexes_pod, PaddedPODArray<ValueType> & values_pod) const
     {
         const UInt32 total_bit_num = getTotalBitNum();
@@ -1325,9 +1359,11 @@ public:
             return 0;
         DataTypePtr value_type = std::make_shared<DataTypeNumber<ValueType>>();
         auto which = WhichDataType(value_type);
-        std::map<IndexType, Int64> index2value;
+        if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
         if (which.isUInt())
         {
+            std::map<IndexType, UInt64> index2value;
             for (size_t i = 0; i < total_bit_num; ++i)
             {
                 PaddedPODArray<IndexType> indexes;
@@ -1337,9 +1373,16 @@ public:
                     index2value[indexes[j]] |= (1ULL << i);
                 }
             }
+            for (auto & [index, value] : index2value)
+            {
+                indexes_pod.emplace_back(index);
+                values_pod.emplace_back(static_cast<ValueType>(value));
+            }
+            return index2value.size();
         }
         else if (which.isInt() || which.isFloat())
         {
+            std::map<IndexType, Int64> index2value;
             UInt32 sign_bit_index = total_bit_num - 1;
             Roaring all_negative_indexes;
             all_negative_indexes.rb_or(*getDataArrayAt(sign_bit_index));
@@ -1375,18 +1418,25 @@ public:
                 index2value[all_negative_indexes_array[i]] += 1;
                 index2value[all_negative_indexes_array[i]] *= -1;
             }
+
+            for (auto & [index, value] : index2value)
+            {
+                indexes_pod.emplace_back(index);
+                if (fraction_bit_num == 0)
+                {
+                    values_pod.emplace_back(static_cast<ValueType>(value));
+                }
+                else
+                {
+                    values_pod.emplace_back(static_cast<ValueType>(value / std::pow(2.0, fraction_bit_num)));
+                }
+            }
+            return index2value.size();
         }
         else
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported value type for getAllValueSum()");
         }
-
-        for (auto & [index, value] : index2value)
-        {
-            indexes_pod.emplace_back(index);
-            values_pod.emplace_back(static_cast<ValueType>(value / (std::pow(2.0, fraction_bit_num))));
-        }
-        return index2value.size();
     }
 
     void read(DB::ReadBuffer & in)

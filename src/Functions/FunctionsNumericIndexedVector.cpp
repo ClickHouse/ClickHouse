@@ -9,30 +9,27 @@ namespace DB
 REGISTER_FUNCTION(NumericIndexedVector)
 {
     factory.registerFunction<FunctionNumericIndexedVectorBuild>(FunctionDocumentation{
-        .description=R"(Creates a NumericIndexedVector from a map. The map’s keys represent the Index and the map’s value represents the element value.)",
+        .description
+        = R"(Creates a NumericIndexedVector from a map. The map’s keys represent the Index and the map’s value represents the element value.)",
         .syntax = "SELECT numericIndexedVectorBuild(map)",
         .arguments = {{"map", "A mapping from Index to Value."}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             "SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res, toTypeName(res);",
             R"(
 ┌─res─┬─toTypeName(res)────────────────────────────────────────────┐
 │     │ AggregateFunction(groupNumericIndexedVector, UInt8, UInt8) │
 └─────┴────────────────────────────────────────────────────────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseAdd>(FunctionDocumentation{
-        .description = R"(Performs pointwise addition between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
+        .description
+        = R"(Performs pointwise addition between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseAdd(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
@@ -45,19 +42,15 @@ SELECT
 ┌─res1──────────────────┬─res2─────────────┐
 │ {1:10,2:30,3:50,4:30} │ {1:12,2:22,3:32} │
 └───────────────────────┴──────────────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseSubtract>(FunctionDocumentation{
-        .description = R"(Performs pointwise subtraction between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
+        .description
+        = R"(Performs pointwise subtraction between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
@@ -70,19 +63,15 @@ SELECT
 ┌─res1───────────────────┬─res2────────────┐
 │ {1:10,2:10,3:10,4:-30} │ {1:8,2:18,3:28} │
 └────────────────────────┴─────────────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseMultiply>(FunctionDocumentation{
-        .description = R"(Performs pointwise multiplication between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
+        .description
+        = R"(Performs pointwise multiplication between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toInt32(x), [10, 20, 30]))) as vec1,
@@ -95,19 +84,15 @@ SELECT
 ┌─res1──────────┬─res2─────────────┐
 │ {2:200,3:600} │ {1:20,2:40,3:60} │
 └───────────────┴──────────────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseDivide>(FunctionDocumentation{
-        .description = R"(Performs pointwise division between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
+        .description
+        = R"(Performs pointwise division between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The function returns a new NumericIndexedVector.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
@@ -120,19 +105,15 @@ SELECT
 ┌─res1────────┬─res2────────────┐
 │ {2:2,3:1.5} │ {1:5,2:10,3:15} │
 └─────────────┴─────────────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseEqual>(FunctionDocumentation{
-        .description = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding Value entries set to 1.)",
+        .description
+        = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the values are equal, with all corresponding Value entries set to 1.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
@@ -145,19 +126,15 @@ SELECT
 ┌─res1──┬─res2──┐
 │ {2:1} │ {2:1} │
 └───────┴───────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseNotEqual>(FunctionDocumentation{
-        .description = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant.  The result is a NumericIndexedVector containing the indices where the values are not equal, with all corresponding Value entries set to 1.)",
+        .description
+        = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant.  The result is a NumericIndexedVector containing the indices where the values are not equal, with all corresponding Value entries set to 1.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
@@ -170,19 +147,15 @@ SELECT
 ┌─res1──────────┬─res2──────┐
 │ {1:1,3:1,4:1} │ {1:1,3:1} │
 └───────────────┴───────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseLess>(FunctionDocumentation{
-        .description = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than the second vector’s value, with all corresponding Value entries set to 1.)",
+        .description
+        = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than the second vector’s value, with all corresponding Value entries set to 1.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
@@ -195,19 +168,15 @@ SELECT
 ┌─res1──────┬─res2──┐
 │ {3:1,4:1} │ {1:1} │
 └───────────┴───────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseLessEqual>(FunctionDocumentation{
-        .description = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than or equal to the second vector’s value, with all corresponding Value entries set to 1.)",
+        .description
+        = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is less than or equal to the second vector’s value, with all corresponding Value entries set to 1.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) as vec1,
@@ -220,19 +189,15 @@ SELECT
 ┌─res1──────────┬─res2──────┐
 │ {2:1,3:1,4:1} │ {1:1,2:1} │
 └───────────────┴───────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreater>(FunctionDocumentation{
-        .description = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than the second vector’s value, with all corresponding Value entries set to 1.)",
+        .description
+        = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than the second vector’s value, with all corresponding Value entries set to 1.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
@@ -245,19 +210,15 @@ SELECT
 ┌─res1──────┬─res2──┐
 │ {1:1,3:1} │ {3:1} │
 └───────────┴───────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorPointwiseGreaterEqual>(FunctionDocumentation{
-        .description = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than or equal to the second vector’s value, with all corresponding Value entries set to 1.)",
+        .description
+        = R"(Performs pointwise comparison between a NumericIndexedVector and either another NumericIndexedVector or a numeric constant. The result is a NumericIndexedVector containing the indices where the first vector’s value is greater than or equal to the second vector’s value, with all corresponding Value entries set to 1.)",
         .syntax = "numericIndexedVectorPointwiseSubtract(numericIndexedVector, numericIndexedVector | numeric)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"numeric", "A numeric constant"}
-            },
+        .arguments = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"numeric", "A numeric constant"}},
         .returned_value = "NumericIndexedVector object.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 with
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 50]))) as vec1,
@@ -270,19 +231,15 @@ SELECT
 ┌─res1──────────┬─res2──────┐
 │ {1:1,2:1,3:1} │ {2:1,3:1} │
 └───────────────┴───────────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorGetValueImpl>(FunctionDocumentation{
         .description = R"(Retrieves the Value corresponding to a specified Index.)",
         .syntax = "numericIndexedVectorGetValue(numericIndexedVector, index)",
-        .arguments = {
-            {"numericIndexedVector", "A NumericIndexedVector object."},
-            {"index", "The index for which the value is to be retrieved."}
-            },
+        .arguments
+        = {{"numericIndexedVector", "A NumericIndexedVector object."}, {"index", "The index for which the value is to be retrieved."}},
         .returned_value = "A Numeric value with the same type as the Value type of NumericIndexedVector.",
-        .examples = {{
-            "",
+        .examples
+        = {{"",
             R"(
 SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])), 3) AS res;
             )",
@@ -290,9 +247,7 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
 ┌─res─┐
 │  30 │
 └─────┘
-            )"
-        }}
-    });
+            )"}}});
     factory.registerFunction<FunctionNumericIndexedVectorCardinality>(FunctionDocumentation{
         .description = R"(Returns the cardinality (the number of unique indexes) of the NumericIndexedVector.)",
         .syntax = "numericIndexedVectorCardinality(numericIndexedVector)",

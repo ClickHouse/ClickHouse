@@ -72,6 +72,10 @@ AggregateFunctionPtr createAggregateFunctionNumericIndexedVector(
         {
             integer_bit_num = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[1]);
             fraction_bit_num = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]);
+            if (fraction_bit_num > 0 and (second_which.isUInt() or second_which.isInt()))
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
+            }
         }
         else
         {
