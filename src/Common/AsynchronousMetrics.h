@@ -8,7 +8,6 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
-#include <mutex>
 #include <string>
 #include <vector>
 #include <optional>
@@ -92,7 +91,8 @@ protected:
     LoggerPtr log;
 private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
-    virtual void logImpl(AsynchronousMetricValues &) {}
+    virtual void logImpl(AsynchronousMetricValues &) { }
+    static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -227,6 +227,15 @@ private:
         NetworkInterfaceStatValues operator-(const NetworkInterfaceStatValues & other) const;
     };
 
+    // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
+    size_t max_pending_mutations_to_warn = 100lu;
+    size_t max_stuck_mutations_to_warn = 100lu;
+    size_t max_keeper_latency_to_warn = 0;
+    size_t max_keeper_session_losses_warn = 0;
+    double keeper_connection_latency_factor = 5.0; // 5x average latency
+    double keeper_packets_loss_factor = 0.1; // 10% packet loss
+
+
     std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats TSA_GUARDED_BY(data_mutex);
 
     Stopwatch block_devices_rescan_delay TSA_GUARDED_BY(data_mutex);
@@ -244,6 +253,8 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values);
+    void porocessWarningForKeeperLatencyStats(const AsynchronousMetricValues & new_values) const;
 
 #endif
 

@@ -160,7 +160,7 @@ DatabaseReplicated::DatabaseReplicated(
 
     if (!replica_group_name.empty() && database_name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
     {
-        context_->addWarningMessage("ReplicatedDatabaseWithAllGroupsClusterPrefix", fmt::format("There's a Replicated database with a name starting from '{}', "
+        context_->addOrUpdateWarningMessage("ReplicatedDatabaseWithAllGroupsClusterPrefix", fmt::format("There's a Replicated database with a name starting from '{}', "
                                                 "and replica_group_name is configured. It may cause collisions in cluster names.",
                                                 ALL_GROUPS_CLUSTER_PREFIX));
     }

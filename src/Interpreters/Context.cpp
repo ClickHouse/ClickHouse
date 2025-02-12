@@ -920,13 +920,6 @@ struct ContextSharedPart : boost::noncopyable
         trace_collector.emplace();
     }
 
-    void addWarningMessage(const String & warning, const String & message) TSA_REQUIRES(mutex)
-    {
-        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message);
-        warnings[warning] = message;
-    }
-
     void addOrUpdateWarningMessage(const String & warning, const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
@@ -1493,14 +1486,14 @@ void Context::setUserScriptsPath(const String & path)
     shared->user_scripts_path = path;
 }
 
-void Context::addWarningMessage(const String & warning, const String & msg) const
+void Context::addOrUpdateWarningMessage(const String & warning, const String & message) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
 
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(msg, suppress_re);
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
     if (!is_supressed)
-        shared->addWarningMessage(warning, msg);
+        shared->addOrUpdateWarningMessage(warning, message);
 }
 
 void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
@@ -1523,13 +1516,7 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
 
     bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
     if (!is_supressed)
-        shared->addWarningMessage("DeprecatedDatabaseEngineOrdinary", message);
-}
-
-void Context::addOrUpdateWarningMessage(const String & warning, const String & message) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->addOrUpdateWarningMessage(warning, message);
+        shared->addOrUpdateWarningMessage("DeprecatedDatabaseEngineOrdinary", message);
 }
 
 void Context::removeWarningMessage(const String & warning) const

@@ -332,6 +332,12 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
     return values;
 }
 
+auto AsynchronousMetrics::tryGetMetricValue(const AsynchronousMetricValues & metric_values, const String & metric, size_t default_value)
+{
+    const auto it = metric_values.find(metric);
+    return it != metric_values.end() ? it->second.value : default_value;
+}
+
 namespace
 {
 
@@ -730,6 +736,66 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            "non-uniform, and still get the average resource utilization metric."};
 }
 #endif
+
+// Warnings for pending and stuck mutations
+void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values)
+{
+    // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
+    // Warnings for part mutations
+    auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
+    auto num_stuck_mutations = tryGetMetricValue(new_values, "NumberOfStuckMutations");
+    if (num_pending_mutations >= max_pending_mutations_to_warn)
+        global_context->addOrUpdateWarningMessage(
+            "NumberOfPendingMutations", fmt::format("The number of pending mutations is more than {}", max_pending_mutations_to_warn));
+    else
+        global_context->removeWarningMessage("NumberOfPendingMutations");
+    if (num_stuck_mutations >= max_stuck_mutations_to_warn)
+        global_context->addOrUpdateWarningMessage(
+            "NumberOfStuckMutations", fmt::format("The number of stuck mutations is more than {}", max_pending_mutations_to_warn));
+    else
+        global_context->removeWarningMessage("NumberOfStuckMutations");
+}
+
+// Warnings for keeper latency and packet loss
+void AsynchronousMetrics::porocessWarningForKeeperLatencyStats(const AsynchronousMetricValues & new_values) const
+{
+    auto keeper_max_latency = tryGetMetricValue(new_values, "KeeperMaxLatency");
+    auto keeper_avg_latency = tryGetMetricValue(new_values, "KeeperAvgLatency");
+
+    if (keeper_avg_latency > 0)
+    {
+        if (keeper_max_latency > keeper_connection_latency_factor * keeper_avg_latency)
+            global_context->addOrUpdateWarningMessage(
+                "HighKeeperLatency",
+                fmt::format(
+                    "Abnormal Keeper latency was detected that is > than 5x the average latency. Keeper avg latency is {}, and the "
+                    "Keeper max latency is {}",
+                    keeper_avg_latency,
+                    keeper_max_latency));
+        else
+            global_context->removeWarningMessage("HighKeeperLatency");
+    }
+
+    auto packets_sent = tryGetMetricValue(new_values, "KeeperPacketsSent");
+    auto packets_received = tryGetMetricValue(new_values, "KeeperPacketsReceived");
+
+    if (packets_sent > packets_received)
+    {
+        auto packets_lost = packets_sent - packets_received;
+        double loss_ratio = packets_lost / packets_sent;
+
+        if (loss_ratio > keeper_packets_loss_factor)
+        {
+            global_context->addOrUpdateWarningMessage(
+                "KeeperPacketLoss",
+                fmt::format(
+                    "Abnormal Keeper packet loss was detected. About {:.2f}% of the packets that were sent was not received.",
+                    loss_ratio * 100));
+        }
+        else
+            global_context->removeWarningMessage("KeeperPacketLoss");
+    }
+}
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
@@ -1817,6 +1883,10 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
 
+        // These methods look at Asynchronous metrics and add,update or remove warnings
+        // which later get inserted into the system.warnings table:
+        processWarningForMutationStats(new_values);
+        porocessWarningForKeeperLatencyStats(new_values);
     }
 }
 
