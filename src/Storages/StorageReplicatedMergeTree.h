@@ -165,6 +165,9 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
+    UInt64 getNumberOnFlyDataMutations() const override;
+    UInt64 getNumberOnFlyMetadataMutations() const override;
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/) override;
