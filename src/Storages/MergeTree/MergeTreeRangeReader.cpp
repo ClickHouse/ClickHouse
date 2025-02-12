@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <base/range.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <bit>
 #include <boost/algorithm/string/replace.hpp>

@@ -60,7 +60,7 @@ QueryPipelineBuilderPtr UnionStep::updatePipeline(QueryPipelineBuilders pipeline
 #endif
         /// Headers for union must be equal.
         /// But, just in case, convert it to the same header if not.
-        if (!isCompatibleHeader(cur_pipeline->getHeader(), getOutputHeader()))
+        if (!blocksHaveEqualStructure(cur_pipeline->getHeader(), getOutputHeader()))
         {
             QueryPipelineProcessorsCollector collector(*cur_pipeline, this);
             auto converting_dag = ActionsDAG::makeConvertingActions(

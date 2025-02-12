@@ -11,13 +11,11 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include "config.h"
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
-constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
 
 namespace DB
 {
@@ -211,7 +209,7 @@ struct IMergeTreeIndex
             "MergedCondition is not implemented for index of type {}", index.type);
     }
 
-    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
+    Names getColumnsRequiredForIndexCalc() const;
 
     const IndexDescription & index;
 };
