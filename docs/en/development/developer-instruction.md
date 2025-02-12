@@ -83,6 +83,11 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
+:::tip
+Please do not use verbatim `git push`, you may push to the wrong remote and/or the wrong branch.
+It is better to specify the remote and branch names explicitly, e.g. `git push origin my_branch_name`.
+:::
+
 ## Writing Code
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
