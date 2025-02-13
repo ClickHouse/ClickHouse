@@ -1623,7 +1623,7 @@ The following settings can be configured by sub-tags:
 
 Along with a list of rules, you can specify `<defaults/>` which specifies to enable all the default handlers.
 
-You will find the following example, commented out, in config.xml:
+Example:
 
 ```xml
 <http_handlers>
