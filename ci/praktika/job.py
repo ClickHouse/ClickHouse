@@ -48,6 +48,8 @@ class Job:
 
         allow_merge_on_failure: bool = False
 
+        enable_commit_status: bool = False
+
         parameter: Any = None
 
         def parametrize(
