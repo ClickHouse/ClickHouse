@@ -1,13 +1,12 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UncompressedCache.h>
+#include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/errnoToString.h>
 #include <base/find_symbols.h>
-#include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
 #include <Common/filesystemHelpers.h>
@@ -19,8 +18,6 @@
 
 #include <chrono>
 #include <string_view>
-
-#include "Interpreters/Context.h"
 
 #include "config.h"
 
@@ -80,7 +77,7 @@ AsynchronousMetrics::AsynchronousMetrics(
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , update_jemalloc_epoch(update_jemalloc_epoch_)
     , update_rss(update_rss_)
-    , global_context(context_)
+    , context(context_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/cpuinfo", cpuinfo);
@@ -738,63 +735,25 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
 #endif
 
 // Warnings for pending and stuck mutations
-void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values)
+void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
 {
     // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
     // Warnings for part mutations
     auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
     auto num_stuck_mutations = tryGetMetricValue(new_values, "NumberOfStuckMutations");
+    auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
+    auto max_stuck_mutations_to_warn = context->getMaxStuckMutationsToWarn();
+
     if (num_pending_mutations >= max_pending_mutations_to_warn)
-        global_context->addOrUpdateWarningMessage(
-            "NumberOfPendingMutations", fmt::format("The number of pending mutations is more than {}", max_pending_mutations_to_warn));
+        context->addOrUpdateWarningMessage(
+            "NumberOfPendingMutations", fmt::format("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
     else
-        global_context->removeWarningMessage("NumberOfPendingMutations");
+        context->removeWarningMessage("NumberOfPendingMutations");
     if (num_stuck_mutations >= max_stuck_mutations_to_warn)
-        global_context->addOrUpdateWarningMessage(
-            "NumberOfStuckMutations", fmt::format("The number of stuck mutations is more than {}", max_pending_mutations_to_warn));
+        context->addOrUpdateWarningMessage(
+            "NumberOfStuckMutations", fmt::format("The number of stuck mutations is more than {}.", max_pending_mutations_to_warn));
     else
-        global_context->removeWarningMessage("NumberOfStuckMutations");
-}
-
-// Warnings for keeper latency and packet loss
-void AsynchronousMetrics::porocessWarningForKeeperLatencyStats(const AsynchronousMetricValues & new_values) const
-{
-    auto keeper_max_latency = tryGetMetricValue(new_values, "KeeperMaxLatency");
-    auto keeper_avg_latency = tryGetMetricValue(new_values, "KeeperAvgLatency");
-
-    if (keeper_avg_latency > 0)
-    {
-        if (keeper_max_latency > keeper_connection_latency_factor * keeper_avg_latency)
-            global_context->addOrUpdateWarningMessage(
-                "HighKeeperLatency",
-                fmt::format(
-                    "Abnormal Keeper latency was detected that is > than 5x the average latency. Keeper avg latency is {}, and the "
-                    "Keeper max latency is {}",
-                    keeper_avg_latency,
-                    keeper_max_latency));
-        else
-            global_context->removeWarningMessage("HighKeeperLatency");
-    }
-
-    auto packets_sent = tryGetMetricValue(new_values, "KeeperPacketsSent");
-    auto packets_received = tryGetMetricValue(new_values, "KeeperPacketsReceived");
-
-    if (packets_sent > packets_received)
-    {
-        auto packets_lost = packets_sent - packets_received;
-        double loss_ratio = packets_lost / packets_sent;
-
-        if (loss_ratio > keeper_packets_loss_factor)
-        {
-            global_context->addOrUpdateWarningMessage(
-                "KeeperPacketLoss",
-                fmt::format(
-                    "Abnormal Keeper packet loss was detected. About {:.2f}% of the packets that were sent was not received.",
-                    loss_ratio * 100));
-        }
-        else
-            global_context->removeWarningMessage("KeeperPacketLoss");
-    }
+        context->removeWarningMessage("NumberOfStuckMutations");
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
@@ -1886,7 +1845,6 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         // These methods look at Asynchronous metrics and add,update or remove warnings
         // which later get inserted into the system.warnings table:
         processWarningForMutationStats(new_values);
-        porocessWarningForKeeperLatencyStats(new_values);
     }
 }
 

@@ -121,7 +121,7 @@ private:
 
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
-    ContextPtr global_context;
+    ContextPtr context;
 
 
 #if defined(OS_LINUX)
@@ -227,15 +227,6 @@ private:
         NetworkInterfaceStatValues operator-(const NetworkInterfaceStatValues & other) const;
     };
 
-    // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
-    size_t max_pending_mutations_to_warn = 100lu;
-    size_t max_stuck_mutations_to_warn = 100lu;
-    size_t max_keeper_latency_to_warn = 0;
-    size_t max_keeper_session_losses_warn = 0;
-    double keeper_connection_latency_factor = 5.0; // 5x average latency
-    double keeper_packets_loss_factor = 0.1; // 10% packet loss
-
-
     std::unordered_map<String /* device name */, NetworkInterfaceStatValues> network_interface_stats TSA_GUARDED_BY(data_mutex);
 
     Stopwatch block_devices_rescan_delay TSA_GUARDED_BY(data_mutex);
@@ -253,8 +244,7 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
-    void processWarningForMutationStats(const AsynchronousMetricValues & new_values);
-    void porocessWarningForKeeperLatencyStats(const AsynchronousMetricValues & new_values) const;
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
 #endif
 
