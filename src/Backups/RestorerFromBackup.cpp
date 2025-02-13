@@ -24,7 +24,6 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <base/insertAtEnd.h>
 #include <Core/Settings.h>
 
@@ -509,8 +508,7 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
     std::unordered_set<String> table_names_in_backup;
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        fs::path try_metadata_path;
-        fs::path try_tables_metadata_path;
+        fs::path try_metadata_path, try_tables_metadata_path;
         if (database_name_in_backup == DatabaseCatalog::TEMPORARY_DATABASE)
         {
             try_tables_metadata_path = root_path_in_backup / "temporary_tables" / "metadata";
@@ -888,8 +886,7 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 table_id);
         }
 
-        size_t num_dependencies;
-        size_t num_dependents;
+        size_t num_dependencies, num_dependents;
         tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(

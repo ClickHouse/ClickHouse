@@ -51,6 +51,13 @@ struct TranslateImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
             map[static_cast<unsigned char>(map_from[i])] = ascii_upper_bound + 1;
         }
+
+        // Validate any extra characters in map_to to ensure they are ASCII
+        for (size_t i = min_size; i < map_to.size(); ++i)
+        {
+            if (!isASCII(map_to[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
+        }
     }
 
     static void vector(
@@ -162,8 +169,7 @@ struct TranslateUTF8Impl
         {
             size_t len_from = UTF8::seqLength(*map_from_ptr);
 
-            std::optional<UInt32> res_from;
-            std::optional<UInt32> res_to;
+            std::optional<UInt32> res_from, res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
                 res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
@@ -354,7 +360,7 @@ public:
         const ColumnPtr column_map_to = arguments[2].column;
 
         if (!isColumnConst(*column_map_from) || !isColumnConst(*column_map_to))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants.", getName());
 
         const IColumn * c1 = arguments[1].column.get();
         const IColumn * c2 = arguments[2].column.get();

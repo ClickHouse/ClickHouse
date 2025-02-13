@@ -2,9 +2,9 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 
 
@@ -110,10 +110,6 @@ public:
     };
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
-
-    /// Returns a chain of actions that can be
-    /// applied to block to execute mutation commands.
-    std::vector<MutationActions> getMutationActions() const;
 
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.

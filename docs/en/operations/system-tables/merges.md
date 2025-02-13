@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/merges
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # merges
-
-<SystemTableCloud/>
 
 Contains information about merges and part mutations currently in process for tables in the MergeTree family.
 

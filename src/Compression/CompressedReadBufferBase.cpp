@@ -4,7 +4,6 @@
 #include <cstring>
 #include <cassert>
 #include <city.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <base/hex.h>
@@ -23,10 +22,6 @@ namespace ProfileEvents
     extern const Event ReadCompressedBytes;
     extern const Event CompressedReadBufferBlocks;
     extern const Event CompressedReadBufferBytes;
-
-    extern const Event CompressedReadBufferChecksumDoesntMatch;
-    extern const Event CompressedReadBufferChecksumDoesntMatchSingleBitMismatch;
-    extern const Event CompressedReadBufferChecksumDoesntMatchMicroseconds;
 }
 
 namespace DB
@@ -49,9 +44,6 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
         return;
-
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatch);
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CompressedReadBufferChecksumDoesntMatchMicroseconds);
 
     WriteBufferFromOwnString message;
 
@@ -95,7 +87,6 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
-                ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
                 throw Exception::createDeprecated(message.str(), error_code);
@@ -111,7 +102,6 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     if (difference == 1)
     {
-        ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
         throw Exception::createDeprecated(message.str(), error_code);

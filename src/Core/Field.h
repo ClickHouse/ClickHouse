@@ -1,9 +1,12 @@
 #pragma once
 
-#include <map>
+#include <cassert>
 #include <vector>
+#include <algorithm>
+#include <map>
+#include <type_traits>
+#include <functional>
 
-#include <base/AlignedUnion.h>
 #include <Core/CompareHelper.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
@@ -297,6 +300,7 @@ concept not_field_or_bool_or_stringlike
   * NOTE: Actually, sizeof(std::string) is 32 when using libc++, so Field is 40 bytes.
   */
 static constexpr auto DBMS_MIN_FIELD_SIZE = 32;
+
 
 /** Discriminated union of several types.
   * Made for replacement of `boost::variant`
@@ -668,7 +672,7 @@ public:
     static Field restoreFromDump(std::string_view dump_);
 
 private:
-    AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
+    std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
@@ -717,7 +721,7 @@ private:
     void assignConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
-        chassert(which == TypeToEnum<JustT>::value);
+        assert(which == TypeToEnum<JustT>::value);
         JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
         *ptr = std::forward<T>(x);
     }
@@ -726,14 +730,14 @@ private:
     requires (sizeof(CharT) == 1)
     void assignString(const CharT * data, size_t size)
     {
-        chassert(which == Types::String);
+        assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
         ptr->assign(reinterpret_cast<const char *>(data), size);
     }
 
     void assignString(String && str)
     {
-        chassert(which == Types::String);
+        assert(which == Types::String);
         String * ptr = reinterpret_cast<String *>(&storage);
         ptr->assign(std::move(str));
     }

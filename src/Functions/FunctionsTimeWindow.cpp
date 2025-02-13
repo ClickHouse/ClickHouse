@@ -57,7 +57,7 @@ ColumnPtr executeWindowBound(const ColumnPtr & column, size_t index, const Strin
             || (!checkColumn<ColumnVector<UInt32>>(*col_tuple->getColumnPtr(index))
                 && !checkColumn<ColumnVector<UInt16>>(*col_tuple->getColumnPtr(index))))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal column for first argument of function {}. "
-                "Must be a Tuple(DateTime, DateTime)", function_name);
+                "Must be a Tuple(DataTime, DataTime)", function_name);
         return col_tuple->getColumnPtr(index);
     }
 

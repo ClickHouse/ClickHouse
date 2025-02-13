@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>

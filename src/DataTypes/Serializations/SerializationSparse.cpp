@@ -136,7 +136,7 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
-SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
     return std::make_shared<SerializationSparse>(prev);
 }

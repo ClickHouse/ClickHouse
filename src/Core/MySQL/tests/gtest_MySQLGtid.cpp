@@ -6,18 +6,9 @@ using namespace DB;
 
 GTEST_TEST(GTIDSetsContains, Tests)
 {
-    GTIDSets gtid_set;
-    GTIDSets contained1;
-    GTIDSets contained2;
-    GTIDSets contained3;
-    GTIDSets contained4;
-    GTIDSets contained5;
-    GTIDSets not_contained1;
-    GTIDSets not_contained2;
-    GTIDSets not_contained3;
-    GTIDSets not_contained4;
-    GTIDSets not_contained5;
-    GTIDSets not_contained6;
+    GTIDSets gtid_set,
+             contained1, contained2, contained3, contained4, contained5,
+             not_contained1, not_contained2, not_contained3, not_contained4, not_contained5, not_contained6;
 
     gtid_set.parse("2174B383-5441-11E8-B90A-C80AA9429562:1-3:11:47-49, FBC30C64-F8C9-4DDF-8CDD-066208EB433B:1-19:47-49:60");
     contained1.parse("2174B383-5441-11E8-B90A-C80AA9429562:1-3:11:47-49, FBC30C64-F8C9-4DDF-8CDD-066208EB433B:1-19:47-49:60");

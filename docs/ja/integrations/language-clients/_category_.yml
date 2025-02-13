@@ -1,0 +1,8 @@
+position: 101
+label: 'Language clients'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Language clients
+  slug: /ja/integrations/language-clients

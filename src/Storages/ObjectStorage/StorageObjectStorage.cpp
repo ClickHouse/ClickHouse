@@ -1,5 +1,5 @@
-#include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -22,7 +22,6 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/parseGlobs.h>
 #include "Databases/LoadingStrictnessLevel.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
@@ -36,7 +35,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -136,7 +134,7 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->withPartitionWildcard())
+    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
         sample_path = getPathSample(context);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
@@ -223,14 +221,8 @@ public:
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
         const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag.has_value())
-        {
+        if (filter_actions_dag)
             predicate = filter_actions_dag->getOutputs().at(0);
-            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
-            {
-                configuration->implementPartitionPruning(*filter_actions_dag);
-            }
-        }
         createIterator(predicate);
     }
 
@@ -341,7 +333,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
+        getName(),
         column_names,
         getVirtualsList(),
         query_info,

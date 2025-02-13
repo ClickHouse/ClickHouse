@@ -10,9 +10,8 @@ from typing import Tuple
 
 import docker_images_helper
 from ci_config import CI
-from ci_utils import Shell
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET
-from git_helper import Git, checkout_submodules, unshallow
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from git_helper import Git
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
 from stopwatch import Stopwatch
@@ -71,7 +70,6 @@ def get_packager_cmd(
 
     cmd += f" --docker-image-version={image_version}"
     cmd += " --with-profiler"
-    cmd += " --with-buzzhouse"
     cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
@@ -153,19 +151,11 @@ def main():
     build_config = CI.JOB_CONFIGS[build_name].build_config
     assert build_config
 
-    repo_path = Path(REPO_COPY)
-    temp_path = repo_path / "ci" / "tmp"
+    temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo()
-
-    if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
-        print("Unshallow repo")
-        unshallow()
-
-    print("Fetch submodules")
-    # TODO: test sparse checkout: update-submodules.sh?
-    checkout_submodules()
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -185,7 +175,7 @@ def main():
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = temp_path / "build"
+    build_output_path = temp_path / build_name
     build_output_path.mkdir(parents=True, exist_ok=True)
 
     docker_image = docker_images_helper.pull_image(
