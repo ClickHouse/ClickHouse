@@ -284,7 +284,7 @@ bool Client::processWithFuzzing(const String & full_query)
                         fuzzer.getRandomSettings(set_query->changes);
                     }
                     auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
-                    if (!out_query)
+                    if (out_query && !out_query->out_file)
                     {
                         /// Dump result into /dev/null
                         out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
@@ -301,21 +301,6 @@ bool Client::processWithFuzzing(const String & full_query)
             query_to_execute = ast_to_process->formatForErrorMessage();
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
-
-#if USE_BUZZHOUSE
-            if (select_query)
-            {
-                /// Don't keep performance settings in AST
-                if (old_settings)
-                {
-                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
-                }
-                else
-                {
-                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-                }
-            }
-#endif
         }
         catch (...)
         {
@@ -381,6 +366,18 @@ bool Client::processWithFuzzing(const String & full_query)
             if (measure_performance)
             {
                 fc->comparePerformanceResults("AST fuzzer", res1, res2);
+            }
+        }
+        if (select_query)
+        {
+            /// Don't keep performance settings in AST
+            if (old_settings)
+            {
+                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
+            }
+            else
+            {
+                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
 #endif
