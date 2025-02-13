@@ -958,10 +958,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
-        else if (settings.dialect == Dialect::mongo && !internal)
+        else if (settings[Setting::dialect] == Dialect::mongo && !internal)
         {
-            Mongo::ParserMongoQuery parser(max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
-            ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings.max_parser_depth, settings.max_parser_backtracks);
+            Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
         {
@@ -1052,7 +1052,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
         /// Even if we don't have parameters in query_context, check that AST doesn't have unknown parameters
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (!is_create_parameterized_view && probably_has_params && settings.dialect != Dialect::mongo)
+        if (!is_create_parameterized_view && probably_has_params && settings[Setting::dialect] != Dialect::mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);

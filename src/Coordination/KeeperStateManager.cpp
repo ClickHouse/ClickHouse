@@ -68,6 +68,7 @@ std::unordered_map<UInt64, std::string> getClientPorts(const Poco::Util::Abstrac
         "tcp_port_secure"s,
         "mysql_port"s,
         "postgresql_port"s,
+        "mongo_port"s,
         "grpc_port"s,
         "prometheus.port"s,
     };

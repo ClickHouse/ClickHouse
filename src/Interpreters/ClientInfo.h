@@ -39,6 +39,7 @@ public:
         LOCAL = 6,
         TCP_INTERSERVER = 7,
         PROMETHEUS = 8,
+        MONGO = 9,
     };
 
     enum class HTTPMethod : uint8_t
