@@ -1593,7 +1593,7 @@ Example:
 
 ## http_handlers
 
-Allows using custom http handlers. 
+Allows using custom HTTP handlers. 
 To add a new http handler simply add a new `<rule>`. 
 Rules are checked from top to bottom as defined,
 and the first match will run the handler.
