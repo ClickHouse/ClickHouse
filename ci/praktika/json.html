@@ -1098,6 +1098,22 @@
         checkForUpdates();
     }
 
+    function updatePageTitle(PR, REF, sha, nameParams) {
+        let title = "";
+        if (Array.isArray(nameParams) && nameParams.length > 0) {
+            title += ` ${nameParams[0]}`;
+        }
+        if (Array.isArray(nameParams) && nameParams.length > 1) {
+            title += `/${nameParams[1]}`;
+        }
+        if (PR > 0) {
+            title += `, PR#${PR}`;
+        } else {
+            title += `, sha#${sha.substring(0, 8)}`;
+        }
+        document.title = title.trim();
+    }
+
     async function init() {
         const urlParams = new URLSearchParams(window.location.search);
         const PR = urlParams.get('PR');
@@ -1115,6 +1131,7 @@
         await fetchData(PR, REF, sha, nameParams);
         await renderResults(PR, sha, nameParams);
         renderFooter(nameParams)
+        updatePageTitle(PR, REF, sha, nameParams)
 
         if (runtimeCache.json0?.status === "running" || runtimeCache.json0?.status === "pending") {
             console.log("autoreload started")
