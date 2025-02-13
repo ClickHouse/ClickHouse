@@ -20,11 +20,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TYPE;
-    extern const int LOGICAL_ERROR;
     extern const int LIMIT_EXCEEDED;
 }
 
@@ -658,11 +658,8 @@ public:
         {
             Int32 sz_param;
             readBinaryBigEndian(sz_param, in);
-            String current_param(sz_param, '0');
-            Int32 readed = static_cast<Int32>(in.read(current_param.data(), sz_param));
-            if (readed != sz_param)
-                throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Not matched readed size in bind");
-
+            String current_param(sz_param, 0);
+            in.readStrict(current_param.data(), sz_param);
             parameters.push_back(current_param);
         }
 
@@ -704,15 +701,14 @@ public:
 class DescribeQuery : FrontMessage
 {
 public:
+    char describe;
     String function_name;
-    Int32 max_rows;
 
     void deserialize(ReadBuffer & in) override
     {
         Int32 sz;
         readBinaryBigEndian(sz, in);
-        Int8 is_prepared_statement;
-        readBinaryBigEndian(is_prepared_statement, in);
+        in.readStrict(&describe, 1);
         readNullTerminated(function_name, in);
     }
 
@@ -1169,7 +1165,7 @@ public:
     {
         auto it = statements.find(query->function_name);
         if (it == statements.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statement");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         statements.erase(it);
     }
@@ -1204,7 +1200,7 @@ private:
     {
         auto it = statements.find(function_name);
         if (it == statements.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statement");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
         auto body = it->second;
         for (size_t i = 0; i < arguments.size(); ++i)
