@@ -14,8 +14,6 @@ ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
 
 void ReadFromPreparedSource::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    LOG_TRACE(getLogger("QueryCache"),
-                        "Init read from cache pipeline");
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);
 
