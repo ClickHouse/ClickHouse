@@ -281,7 +281,7 @@ bool Client::processWithFuzzing(const String & full_query)
                         set_query->changes.setSetting("log_comment", "measure_performance");
                         fuzzer.getRandomSettings(set_query->changes);
                     }
-                    auto * out_query = ast_to_process->as<ASTQueryWithOutput>();
+                    auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
                     /// Dump result into /dev/null
                     out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
                     out_query->is_outfile_truncate = true;
