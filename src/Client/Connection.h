@@ -4,6 +4,7 @@
 
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
+#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 

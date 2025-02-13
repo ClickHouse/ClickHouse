@@ -273,5 +273,5 @@ class HtmlRunnerHooks:
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=True),
+                url=Info().get_report_url(latest=bool(Info().pr_number)),
             )

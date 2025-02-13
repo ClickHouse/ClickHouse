@@ -54,6 +54,9 @@ on:
   schedule:{CRON_TEMPLATES}
   workflow_dispatch:
 
+concurrency:
+  group: ${{{{{{{{ github.workflow }}}}}}}}
+
 env:
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
