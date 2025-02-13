@@ -189,14 +189,14 @@ bool Client::processWithFuzzing(const String & full_query)
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
     {
 #if USE_BUZZHOUSE
+        ASTPtr old_settings = nullptr;
+        ASTSelectQuery * select_query = nullptr;
         const bool has_buzzhouse_settings = fc && fc->measure_performance && ei;
         bool measure_performance = has_buzzhouse_settings && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
 #endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
         ASTPtr ast_to_process;
-        ASTPtr old_settings = nullptr;
-        ASTSelectQuery * select_query = nullptr;
         try
         {
             WriteBufferFromOwnString dump_before_fuzz;
@@ -260,7 +260,8 @@ bool Client::processWithFuzzing(const String & full_query)
                 /// Add tag to find query later on
                 auto * union_sel = ast_to_process->as<ASTSelectWithUnionQuery>();
 
-                if ((select_query = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get())))
+                if ((select_query
+                     = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get())))
                 {
                     if (!select_query->settings())
                     {
@@ -296,7 +297,12 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
+
             query_to_execute = ast_to_process->formatForErrorMessage();
+            if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
+                return *res;
+
+#if USE_BUZZHOUSE
             if (select_query)
             {
                 /// Don't keep performance settings in AST
@@ -309,8 +315,7 @@ bool Client::processWithFuzzing(const String & full_query)
                     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
                 }
             }
-            if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
-                return *res;
+#endif
         }
         catch (...)
         {
@@ -371,8 +376,7 @@ bool Client::processWithFuzzing(const String & full_query)
         }
         if (measure_performance)
         {
-            measure_performance &= peer_success
-                && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, res2);
+            measure_performance &= peer_success && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, res2);
 
             if (measure_performance)
             {
