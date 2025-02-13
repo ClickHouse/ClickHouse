@@ -54,7 +54,7 @@ macro(configure_rustc)
     endif()
 
     # Otherwise /usr/bin/ld will not be able to link our openssl build (built with lld) to openssl rust wrapper (built ld)
-    list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=${LINKER_NAME}")
+    list(APPEND RUSTFLAGS "-C" "link-arg=-fuse-ld=lld")
 
     set(RUST_CARGO_BUILD_STD "")
     # For more info: https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#memorysanitizer
