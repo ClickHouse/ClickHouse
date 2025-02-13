@@ -185,10 +185,10 @@ Settings for backups, used when writing `BACKUP TO File()`.
 
 The following parameters can be configured:
 
-| Parameter                           | Description                                                                                                                                                                                |
-|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `allowed_path`                      | Path to backup to when using `File()`. This parameter must be set in order to use `File`.                                                                                                  |
-| `remove_backup_files_after_failure` | When `true`, if the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are |
+| Parameter                           | Description                                                                                                                                                                                 |
+|-------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `allowed_path`                      | Path to backup to when using `File()`. This parameter must be set in order to use `File`.                                                                                                   |
+| `remove_backup_files_after_failure` | When `true`, if the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. |
 
 This setting is configured by default as:
 
