@@ -711,7 +711,7 @@ class JobConfigs:
             ["Build (amd_ubsan)"],
         ],
     )
-    performance_comparison_jobs = Job.Config(
+    performance_comparison_amd_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
@@ -728,7 +728,6 @@ class JobConfigs:
             "release, 1/3",
             "release, 2/3",
             "release, 3/3",
-            # "aarch64",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -741,7 +740,35 @@ class JobConfigs:
             ["Build (amd_release)"],
         ],
     )
-    clickbench_jobs = Job.Config(
+    performance_comparison_arm_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=["..params.."],
+        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/performance_comparison_check.py",
+                "./tests/performance/",
+            ],
+        ),
+        allow_merge_on_failure=True,
+    ).parametrize(
+        parameter=[
+            "aarch64, 1/3",
+            "aarch64, 2/3",
+            "aarch64, 3/3",
+        ],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_ARM,
+        ],
+        requires=[
+            ["Build (arm_release)"],
+            ["Build (arm_release)"],
+            ["Build (arm_release)"],
+        ],
+    )
+    clickbench_master_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
