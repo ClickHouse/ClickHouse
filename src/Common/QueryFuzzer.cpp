@@ -1403,6 +1403,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             table_expr->final = !table_expr->final;
         }
         fuzzTableName(*table_expr);
+        fuzz(table_expr->subquery);
+
         fuzz(table_expr->children);
     }
     else if (auto * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
@@ -1427,6 +1429,17 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             fuzzColumnLikeExpressionList(def.partition_by.get());
             fuzzOrderByList(def.order_by.get());
             fuzzWindowFrame(def);
+        }
+
+        fuzz(fn->children);
+    }
+    else if (auto * aj = typeid_cast<ASTArrayJoin *>(ast.get()))
+    {
+        fuzzColumnLikeExpressionList(aj->expression_list.get());
+
+        if (fuzz_rand() % 30 == 0)
+        {
+            aj->kind = aj->kind == ASTArrayJoin::Kind::Inner ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
         }
 
         fuzz(fn->children);
