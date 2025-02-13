@@ -2226,7 +2226,8 @@ Keys:
 
 ## ssh_server
 
-Configuration for writing the public part of a host key to a known_hosts file on the SSH client side on the first connect.
+The public part of the host key will be written to the known_hosts file
+on the SSH client side on the first connect.
 
 Host Key Configurations are inactive by default. 
 Uncomment the host key configurations, and provide the path to the respective ssh key to active them:
