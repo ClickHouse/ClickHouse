@@ -1,6 +1,5 @@
 #pragma once
 
-#include <functional>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -12,8 +11,6 @@
 #include <Parsers/ParserPreparedStatement.h>
 #include <unordered_map>
 #include <utility>
-
-#include <iostream>
 
 namespace DB
 {
