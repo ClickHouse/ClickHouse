@@ -479,7 +479,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cx52, altinity-image-x86-app-docker-ce, altinity-setup-regression
-      commit: 6a4a02ba19dcf0212ab7c4e26856e9445b63fe11
+      commit: a5b768e5aa5d634f17c5b0c960c1e79580058347
       arch: release
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
@@ -490,7 +490,7 @@ jobs:
     secrets: inherit
     with:
       runner_type: altinity-on-demand, altinity-type-cax41, altinity-image-arm-app-docker-ce, altinity-setup-regression
-      commit: 6a4a02ba19dcf0212ab7c4e26856e9445b63fe11
+      commit: a5b768e5aa5d634f17c5b0c960c1e79580058347
       arch: aarch64
       build_sha: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout_minutes: 300
@@ -566,3 +566,25 @@ jobs:
           ${{ toJson(needs) }}
           EOF
           python3 ./tests/ci/ci_buddy.py --check-wf-status
+      - name: Create and upload combined report
+        if: ${{ !cancelled() }}
+        env:
+          CHECKS_DATABASE_HOST: ${{ secrets.CHECKS_DATABASE_HOST }}
+          CHECKS_DATABASE_USER: ${{ secrets.CHECKS_DATABASE_USER }}
+          CHECKS_DATABASE_PASSWORD: ${{ secrets.CHECKS_DATABASE_PASSWORD }}
+          COMMIT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          PR_NUMBER: ${{ github.event.number }}
+          ACTIONS_RUN_URL: ${{ github.event.repository.html_url }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          pip install clickhouse-driver==0.2.8 numpy==1.26.4 pandas==2.2.0
+
+          REPORT_LINK=$(python3 .github/create_combined_ci_report.py --pr-number $PR_NUMBER --commit-sha $COMMIT_SHA --actions-run-url $ACTIONS_RUN_URL)
+
+          IS_VALID_URL=$(echo $REPORT_LINK | grep -E '^https?://')
+          if [[ -n $IS_VALID_URL ]]; then
+            echo "Combined CI Report: [View Report]($REPORT_LINK)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Error: $REPORT_LINK" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
