@@ -1894,7 +1894,7 @@ Maximal number of requests through a single keep-alive connection until it will 
 
 ## ldap_servers
 
-List LDAP servers with their connection parameters here to later:
+List LDAP servers with their connection parameters here to:
 - use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
 - use them as remote user directories.
 
