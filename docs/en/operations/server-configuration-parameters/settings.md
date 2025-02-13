@@ -183,11 +183,11 @@ Default: `512`
 
 Settings for backups, used when writing `BACKUP TO File()`.
 
-The following parameters can be configured:
+The following settings can be configured by sub-tags:
 
-| Parameter                           | Description                                                                                                                                                                                 |
+| Setting                             | Description                                                                                                                                                                                 |
 |-------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `allowed_path`                      | Path to backup to when using `File()`. This parameter must be set in order to use `File`.                                                                                                   |
+| `allowed_path`                      | Path to backup to when using `File()`. This setting must be set in order to use `File`.                                                                                                     |
 | `remove_backup_files_after_failure` | When `true`, if the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. |
 
 This setting is configured by default as:
@@ -1466,7 +1466,7 @@ Default: `86400` (1 day).
 
 ## default_profile
 
-Default settings profile. Settings profiles are located in the file specified in the parameter `user_config`.
+Default settings profile. Settings profiles are located in the file specified in the setting `user_config`.
 
 **Example**
 
@@ -1652,9 +1652,9 @@ To add a new http handler simply add a new `<rule>`.
 Rules are checked from top to bottom as defined,
 and the first match will run the handler.
 
-Rules have the following parameters:
+The following settings can be configured by sub-tags:
 
-| Parameter            | Definition                                                                                                                                        |
+| Sub-tags             | Definition                                                                                                                                        |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                           |
 | `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
@@ -1662,9 +1662,9 @@ Rules have the following parameters:
 | `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
 | `handler`            | The request handler                                                                                                                               |
 
-`handler` contains the following parameters:
+`handler` contains the following settings, which can be configured by sub-tags:
 
-| Parameter          | Definition                                                                                                                                                            |
+| Sub-tags           | Definition                                                                                                                                                            |
 |--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
 | `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
@@ -1793,7 +1793,7 @@ Perform `mlockall` after startup to lower first queries latency and to prevent c
 
 :::note
 Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
-Keep in mind that this parameter would not work without "CAP_IPC_LOCK" capability.
+Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
 :::
 
 **Example**
@@ -1905,7 +1905,7 @@ A username and a password used to connect to other servers during [replication](
 - These credentials are common for replication via `HTTP` and `HTTPS`.
 :::
 
-The section contains the following parameters:
+The following settings can be configured by sub-tags:
 
 - `user` — Username.
 - `password` — Password.
@@ -1973,9 +1973,9 @@ List LDAP servers with their connection parameters here to later:
 - use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
 - use them as remote user directories.
 
-The following parameters are accepted:
+The following settings can be configured by sub-tags:
 
-| Parameter                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
 |--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `host`                         | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
 | `port`                         | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
@@ -1991,9 +1991,9 @@ The following parameters are accepted:
 | `tls_ca_cert_dir`              | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `tls_cipher_suite`             | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
 
-Parameter `user_dn_detection` accepts parameters:
+Setting `user_dn_detection` can be configured with sub-tags:
 
-| Parameter       | Description                                                                                                                                                                                                                                                                                                                                    |
+| Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
 | `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |                                                                                                                               
@@ -2366,9 +2366,9 @@ Configuration of `disks` follows the structure given below:
 </storage_configuration>
 ```
 
-The tags above define the following parameters for `disks`:
+The sub-tags above define the following settings for `disks`:
 
-| Parameter               | Description                                                                                           |
+| Setting                 | Description                                                                                           |
 |-------------------------|-------------------------------------------------------------------------------------------------------|
 | `<disk_name_N>`         | The name of the disk, which should be unique.                                                         |
 | `path`                  | The path to which server data will be stored (`data` and `shadow` catalogues). It should end with `/` |
@@ -2380,9 +2380,9 @@ The order of the disks does not matter.
 
 ### Configuration of policies
 
-The tags above define the following parameters for `policies`:
+The sub-tags above define the following settings for `policies`:
 
-| Parameter                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Setting                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 |------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `policy_name_N`              | Name of the policy. Policy names must be unique.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `volume_name_N`              | The volume name. Volume names must be unique.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -3039,9 +3039,9 @@ Settings for the [text_log](../../operations/system-tables/text_log.md#system_ta
 
 Additionally:
 
-| Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
-| `level`                            | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
+| Setting | Description                                                                                                                                                                                                 | Default Value       |
+|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `level` | Maximum Message Level (by default `Trace`) which will be stored in a table.                                                                                                                                 | `Trace`             |
 
 **Example**
 
@@ -3212,11 +3212,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 
 **Config fields**:
 
-- `name` - name for the rule (optional)
-- `regexp` - RE2 compatible regular expression (mandatory)
-- `replace` - substitution string for sensitive data (optional, by default - six asterisks)
-
-| Parameter | Description                                                                   |
+| Setting   | Description                                                                   |
 |-----------|-------------------------------------------------------------------------------|
 | `name`    | name for the rule (optional)                                                  |
 | `regexp`  | RE2 compatible regular expression (mandatory)                                 |
@@ -3585,9 +3581,9 @@ Default: true
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster. ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
 
-This section contains the following parameters:
+The following settings can be configured by sub-tags:
 
-| Parameter                                  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Setting                                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 |--------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `node`                                     | ZooKeeper endpoint. You can set multiple endpoints. Eg. `<node index="1"><host>example_host</host><port>2181</port></node>`. The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.                                                                                                                                                                                                                                                                                            |
 | `session_timeout_ms`                       | Maximum timeout for the client session in milliseconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -3598,7 +3594,7 @@ This section contains the following parameters:
 | `identity` (optional)                      | User and password required by ZooKeeper to access requested znodes.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `use_compression` (optional)               | Enables compression in Keeper protocol if set to true.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-There is also the `zookeeper_load_balancing` parameter (optional) which lets you select the algorithm for ZooKeeper node selection:
+There is also the `zookeeper_load_balancing` setting (optional) which lets you select the algorithm for ZooKeeper node selection:
 
 | Algorithm Name                   | Description                                                                                                                    |
 |----------------------------------|--------------------------------------------------------------------------------------------------------------------------------|

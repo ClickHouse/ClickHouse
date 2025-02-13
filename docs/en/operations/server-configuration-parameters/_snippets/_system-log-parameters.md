@@ -1,6 +1,6 @@
-The following parameters can be used to configure the table:
+The following settings can be configured by sub-tags:
 
-| Parameter                          | Description                                                                                                                                             | Default             | Note                                                                                                               |
+| Setting                            | Description                                                                                                                                             | Default             | Note                                                                                                               |
 |------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------|
 | `database`                         | Name of the database.                                                                                                                                   |                     |                                                                                                                    |
 | `table`                            | Name of the system table.                                                                                                                               |                     |                                                                                                                    |
