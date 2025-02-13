@@ -11,6 +11,7 @@
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
 namespace DB
