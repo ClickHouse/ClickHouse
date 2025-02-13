@@ -63,9 +63,7 @@ To manually turn on asynchronous metric logs history collection [`system.asynchr
 To disable `asynchronous_metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_asynchronous_metric_log.xml` with the following content:
 
 ```xml
-<clickhouse>
-    <asynchronous_metric_log remove="1" />
-</clickhouse>
+<clickhouse><asynchronous_metric_log remove="1" /></clickhouse>
 ```
 
 <SystemLogParameters/>
@@ -226,9 +224,7 @@ Work factor for the bcrypt_password authentication type.
 Default: `12`
 
 ```xml
-<bcrypt_workfactor>
-    12
-</bcrypt_workfactor>
+<bcrypt_workfactor>12</bcrypt_workfactor>
 ```
 
 ## cache_size_to_ram_max_ratio
@@ -606,9 +602,7 @@ This limitation does not restrict drop table and truncate table, see [max_table_
 **Example**
 
 ```xml
-<max_partition_size_to_drop>
-    0
-</max_partition_size_to_drop>
+<max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
 Type: `UInt64`
@@ -725,9 +719,7 @@ If the number of attached databases exceeds the specified value, clickhouse serv
 **Example**
 
 ```xml
-<max_database_num_to_warn>
-    50
-</max_database_num_to_warn>
+<max_database_num_to_warn>50</max_database_num_to_warn>
 ```
 
 Default: `1000`
@@ -739,9 +731,7 @@ If the number of attached tables exceeds the specified value, clickhouse server 
 **Example**
 
 ```xml
-<max_table_num_to_warn>
-    400
-</max_table_num_to_warn>
+<max_table_num_to_warn>400</max_table_num_to_warn>
 ```
 
 Default: `5000`
@@ -753,9 +743,7 @@ If the number of attached views exceeds the specified value, clickhouse server w
 **Example**
 
 ```xml
-<max_view_num_to_warn>
-    400
-</max_view_num_to_warn>
+<max_view_num_to_warn>400</max_view_num_to_warn>
 ```
 
 Type: `UInt64`
@@ -769,9 +757,7 @@ If the number of attached dictionaries exceeds the specified value, clickhouse s
 **Example**
 
 ```xml
-<max_dictionary_num_to_warn>
-    400
-</max_dictionary_num_to_warn>
+<max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
 ```
 
 Type: `UInt64`
@@ -785,9 +771,7 @@ If the number of active parts exceeds the specified value, clickhouse server wil
 **Example**
 
 ```xml
-<max_part_num_to_warn>
-    400
-</max_part_num_to_warn>
+<max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
 Type: `UInt64`
@@ -816,9 +800,7 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_table_num_to_throw>
-    400
-</max_table_num_to_throw>
+<max_table_num_to_throw>400</max_table_num_to_throw>
 ```
 
 Type: `UInt64`
@@ -841,9 +823,7 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_replicated_table_num_to_throw>
-    400
-</max_replicated_table_num_to_throw>
+<max_replicated_table_num_to_throw>400</max_replicated_table_num_to_throw>
 ```
 
 Type: `UInt64`
@@ -866,9 +846,7 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_dictionary_num_to_throw>
-    400
-</max_dictionary_num_to_throw>
+<max_dictionary_num_to_throw>400</max_dictionary_num_to_throw>
 ```
 
 Type: `UInt64`
@@ -891,9 +869,7 @@ A value of `0` means no limitation.
 
 **Example**
 ```xml
-<max_view_num_to_throw>
-    400
-</max_view_num_to_throw>
+<max_view_num_to_throw>400</max_view_num_to_throw>
 ```
 
 Type: `UInt64`
@@ -942,9 +918,7 @@ If the number of **idle** threads in the Global Thread pool is greater than [`ma
 **Example**
 
 ```xml
-<max_thread_pool_free_size>
-    1200
-</max_thread_pool_free_size>
+<max_thread_pool_free_size>1200</max_thread_pool_free_size>
 ```
 
 Type: `UInt64`
@@ -958,9 +932,7 @@ ClickHouse uses threads from the Global Thread pool to process queries. If there
 **Example**
 
 ```xml
-<max_thread_pool_size>
-    12000
-</max_thread_pool_size>
+<max_thread_pool_size>12000</max_thread_pool_size>
 ```
 
 Type: `UInt64`
@@ -1082,9 +1054,7 @@ A value of `0` means unlimited.
 **Example**
 
 ```xml
-<thread_pool_queue_size>
-    12000
-</thread_pool_queue_size>
+<thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
 Type: UInt64
@@ -1184,9 +1154,7 @@ ClickHouse reloads built-in dictionaries every x seconds. This makes it possible
 **Example**
 
 ```xml
-<builtin_dictionaries_reload_interval>
-    3600
-</builtin_dictionaries_reload_interval>
+<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
 Type: UInt64
@@ -1357,9 +1325,7 @@ To manually turn on error history collection [`system.error_log`](../../operatio
 To disable `error_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_error_log.xml` with the following content:
 
 ```xml
-<clickhouse>
-    <error_log remove="1" />
-</clickhouse>
+<clickhouse><error_log remove="1" /></clickhouse>
 ```
 
 <SystemLogParameters/>
@@ -1371,9 +1337,7 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 **Example**
 
 ```xml
-<custom_settings_prefixes>
-    custom_
-</custom_settings_prefixes>
+<custom_settings_prefixes>custom_</custom_settings_prefixes>
 ```
 
 **See Also**
@@ -1391,11 +1355,7 @@ Hard limit is configured via system tools
 **Example**
 
 ```xml
-<core_dump>
-    <size_limit>
-        1073741824
-    </size_limit>
-</core_dump>
+<core_dump><size_limit>1073741824</size_limit></core_dump>
 ```
 
 Default: `1073741824`
@@ -1471,9 +1431,7 @@ Default settings profile. Settings profiles are located in the file specified in
 **Example**
 
 ```xml
-<default_profile>
-    default
-</default_profile>
+<default_profile>default</default_profile>
 ```
 
 ## default_replica_path
@@ -1483,9 +1441,7 @@ The path to the table in ZooKeeper.
 **Example**
 
 ```xml
-<default_replica_path>
-    /clickhouse/tables/{uuid}/{shard}
-</default_replica_path>
+<default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
 ```
 
 ## default_replica_name
@@ -1495,9 +1451,7 @@ The replica name in ZooKeeper.
 **Example**
 
 ```xml
-<default_replica_name>
-    {replica}
-</default_replica_name>
+<default_replica_name>{replica}</default_replica_name>
 ```
 
 ## dictionaries_config
@@ -1515,9 +1469,7 @@ See also:
 **Example**
 
 ```xml
-<dictionaries_config>
-    *_dictionary.xml
-</dictionaries_config>
+<dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
 ## user_defined_executable_functions_config
@@ -1535,9 +1487,7 @@ See also:
 **Example**
 
 ```xml
-<user_defined_executable_functions_config>
-    *_function.xml
-</user_defined_executable_functions_config>
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
 ## dictionaries_lazy_load
@@ -1555,9 +1505,7 @@ The server will wait at startup until all the dictionaries finish their loading 
 **Example**
 
 ```xml
-<dictionaries_lazy_load>
-    true
-</dictionaries_lazy_load>
+<dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
 ## format_schema_path
@@ -1568,9 +1516,7 @@ The path to the directory with the schemes for the input data, such as schemas f
 
 ```xml
 <!-- Directory containing schema files for various input formats. -->
-<format_schema_path>
-    format_schemas/
-</format_schema_path>
+<format_schema_path>format_schemas/</format_schema_path>
 ```
 
 ## graphite
@@ -1721,9 +1667,7 @@ The port for connecting to the server over HTTP(s).
 **Example**
 
 ```xml
-<https_port>
-    9999
-</https_port>
+<https_port>9999</https_port>
 ```
 
 ## http_server_default_response
@@ -1782,9 +1726,7 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 **Example**
 
 ```xml
-<hsts_max_age>
-    600000
-</hsts_max_age>
+<hsts_max_age>600000</hsts_max_age>
 ```
 
 ## mlock_executable
@@ -1799,9 +1741,7 @@ Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
 **Example**
 
 ```xml
-<mlock_executable>
-    false
-</mlock_executable>
+<mlock_executable>false</mlock_executable>
 ```
 
 ## include_from
@@ -1813,9 +1753,7 @@ For more information, see the section "[Configuration files](../../operations/co
 **Example**
 
 ```xml
-<include_from>
-    /etc/metrica.xml
-</include_from>
+<include_from>/etc/metrica.xml</include_from>
 ```
 
 ## interserver_listen_host
@@ -1830,12 +1768,8 @@ By default, the value is equal to the [`listen_host`](#listen_host) setting.
 **Example**
 
 ```xml
-<interserver_listen_host>
-    ::ffff:a00:1
-</interserver_listen_host>
-<interserver_listen_host>
-    10.0.0.1
-</interserver_listen_host>
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
 ```
 
 Type:
@@ -1849,9 +1783,7 @@ Port for exchanging data between ClickHouse servers.
 **Example**
 
 ```xml
-<interserver_http_port>
-    9009
-</interserver_http_port>
+<interserver_http_port>9009</interserver_http_port>
 ```
 
 ## interserver_http_host
@@ -1865,9 +1797,7 @@ Useful for breaking away from a specific network interface.
 **Example**
 
 ```xml
-<interserver_http_host>
-    example.clickhouse.com
-</interserver_http_host>
+<interserver_http_host>example.clickhouse.com</interserver_http_host>
 ```
 
 ## interserver_https_port
@@ -1877,9 +1807,7 @@ Port for exchanging data between ClickHouse servers over `HTTPS`.
 **Example**
 
 ```xml
-<interserver_https_port>
-    9010
-</interserver_https_port>
+<interserver_https_port>9010</interserver_https_port>
 ```
 
 ## interserver_https_host
@@ -1889,9 +1817,7 @@ Similar to [`interserver_http_host`](#interserver_http_host), except that this h
 **Example**
 
 ```xml
-<interserver_https_host>
-    example.clickhouse.com
-</interserver_https_host>
+<interserver_https_host>example.clickhouse.com</interserver_https_host>
 ```
 
 ## interserver_http_credentials
@@ -2040,12 +1966,8 @@ Restriction on hosts that requests can come from. If you want the server to answ
 Examples:
 
 ```xml
-<listen_host>
-    ::1
-</listen_host>
-<listen_host>
-    127.0.0.1
-</listen_host>
+<listen_host>::1</listen_host>
+<listen_host>127.0.0.1</listen_host>
 ```
 
 ## listen_try
@@ -2055,9 +1977,7 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
 **Example**
 
 ```xml
-<listen_try>
-    0
-</listen_try>
+<listen_try>0</listen_try>
 ```
 
 ## listen_reuse_port
@@ -2067,9 +1987,7 @@ Allow multiple servers to listen on the same address:port. Requests will be rout
 **Example**
 
 ```xml
-<listen_reuse_port>
-    0
-</listen_reuse_port>
+<listen_reuse_port>0</listen_reuse_port>
 ```
 
 Type:
@@ -2091,9 +2009,7 @@ So even if you have `TcpExtListenOverflows` (from `nstat`) non-zero and this cou
 **Example**
 
 ```xml
-<listen_backlog>
-    4096
-</listen_backlog>
+<listen_backlog>4096</listen_backlog>
 ```
 
 ## logger
@@ -2427,9 +2343,7 @@ Empty by default.
 **Example**
 
 ```xml
-<replica_group_name>
-    backups
-</replica_group_name>
+<replica_group_name>backups</replica_group_name>
 ```
 
 Type: String
@@ -2445,9 +2359,7 @@ This feature is highly experimental, and therefore set `false` by default.
 :::
 
 ```xml
-<remap_executable>
-    false
-</remap_executable>
+<remap_executable>false</remap_executable>
 ```
 
 ## max_open_files
@@ -2461,9 +2373,7 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 **Example**
 
 ```xml
-<max_open_files>
-    262144
-</max_open_files>
+<max_open_files>262144</max_open_files>
 ```
 
 ## max_session_timeout
@@ -2473,11 +2383,8 @@ Maximum session timeout, in seconds.
 Default: `3600`
 
 ```xml
-<max_session_timeout>
-    3600
-</max_session_timeout>
+<max_session_timeout>3600</max_session_timeout>
 ```
-
 
 ## max_table_size_to_drop
 
@@ -2494,9 +2401,7 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
 **Example**
 
 ```xml
-<max_table_size_to_drop>
-    0
-</max_table_size_to_drop>
+<max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
 Default: 50 GB.
@@ -2523,9 +2428,7 @@ Before changing it, please also take a look at related MergeTree settings, such 
 **Example**
 
 ```xml
-<background_pool_size>
-    16
-</background_pool_size>
+<background_pool_size>16</background_pool_size>
 ```
 
 Type:
@@ -2544,9 +2447,7 @@ A value of `0` means unlimited.
 **Example**
 
 ```xml
-<merges_mutations_memory_usage_soft_limit>
-    0
-</merges_mutations_memory_usage_soft_limit>
+<merges_mutations_memory_usage_soft_limit>0</merges_mutations_memory_usage_soft_limit>
 ```
 
 ## merges_mutations_memory_usage_to_ram_ratio
@@ -2570,9 +2471,7 @@ Asynchronous loading of databases and tables.
 **Example**
 
 ```xml
-<async_load_databases>
-    true
-</async_load_databases>
+<async_load_databases>true</async_load_databases>
 ```
 
 Default: `false`.
@@ -2587,9 +2486,7 @@ Asynchronous loading of system tables. Helpful if there is a high amount of log 
 **Example**
 
 ```xml
-<async_load_system_database>
-    true
-</async_load_system_database>
+<async_load_system_database>true</async_load_system_database>
 ```
 
 Default: `false`.
@@ -2829,9 +2726,7 @@ The trailing slash is mandatory.
 **Example**
 
 ```xml
-<path>
-    /var/lib/clickhouse/
-</path>
+<path>/var/lib/clickhouse/</path>
 ```
 ## processors_profile_log
 
@@ -3145,9 +3040,7 @@ In this case, an exception will not be thrown, to allow the server to successful
 It is set by default to `/var/lib/clickhouse/caches/`:
 
 ```xml
-<custom_cached_disks_base_directory>
-    /var/lib/clickhouse/caches/
-</custom_cached_disks_base_directory>
+<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
 ## backup_log
@@ -3254,9 +3147,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 **Example**
 
 ```xml
-<timezone>
-    Asia/Istanbul
-</timezone>
+<timezone>Asia/Istanbul</timezone>
 ```
 
 **See also**
@@ -3270,9 +3161,7 @@ Port for communicating with clients over the TCP protocol.
 **Example**
 
 ```xml
-<tcp_port>
-    9000
-</tcp_port>
+<tcp_port>9000</tcp_port>
 ```
 
 ## tcp_port_secure
@@ -3282,9 +3171,7 @@ TCP port for secure communication with clients. Use it with [OpenSSL](#openssl) 
 **Default value**
 
 ```xml
-<tcp_port_secure>
-    9440
-</tcp_port_secure>
+<tcp_port_secure>9440</tcp_port_secure>
 ```
 
 ## mysql_port
@@ -3299,9 +3186,7 @@ Port for communicating with clients over MySQL protocol.
 **Example**
 
 ```xml
-<mysql_port>
-    9004
-</mysql_port>
+<mysql_port>9004</mysql_port>
 ```
 
 ## postgresql_port
@@ -3316,9 +3201,7 @@ Port for communicating with clients over PostgreSQL protocol.
 **Example**
 
 ```xml
-<postgresql_port>
-    9005
-</postgresql_port>
+<postgresql_port>9005</postgresql_port>
 ```
 
 ## tmp_path
@@ -3333,9 +3216,7 @@ Path on the local filesystem to store temporary data for processing large querie
 **Example**
 
 ```xml
-<tmp_path>
-    /var/lib/clickhouse/tmp/
-</tmp_path>
+<tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
 ## url_scheme_mappers
@@ -3365,9 +3246,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 **Example**
 
 ```xml
-<user_files_path>
-    /var/lib/clickhouse/user_files/
-</user_files_path>
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
 ## user_scripts_path
@@ -3377,9 +3256,7 @@ The directory with user scripts files. Used for Executable user defined function
 **Example**
 
 ```xml
-<user_scripts_path>
-    /var/lib/clickhouse/user_scripts/
-</user_scripts_path>
+<user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
 ```
 
 Type:
@@ -3393,9 +3270,7 @@ The directory with user defined files. Used for SQL user defined functions [SQL 
 **Example**
 
 ```xml
-<user_defined_path>
-    /var/lib/clickhouse/user_defined/
-</user_defined_path>
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
 ## users_config
@@ -3410,9 +3285,7 @@ Path to the file that contains:
 **Example**
 
 ```xml
-<users_config>
-    users.xml
-</users_config>
+<users_config>users.xml</users_config>
 ```
 
 ## validate_tcp_client_information
@@ -3422,9 +3295,7 @@ Determines whether validation of client information is enabled when a query pack
 By default, it is `false`:
 
 ```xml
-<validate_tcp_client_information>
-    false
-</validate_tcp_client_information>
+<validate_tcp_client_information>false</validate_tcp_client_information>
 ```
 
 ## users_without_row_policies_can_read_rows
