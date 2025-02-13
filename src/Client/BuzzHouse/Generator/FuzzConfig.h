@@ -139,7 +139,7 @@ public:
 
     String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
 
-    void comparePerformanceResults(const String & oracle_name, const PerformanceResult & res1, const PerformanceResult & res2) const;
+    void comparePerformanceResults(const String & oracle_name, const PerformanceResult & server, const PerformanceResult & peer) const;
 };
 
 }

@@ -333,53 +333,54 @@ FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partit
     return res;
 }
 
-void FuzzConfig::comparePerformanceResults(const String & oracle_name, const PerformanceResult & res1, const PerformanceResult & res2) const
+void FuzzConfig::comparePerformanceResults(
+    const String & oracle_name, const PerformanceResult & server, const PerformanceResult & peer) const
 {
     if (this->measure_performance)
     {
-        const String time_res1 = formatReadableTime(static_cast<double>(res1.query_duration_ms * 1000000));
-        const String time_res2 = formatReadableTime(static_cast<double>(res2.query_duration_ms * 1000000));
-        const String mem_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(res1.memory_usage));
-        const String mem_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(res2.memory_usage));
-        const String bytes_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(res1.read_bytes));
-        const String bytes_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(res2.read_bytes));
+        const String time_server = formatReadableTime(static_cast<double>(server.query_duration_ms * 1000000));
+        const String time_peer = formatReadableTime(static_cast<double>(peer.query_duration_ms * 1000000));
+        const String mem_server = formatReadableSizeWithBinarySuffix(static_cast<double>(server.memory_usage));
+        const String mem_peer = formatReadableSizeWithBinarySuffix(static_cast<double>(peer.memory_usage));
+        const String bytes_server = formatReadableSizeWithBinarySuffix(static_cast<double>(server.read_bytes));
+        const String bytes_peer = formatReadableSizeWithBinarySuffix(static_cast<double>(peer.read_bytes));
 
-        if (this->query_time_minimum < res1.query_duration_ms
-            && res1.query_duration_ms
-                > static_cast<uint64_t>(res2.query_duration_ms * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
+        if (this->query_time_minimum < server.query_duration_ms
+            && server.query_duration_ms
+                > static_cast<uint64_t>(peer.query_duration_ms * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
                 "{}: ClickHouse peer server query time: {} was faster than the target server: {}",
                 oracle_name,
-                time_res1,
-                time_res2);
+                time_peer,
+                time_server);
         }
-        if (this->query_memory_minimum < res1.memory_usage
-            && res1.memory_usage
-                > static_cast<uint64_t>(res2.memory_usage * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
+        if (this->query_memory_minimum < server.memory_usage
+            && server.memory_usage
+                > static_cast<uint64_t>(peer.memory_usage * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
                 "{}: ClickHouse peer server query peak memory usage: {} was less than the target server: {}",
                 oracle_name,
-                mem_res1,
-                mem_res2);
+                mem_peer,
+                mem_server);
         }
-        if (this->query_bytes_read_minimum < res1.read_bytes
-            && res1.read_bytes
-                > static_cast<uint64_t>(res2.read_bytes * (1 + (static_cast<double>(this->query_bytes_read_threshold) / 100.0f))))
+        if (this->query_bytes_read_minimum < server.read_bytes
+            && server.read_bytes
+                > static_cast<uint64_t>(peer.read_bytes * (1 + (static_cast<double>(this->query_bytes_read_threshold) / 100.0f))))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
                 "{}: ClickHouse peer server query bytes read: {} was less than the target server: {}",
                 oracle_name,
-                bytes_res1,
-                bytes_res2);
+                bytes_peer,
+                bytes_server);
         }
-        LOG_INFO(log, "{}: peer query time: {} vs server query time: {}", oracle_name, time_res1, time_res2);
-        LOG_INFO(log, "{}: peer query memory usage: {} vs server query memory usage: {}", oracle_name, mem_res1, mem_res2);
-        LOG_INFO(log, "{}: peer query bytes read: {} vs server query bytes read: {}", oracle_name, bytes_res1, bytes_res2);
+        LOG_INFO(log, "{}: server query time: {} vs peer query time: {}", oracle_name, time_server, time_peer);
+        LOG_INFO(log, "{}: server query memory usage: {} vs peer query memory usage: {}", oracle_name, mem_server, mem_peer);
+        LOG_INFO(log, "{}: server query bytes read: {} vs peer query bytes read: {}", oracle_name, bytes_server, bytes_peer);
     }
 }
 

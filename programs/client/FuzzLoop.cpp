@@ -204,10 +204,6 @@ bool Client::processWithFuzzing(const String & full_query)
             auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
             ast_to_process = fuzz_base->clone();
-
-            WriteBufferFromOwnString dump_of_cloned_ast;
-            ast_to_process->dumpTree(dump_of_cloned_ast);
-
             // Run the original query as well.
             if (fuzz_step > 0)
             {
@@ -242,9 +238,9 @@ bool Client::processWithFuzzing(const String & full_query)
                         set_query->changes.setSetting("log_comment", "measure_performance");
                         fuzzer.getRandomSettings(set_query->changes);
                     }
-                    auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
                     /// This can't be done because I am using MySQL client
-                    /*if (out_query && !out_query->out_file)
+                    /*auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
+                    if (out_query && !out_query->out_file)
                     {
                         /// Dump result into /dev/null
                         out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
@@ -257,6 +253,8 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
+            WriteBufferFromOwnString dump_of_cloned_ast;
+            ast_to_process->dumpTree(dump_of_cloned_ast);
 
             auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 

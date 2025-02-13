@@ -1403,7 +1403,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             table_expr->final = !table_expr->final;
         }
         fuzzTableName(*table_expr);
-        fuzz(table_expr->subquery);
 
         fuzz(table_expr->children);
     }
