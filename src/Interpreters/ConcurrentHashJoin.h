@@ -3,7 +3,6 @@
 #include <memory>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -71,7 +70,6 @@ public:
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
-
     bool isCloneSupported() const override
     {
         return !getTotals() && getTotalRowCount() == 0;
@@ -88,6 +86,7 @@ public:
     {
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
+        bool space_was_preallocated = false;
     };
 
 private:
@@ -105,6 +104,8 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
+IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
+UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 UInt64 calculateCacheKey(
     std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 }

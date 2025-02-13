@@ -1,6 +1,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -35,9 +36,8 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     if (!table_join.getClauses().empty())
         description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
 
-    // TODO: print mixed join expressions, something like the following but it should be single line
-    // if (table_join.getMixedJoinExpression() != nullptr)
-    //     description.emplace_back("Mixed join expressions", table_join.getMixedJoinExpression()->dumpActions());
+    if (const auto & mixed_expression = table_join.getMixedJoinExpression())
+        description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
 
     return description;
 }

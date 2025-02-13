@@ -1,8 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/PathInData.h>
-#include <DataTypes/IDataType.h>
-#include <Columns/IColumn.h>
 #include <Common/HashTable/HashMap.h>
 
 namespace DB

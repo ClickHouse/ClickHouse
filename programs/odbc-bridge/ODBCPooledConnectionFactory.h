@@ -7,6 +7,8 @@
 #include <base/defines.h>
 #include <unordered_map>
 
+#include <boost/noncopyable.hpp>
+
 
 namespace DB
 {

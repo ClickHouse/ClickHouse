@@ -2,15 +2,22 @@
 title : ORC
 slug : /en/interfaces/formats/ORC
 keywords : [ORC]
+input_format: true
+output_format: true
+alias: []
 ---
+
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
 ## Description
 
-[Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the [Hadoop](https://hadoop.apache.org/) ecosystem.
+[Apache ORC](https://orc.apache.org/) is a columnar storage format widely used in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
 ## Data Types Matching {#data-types-matching-orc}
 
-The table below shows supported data types and how they match ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+The table below compares supported ORC data types and their corresponding ClickHouse [data types](/docs/en/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
 | ORC data type (`INSERT`)              | ClickHouse data type                                                                                              | ORC data type (`SELECT`) |
 |---------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------------------|
@@ -41,27 +48,29 @@ The table below shows supported data types and how they match ClickHouse [data t
 
 ### Inserting Data {#inserting-data-orc}
 
-You can insert ORC data from a file into ClickHouse table by the following command:
+You can insert ORC data from a file into ClickHouse table using the following command:
 
-``` bash
+```bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
 ### Selecting Data {#selecting-data-orc}
 
-You can select data from a ClickHouse table and save them into some file in the ORC format by the following command:
+You can select data from a ClickHouse table and save them into some file in the ORC format using the following command:
 
-``` bash
+```bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
 
 ## Format Settings
 
-- [output_format_arrow_string_as_string](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string) - use Arrow String type instead of Binary for String columns. Default value - `false`.
-- [output_format_orc_compression_method](/docs/en/operations/settings/settings-formats.md/#output_format_orc_compression_method) - compression method used in output ORC format. Default value - `none`.
-- [input_format_arrow_case_insensitive_column_matching](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching) - ignore case when matching Arrow columns with ClickHouse columns. Default value - `false`.
-- [input_format_arrow_allow_missing_columns](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns) - allow missing columns while reading Arrow data. Default value - `false`.
-- [input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) - allow skipping columns with unsupported types while schema inference for Arrow format. Default value - `false`.
+| Setting                                                                                                                                                                                                      | Description                                                                            | Default |
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|---------|
+| [`output_format_arrow_string_as_string`](/docs/en/operations/settings/settings-formats.md/#output_format_arrow_string_as_string)                                                                             | Use Arrow String type instead of Binary for String columns.                            | `false` |
+| [`output_format_orc_compression_method`](/docs/en/operations/settings/settings-formats.md/#output_format_orc_compression_method)                                                                             | Compression method used in output ORC format. Default value                            | `none`  |
+| [`input_format_arrow_case_insensitive_column_matching`](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_case_insensitive_column_matching)                                               | Ignore case when matching Arrow columns with ClickHouse columns.                       | `false` |
+| [`input_format_arrow_allow_missing_columns`](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_allow_missing_columns)                                                                     | Allow missing columns while reading Arrow data.                                        | `false` |
+| [`input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference`](/docs/en/operations/settings/settings-formats.md/#input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference) | Allow skipping columns with unsupported types while schema inference for Arrow format. | `false` |
 
 To exchange data with Hadoop, you can use [HDFS table engine](/docs/en/engines/table-engines/integrations/hdfs.md).
 

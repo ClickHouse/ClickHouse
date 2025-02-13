@@ -16,6 +16,7 @@
 #include <Parsers/TokenIterator.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/TTLCachePolicy.h>
@@ -341,6 +342,7 @@ QueryCache::Key::Key(
     const String & current_database,
     const Settings & settings,
     Block header_,
+    const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
@@ -354,6 +356,7 @@ QueryCache::Key::Key(
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
     , query_string(queryStringFromAST(ast_))
+    , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
 {
 }
@@ -362,10 +365,11 @@ QueryCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
     const Settings & settings,
+    const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
-    /// ^^ dummy values for everything != AST, current database, user name/roles
+    : QueryCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
 
@@ -394,9 +398,11 @@ bool QueryCache::IsStale::operator()(const Key & key) const
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
-QueryCache::Writer::Writer(
-    Cache & cache_, const Key & key_,
-    size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_,
+QueryCacheWriter::QueryCacheWriter(
+    Cache & cache_,
+    const QueryCache::Key & key_,
+    size_t max_entry_size_in_bytes_,
+    size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
     size_t max_block_size_)
@@ -408,14 +414,14 @@ QueryCache::Writer::Writer(
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryCache::IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
 }
 
-QueryCache::Writer::Writer(const Writer & other)
+QueryCacheWriter::QueryCacheWriter(const QueryCacheWriter & other)
     : cache(other.cache)
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
@@ -426,7 +432,7 @@ QueryCache::Writer::Writer(const Writer & other)
 {
 }
 
-void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
+void QueryCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
 {
     if (skip_insert)
         return;
@@ -470,7 +476,7 @@ void QueryCache::Writer::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
-void QueryCache::Writer::finalizeWrite()
+void QueryCacheWriter::finalizeWrite()
 {
     LOG_TRACE(logger, "Finalize write for query {}", doubleQuoteString(key.query_string));
 
@@ -491,7 +497,7 @@ void QueryCache::Writer::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryCache::IsStale()(entry->key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -562,7 +568,7 @@ void QueryCache::Writer::finalizeWrite()
 
     /// Check more reasons why the entry must not be cached.
 
-    auto count_rows_in_chunks = [](const Entry & entry)
+    auto count_rows_in_chunks = [](const QueryCache::Entry & entry)
     {
         size_t res = 0;
         for (const auto & chunk : entry.chunks)
@@ -572,7 +578,7 @@ void QueryCache::Writer::finalizeWrite()
         return res;
     };
 
-    size_t new_entry_size_in_bytes = QueryCacheEntryWeight()(*query_result);
+    size_t new_entry_size_in_bytes = QueryCache::QueryCacheEntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
@@ -588,7 +594,7 @@ void QueryCache::Writer::finalizeWrite()
 }
 
 /// Creates a source processor which serves result chunks stored in the query cache, and separate sources for optional totals/extremes.
-void QueryCache::Reader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+void QueryCacheReader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
@@ -607,7 +613,7 @@ void QueryCache::Reader::buildSourceFromChunks(Block header, Chunks && chunks, c
     }
 }
 
-QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guard<std::mutex> &)
+QueryCacheReader::QueryCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_.getWithKey(key);
 
@@ -628,7 +634,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
         return;
     }
 
-    if (IsStale()(entry_key))
+    if (QueryCache::IsStale()(entry_key))
     {
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;
@@ -671,7 +677,7 @@ QueryCache::Reader::Reader(Cache & cache_, const Key & key, const std::lock_guar
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryCache::Reader::hasCacheEntryForKey() const
+bool QueryCacheReader::hasCacheEntryForKey() const
 {
     bool has_entry = (source_from_chunks != nullptr);
 
@@ -683,23 +689,24 @@ bool QueryCache::Reader::hasCacheEntryForKey() const
     return has_entry;
 }
 
-std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSource()
+std::unique_ptr<SourceFromChunks> QueryCacheReader::getSource()
 {
     return std::move(source_from_chunks);
 }
 
-std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceTotals()
+std::unique_ptr<SourceFromChunks> QueryCacheReader::getSourceTotals()
 {
     return std::move(source_from_chunks_totals);
 }
 
-std::unique_ptr<SourceFromChunks> QueryCache::Reader::getSourceExtremes()
+std::unique_ptr<SourceFromChunks> QueryCacheReader::getSourceExtremes()
 {
     return std::move(source_from_chunks_extremes);
 }
 
 QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(std::make_unique<PerUserTTLCachePolicyUserQuota>()))
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(
+          std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }
@@ -713,13 +720,19 @@ void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entrie
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryCache::Reader QueryCache::createReader(const Key & key)
+QueryCacheReader QueryCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
-    return Reader(cache, key, lock);
+    return QueryCacheReader(cache, key, lock);
 }
 
-QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::milliseconds min_query_runtime, bool squash_partial_results, size_t max_block_size, size_t max_query_cache_size_in_bytes_quota, size_t max_query_cache_entries_quota)
+QueryCacheWriter QueryCache::createWriter(
+    const Key & key,
+    std::chrono::milliseconds min_query_runtime,
+    bool squash_partial_results,
+    size_t max_block_size,
+    size_t max_query_cache_size_in_bytes_quota,
+    size_t max_query_cache_entries_quota)
 {
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
@@ -729,7 +742,7 @@ QueryCache::Writer QueryCache::createWriter(const Key & key, std::chrono::millis
         cache.setQuotaForUser(*key.user_id, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return Writer(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
 void QueryCache::clear(const std::optional<String> & tag)

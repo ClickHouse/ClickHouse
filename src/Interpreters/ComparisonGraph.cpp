@@ -90,26 +90,26 @@ std::string functionName(const ASTPtr & node)
     return node->as<ASTFunction &>().name;
 }
 
-const Field * tryGetConstantValue(const QueryTreeNodePtr & node)
+std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
 {
     if (const auto * constant = node->as<ConstantNode>())
-        return &constant->getValue();
+        return constant->getValue();
 
-    return nullptr;
+    return {};
 }
 
-const Field * tryGetConstantValue(const ASTPtr & node)
+std::optional<Field> tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
-        return &constant->value;
+        return constant->value;
 
-    return nullptr;
+    return {};
 }
 
 template <typename Node>
-const Field & getConstantValue(const Node & node)
+Field getConstantValue(const Node & node)
 {
-    const auto * constant = tryGetConstantValue(node);
+    const auto constant = tryGetConstantValue(node);
     assert(constant);
     return *constant;
 }
@@ -514,7 +514,7 @@ void ComparisonGraph<Node>::EqualComponent::buildConstants()
     constant_index.reset();
     for (size_t i = 0; i < nodes.size(); ++i)
     {
-        if (tryGetConstantValue(nodes[i]) != nullptr)
+        if (tryGetConstantValue(nodes[i]))
         {
             constant_index = i;
             return;
@@ -562,7 +562,7 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
 template <ComparisonGraphNodeType Node>
 std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstUpperBound(const Node & node) const
 {
-    if (const auto * constant = tryGetConstantValue(node))
+    if (const auto constant = tryGetConstantValue(node))
         return std::make_pair(*constant, false);
 
     const auto it = graph.node_hash_to_component.find(Graph::getHash(node));
@@ -580,7 +580,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstUpperBound(
 template <ComparisonGraphNodeType Node>
 std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstLowerBound(const Node & node) const
 {
-    if (const auto * constant = tryGetConstantValue(node))
+    if (const auto constant = tryGetConstantValue(node))
         return std::make_pair(*constant, false);
 
     const auto it = graph.node_hash_to_component.find(Graph::getHash(node));
