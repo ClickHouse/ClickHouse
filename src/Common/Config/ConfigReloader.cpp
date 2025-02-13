@@ -162,7 +162,7 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             return std::nullopt;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
-#ifdef USE_SSL
+#if USE_SSL
         config_processor.decryptEncryptedElements(loaded_config, load_encryption_codecs);
 #endif
 
