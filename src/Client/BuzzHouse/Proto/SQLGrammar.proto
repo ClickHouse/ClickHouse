@@ -1540,14 +1540,22 @@ enum SQLFunc {
 }
 
 enum SQLTableFunc {
-    TFfile = 1;
-    TFformat = 2;
-    TFgenerateSeries = 3;
-    TFmysql = 4;
-    TFpostgresql = 5;
-    TFremote = 6;
-    TFS3 = 7;
-    TFsqlite = 8;
+    TFcluster = 1;
+    TFclusterAllReplicas = 2;
+    TFfile = 3;
+    TFfileCluster = 4;
+    TFformat = 5;
+    TFgenerateSeries = 6;
+    TFmerge = 7;
+    TFmysql = 8;
+    TFpostgresql = 9;
+    TFremote = 10;
+    TFremoteSecure = 11;
+    TFS3 = 12;
+    TFS3Cluster = 13;
+    TFsqlite = 14;
+    TFurl = 15;
+    TFurlCluster = 16;
 }
 
 message Database {
@@ -1777,14 +1785,16 @@ enum BinaryOperator {
     BINOP_EQEQ = 6;
     BINOP_NOTEQ = 7;
     BINOP_LEGR = 8;
-    BINOP_AND = 9;
-    BINOP_OR = 10;
-    BINOP_CONCAT = 11;
-    BINOP_STAR = 12;
-    BINOP_SLASH = 13;
-    BINOP_PERCENT = 14;
-    BINOP_PLUS = 15;
-    BINOP_MINUS = 16;
+    BINOP_IS_NOT_DISTINCT_FROM = 9;
+    BINOP_LEEQGR = 10;
+    BINOP_AND = 11;
+    BINOP_OR = 12;
+    BINOP_CONCAT = 13;
+    BINOP_STAR = 14;
+    BINOP_SLASH = 15;
+    BINOP_PERCENT = 16;
+    BINOP_PLUS = 17;
+    BINOP_MINUS = 18;
 }
 
 message BinaryExpr {
@@ -1821,7 +1831,7 @@ message ExprIn {
     required bool not = 3;
     oneof exprin_oneof {
         ExprList exprs = 4;
-        Select sel = 5;
+        ExplainQuery sel = 5;
     }
 }
 
@@ -1829,7 +1839,7 @@ message ExprAny {
     required Expr expr = 1;
     required BinaryOperator op = 2;
     required bool anyall = 3;
-    required Select sel = 4;
+    required ExplainQuery sel = 4;
 }
 
 message ExprNullTests {
@@ -1851,18 +1861,19 @@ message ExprWhenThen {
 
 message ExprExists {
     required bool not = 1;
-    required Select select = 3;
+    required ExplainQuery select = 3;
 }
 
 message ExprLike {
-    required Expr expr1 = 5;
-    required bool not = 1;
+    required Expr expr1 = 1;
+    required bool not = 2;
     enum PossibleKeywords {
         LIKE = 1;
         ILIKE = 2;
+        REGEXP = 3;
     }
-    required PossibleKeywords keyword = 2;
-    required Expr expr2 = 3;
+    required PossibleKeywords keyword = 3;
+    required Expr expr2 = 4;
 }
 
 message CondExpr {
@@ -2073,7 +2084,7 @@ message ComplicatedExpr {
         ExprExists expr_exists = 11;
         ExprLike expr_like = 12;
         CondExpr expr_cond = 13;
-        Select subquery = 14;
+        ExplainQuery subquery = 14;
         SQLFuncCall func_call = 15;
         WindowFuncCall window_call = 16;
         IntervalExpr interval = 17;
@@ -2348,7 +2359,7 @@ message JoinClause {
 }
 
 message JoinedDerivedQuery {
-    required Select select = 1;
+    required ExplainQuery select = 1;
     optional Table table_alias = 2;
 }
 
@@ -2439,6 +2450,23 @@ message SQLTableFuncCall {
     repeated SQLFuncArg args = 2;
 }
 
+message MergeFunc {
+    optional string mdatabase = 1;
+    required string mtable = 2;
+}
+
+message ClusterFunc {
+    enum CName {
+        cluster = 1;
+        clusterAllReplicas = 2;
+    }
+    required CName cname = 1;
+    required string ccluster = 2;
+    required string cdatabase = 3;
+    required string ctable = 4;
+    optional string sharding_key = 5;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2450,6 +2478,8 @@ message TableFunction {
         SQLiteFunc sqite = 7;
         S3Func s3 = 8;
         SQLTableFuncCall func = 9;
+        MergeFunc merge = 10;
+        ClusterFunc cluster = 11;
     }
 }
 
@@ -2571,10 +2601,10 @@ message SetQuery {
         EXCEPT = 2;
         INTERSECT = 3;
     }
-    required Select sel1 = 1;
+    required ExplainQuery sel1 = 1;
     required SetOp set_op = 2;
     required AllOrDistinct s_or_d = 3;
-    required Select sel2 = 4;
+    required ExplainQuery sel2 = 4;
 }
 
 message CTEquery {
@@ -2932,6 +2962,7 @@ enum TableEngineValues {
     DeltaLake = 25;
     IcebergS3 = 26;
     Merge = 27;
+    Distributed = 28;
 }
 
 enum TableEngineOption {
@@ -3562,17 +3593,17 @@ message ExplainQuery {
         ESTIMATE = 6;
         TABLE_OVERRIDE = 7;
     }
-    optional ExplainValues expl = 1;
-    repeated ExplainOption opts = 2;
-    required SQLQueryInner inner_query = 3;
+    optional bool is_explain = 1;
+    optional ExplainValues expl = 2;
+    repeated ExplainOption opts = 3;
+    required SQLQueryInner inner_query = 4;
 }
 
 message SQLQuery {
     oneof query_oneof {
-        SQLQueryInner inner_query = 1;
-        ExplainQuery explain = 2;
-        bool start_trans = 3;
-        bool commit_trans = 4;
-        bool rollback_trans = 5;
+        ExplainQuery explain = 1;
+        bool start_trans = 2;
+        bool commit_trans = 3;
+        bool rollback_trans = 4;
     }
 }

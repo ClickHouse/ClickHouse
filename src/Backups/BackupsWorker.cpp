@@ -181,6 +181,9 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     ASYNC_BACKGROUND_INTERNAL_RESTORE,
     ON_CLUSTER_COORDINATION_INTERNAL_BACKUP,
     ON_CLUSTER_COORDINATION_INTERNAL_RESTORE,
+
+    /// Remove locks of snapshot from keeper and unused object
+    UNLOCK_SNAPSHOT,
 };
 
 
@@ -229,6 +232,7 @@ public:
             }
 
             case ThreadPoolId::RESTORE:
+            case ThreadPoolId::UNLOCK_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_RESTORE:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_RESTORE:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE:
@@ -509,6 +513,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
     backup_create_params.password = backup_settings.password;
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
+    backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
@@ -992,6 +997,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     return std::make_shared<BackupCoordinationOnCluster>(
         *backup_settings.backup_uuid,
         !backup_settings.deduplicate_files,
+        backup_settings.experimental_lightweight_snapshot,
         root_zk_path,
         get_zookeeper,
         keeper_settings,

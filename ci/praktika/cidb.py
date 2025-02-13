@@ -1,7 +1,6 @@
 import copy
 import dataclasses
 import json
-import traceback
 import urllib
 from typing import Optional
 
@@ -105,37 +104,40 @@ class CIDB:
             yield json.dumps(dataclasses.asdict(record))
 
     def insert(self, result: Result):
-        # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
             "query": f"INSERT INTO {Settings.CI_DB_TABLE_NAME} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
+        assert Settings.CI_DB_TABLE_NAME and Settings.CI_DB_TABLE_NAME
 
-        session = requests.Session()
         MAX_RETRIES = 3
+        jsons = []
         for json_str in self.json_data_generator(result):
-            for retry in range(MAX_RETRIES):
-                try:
-                    response = session.post(
-                        url=self.url,
-                        params=params,
-                        data=json_str,
-                        headers=self.auth,
-                        timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                    )
-                    if response.ok:
-                        break
-                    else:
-                        if retry == MAX_RETRIES - 1:
-                            raise RuntimeError(
-                                f"Failed to write to CI DB, response code [{response.status_code}]"
-                            )
-                except Exception as ex:
+            jsons.append(json_str)
+
+        for retry in range(MAX_RETRIES):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data=",".join(jsons),
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                print(response.text)
+                if response.ok:
+                    print(f"INFO: {len(jsons)} rows inserted into CIDB")
+                    break
+                else:
                     if retry == MAX_RETRIES - 1:
-                        raise ex
-        session.close()
+                        raise RuntimeError(
+                            f"Failed to write to CI DB, response code [{response.status_code}]"
+                        )
+            except Exception as ex:
+                if retry == MAX_RETRIES - 1:
+                    raise ex
 
     def check(self):
         # Create a session object
@@ -143,27 +145,26 @@ class CIDB:
             "database": Settings.CI_DB_DB_NAME,
             "query": f"SELECT 1",
         }
-        try:
-            response = requests.post(
-                url=self.url,
-                params=params,
-                data="",
-                headers=self.auth,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            )
-            if not response.ok:
-                print("ERROR: No connection to CI DB")
-                return (
-                    False,
-                    f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]",
+        error = ""
+        for retry in range(2):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data="",
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
                 )
-            if not response.json() == 1:
-                print("ERROR: CI DB smoke test failed select 1 == 1")
-                return (
-                    False,
-                    f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]",
-                )
-        except Exception as ex:
-            print(f"ERROR: Exception [{ex}]")
-            return False, f"CIDB: ERROR: Exception [{ex}]"
-        return True, ""
+                if not response.ok:
+                    error = f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]"
+                elif not response.json() == 1:
+                    print("ERROR: CI DB smoke test failed select 1 == 1")
+                    error = f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]"
+                else:
+                    return True, ""
+
+            except Exception as ex:
+                print(f"ERROR: Exception [{ex}]")
+                error = f"CIDB: ERROR: Exception [{ex}]"
+
+        return False, error
