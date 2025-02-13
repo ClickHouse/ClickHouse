@@ -82,11 +82,6 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
 
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (next.isReplicatedDatabase())
-    {
-        next.zoo_path_counter = this->zoo_path_counter++;
-        deng->set_zoo_path(next.zoo_path_counter);
-    }
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
     {
         next.cluster = rg.pickRandomlyFromVector(fc.clusters);

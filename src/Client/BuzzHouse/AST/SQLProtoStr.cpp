@@ -2387,12 +2387,6 @@ CONV_FN(DatabaseEngine, deng)
     const DatabaseEngineValues dengine = deng.engine();
 
     ret += DatabaseEngineValues_Name(dengine).substr(1);
-    if (dengine == DatabaseEngineValues::DReplicated)
-    {
-        ret += "('/test/db";
-        ret += std::to_string(deng.zoo_path());
-        ret += "', 's1', 'r1')";
-    }
 }
 
 CONV_FN(CreateDatabase, create_database)

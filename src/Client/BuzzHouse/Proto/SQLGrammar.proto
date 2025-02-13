@@ -2650,8 +2650,7 @@ enum DatabaseEngineValues {
 }
 
 message DatabaseEngine {
-    required DatabaseEngineValues engine = 2;
-    optional uint32 zoo_path = 4;
+    required DatabaseEngineValues engine = 1;
 }
 
 message CreateDatabase {
@@ -2715,8 +2714,8 @@ message JSONDef {
 }
 
 message EnumDefValue {
-    required string enumv = 2;
-    required int32 number = 3;
+    required string enumv = 1;
+    required int32 number = 2;
 }
 
 message EnumDef {
@@ -3389,7 +3388,7 @@ message ClearIndexInPartition {
 
 message MovePartition {
     required PartitionExpr partition = 1;
-    required Storage storage = 3;
+    required Storage storage = 2;
 }
 
 message AlterTableItem {
