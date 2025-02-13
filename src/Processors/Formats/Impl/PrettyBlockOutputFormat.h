@@ -6,6 +6,8 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/PODArray_fwd.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -54,9 +56,12 @@ protected:
 
     void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
+    void findWidth(size_t & width, size_t & max_padded_width, String & serialized_value, bool split_by_lines, bool & out_has_newlines, size_t prefix);
+
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names,
+        std::vector<Strings> & subcolumn_names, std::vector<WidthsPerColumn> & subcolumn_widths, std::vector<Widths> & max_subcolumn_widths, std::vector<Widths> & subcolumn_name_widths);
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
