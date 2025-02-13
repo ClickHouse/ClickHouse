@@ -187,7 +187,7 @@ The following settings can be configured by sub-tags:
 
 | Setting                             | Description                                                                                                                                                                                 |
 |-------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `allowed_path`                      | Path to backup to when using `File()`. This setting must be set in order to use `File`.                                                                                                     |
+| `allowed_path`                      | Path to backup to when using `File()`. This setting must be set in order to use `File`. The path can be relative to the instance directory or it can be absolute.                           |
 | `remove_backup_files_after_failure` | When `true`, if the `BACKUP` command fails, ClickHouse will try to remove the files already copied to the backup before the failure,  otherwise it will leave the copied files as they are. |
 
 This setting is configured by default as:
