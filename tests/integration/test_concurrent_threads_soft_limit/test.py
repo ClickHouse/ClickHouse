@@ -171,7 +171,7 @@ def test_concurrent_threads_soft_limit_defined_50(started_cluster):
         "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_2' order by query_start_time_microseconds desc limit 1"
     ).strip()
     count = int(s_count) if s_count else 0
-    assert count >= 3 and count <= 52
+    assert count >= 3 and count <= 53
 
 
 def test_use_concurrency_control_soft_limit_defined_50(started_cluster):
@@ -259,7 +259,7 @@ def test_concurrent_threads_soft_limit_defined_1(started_cluster):
 
 # In config_limit_reached.xml there is concurrent_threads_soft_limit=10
 # Background query starts in a separate thread to reach this limit.
-# When this limit is reached the foreground query gets less than 5 queries despite the fact that it has settings max_threads=5
+# When this limit is reached the foreground query gets less than 6 threads despite the fact that it has settings max_threads=6
 def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
     def background_query():
         try:
@@ -281,13 +281,13 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
             count = int(s_count)
         else:
             count = 0
-        return count >= 10
+        return count >= 11
 
     while not limit_reached():
         time.sleep(0.1)
 
     node4.query(
-        "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=5",
+        "SELECT count(*) FROM numbers_mt(10000000) settings max_threads=6",
         query_id="test_concurrent_threads_soft_limit_4",
     )
 
@@ -313,6 +313,12 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
     assert_profile_event(
         node4,
         "test_concurrent_threads_soft_limit_4",
+        "ConcurrencyControlSlotsAcquiredNonCompeting",
+        lambda x: x == 1,
+    )
+    assert_profile_event(
+        node4,
+        "test_concurrent_threads_soft_limit_4",
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 1,
     )
@@ -323,6 +329,6 @@ def test_concurrent_threads_soft_limit_limit_reached(started_cluster):
         count = int(s_count)
     else:
         count = 0
-    assert count < 5
+    assert count < 6
     node4.query("KILL QUERY WHERE query_id = 'background_query' SYNC")
     background_thread.join()
