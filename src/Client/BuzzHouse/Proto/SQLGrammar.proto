@@ -2651,6 +2651,7 @@ enum DatabaseEngineValues {
 
 message DatabaseEngine {
     required DatabaseEngineValues engine = 1;
+    optional uint32 zoo_path = 2;
 }
 
 message CreateDatabase {
