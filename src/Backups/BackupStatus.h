@@ -1,8 +1,7 @@
 #pragma once
 
-
-#include <vector>
 #include <base/types.h>
+
 #include <vector>
 
 namespace DB
