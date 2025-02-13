@@ -196,6 +196,7 @@ namespace DB
     DECLARE(Bool, prepare_system_log_tables_on_startup, false, "If true, ClickHouse creates all configured `system.*_log` tables before the startup. It can be helpful if some startup scripts depend on these tables.", 0) \
     DECLARE(UInt64, config_reload_interval_ms, 2000, "How often clickhouse will reload config and check for new changes", 0) \
     DECLARE(UInt64, memory_worker_period_ms, 0, "Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source", 0) \
+    DECLARE(Bool, memory_worker_correct_memory_tracker, 0, "Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, "Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, "Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, parts_kill_delay_period_random_add, 10, "Add uniformly distributed value from 0 to x seconds to kill_delay_period to avoid thundering herd effect and subsequent DoS of ZooKeeper in case of very large number of tables. Only available in ClickHouse Cloud", 0) \
