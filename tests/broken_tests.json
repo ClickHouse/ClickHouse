@@ -1,0 +1,41 @@
+{
+    "02700_s3_part_INT_MAX": {
+        "reason": "Fails on asan"
+    },
+    "00157_cache_dictionary": {
+        "reason": "fails with asan,debug,msan"
+    },
+    "02815_no_throw_in_simple_queries": {
+        "reason": "Fails on asan,msan,tsan,debug,Aarch64"
+    },
+    "03206_no_exceptions_clickhouse_local": {
+        "reason": "Fails on asan,msan,tsan,debug,Aarch64"
+    },
+    "03203_hive_style_partitioning": {
+        "reason": "new fail in 24.12"
+    },
+    "test_attach_partition_using_copy/test.py::test_all_replicated": {
+        "reason": "Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_attach_partition_using_copy/test.py::test_both_mergetree": {
+        "reason": "Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_backup_restore_on_cluster/test_cancel_backup.py::test_shutdown_cancels_backup": {
+        "reason": "Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_backup_restore_on_cluster/test_different_versions.py::test_different_versions": {
+        "reason": "Fails on ASAN, ASAN old analyzer, Release, TSAN"
+    },
+    "test_grpc_protocol/test.py::test_ipv6_select_one": {
+        "reason": "Fails on ASAN, ASAN old analyzer, Release, TSAN - FIXED in 24.8"
+    },
+    "test_settings_randomization/test.py::test_settings_randomization": {
+        "reason": "Fails on ASAN, ASAN old analyzer, Release"
+    },
+    "test_attach_partition_using_copy/test.py::test_not_work_on_different_disk": {
+        "reason": "Fails on ASAN old analyzer, TSAN"
+    },
+    "test_attach_partition_using_copy/test.py::test_only_destination_replicated": {
+        "reason": "Fails on TSAN"
+    }
+}
