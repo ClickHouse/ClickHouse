@@ -6,6 +6,9 @@ on:
     - cron: 13 4 * * *
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}
+
 env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ${{ github.head_ref }}
@@ -128,7 +131,7 @@ jobs:
 
   build_amd_binary:
     runs-on: [self-hosted, builder]
-    needs: [config_workflow]
+    needs: [config_workflow, dockers_build_amd]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
     outputs:

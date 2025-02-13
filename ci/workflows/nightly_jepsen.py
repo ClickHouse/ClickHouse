@@ -6,6 +6,7 @@ from ci.workflows.job_configs import JobConfigs
 binary_build_job = [
     job for job in JobConfigs.build_jobs if BuildTypes.AMD_BINARY in job.name
 ][0]
+
 jepsen_keeper_job = Job.Config(
     name="ClickHouse Keeper Jepsen",
     runs_on=RunnerLabels.STYLE_CHECK_ARM,
@@ -24,7 +25,7 @@ workflow = Workflow.Config(
         #   these jobs should be skipped in most of the cases
         JobConfigs.docker_build_arm,
         JobConfigs.docker_build_amd,
-        binary_build_job,
+        binary_build_job.set_dependency(JobConfigs.docker_build_amd.name),
         jepsen_keeper_job,
     ],
     artifacts=ARTIFACTS,
