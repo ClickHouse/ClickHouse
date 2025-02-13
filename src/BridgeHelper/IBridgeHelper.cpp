@@ -97,7 +97,7 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
     }
 
     std::string allowed_paths;
-    for (auto allowed_path_config : {"dictionaries_lib_path", "catboost_lib_path"})
+    for (const auto * allowed_path_config : {"dictionaries_lib_path", "catboost_lib_path"})
     {
         if (config.has(allowed_path_config))
         {
