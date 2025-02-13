@@ -195,6 +195,8 @@ bool Client::processWithFuzzing(const String & full_query)
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
         ASTPtr ast_to_process;
+        ASTPtr old_settings = nullptr;
+        ASTSelectQuery * select_query = nullptr;
         try
         {
             WriteBufferFromOwnString dump_before_fuzz;
@@ -257,10 +259,8 @@ bool Client::processWithFuzzing(const String & full_query)
             {
                 /// Add tag to find query later on
                 auto * union_sel = ast_to_process->as<ASTSelectWithUnionQuery>();
-                auto * select_query
-                    = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get());
 
-                if (select_query)
+                if ((select_query = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get())))
                 {
                     if (!select_query->settings())
                     {
@@ -269,6 +269,7 @@ bool Client::processWithFuzzing(const String & full_query)
                         settings_changes.setSetting("log_comment", "measure_performance");
 
                         /// Sometimes change settings
+                        old_settings = std::make_shared<ASTSetQuery>();
                         fuzzer.getRandomSettings(settings_changes);
                         settings_query->changes = std::move(settings_changes);
                         settings_query->is_standalone = false;
@@ -278,13 +279,17 @@ bool Client::processWithFuzzing(const String & full_query)
                     {
                         auto * set_query = select_query->settings()->as<ASTSetQuery>();
 
+                        old_settings = set_query->clone();
                         set_query->changes.setSetting("log_comment", "measure_performance");
                         fuzzer.getRandomSettings(set_query->changes);
                     }
                     auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
-                    /// Dump result into /dev/null
-                    out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
-                    out_query->is_outfile_truncate = true;
+                    if (!out_query)
+                    {
+                        /// Dump result into /dev/null
+                        out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
+                        out_query->is_outfile_truncate = true;
+                    }
                 }
                 else
                 {
@@ -293,6 +298,11 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 #endif
             query_to_execute = ast_to_process->formatForErrorMessage();
+            if (select_query)
+            {
+                /// Don't keep performance settings in AST
+                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
+            }
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
         }
