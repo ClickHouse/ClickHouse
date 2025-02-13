@@ -1,3 +1,4 @@
+#include "Common/logger_useful.h"
 #include <Common/SipHash.h>
 #include <Parsers/ASTWithAlias.h>
 #include <IO/WriteHelpers.h>
@@ -45,8 +46,10 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 
 void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    if (!alias.empty() && !ignore_aliases)
+    if (!alias.empty() && !ignore_aliases) {
+        LOG_TRACE(getLogger("QueryCache"), "Ast hash impl alias: {}, id = {}", alias, getID());
         hash_state.update(alias);
+    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

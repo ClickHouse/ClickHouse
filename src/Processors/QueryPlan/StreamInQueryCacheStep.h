@@ -12,7 +12,7 @@ class StreamInQueryCacheStep : public ITransformingStep
 public:
     StreamInQueryCacheStep(
         const Header & input_header_,
-        std::shared_ptr<QueryCache::Writer> writer_,
+        std::shared_ptr<QueryCacheWriter> writer_,
         const std::string& query
     );
 
@@ -26,7 +26,7 @@ private:
         output_header = input_headers.front();
     }
 
-    std::shared_ptr<QueryCache::Writer> writer;
+    std::shared_ptr<QueryCacheWriter> writer;
     std::string query;
 };
 

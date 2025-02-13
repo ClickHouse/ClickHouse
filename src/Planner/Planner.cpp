@@ -1506,8 +1506,8 @@ void Planner::buildPlanForQueryNode()
     if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
     {
         LOG_TRACE(getLogger("QueryCache"), "Try to read from subquery cache");
-        QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getUserID(), query_context->getCurrentRoles());
-        auto reader = std::make_shared<QueryCache::Reader>(query_cache->createReader(key));
+        QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles());
+        auto reader = std::make_shared<QueryCacheReader>(query_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
             LOG_TRACE(getLogger("QueryCache"), "Entry found");
@@ -1945,7 +1945,7 @@ void Planner::buildPlanForQueryNode()
         {
             QueryCache::Key key(
                 ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
-                query_context->getUserID(), query_context->getCurrentRoles(),
+                query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
                 settings[Setting::query_cache_share_between_users],
                 std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
                 settings[Setting::query_cache_compress_entries]);
@@ -1959,7 +1959,7 @@ void Planner::buildPlanForQueryNode()
             }
             else
             {
-                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
                                     key,
                                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                     settings[Setting::query_cache_squash_partial_results],

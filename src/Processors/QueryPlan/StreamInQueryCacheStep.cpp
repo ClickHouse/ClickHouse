@@ -22,7 +22,7 @@ static ITransformingStep::Traits getTraits()
 
 StreamInQueryCacheStep::StreamInQueryCacheStep(
     const Header & input_header_,
-    std::shared_ptr<QueryCache::Writer> writer_,
+    std::shared_ptr<QueryCacheWriter> writer_,
     const std::string& query_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , writer(writer_)
@@ -34,7 +34,7 @@ void StreamInQueryCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, 
 {   
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        using ChunkType = QueryCache::Writer::ChunkType;
+        using ChunkType = QueryCacheWriter::ChunkType;
         using StreamType = QueryPipelineBuilder::StreamType;
 
         ChunkType chunk_type;

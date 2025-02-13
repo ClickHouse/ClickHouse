@@ -11,6 +11,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -22,8 +23,6 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include "IO/WriteHelpers.h"
-#include "Parsers/ASTTablesInSelectQuery.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -221,12 +220,10 @@ using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSetti
 /// have been parsed already, they are not lost or discarded.
 ASTPtr removeQueryCacheSettings(ASTPtr ast)
 {
-    ASTPtr transformed_ast = ast->clone();
-
     RemoveQueryCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryCacheSettingsVisitor(visitor_data).visit(transformed_ast);
+    RemoveQueryCacheSettingsVisitor(visitor_data).visit(ast);
 
-    return transformed_ast;
+    return ast;
 }
 
 class RemoveTableAliasMatcher
@@ -257,20 +254,17 @@ using RemoveTableAliasVisitor = InDepthNodeVisitor<RemoveTableAliasMatcher, true
 
 ASTPtr removeTableAliases(ASTPtr ast)
 {
-    ASTPtr transformed_ast = ast->clone();
-
     RemoveTableAliasVisitor::Data visitor_data;
-    RemoveTableAliasVisitor(visitor_data).visit(transformed_ast);
+    RemoveTableAliasVisitor(visitor_data).visit(ast);
 
-    return transformed_ast;
+    return ast;
 }
 
 IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
+    ast = ast->clone();
     ast = removeQueryCacheSettings(ast);
     ast = removeTableAliases(ast);
-    // ast = removeASTSubquery(ast);
-    // ast = removeASTSelectWithUnionQuery(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -287,13 +281,13 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     LOG_TRACE(getLogger("QueryCache"), "extremes {} max_result_bytes {} {}", settings[Setting::extremes], settings[Setting::max_result_bytes], settings[Setting::max_result_rows]);
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
-    ///       Therefore, collect and sort the settings first, then hash them.
+    /// Therefore, collect and sort the settings first, then hash them.
     auto changed_settings = settings.changes();
     std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+        if (!isQueryCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() and isSubquerySpecificSetting() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
         else
             LOG_TRACE(getLogger("QueryCache"), "unused setting: {} {}", change.name, change.value);
@@ -301,7 +295,7 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
 
     /// Some specific settings are added to subqueries (extremes 0, max_result_bytes 0, max_result_rows 0),
     /// however non subqueries don't have this settings in settings.changes() and therefore don't match in cache.
-    /// Try to also add values for extremes, max_result_bytes, max_result_rows from settings. 
+    /// Try to also add default values for extremes, max_result_bytes, max_result_rows from settings. 
 
     if (!changed_settings.tryGet("extremes")) {
         changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});

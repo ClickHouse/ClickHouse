@@ -221,7 +221,7 @@ private:
     const size_t max_block_size;
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryCache::Entry>();
     std::atomic<bool> skip_insert = false;
-    bool was_finalized = false;
+    std::atomic<bool> was_finalized = false;
     LoggerPtr logger = getLogger("QueryCache");
 
     QueryCacheWriter(

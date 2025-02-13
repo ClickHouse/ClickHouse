@@ -648,7 +648,8 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> 
 
 void QueryPipeline::finalizeWriteInQueryCache()
 {
-    /// The pipeline can contain multiple StreamInQueryCacheTransforms which all points to different query cache writer objects.
+    /// The pipeline can contain multiple StreamInQueryCacheTransforms if subqueries are cached,
+    /// and all StreamInQueryCacheTransforms can point to different QueryCacheWriter objects.
     /// We should call finalize() on all of them.
 
     LOG_TRACE(getLogger("QueryCache"),
