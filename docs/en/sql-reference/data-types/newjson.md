@@ -78,9 +78,11 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-### Using CAST with `JSON`
+### Using CAST with `::JSON`
 
-#### CAST from `JSON` to `String`
+It is possible to cast various types using the special syntax `::JSON`.
+
+#### CAST from `String` to `JSON`
 
 ```sql title="Query"
 SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
@@ -132,7 +134,27 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::Object('json
 ```
 
 :::note
-CAST from `Tuple`/`Map`/`Object('json')` to `JSON` is implemented via serializing the column into a `String` column containing JSON objects and deserializing it back to a `JSON` type column. 
+JSON paths are stored flattened. This means that when a JSON object is formatted from a path like `a.b.c`
+it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a" " {"b" : {"c" : ... }}}`.
+Our implementation will always assume the latter.
+
+For example
+
+```sql
+SELECT map(4.2, 2)::JSON;
+```
+
+will return:
+
+```response
+{"4":{"2":"2"}}
+```
+
+and **not**:
+
+```sql
+{"4.2":"2"}
+```
 :::
 
 ## Reading JSON paths as sub-columns
@@ -812,3 +834,8 @@ Before creating `JSON` column and loading data into it, consider the following t
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient. 
   While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` > 10 000.
+
+## Further Reading
+
+- [How we built a new powerful JSON data type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
+- [The billion docs JSON Challenge: ClickHouse vs. MongoDB, Elasticsearch, and more](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)
