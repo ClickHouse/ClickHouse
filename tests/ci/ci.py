@@ -1428,21 +1428,7 @@ def main() -> int:
 
         # post
         try:
-            job_report = JobReport.load()
-            gh = GitHub(get_best_robot_token(), per_page=100)
-            commit = get_commit(gh, pr_info.sha)
-            if not job_report.dummy:
-                if "style" in check_name.lower() and job_report.status == "success":
-                    # style status required for sync ...
-                    post_commit_status(
-                        commit,
-                        job_report.status,
-                        "",
-                        "",
-                        check_name,
-                        pr_info,
-                    )
-            else:
+            if JobReport.load().dummy:
                 print("ERROR: Job was killed - generate evidence")
                 job_report.duration = (
                     start_time - datetime.now(timezone.utc)

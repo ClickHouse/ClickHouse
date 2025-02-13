@@ -32,6 +32,7 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         requires=[JobNames.DOCKER_BUILDS_AMD],
+        enable_commit_status=True,
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -721,6 +722,7 @@ class JobConfigs:
             ],
         ),
         allow_merge_on_failure=True,
+        enable_commit_status=True,
     ).parametrize(
         parameter=[
             "release, 1/3",
