@@ -1346,7 +1346,7 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
     if (clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
-                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage, "
+                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, memory_usage, "
                 "read_bytes FROM "
                 "system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC "
                 "LIMIT 1;",
