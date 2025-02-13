@@ -207,7 +207,7 @@ bool isStorageTouchedByMutations(
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto select_query_tree = prepareQueryAffectedQueryTree(commands, storage_from_part, context);
-        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, nullptr, SelectQueryOptions().ignoreLimits());
+        InterpreterSelectQueryAnalyzer interpreter(select_query_tree, context, SelectQueryOptions().ignoreLimits());
         io = interpreter.execute();
     }
     else

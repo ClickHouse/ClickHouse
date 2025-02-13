@@ -417,7 +417,6 @@ void StorageLiveView::writeBlock(StorageLiveView & live_view, Block && block, Ch
 
             InterpreterSelectQueryAnalyzer interpreter(select_description.inner_query_node,
                 local_context,
-                nullptr,
                 SelectQueryOptions(QueryProcessingStage::WithMergeableState));
             builder = interpreter.buildQueryPipeline();
         }
@@ -642,7 +641,6 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
 
         InterpreterSelectQueryAnalyzer interpreter(select_description.select_query_node,
             block_context,
-            nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete));
         builder = interpreter.buildQueryPipeline();
     }
