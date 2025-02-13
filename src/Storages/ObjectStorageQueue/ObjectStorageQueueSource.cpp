@@ -838,10 +838,20 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 break;
             }
 
+            const auto processed_files_num = progress->processed_files.fetch_add(1);
+            if (commit_settings.max_processed_files_before_commit
+                && processed_files_num >= commit_settings.max_processed_files_before_commit)
+            {
+                LOG_TRACE(log, "Number of max processed files before commit reached "
+                          "(rows: {}, bytes: {}, files: {}, time: {})",
+                          progress->processed_rows, progress->processed_bytes,
+                          progress->processed_files, progress->elapsed_time.elapsedSeconds());
+                break;
+            }
+
             const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
             file_metadata = object_info->file_metadata;
             processed_files.emplace_back(file_metadata);
-            progress->processed_files += 1;
         }
 
         chassert(file_metadata);
@@ -923,13 +933,17 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadFiles);
 
+        LOG_TEST(log,
+                 "Processed file {}. Total processed files: {}, processed rows: {}, processed bytes: {}",
+                 path, progress->processed_files, progress->processed_rows, progress->processed_bytes);
+
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
         file_status.reset();
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit
-            && progress->processed_files == commit_settings.max_processed_files_before_commit)
+            && progress->processed_files >= commit_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
                       "(rows: {}, bytes: {}, files: {}, time: {})",
@@ -938,7 +952,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         }
 
         if (commit_settings.max_processed_rows_before_commit
-            && progress->processed_rows == commit_settings.max_processed_rows_before_commit)
+            && progress->processed_rows >= commit_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
                       "(rows: {}, bytes: {}, files: {}, time: {})",
@@ -947,7 +961,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
         }
 
         if (commit_settings.max_processed_bytes_before_commit
-            && progress->processed_bytes == commit_settings.max_processed_bytes_before_commit)
+            && progress->processed_bytes >= commit_settings.max_processed_bytes_before_commit)
         {
             LOG_TRACE(log, "Number of max processed bytes before commit reached "
                       "(rows: {}, bytes: {}, files: {}, time: {})",
@@ -963,6 +977,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                       progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
             break;
         }
+
     }
 
     return {};
