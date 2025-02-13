@@ -3828,7 +3828,7 @@ To add an LDAP server as a remote user directory of users that are not defined l
 
 ## top_level_domains_list
 
-Defines a list of custom top level domains to add where each entry is of the format `<name>/path/to/file</name>`.
+Defines a list of custom top level domains to add where each entry is, of the format `<name>/path/to/file</name>`.
 
 For example:
 
@@ -3837,6 +3837,10 @@ For example:
     <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
 </top_level_domains_lists>
 ```
+
+See also: 
+- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof, 
+which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## total_memory_profiler_step
 
