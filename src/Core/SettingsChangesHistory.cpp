@@ -69,6 +69,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
+            {"query_plan_optimize_join_read_by_layers", false, true, "New setting"},
+            {"query_plan_optimize_full_sorting_merge_join_by_layers", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
