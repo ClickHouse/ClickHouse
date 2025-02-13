@@ -155,6 +155,7 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
     updateKeeperMemorySoftLimit(config);
 
     digest_enabled = config.getBool("keeper_server.digest_enabled", false);
+    digest_enabled_on_commit = config.getBool("keeper_server.digest_enabled_on_commit", false);
     ignore_system_path_on_startup = config.getBool("keeper_server.ignore_system_path_on_startup", false);
 
     initializeFeatureFlags(config);
@@ -208,7 +209,12 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 
-    rocksdb_storage = getRocksDBPathFromConfig(config);
+    #if USE_ROCKSDB
+    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
+    {
+        rocksdb_storage = getRocksDBPathFromConfig(config);
+    }
+    #endif
 
     log_storage = getLogsPathFromConfig(config);
 
@@ -259,6 +265,11 @@ bool KeeperContext::ignoreSystemPathOnStartup() const
 bool KeeperContext::digestEnabled() const
 {
     return digest_enabled;
+}
+
+bool KeeperContext::digestEnabledOnCommit() const
+{
+    return digest_enabled_on_commit;
 }
 
 void KeeperContext::setDigestEnabled(bool digest_enabled_)
@@ -589,7 +600,24 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_NOT_EXISTS);
         case Coordination::OpNum::RemoveRecursive:
             return feature_flags.isEnabled(KeeperFeatureFlag::REMOVE_RECURSIVE);
-        default:
+        case Coordination::OpNum::Close:
+        case Coordination::OpNum::Error:
+        case Coordination::OpNum::Create:
+        case Coordination::OpNum::Remove:
+        case Coordination::OpNum::Exists:
+        case Coordination::OpNum::Get:
+        case Coordination::OpNum::Set:
+        case Coordination::OpNum::GetACL:
+        case Coordination::OpNum::SetACL:
+        case Coordination::OpNum::SimpleList:
+        case Coordination::OpNum::Sync:
+        case Coordination::OpNum::Heartbeat:
+        case Coordination::OpNum::List:
+        case Coordination::OpNum::Check:
+        case Coordination::OpNum::Multi:
+        case Coordination::OpNum::Reconfig:
+        case Coordination::OpNum::Auth:
+        case Coordination::OpNum::SessionID:
             return true;
     }
 }

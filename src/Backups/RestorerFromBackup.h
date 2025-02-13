@@ -38,6 +38,7 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
+        const ContextPtr & query_context_,
         ThreadPool & thread_pool_,
         const std::function<void()> & after_task_callback_);
 
@@ -75,12 +76,13 @@ public:
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
 
-private:
+protected:
     const ASTBackupQuery::Elements restore_query_elements;
     const RestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
+    ContextPtr query_context;
     QueryStatusPtr process_list_element;
     std::function<void()> after_task_callback;
     std::chrono::milliseconds create_table_timeout;

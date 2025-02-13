@@ -1,7 +1,5 @@
 #pragma once
 
-#include <variant>
-
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -305,7 +303,7 @@ private:
       */
     bool got_duplicated_part_uuids = false;
 
-    bool has_postponed_packet = false;
+    bool packet_in_progress = false;
 
     bool is_remote_function = false;
     UInt32 shard_count = 0;
@@ -319,6 +317,8 @@ private:
     LoggerPtr log = nullptr;
 
     GetPriorityForLoadBalancing::Func priority_func;
+
+    const bool read_packet_type_separately = false;
 
     /// Send all scalars to remote servers
     void sendScalars();

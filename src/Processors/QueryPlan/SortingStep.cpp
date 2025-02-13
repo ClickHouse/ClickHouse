@@ -31,6 +31,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 min_external_sort_block_bytes;
     extern const SettingsUInt64 max_bytes_before_external_sort;
     extern const SettingsDouble max_bytes_ratio_before_external_sort;
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
@@ -107,6 +108,7 @@ SortingStep::Settings::Settings(const Context & context)
     max_bytes_before_remerge = settings[Setting::max_bytes_before_remerge_sort];
     remerge_lowered_memory_bytes_ratio = settings[Setting::remerge_sort_lowered_memory_bytes_ratio];
     max_bytes_before_external_sort = getMaxBytesBeforeExternalSort(settings[Setting::max_bytes_before_external_sort], settings[Setting::max_bytes_ratio_before_external_sort]);
+    min_external_sort_block_bytes = settings[Setting::min_external_sort_block_bytes];
     tmp_data = context.getTempDataOnDisk();
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
@@ -379,7 +381,8 @@ void SortingStep::mergeSorting(
                 increase_sort_description_compile_attempts_current,
                 sort_settings.max_bytes_before_remerge / pipeline.getNumStreams(),
                 sort_settings.remerge_lowered_memory_bytes_ratio,
-                sort_settings.max_bytes_before_external_sort,
+                sort_settings.min_external_sort_block_bytes,
+                sort_settings.max_bytes_before_external_sort / pipeline.getNumStreams(),
                 std::move(tmp_data_on_disk),
                 sort_settings.min_free_disk_space);
         });

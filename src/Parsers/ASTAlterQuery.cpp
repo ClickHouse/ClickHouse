@@ -69,10 +69,19 @@ ASTPtr ASTAlterCommand::clone() const
     return res;
 }
 
+/// When the alter command is about statistics, the Parentheses is necessary to avoid ambiguity.
+bool needToFormatWithParentheses(ASTAlterCommand::Type type)
+{
+    return type == ASTAlterCommand::ADD_STATISTICS
+        || type == ASTAlterCommand::DROP_STATISTICS
+        || type == ASTAlterCommand::MATERIALIZE_STATISTICS
+        || type == ASTAlterCommand::MODIFY_STATISTICS;
+}
+
 void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     scope_guard closing_bracket_guard;
-    if (format_alter_commands_with_parentheses)
+    if (format_alter_commands_with_parentheses || needToFormatWithParentheses(type))
     {
         ostr << "(";
         closing_bracket_guard = make_scope_guard(std::function<void(void)>([&ostr]() { ostr << ")"; }));
@@ -557,6 +566,11 @@ bool ASTAlterQuery::isFreezeAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
+}
+
+bool ASTAlterQuery::isUnlockSnapshot() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::UNLOCK_SNAPSHOT);
 }
 
 bool ASTAlterQuery::isAttachAlter() const
