@@ -29,12 +29,12 @@ A table with the specified structure for reading data in the specified file.
 
 1.  Suppose that we have a ClickHouse cluster named `cluster_simple`, and several files with following URIs on HDFS:
 
-- 'hdfs://hdfs1:9000/some_dir/some_file_1'
-- 'hdfs://hdfs1:9000/some_dir/some_file_2'
-- 'hdfs://hdfs1:9000/some_dir/some_file_3'
-- 'hdfs://hdfs1:9000/another_dir/some_file_1'
-- 'hdfs://hdfs1:9000/another_dir/some_file_2'
-- 'hdfs://hdfs1:9000/another_dir/some_file_3'
+- ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+- ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+- ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+- ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+- ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+- ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 2.  Query the amount of rows in these files:
 

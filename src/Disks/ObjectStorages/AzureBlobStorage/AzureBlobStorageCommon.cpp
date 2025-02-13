@@ -21,8 +21,6 @@ namespace ProfileEvents
     extern const Event DiskAzureCreateContainer;
 }
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
 namespace Setting
@@ -153,12 +151,6 @@ std::unique_ptr<ServiceClient> ConnectionParams::createForService() const
 
 std::unique_ptr<ContainerClient> ConnectionParams::createForContainer() const
 {
-    if (!endpoint.sas_auth.empty())
-    {
-        RawContainerClient raw_client{endpoint.getContainerEndpoint(), client_options};
-        return std::make_unique<ContainerClient>(std::move(raw_client), endpoint.prefix);
-    }
-
     return std::visit([this]<typename T>(const T & auth)
     {
         if constexpr (std::is_same_v<T, ConnectionString>)
@@ -250,12 +242,6 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
                 container_name = endpoint.substr(cont_pos_begin + 1);
             }
         }
-
-        if (config.has(config_prefix + ".endpoint_subpath"))
-        {
-            String endpoint_subpath = config.getString(config_prefix + ".endpoint_subpath");
-            prefix = fs::path(prefix) / endpoint_subpath;
-        }
     }
     else if (config.has(config_prefix + ".connection_string"))
     {
@@ -329,9 +315,6 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
-    if (!params.endpoint.sas_auth.empty())
-        return params.createForContainer();
-
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
     {
         return params.createForContainer();

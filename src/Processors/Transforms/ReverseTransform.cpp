@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Common/PODArray.h>
 

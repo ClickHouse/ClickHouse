@@ -2,6 +2,7 @@
 
 #include <Core/Defines.h>
 #include <algorithm>
+#include <memory>
 
 
 namespace DB

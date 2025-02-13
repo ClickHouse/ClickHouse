@@ -9,7 +9,6 @@
 #include "ICommand_fwd.h"
 
 #include <cstring>
-#include <exception>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -17,15 +16,7 @@
 #include <Disks/registerDisks.h>
 
 #include <Formats/registerFormats.h>
-#include <boost/program_options/positional_options.hpp>
 #include <Common/TerminalSize.h>
-
-#include <Common/logger_useful.h>
-#include "Loggers/OwnFormattingChannel.h"
-#include "Loggers/OwnPatternFormatter.h"
-#include "config.h"
-
-#include "Utils.h"
 
 namespace DB
 {
@@ -61,11 +52,11 @@ std::vector<String> DisksApp::getEmptyCompletion(String command_name) const
     std::vector<String> answer{};
     if (multidisk_commands.contains(command_ptr->command_name))
     {
-        answer = client->getAllFilesByPrefixFromInitializedDisks("", true);
+        answer = client->getAllFilesByPatternFromAllDisks("");
     }
     else
     {
-        answer = client->getCurrentDiskWithPath().getAllFilesByPrefix("", true);
+        answer = client->getCurrentDiskWithPath().getAllFilesByPattern("");
     }
     for (const auto & disk_name : client->getAllDiskNames())
     {
@@ -160,11 +151,10 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
     answer = [&]() -> std::vector<String>
     {
         if (multidisk_commands.contains(command->command_name))
-            return client->getAllFilesByPrefixFromInitializedDisks(last_token, true);
+            return client->getAllFilesByPatternFromAllDisks(last_token);
 
-        return client->getCurrentDiskWithPath().getAllFilesByPrefix(last_token, true);
+        return client->getCurrentDiskWithPath().getAllFilesByPattern(last_token);
     }();
-
 
     for (const auto & disk_name : client->getAllDiskNames())
     {
@@ -173,7 +163,6 @@ std::vector<String> DisksApp::getCompletions(const String & prefix) const
             answer.push_back(disk_name);
         }
     }
-
     for (const auto & option : command->options_description.options())
     {
         String option_sign = "--" + option->long_name();
@@ -201,52 +190,42 @@ bool DisksApp::processQueryText(const String & text)
     if (exit_strings.find(text) != exit_strings.end())
         return false;
     CommandPtr command;
-
-    auto subqueries = splitOnUnquotedSemicolons(text);
-    for (const auto & subquery : subqueries)
+    try
     {
-        std::optional<String> error_string;
-        // std::cerr << "SUBQUERY: " << subquery << "\n";
-        try
+        auto arguments = po::split_unix(text, word_break_characters);
+        command = getCommandByName(arguments[0]);
+        arguments.erase(arguments.begin());
+        command->execute(arguments, *client);
+    }
+    catch (DB::Exception & err)
+    {
+        int code = getCurrentExceptionCode();
+
+        if (code == ErrorCodes::LOGICAL_ERROR)
+            throw std::move(err);
+
+        if (code == ErrorCodes::BAD_ARGUMENTS)
         {
-            auto arguments = po::split_unix(subquery, word_break_characters);
-            if (arguments.empty())
-                continue;
-            command = getCommandByName(arguments[0]);
-            arguments.erase(arguments.begin());
-            command->execute(arguments, *client);
-        }
-        catch (DB::Exception & err)
-        {
-            int code = err.code();
-            error_string = getExceptionMessage(err, true, false);
-            if (code == ErrorCodes::BAD_ARGUMENTS)
+            std::cerr << err.message() << "\n"
+                      << "\n";
+            if (command.get())
             {
-                if (command.get())
-                {
-                    std::cerr << "COMMAND: " << command->command_name << "\n";
-                    std::cerr << command->options_description << "\n";
-                }
-                else
-                {
-                    printAvailableCommandsHelpMessage();
-                }
+                std::cerr << "COMMAND: " << command->command_name << "\n";
+                std::cerr << command->options_description << "\n";
+            }
+            else
+            {
+                printAvailableCommandsHelpMessage();
             }
         }
-        catch (std::exception & err)
+        else
         {
-            error_string = err.what();
+            std::cerr << err.message() << "\n";
         }
-        catch (...)
-        {
-            error_string = "Unknown exception";
-        }
-        if (error_string.has_value())
-        {
-            std::cerr << "Error: " << error_string.value() << "\n";
-            LOG_ERROR(&Poco::Logger::root(), "{}", error_string.value());
-        }
-        command = nullptr;
+    }
+    catch (std::exception & err)
+    {
+        std::cerr << err.what() << "\n";
     }
 
     return true;
@@ -282,12 +261,9 @@ void DisksApp::runInteractiveReplxx()
 }
 
 void DisksApp::parseAndCheckOptions(
-    const std::vector<String> & arguments,
-    const ProgramOptionsDescription & options_description,
-    PositionalProgramOptionsDescription & positional_options_description,
-    CommandLineOptions & options)
+    const std::vector<String> & arguments, const ProgramOptionsDescription & options_description, CommandLineOptions & options)
 {
-    auto parser = po::command_line_parser(arguments).options(options_description).positional(positional_options_description);
+    auto parser = po::command_line_parser(arguments).options(options_description).allow_unregistered();
     po::parsed_options parsed = parser.run();
     po::store(parsed, options);
 }
@@ -297,13 +273,8 @@ void DisksApp::addOptions()
     options_description.add_options()("help,h", "Print common help message")("config-file,C", po::value<String>(), "Set config file")(
         "disk", po::value<String>(), "Set disk name")("save-logs", "Save logs to a file")(
         "log-level", po::value<String>(), "Logging level")("query,q", po::value<String>(), "Query for a non-interactive mode")(
-        "test-mode", "Interactive interface in test regime");
+        "test-mode", "Interactive interface in test regyme");
 
-    positional_options_description.add("disk", 1);
-}
-
-void DisksApp::registerCommands()
-{
     command_descriptions.emplace("list-disks", makeCommandListDisks());
     command_descriptions.emplace("copy", makeCommandCopy());
     command_descriptions.emplace("list", makeCommandList());
@@ -318,7 +289,7 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
     command_descriptions.emplace("help", makeCommandHelp(*this));
-#if CLICKHOUSE_CLOUD
+#ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
     for (const auto & [command_name, command_ptr] : command_descriptions)
@@ -329,7 +300,6 @@ void DisksApp::registerCommands()
         }
     }
 }
-
 
 void DisksApp::processOptions()
 {
@@ -436,7 +406,7 @@ void DisksApp::initializeHistoryFile()
 void DisksApp::init(const std::vector<String> & common_arguments)
 {
     addOptions();
-    parseAndCheckOptions(common_arguments, options_description, positional_options_description, options);
+    parseAndCheckOptions(common_arguments, options_description, options);
 
     po::notify(options);
 
@@ -462,18 +432,10 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     if (config().has("config-file") || fs::exists(getDefaultConfigFileName()))
     {
         String config_path = config().getString("config-file", getDefaultConfigFileName());
-        try
-        {
-            ConfigProcessor config_processor(config_path, false, false);
-            ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
-            auto loaded_config = config_processor.loadConfig();
-            config().add(loaded_config.configuration.duplicate(), false, false);
-        }
-        catch (...)
-        {
-            std::cerr << "Cannot parse config file " << config_path << std::endl;
-            throw;
-        }
+        ConfigProcessor config_processor(config_path, false, false);
+        ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
+        auto loaded_config = config_processor.loadConfig();
+        config().add(loaded_config.configuration.duplicate(), false, false);
     }
     else
     {
@@ -490,18 +452,13 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
-        logger().setChannel(log);
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::FileChannel>(new Poco::FileChannel(log_path)));
     }
     else
     {
         auto log_level = config().getString("log-level", "none");
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
-
-    registerCommands();
 
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
@@ -516,7 +473,24 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
     global_context->setPath(path);
 
-    client = std::make_unique<DisksClient>(config(), global_context);
+    String main_disk = config().getString("disk", "default");
+
+    auto validator = [](const Poco::Util::AbstractConfiguration &, const std::string &, const std::string &) { return true; };
+
+    constexpr auto config_prefix = "storage_configuration.disks";
+    auto disk_selector = std::make_shared<DiskSelector>(std::unordered_set<String>{"cache", "encrypted"});
+    disk_selector->initialize(config(), config_prefix, global_context, validator);
+
+    std::vector<std::pair<DiskPtr, std::optional<String>>> disks_with_path;
+
+    for (const auto & [_, disk_ptr] : disk_selector->getDisksMap())
+    {
+        disks_with_path.emplace_back(
+            disk_ptr, (disk_ptr->getName() == "local") ? std::optional{fs::current_path().string()} : std::nullopt);
+    }
+
+
+    client = std::make_unique<DisksClient>(std::move(disks_with_path), main_disk);
 
     suggest.setCompletionsCallback([&](const String & prefix, size_t /* prefix_length */) { return getCompletions(prefix); });
 

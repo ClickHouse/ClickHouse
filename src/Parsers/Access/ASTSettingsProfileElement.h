@@ -25,8 +25,6 @@ public:
 
     String getID(char) const override { return "SettingsProfileElement"; }
     ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElement>(*this); }
-
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
@@ -46,13 +44,11 @@ public:
 
     String getID(char) const override { return "SettingsProfileElements"; }
     ASTPtr clone() const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void setUseInheritKeyword(bool use_inherit_keyword_);
 
     void add(ASTSettingsProfileElements && other);
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 /* Represents a clause used to alter settings or profiles assigned to a user or a role or another profile.
@@ -75,11 +71,9 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 
     void add(ASTAlterSettingsProfileElements && other);
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 };
 
 }

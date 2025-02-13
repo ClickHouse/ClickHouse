@@ -27,7 +27,7 @@ ClickHouseは、指定されたクラスタ内のすべてのサーバー上に 
 
 ### ENGINE
 
-デフォルトでは、ClickHouseは自身の[Atomic](../../../engines/database-engines/atomic.md)データベースエンジンを使用します。他にも[Lazy](../../../engines/database-engines/lazy.md)、[MySQL](../../../engines/database-engines/mysql.md)、[PostgresSQL](../../../engines/database-engines/postgresql.md)、[MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md)、[Replicated](../../../engines/database-engines/replicated.md)、[SQLite](../../../engines/database-engines/sqlite.md)があります。
+デフォルトでは、ClickHouseは自身の[Atomic](../../../engines/database-engines/atomic.md)データベースエンジンを使用します。他にも[Lazy](../../../engines/database-engines/lazy.md)、[MySQL](../../../engines/database-engines/mysql.md)、[PostgresSQL](../../../engines/database-engines/postgresql.md)、[MaterializedMySQL](../../../engines/database-engines/materialized-mysql.md)、[MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md)、[Replicated](../../../engines/database-engines/replicated.md)、[SQLite](../../../engines/database-engines/sqlite.md)があります。
 
 ### COMMENT
 

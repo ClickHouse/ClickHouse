@@ -120,8 +120,7 @@ public:
 
 bool allowTypes(const DataTypePtr& left, const DataTypePtr& right) noexcept
 {
-    const WhichDataType l_dt(left);
-    const WhichDataType r_dt(right);
+    const WhichDataType l_dt(left), r_dt(right);
 
     constexpr auto allow = [](WhichDataType t)
     {

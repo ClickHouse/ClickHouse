@@ -18,7 +18,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
@@ -32,6 +32,11 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_CATALOG_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
 }
 
 namespace Iceberg
@@ -48,8 +53,7 @@ std::pair<std::string, std::string> parseCatalogCredential(const std::string & c
     /// Parse a string of format "<client_id>:<client_secret>"
     /// into separare strings client_id and client_secret.
 
-    std::string client_id;
-    std::string client_secret;
+    std::string client_id, client_secret;
     if (!catalog_credential.empty())
     {
         auto pos = catalog_credential.find(':');
@@ -469,7 +473,6 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / base_namespace / "tables";
-
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
 }
@@ -619,25 +622,17 @@ bool RestCatalog::getTableMetadataImpl(
                 static constexpr auto access_key_id_str = "s3.access-key-id";
                 static constexpr auto secret_access_key_str = "s3.secret-access-key";
                 static constexpr auto session_token_str = "s3.session-token";
-                static constexpr auto storage_endpoint_str = "s3.endpoint";
 
-                std::string access_key_id;
-                std::string secret_access_key;
-                std::string session_token;
-                std::string storage_endpoint;
+                std::string access_key_id, secret_access_key, session_token;
                 if (config_object->has(access_key_id_str))
                     access_key_id = config_object->get(access_key_id_str).extract<String>();
                 if (config_object->has(secret_access_key_str))
                     secret_access_key = config_object->get(secret_access_key_str).extract<String>();
                 if (config_object->has(session_token_str))
                     session_token = config_object->get(session_token_str).extract<String>();
-                if (config_object->has(storage_endpoint_str))
-                    storage_endpoint = config_object->get(storage_endpoint_str).extract<String>();
 
                 result.setStorageCredentials(
                     std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token));
-
-                result.setEndpoint(storage_endpoint);
                 break;
             }
             default:
