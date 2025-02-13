@@ -2626,6 +2626,7 @@ For more information, see the MergeTreeSettings.h header file.
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </replicated_merge_tree>
 ```
+
 ## opentelemetry_span_log
 
 Settings for the [`opentelemetry_span_log`](../system-tables/opentelemetry_span_log.md) system table.
