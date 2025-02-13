@@ -1325,7 +1325,9 @@ To manually turn on error history collection [`system.error_log`](../../operatio
 To disable `error_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_error_log.xml` with the following content:
 
 ```xml
-<clickhouse><error_log remove="1" /></clickhouse>
+<clickhouse>
+    <error_log remove="1" />
+</clickhouse>
 ```
 
 <SystemLogParameters/>
