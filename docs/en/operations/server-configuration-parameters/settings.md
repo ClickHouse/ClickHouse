@@ -1355,7 +1355,9 @@ Hard limit is configured via system tools
 **Example**
 
 ```xml
-<core_dump><size_limit>1073741824</size_limit></core_dump>
+<core_dump>
+     <size_limit>1073741824</size_limit>
+</core_dump>
 ```
 
 Default: `1073741824`
