@@ -1,14 +1,15 @@
 #pragma once
 
+#include <base/defines.h>
 #include <base/types.h>
-#include <Common/SipHash.h>
 
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
-namespace Histogram
+namespace DB::Histogram
 {
     using Value = Int64;
     using Buckets = std::vector<Value>;
@@ -41,7 +42,7 @@ namespace Histogram
         {
             size_t operator()(const LabelValues & label_values) const;
         };
-        
+
         using MetricsMap = std::unordered_map<LabelValues, std::shared_ptr<Metric>, LabelValuesHash>;
 
     public:
@@ -65,7 +66,7 @@ namespace Histogram
         String documentation;
         MetricFamily family;
     };
-    
+
     using MetricRecordPtr = std::shared_ptr<MetricRecord>;
     using MetricRecords = std::vector<MetricRecordPtr>;
 

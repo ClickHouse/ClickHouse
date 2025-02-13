@@ -14,6 +14,7 @@ Columns:
 - `metric` ([String](../../sql-reference/data-types/string.md)) — Metric name.
 - `value` ([Int64](../../sql-reference/data-types/int-uint.md)) — Metric value.
 - `description` ([String](../../sql-reference/data-types/string.md)) — Metric description.
+- `labels` ([Map(String, String)](../../sql-reference/data-types/map.md)) — Metric labels.
 - `name` ([String](../../sql-reference/data-types/string.md)) — Alias for `metric`.
 
 You can find all supported metrics in source file [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
@@ -748,6 +749,10 @@ Total number of acquired CPU slots.
 ### ConcurrencyControlSoftLimit
 
 Value of soft limit on number of CPU slots.
+
+### keeper_response_time_ms
+
+Histogram metric for the response time of Keeper, in milliseconds.
 
 **See Also**
 

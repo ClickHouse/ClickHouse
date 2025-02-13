@@ -15,6 +15,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Histogram.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -65,9 +66,11 @@ namespace CurrentMetrics
 
 namespace Metrics::ResponseTime
 {
+    using namespace DB;
+
     Histogram::MetricFamily & mf = Histogram::Factory::instance().registerMetric(
-        "zookeeper_response_time_ms",
-        "The response time of ZooKeeper, in milliseconds",
+        "keeper_response_time_ms",
+        "The response time of Keeper, in milliseconds",
         {1, 2, 5, 10, 20, 50},
         {"operation"}
     );

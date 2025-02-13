@@ -1,8 +1,10 @@
 #include <Common/Histogram.h>
+#include <Common/SipHash.h>
 
 #include <algorithm>
 
-namespace Histogram
+
+namespace DB::Histogram
 {
     Metric::Metric(const Buckets& buckets_)
         : buckets(buckets_)
