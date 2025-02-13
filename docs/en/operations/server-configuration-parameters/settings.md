@@ -183,10 +183,6 @@ Default: `512`
 
 Settings for backups, used when writing `BACKUP TO File()`.
 
-:::note
-[ClickHouse Cloud](https://clickhouse.com/cloud) provides automatic backups to object storage.
-:::
-
 The following parameters can be configured:
 
 | Parameter                           | Description                                                                                                                                                                                |
