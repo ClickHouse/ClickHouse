@@ -1203,6 +1203,12 @@ private:
     mutable IndexSizeByName secondary_index_sizes;
 
 protected:
+    void resetColumnSizes()
+    {
+        column_sizes.clear();
+        are_columns_and_secondary_inices_sizes_calculated = false;
+    }
+
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 

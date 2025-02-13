@@ -3288,8 +3288,7 @@ void MergeTreeData::dropAllData()
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    column_sizes.clear();
-    are_columns_and_secondary_inices_sizes_calculated = false;
+    resetColumnSizes();
 
     auto detached_parts = getDetachedParts();
     for (const auto & part : detached_parts)
