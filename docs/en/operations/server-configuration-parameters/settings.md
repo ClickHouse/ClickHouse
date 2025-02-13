@@ -3729,7 +3729,7 @@ Default: `/var/lib/clickhouse/access/`.
 
 ## allow_plaintext_password
 
-Sets whether an insecure password type of plaintext-password is allowed or not.
+Sets whether plaintext-password types (insecure) are allowed or not.
 By default, it is set `1` (true) which means that authType plaintext_password is allowed.
 
 ```xml
