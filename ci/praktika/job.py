@@ -48,9 +48,9 @@ class Job:
 
         allow_merge_on_failure: bool = False
 
-        parameter: Any = None
+        enable_commit_status: bool = False
 
-        no_download_requires: bool = False
+        parameter: Any = None
 
         def parametrize(
             self,

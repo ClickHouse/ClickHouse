@@ -29,7 +29,7 @@ from kafka.protocol.group import MemberAssignment
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 from . import kafka_pb2, message_with_repeated_pb2, social_pb2
 
@@ -5051,10 +5051,13 @@ def test_system_kafka_consumers(kafka_cluster):
 
     result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
 
-    result_system_kafka_consumers = instance.query(
-        """
+    check_query = """
         create or replace function stable_timestamp as
           (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
+
+        -- check last_used stores microseconds correctly
+        create or replace function check_last_used as
+          (v) -> if(abs(toStartOfSecond(last_used) - last_used) * 1e6 > 0, 'microseconds', toString(v));
 
         SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
           assignments.current_offset,
@@ -5062,32 +5065,35 @@ def test_system_kafka_consumers(kafka_cluster):
           if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
           stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
-          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used,
+          check_last_used(last_used) as last_used_,
+          if(toStartOfDay(last_used) == toStartOfDay(last_poll_time), 'equal', toString(last_used)) as last_used_and_last_poll_time
           FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
         """
-    )
-    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
-    assert (
-        result_system_kafka_consumers
-        == """Row 1:
+    assert_eq_with_retry(
+        instance,
+        check_query,
+        """Row 1:
 ──────
-database:                   test
-table:                      kafka
-length(consumer_id):        67
-assignments.topic:          ['system_kafka_cons']
-assignments.partition_id:   [0]
-assignments.current_offset: [4]
-last_exception_time_:       never
-last_exception_:            no exception
-last_poll_time_:            now
-num_messages_read:          4
-last_commit_time_:          now
-num_commits:                1
-last_rebalance_time_:       never
-num_rebalance_revocations:  0
-num_rebalance_assignments:  1
-is_currently_used:          0
-"""
+database:                     test
+table:                        kafka
+length(consumer_id):          67
+assignments.topic:            ['system_kafka_cons']
+assignments.partition_id:     [0]
+assignments.current_offset:   [4]
+last_exception_time_:         never
+last_exception_:              no exception
+last_poll_time_:              now
+num_messages_read:            4
+last_commit_time_:            now
+num_commits:                  1
+last_rebalance_time_:         never
+num_rebalance_revocations:    0
+num_rebalance_assignments:    1
+is_currently_used:            0
+last_used_:                   microseconds
+last_used_and_last_poll_time: equal
+""",
     )
 
     instance.query("DROP TABLE test.kafka")

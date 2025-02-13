@@ -230,7 +230,6 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -2981,7 +2980,6 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
-toStartOfIntervalAllowNegative
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
@@ -3214,3 +3212,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+JSONCompactEachRowWithProgress
+JSONCompactStringsEachRowWithProgress
