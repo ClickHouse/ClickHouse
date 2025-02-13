@@ -269,7 +269,6 @@ bool Client::processWithFuzzing(const String & full_query)
                         settings_changes.setSetting("log_comment", "measure_performance");
 
                         /// Sometimes change settings
-                        old_settings = std::make_shared<ASTSetQuery>();
                         fuzzer.getRandomSettings(settings_changes);
                         settings_query->changes = std::move(settings_changes);
                         settings_query->is_standalone = false;
@@ -301,7 +300,14 @@ bool Client::processWithFuzzing(const String & full_query)
             if (select_query)
             {
                 /// Don't keep performance settings in AST
-                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
+                if (old_settings)
+                {
+                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
+                }
+                else
+                {
+                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+                }
             }
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
