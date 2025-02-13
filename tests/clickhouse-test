@@ -578,14 +578,11 @@ def cleanup_child_processes(pid):
     # But we are hoping that nobody creates session in the tests (though it is
     # possible via timeout(), but we are assuming that they will be killed by
     # timeout).
-    processes = subprocess.check_output(
+    pgrep = subprocess.check_output(
         f"pgrep --parent {pid}", shell=True, stderr=subprocess.STDOUT
     )
-    processes = processes.decode("utf-8")
-    processes = processes.strip()
-    processes = processes.split("\n")
-    processes = map(lambda x: int(x.strip()), processes)
-    processes = list(processes)
+    proc_list = pgrep.decode("utf-8").strip().split("\n")
+    processes = list(map(lambda x: int(x.strip()), proc_list))
     for child in processes:
         child_pgid = os.getpgid(child)
         if child_pgid != pgid:
@@ -2463,7 +2460,7 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
         multiprocessing.managers.ListProxy,
-    ]
+    ],
 ):
     (
         all_tests,
