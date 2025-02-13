@@ -41,7 +41,7 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "Quota name."},
         {"id", std::make_shared<DataTypeUUID>(), "Quota ID."},
-        {"storage", std::make_shared<DataTypeString>(), "Storage of quotas. Possible value: “users.xml” if a quota configured in the users.xml file, “disk” if a quota configured by an SQL-query."},
+        {"storage", std::make_shared<DataTypeString>(), "Storage of quotas. Possible value: 'users.xml' if a quota configured in the users.xml file, 'disk' if a quota configured by an SQL-query."},
         {"keys", std::make_shared<DataTypeArray>(std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues())),
             "Key specifies how the quota should be shared. If two connections use the same quota and key, they share the same amounts of resources. Values: "
             "[] — All users share the same quota, "
