@@ -1,11 +1,6 @@
 #pragma once
 
 #include "Types.h"
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Util/LayeredConfiguration.h>
-#include <future>
-#include <memory>
-#include <string>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -16,8 +11,19 @@
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
+
+#include <Poco/Util/LayeredConfiguration.h>
+
+#include <future>
+#include <memory>
+#include <string>
 #include <unistd.h>
 
+
+namespace Poco::Net
+{
+    class SocketAddress;
+}
 
 namespace ProfileEvents
 {
@@ -52,37 +58,7 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 /// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
 constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
-struct ShuffleHost
-{
-    enum AvailabilityZoneInfo
-    {
-        SAME = 0,
-        UNKNOWN = 1,
-        OTHER = 2,
-    };
-
-    String host;
-    bool secure = false;
-    UInt8 original_index = 0;
-    AvailabilityZoneInfo az_info = UNKNOWN;
-    Priority priority;
-    UInt64 random = 0;
-
-    /// We should resolve it each time without caching
-    mutable std::optional<Poco::Net::SocketAddress> address;
-
-    void randomize()
-    {
-        random = thread_local_rng();
-    }
-
-    static bool compare(const ShuffleHost & lhs, const ShuffleHost & rhs)
-    {
-        return std::forward_as_tuple(lhs.az_info, lhs.priority, lhs.random)
-            < std::forward_as_tuple(rhs.az_info, rhs.priority, rhs.random);
-    }
-};
-
+struct ShuffleHost;
 using ShuffleHosts = std::vector<ShuffleHost>;
 
 struct RemoveException

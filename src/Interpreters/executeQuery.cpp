@@ -75,6 +75,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 #include <memory>
 #include <random>
 
