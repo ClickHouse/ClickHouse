@@ -18,7 +18,6 @@ namespace ErrorCodes
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
-    bool compressed_data_read_ok = false;
     try
     {
         size_t size_decompressed = 0;
@@ -27,7 +26,6 @@ bool CompressedReadBufferFromFile::nextImpl()
         if (!size_compressed)
             return false;
 
-        compressed_data_read_ok = true;
         LOG_TEST(log, "Decompressing {} bytes from {} to {} bytes", size_compressed, file_in.getFileName(), size_decompressed);
 
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
@@ -50,12 +48,7 @@ bool CompressedReadBufferFromFile::nextImpl()
     }
     catch (Exception & e)
     {
-        auto current_pos = file_in.tryGetPosition();
-        e.addMessage("While {} next portion of data{} from {} (position: {})",
-                     (compressed_data_read_ok ? "decompressing" : "reading"),
-                     (compressed_data_read_ok ? fmt::format(" ({} bytes)", size_compressed) : ""),
-                     file_in.getFileName(),
-                     (current_pos ? std::to_string(*current_pos) : "?"));
+        addDiagnostics(e);
         throw;
     }
 }
@@ -69,6 +62,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;
+    LOG_TEST(log, "Decompressing {}", file_in.getFileName());
 }
 
 
@@ -189,9 +183,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
     }
     catch (Exception & e)
     {
-        auto current_pos = file_in.tryGetPosition();
-        e.addMessage("While reading or decompressing {} bytes from {} (position: {})",
-                     n, file_in.getFileName(), (current_pos ? std::to_string(*current_pos) : "?"));
+        addDiagnostics(e);
         throw;
     }
 }
