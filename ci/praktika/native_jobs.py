@@ -32,6 +32,7 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
+    timeout=600,
 )
 
 _docker_build_job = Job.Config(
@@ -244,11 +245,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     # checks:
-    result_ = _check_yaml_up_to_date()
-    if result_.status != Result.Status.SUCCESS:
-        print("ERROR: yaml files are outdated - regenerate, commit and push")
-        info_lines.append(result_.name + ": " + result_.info)
-    results.append(result_)
+    if results[-1].is_ok():
+        result_ = _check_yaml_up_to_date()
+        if result_.status != Result.Status.SUCCESS:
+            print("ERROR: yaml files are outdated - regenerate, commit and push")
+            info_lines.append(result_.name + ": " + result_.info)
+        results.append(result_)
 
     if results[-1].is_ok() and workflow.secrets:
         result_ = _check_secrets(workflow.secrets)

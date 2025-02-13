@@ -2,11 +2,11 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <base/types.h>
 
-#include <exception>
-#include <optional>
-#include <string_view>
+#include <Columns/ColumnNullable.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <base/JSON.h>
 #include <boost/algorithm/string/join.hpp>
 #include <Common/CurrentMetrics.h>
@@ -41,6 +42,10 @@
 #include <Common/logger_useful.h>
 
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+
+#include <exception>
+#include <optional>
+#include <string_view>
 
 
 namespace CurrentMetrics

@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>

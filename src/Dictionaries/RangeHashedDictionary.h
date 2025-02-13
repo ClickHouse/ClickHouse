@@ -10,6 +10,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
 #include <Common/ArenaUtils.h>
+#include <Core/callOnTypeIndex.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -28,7 +29,6 @@
 
 #include <Columns/ColumnNullable.h>
 
-#include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB

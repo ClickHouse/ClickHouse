@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_ORC
+#include <Common/PODArray_fwd.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
