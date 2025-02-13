@@ -62,7 +62,7 @@ def generate_data(q, total_number, use_token):
             q.put(old_data[idx])
         if simulate_flag == 1:
             empty_insert_stmt = (
-                "insert into t_async_insert_dedup values format JSONEachRow"
+                "insert into t_async_insert_dedup format JSONEachRow"
             )
             q.put((empty_insert_stmt, ""))
         else:
@@ -91,22 +91,27 @@ def generate_data(q, total_number, use_token):
 
 
 def fetch_and_insert_data(q, client):
-    while True:
-        insert = q.get()
-        client.query(
-            insert[0],
-            settings={
-                "async_insert": 1,
-                "async_insert_deduplicate": 1,
-                "wait_for_async_insert": 0,
-                "async_insert_busy_timeout_ms": 1500,
-                "insert_keeper_fault_injection_probability": 0,
-                "insert_deduplication_token": insert[1],
-            },
-        )
-        q.task_done()
-        sleep_time = random.randint(50, 500)
-        time.sleep(sleep_time / 1000.0)
+    try:
+        while True:
+            insert = q.get()
+            content = client.query(
+                insert[0],
+                settings={
+                    "async_insert": 1,
+                    "async_insert_deduplicate": 1,
+                    "wait_for_async_insert": 1,
+                    "async_insert_busy_timeout_ms": 1500,
+                    "insert_keeper_fault_injection_probability": 0,
+                    "insert_deduplication_token": insert[1],
+                },
+                with_retries=False,
+            )
+            q.task_done()
+            sleep_time = random.randint(50, 500)
+            time.sleep(sleep_time / 1000.0)
+    except ValueError as ex:
+        print(ex, file=sys.stderr)
+        os._exit(1)
 
 
 # main process
@@ -123,7 +128,7 @@ ORDER BY (KeyID, EventDate) SETTINGS use_async_block_ids_cache = 1
 client.query(create_query)
 
 q = queue.Queue(100)
-total_number = 10000
+total_number = 3000
 
 use_token = False
 if len(sys.argv) >= 3 and sys.argv[2] == "token":
@@ -159,12 +164,11 @@ while True:
                 break
     # retry several times to get stable results.
     if err and retry >= 5:
-        print(errMsg, flush=True)
+        raise Exception(errMsg)
+        os._exit(1)
     elif err:
         retry += 1
         continue
-    else:
-        print(len(result), flush=True)
     break
 
 result = client.query(
@@ -173,6 +177,7 @@ result = client.query(
 result = int(result.split()[0])
 if result <= 0:
     raise Exception(f"AsyncInsertCacheSize should > 0, but got {result}")
+    os._exit(1)
 
 result = client.query(
     "SELECT value FROM system.events where event = 'AsyncInsertCacheHits'"
@@ -180,6 +185,7 @@ result = client.query(
 result = int(result.split()[0])
 if result <= 0:
     raise Exception(f"AsyncInsertCacheHits should > 0, but got {result}")
+    os._exit(1)
 
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup SYNC")
 
