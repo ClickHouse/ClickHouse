@@ -1585,7 +1585,7 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 
 Defines a directory containing proto files for Protobuf types.
 
-By default, it is configured as:
+Example:
 
 ```xml
 <google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
