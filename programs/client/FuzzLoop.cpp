@@ -256,7 +256,7 @@ bool Client::processWithFuzzing(const String & full_query)
             WriteBufferFromOwnString dump_of_cloned_ast;
             ast_to_process->dumpTree(dump_of_cloned_ast);
 
-            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
+            auto base_after_fuzz = ast_to_process->formatForErrorMessage();
 
             // Check that the source AST didn't change after fuzzing. This
             // helps debug AST cloning errors, where the cloned AST doesn't
