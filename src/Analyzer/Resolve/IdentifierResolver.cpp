@@ -1494,18 +1494,15 @@ namespace
 
 std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identifier, const String & name)
 {
-    String current_prefix;
-    const auto & parts = identifier.getParts();
-    for (size_t i = 0; i != parts.size(); ++i)
+    IdentifierView identifier_view(identifier);
+    while (identifier_view.getLength() > name.length())
     {
-        if (!current_prefix.empty())
-            current_prefix += ".";
-        current_prefix += parts[i];
-        if (name == current_prefix)
-            return i + 1;
+        identifier_view.popLast();
     }
 
-    return std::nullopt;
+    if (identifier_view.getLength() != name.length() || identifier_view.getFullName() != name)
+        return std::nullopt;
+    return identifier_view.getPartsSize();
 }
 
 }
