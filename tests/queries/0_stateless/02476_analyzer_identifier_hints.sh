@@ -134,7 +134,7 @@ $CLICKHOUSE_CLIENT -q "SELECT cast(tuple(1), 'Tuple(value_1 String)') AS constan
     | grep "Maybe you meant: \['constant_value.value_1'\]" &>/dev/null;
 
 $CLICKHOUSE_CLIENT -q "SELECT cast(tuple(1), 'Tuple(value_1 String)') AS constant_value, constant_valu.value_ SETTINGS enable_analyzer = 1;" 2>&1 \
-    | grep "Maybe you meant: \['constant_value'\]" &>/dev/null;
+    | grep "Maybe you meant: \['constant_value.value_1'\]" &>/dev/null;
 
 $CLICKHOUSE_CLIENT -q "SELECT cast(tuple(1), 'Tuple(value_1 String)') AS constant_value, arrayMap(lambda_argument -> lambda_argument + constant_value.value_, [1, 2, 3]) SETTINGS enable_analyzer = 1;" 2>&1 \
     | grep "Maybe you meant: \['constant_value.value_1'\]" &>/dev/null;

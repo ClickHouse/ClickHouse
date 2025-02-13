@@ -39,7 +39,7 @@ WITH <identifier> AS <subquery expression>
 
 ## Examples
 
-**Example 1:** Using constant expression as "variable"
+**Example 1:** Using constant expression as “variable”
 
 ``` sql
 WITH '2019-08-01 15:23:00' as ts_upper_bound

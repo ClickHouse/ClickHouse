@@ -3,7 +3,6 @@
 #if USE_MYSQL
 #    include <filesystem>
 #    include <string>
-#    include <Columns/IColumn.h>
 #    include <Core/Settings.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>

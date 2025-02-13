@@ -212,7 +212,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
     return std::make_shared<DataTypeArray>(prev);
 }
 
-SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
     return std::make_shared<SerializationArray>(prev);
 }

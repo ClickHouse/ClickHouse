@@ -166,13 +166,9 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
 
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-
-    void forEachSubcolumn(ColumnCallback callback) const override;
-
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
@@ -180,7 +176,6 @@ public:
 
     void finalize() override;
     bool isFinalized() const override;
-    bool canBeInsideNullable() const override { return true; }
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;

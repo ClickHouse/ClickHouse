@@ -27,7 +27,7 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
 {
     offset = offset_;
     need_seek = true;
-    LOG_TEST(log, "Decrypting {}: version={}, algorithm={}", in->getFileName(), header_.version, toString(header_.algorithm));
+    LOG_TEST(log, "Decrypting {}: version={}, algorithm={}", getFileName(), header_.version, toString(header_.algorithm));
 }
 
 off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)

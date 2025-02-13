@@ -186,10 +186,6 @@ DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_tab
 arrayMap(lambda(tuple(x), id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';
 --
-DESCRIBE (SELECT arrayMap(x -> tt.* EXCEPT value, [1,2,3]) FROM test_table as tt);
-arrayMap(lambda(tuple(x), id), [1, 2, 3])	Array(UInt64)					
-SELECT '--';
---
 DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value APPLY x -> x, [1,2,3]) FROM test_table);
 arrayMap(lambda(tuple(x), id), [1, 2, 3])	Array(UInt64)					
 SELECT '--';

@@ -11,6 +11,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include "config.h"
@@ -209,7 +210,7 @@ struct IMergeTreeIndex
             "MergedCondition is not implemented for index of type {}", index.type);
     }
 
-    Names getColumnsRequiredForIndexCalc() const;
+    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
     const IndexDescription & index;
 };

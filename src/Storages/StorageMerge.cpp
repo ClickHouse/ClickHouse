@@ -10,6 +10,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/quoteString.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -46,7 +47,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Storages/AlterCommands.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
@@ -773,6 +773,105 @@ private:
     QueryTreeNodePtr replacement_table_expression;
 };
 
+bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr replacement_table_expression)
+{
+    QueryTreeNodes stack = { node };
+    while (!stack.empty())
+    {
+        auto current = stack.back();
+        stack.pop_back();
+
+        switch (current->getNodeType())
+        {
+            case QueryTreeNodeType::CONSTANT:
+                break;
+            case QueryTreeNodeType::COLUMN:
+            {
+                auto * column_node = current->as<ColumnNode>();
+                auto source = column_node->getColumnSourceOrNull();
+                if (source != replacement_table_expression)
+                    return true;
+                break;
+            }
+            default:
+            {
+                for (const auto & child : current->getChildren())
+                {
+                    if (child)
+                        stack.push_back(child);
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void replaceFilterExpression(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & replacement_table_expression,
+    const ContextPtr & context)
+{
+    auto * function = expression->as<FunctionNode>();
+    if (!function)
+        return;
+
+    if (function->getFunctionName() != "and")
+    {
+        if (hasUnknownColumn(expression, replacement_table_expression))
+            expression = nullptr;
+        return;
+    }
+
+    QueryTreeNodes conjunctions;
+    QueryTreeNodes processing{ expression };
+
+    while (!processing.empty())
+    {
+        auto node = std::move(processing.back());
+        processing.pop_back();
+
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            if (function_node->getFunctionName() == "and")
+                std::copy(
+                    function_node->getArguments().begin(),
+                    function_node->getArguments().end(),
+                    std::back_inserter(processing)
+                );
+            else
+                conjunctions.push_back(node);
+        }
+        else
+        {
+            conjunctions.push_back(node);
+        }
+    }
+
+    std::swap(processing, conjunctions);
+
+    for (const auto & node : processing)
+    {
+        if (!hasUnknownColumn(node, replacement_table_expression))
+            conjunctions.push_back(node);
+    }
+
+    if (conjunctions.empty())
+    {
+        expression = {};
+        return;
+    }
+    if (conjunctions.size() == 1)
+    {
+        expression = conjunctions[0];
+        return;
+    }
+
+    function->getArguments().getNodes() = std::move(conjunctions);
+
+    const auto function_impl = FunctionFactory::instance().get("and", context);
+    function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+}
+
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
     QueryTreeNodePtr original_table_expression,
@@ -802,9 +901,9 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     // For backward compatibility we need to leave all filters related to this table.
     // It may lead to some incorrect result.
     if (query_node->hasPrewhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), replacement_table_expression, context);
+        replaceFilterExpression(query_node->getPrewhere(), replacement_table_expression, context);
     if (query_node->hasWhere())
-        removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
+        replaceFilterExpression(query_node->getWhere(), replacement_table_expression, context);
 
     query_node->getGroupBy().getNodes().clear();
     query_node->getHaving() = {};
@@ -1367,14 +1466,13 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
     DatabaseTablesIterators database_table_iterators;
 
+    /// database_name argument is not a regexp
     if (!database_is_regexp)
-    {
-        /// database_name argument is not a regexp
         database_table_iterators.emplace_back(getDatabaseIterator(source_database_name_or_regexp, local_context));
-    }
+
+    /// database_name argument is a regexp
     else
     {
-        /// database_name argument is a regexp
         auto databases = DatabaseCatalog::instance().getDatabases();
 
         for (const auto & db : databases)

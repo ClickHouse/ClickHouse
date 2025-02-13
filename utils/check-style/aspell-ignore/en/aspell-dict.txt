@@ -230,6 +230,7 @@ Damerau
 DataGrip
 DataLens
 DataPacket
+DataTime
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -966,7 +967,6 @@ SaaS
 Sanjeev
 Sankey
 Scalable
-ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -2000,7 +2000,6 @@ infty
 initcap
 initcapUTF
 initialQueryID
-initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -3212,5 +3211,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-JSONCompactEachRowWithProgress
-JSONCompactStringsEachRowWithProgress

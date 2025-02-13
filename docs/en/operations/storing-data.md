@@ -377,6 +377,8 @@ Starting from `24.5` it is possible configure any object storage disk (`s3`, `az
 
 `MergeTree` family table engines can store data to [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) using a disk with type `azure_blob_storage`.
 
+As of February 2022, this feature is still a fresh addition, so expect that some Azure Blob Storage functionalities might be unimplemented.
+
 Configuration markup:
 ``` xml
 <storage_configuration>

@@ -332,8 +332,8 @@ Some aggregate functions can contain two lists of arguments in brackets. For exa
 quantile (0.9)(x) 
 ```
 
-These aggregate functions are called "parametric" functions, 
-and the arguments in the first list are called "parameters".
+These aggregate functions are called “parametric” functions, 
+and the arguments in the first list are called “parameters”.
 
 :::note
 The syntax of aggregate functions without parameters is the same as for regular functions.
@@ -417,7 +417,7 @@ SELECT (1 AS n) + 2, n`.
 SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 ```
 
-- Be careful with aliases that are the same as column or table names. Let's consider the following example:
+- Be careful with aliases that are the same as column or table names. Let’s consider the following example:
 
 ``` sql
 CREATE TABLE t

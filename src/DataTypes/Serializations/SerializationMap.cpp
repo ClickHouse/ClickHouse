@@ -4,11 +4,11 @@
 
 #include <Common/StringUtils.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>

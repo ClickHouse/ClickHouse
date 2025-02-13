@@ -23,7 +23,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeLowCardinality.h>

@@ -1,6 +1,5 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Columns/ColumnString.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>

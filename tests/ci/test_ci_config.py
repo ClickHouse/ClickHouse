@@ -109,7 +109,7 @@ class TestCIConfig(unittest.TestCase):
                 elif "debug" in job:
                     expected_builds = [CI.BuildNames.PACKAGE_DEBUG]
                 elif job in (
-                    "Unit tests (binary)",
+                    "Unit tests (release)",
                     "ClickHouse Keeper Jepsen",
                     "ClickHouse Server Jepsen",
                 ):
@@ -420,7 +420,7 @@ class TestCIConfig(unittest.TestCase):
             "Style check",
             "Fast test",
             "binary_release",
-            "Unit tests (binary)",
+            "Unit tests (release)",
         ]
         self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
 

@@ -132,7 +132,7 @@ public:
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
-    void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+    void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
 
     BlockAndProgress read();
     bool isFinished() const { return mark_ranges.empty() && range_readers.main.isCurrentRangeFinished(); }
@@ -144,7 +144,7 @@ public:
     Readers releaseReaders() { return std::move(readers); }
 
     static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
-    static RangeReaders createRangeReaders(const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+    static RangeReaders createRangeReaders(const Readers & readers, const PrewhereExprInfo & prewhere_actions);
 
 private:
     UInt64 estimateNumRows() const;

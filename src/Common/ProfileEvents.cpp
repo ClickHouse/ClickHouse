@@ -43,9 +43,6 @@
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).", ValueType::Bytes) \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).", ValueType::Number) \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).", ValueType::Bytes) \
-    M(CompressedReadBufferChecksumDoesntMatch, "Number of times the compressed block checksum did not match.", ValueType::Number) \
-    M(CompressedReadBufferChecksumDoesntMatchSingleBitMismatch, "Number of times a compressed block checksum mismatch was caused by a single-bit difference.", ValueType::Number) \
-    M(CompressedReadBufferChecksumDoesntMatchMicroseconds, "Total time spent detecting bit-flips due to compressed block checksum mismatches.", ValueType::Microseconds) \
     M(UncompressedCacheHits, "Number of times a block of data has been found in the uncompressed cache (and decompression was avoided).", ValueType::Number) \
     M(UncompressedCacheMisses, "Number of times a block of data has not been found in the uncompressed cache (and required decompression).", ValueType::Number) \
     M(UncompressedCacheWeightLost, "Number of bytes evicted from the uncompressed cache.", ValueType::Bytes) \
@@ -332,8 +329,6 @@
     M(StorageBufferPassedBytesFlushThreshold, "Number of times background-only flush threshold on bytes has been reached to flush a buffer in a 'Buffer' table. This is expert-only metric. If you read this and you are not an expert, stop reading.", ValueType::Number) \
     M(StorageBufferLayerLockReadersWaitMilliseconds, "Time for waiting for Buffer layer during reading.", ValueType::Milliseconds) \
     M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers).", ValueType::Milliseconds) \
-    \
-    M(SystemLogErrorOnFlush, "Number of times any of the system logs have failed to flush to the corresponding system table. Attempts to flush are repeated.", ValueType::Number) \
     \
     M(DictCacheKeysRequested, "Number of keys requested from the data source for the dictionaries of 'cache' types.", ValueType::Number) \
     M(DictCacheKeysRequestedMiss, "Number of keys requested from the data source for dictionaries of 'cache' types but not found in the data source.", ValueType::Number) \
@@ -743,24 +738,6 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds, "Time spent to set file as failed", ValueType::Microseconds) \
     M(ObjectStorageQueuePullMicroseconds, "Time spent to read file data", ValueType::Microseconds) \
     M(ObjectStorageQueueLockLocalFileStatusesMicroseconds, "Time spent to lock local file statuses", ValueType::Microseconds) \
-    M(ObjectStorageQueueFailedToBatchSetProcessing, "Number of times batched set processing request failed", ValueType::Number)\
-    M(ObjectStorageQueueTrySetProcessingRequests, "The number of times we tried to make set processing request", ValueType::Number)\
-    M(ObjectStorageQueueTrySetProcessingSucceeded, "The number of times we successfully set file as processing", ValueType::Number)\
-    M(ObjectStorageQueueTrySetProcessingFailed, "The number of times we unsuccessfully set file as processing", ValueType::Number)\
-    M(ObjectStorageQueueListedFiles, "Number of listed files in StorageS3(Azure)Queue", ValueType::Number)\
-    M(ObjectStorageQueueFilteredFiles, "Number of filtered files in StorageS3(Azure)Queue", ValueType::Number)\
-    M(ObjectStorageQueueReadFiles, "Number of read files (not equal to the number of actually inserted files)", ValueType::Number)\
-    M(ObjectStorageQueueReadRows, "Number of read rows (not equal to the number of actually inserted rows)", ValueType::Number)\
-    M(ObjectStorageQueueReadBytes, "Number of read bytes (not equal to the number of actually inserted bytes)", ValueType::Number)\
-    M(ObjectStorageQueueExceptionsDuringRead, "Number of exceptions during read in S3(Azure)Queue", ValueType::Number)\
-    M(ObjectStorageQueueExceptionsDuringInsert, "Number of exceptions during insert in S3(Azure)Queue", ValueType::Number)\
-    M(ObjectStorageQueueRemovedObjects, "Number of objects removed as part of after_processing = delete", ValueType::Number)\
-    M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number)\
-    M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number)\
-    M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number)\
-    M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number)\
-    M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number)\
-    M(ObjectStorageQueueProcessedRows, "Number of processed rows in StorageS3(Azure)Queue", ValueType::Number)\
     \
     M(ServerStartupMilliseconds, "Time elapsed from starting server to listening to sockets in milliseconds", ValueType::Milliseconds) \
     M(IOUringSQEsSubmitted, "Total number of io_uring SQEs submitted", ValueType::Number) \
@@ -771,18 +748,11 @@ The server successfully detected this situation and will download merged part fr
     \
     M(BackupsOpenedForRead, "Number of backups opened for reading", ValueType::Number) \
     M(BackupsOpenedForWrite, "Number of backups opened for writing", ValueType::Number) \
-    M(BackupsOpenedForUnlock, "Number of backups opened for unlocking", ValueType::Number) \
     M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file", ValueType::Microseconds) \
     M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file", ValueType::Microseconds) \
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \
     M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data", ValueType::Microseconds) \
     M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries", ValueType::Microseconds) \
-    M(BackupPreparingFileInfosMicroseconds, "Time spent preparing file infos for backup entries", ValueType::Microseconds) \
-    M(BackupReadLocalFilesToCalculateChecksums, "Number of files read locally to calculate checksums for backup entries", ValueType::Number) \
-    M(BackupReadLocalBytesToCalculateChecksums, "Total size of files read locally to calculate checksums for backup entries", ValueType::Number) \
-    M(BackupReadRemoteFilesToCalculateChecksums, "Number of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
-    M(BackupReadRemoteBytesToCalculateChecksums, "Total size of files read from remote disks to calculate checksums for backup entries", ValueType::Number) \
-    M(BackupLockFileReads, "How many times the '.lock' file was read while making backup", ValueType::Number) \
     M(RestorePartsSkippedFiles, "Number of files skipped while restoring parts", ValueType::Number) \
     M(RestorePartsSkippedBytes, "Total size of files skipped while restoring parts", ValueType::Number) \
     \

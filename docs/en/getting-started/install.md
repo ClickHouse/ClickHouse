@@ -277,7 +277,7 @@ tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
-For production environments, it's recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 
 ### From Docker Image {#from-docker-image}
 
@@ -296,7 +296,7 @@ Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
-You'll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
+You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
 ```
 /var/lib/clickhouse/data/default/
@@ -375,7 +375,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section ["Configuration Files"](/docs/en/operations/configuration-files.md).
+For more information, see the section [“Configuration Files”](/docs/en/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -386,7 +386,7 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section ["Command-line client"](/docs/en/interfaces/cli.md).
+For more information, see the section [“Command-line client”](/docs/en/interfaces/cli.md).
 
 Example:
 
