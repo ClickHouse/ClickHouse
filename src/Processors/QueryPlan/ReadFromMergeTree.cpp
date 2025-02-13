@@ -5,6 +5,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
@@ -1224,7 +1225,7 @@ static void addMergingFinal(
 static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
 {
     ASTPtr sign_indentifier = std::make_shared<ASTIdentifier>(sign_column_name);
-    ASTPtr sign_filter = makeASTFunction("greater", sign_indentifier, std::make_shared<ASTLiteral>(Field{0}));
+    ASTPtr sign_filter = makeASTFunction("equals", sign_indentifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1))));
     const auto & sign_column = header.getByName(sign_column_name);
 
     auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});

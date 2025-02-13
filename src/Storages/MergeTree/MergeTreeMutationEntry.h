@@ -23,6 +23,11 @@ struct MergeTreeMutationEntry
     String file_name;
     bool is_temp = false;
 
+    /// This flag is set periodically in a background thread.
+    /// If it is true, then mutation is done. If it is false,
+    /// then mutation may be already done but not processed by this thread.
+    bool is_done = false;
+
     UInt64 block_number = 0;
 
     String latest_failed_part;

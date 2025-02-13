@@ -1,8 +1,10 @@
 #pragma once
-#include <type_traits>
+#include <Columns/IColumn.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
-#include "Columns/IColumn.h"
-#include "Interpreters/HashJoin/ScatteredBlock.h"
+#include <Interpreters/HashJoin/ScatteredBlock.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -193,7 +195,9 @@ ScatteredBlock HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         block.getSourceBlock().setColumns(columns);
         block = ScatteredBlock(std::move(block).getSourceBlock());
     }
+
     block.getSourceBlock().erase(block_columns_to_erase);
+
     return remaining_block;
 }
 

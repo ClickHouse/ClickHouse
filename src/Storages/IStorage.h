@@ -71,6 +71,8 @@ class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
 
+class ActionsDAG;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -770,7 +772,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
-        std::string storage_name);
+        std::shared_ptr<IStorage> storage_);
 
 private:
     /// Lock required for alter queries (lockForAlter).
