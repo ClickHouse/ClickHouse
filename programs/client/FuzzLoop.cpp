@@ -213,47 +213,6 @@ bool Client::processWithFuzzing(const String & full_query)
             {
                 fuzzer.fuzzMain(ast_to_process);
             }
-
-            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
-
-            // Check that the source AST didn't change after fuzzing. This
-            // helps debug AST cloning errors, where the cloned AST doesn't
-            // clone all its children, and erroneously points to some source
-            // child elements.
-            if (base_before_fuzz != base_after_fuzz)
-            {
-                printChangedSettings();
-
-                fmt::print(
-                    stderr,
-                    "Base before fuzz: {}\n"
-                    "Base after fuzz: {}\n",
-                    base_before_fuzz,
-                    base_after_fuzz);
-                fmt::print(stderr, "Dump before fuzz:\n{}\n", dump_before_fuzz.str());
-                fmt::print(stderr, "Dump of cloned AST:\n{}\n", dump_of_cloned_ast.str());
-                fmt::print(stderr, "Dump after fuzz:\n");
-
-                WriteBufferFromOStream cerr_buf(std::cerr, 4096);
-                fuzz_base->dumpTree(cerr_buf);
-                cerr_buf.finalize();
-
-                fmt::print(
-                    stderr,
-                    "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its "
-                    "cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent "
-                    "node doesn't implement clone() correctly.");
-
-                _exit(1);
-            }
-
-            auto fuzzed_text = ast_to_process->formatForErrorMessage();
-            if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
-            {
-                fmt::print(stderr, "Got boring AST\n");
-                continue;
-            }
-
 #if USE_BUZZHOUSE
             if (measure_performance)
             {
@@ -297,6 +256,46 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
+
+            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
+
+            // Check that the source AST didn't change after fuzzing. This
+            // helps debug AST cloning errors, where the cloned AST doesn't
+            // clone all its children, and erroneously points to some source
+            // child elements.
+            if (base_before_fuzz != base_after_fuzz)
+            {
+                printChangedSettings();
+
+                fmt::print(
+                    stderr,
+                    "Base before fuzz: {}\n"
+                    "Base after fuzz: {}\n",
+                    base_before_fuzz,
+                    base_after_fuzz);
+                fmt::print(stderr, "Dump before fuzz:\n{}\n", dump_before_fuzz.str());
+                fmt::print(stderr, "Dump of cloned AST:\n{}\n", dump_of_cloned_ast.str());
+                fmt::print(stderr, "Dump after fuzz:\n");
+
+                WriteBufferFromOStream cerr_buf(std::cerr, 4096);
+                fuzz_base->dumpTree(cerr_buf);
+                cerr_buf.finalize();
+
+                fmt::print(
+                    stderr,
+                    "Found error: IAST::clone() is broken for some AST node. This is a bug. The original AST ('dump before fuzz') and its "
+                    "cloned copy ('dump of cloned AST') refer to the same nodes, which must never happen. This means that their parent "
+                    "node doesn't implement clone() correctly.");
+
+                _exit(1);
+            }
+
+            auto fuzzed_text = ast_to_process->formatForErrorMessage();
+            if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
+            {
+                fmt::print(stderr, "Got boring AST\n");
+                continue;
+            }
 
             query_to_execute = ast_to_process->formatForErrorMessage();
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
