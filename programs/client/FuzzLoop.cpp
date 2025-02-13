@@ -243,12 +243,13 @@ bool Client::processWithFuzzing(const String & full_query)
                         fuzzer.getRandomSettings(set_query->changes);
                     }
                     auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
-                    if (out_query && !out_query->out_file)
+                    /// This can't be done because I am using MySQL client
+                    /*if (out_query && !out_query->out_file)
                     {
                         /// Dump result into /dev/null
                         out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
                         out_query->is_outfile_truncate = true;
-                    }
+                    }*/
                 }
                 else
                 {
