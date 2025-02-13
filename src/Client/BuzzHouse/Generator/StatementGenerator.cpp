@@ -785,7 +785,10 @@ void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchan
     ExprSchemaTable * est2 = et->mutable_est2();
     const auto & input = filterCollection<SQLTable>(
         [](const SQLTable & t)
-        { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer() && !t.getCluster(); });
+        {
+            return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer()
+                && !t.getCluster();
+        });
 
     for (const auto & entry : input)
     {
