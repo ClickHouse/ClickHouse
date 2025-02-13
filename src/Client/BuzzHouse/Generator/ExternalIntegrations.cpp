@@ -1346,7 +1346,8 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
     if (clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
-                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
+                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage, "
+                "read_bytes FROM "
                 "system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC "
                 "LIMIT 1;",
                 out_path.generic_string())))
@@ -1358,10 +1359,13 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
             {
                 buf.pop_back();
             }
-            const auto tabchar = buf.find('\t');
+            const auto tabchar1 = buf.find('\t');
+            const auto substr = buf.substr(tabchar1 + 1);
+            const auto tabchar2 = substr.find('\t');
 
             res.query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
-            res.memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
+            res.memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar1 + 1)));
+            res.read_bytes = static_cast<uint64_t>(std::stoull(substr.substr(tabchar2 + 1)));
             return true;
         }
     }

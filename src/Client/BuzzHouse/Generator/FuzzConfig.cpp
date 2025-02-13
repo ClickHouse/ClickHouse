@@ -97,8 +97,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time_minimum", [&](const JSONObjectType & value) { query_time_minimum = value.getUInt64(); }},
         {"query_memory_minimum", [&](const JSONObjectType & value) { query_memory_minimum = value.getUInt64(); }},
+        {"query_bytes_read_minimum", [&](const JSONObjectType & value) { query_bytes_read_minimum = value.getUInt64(); }},
         {"query_time_threshold", [&](const JSONObjectType & value) { query_time_threshold = value.getUInt64(); }},
         {"query_memory_threshold", [&](const JSONObjectType & value) { query_memory_threshold = value.getUInt64(); }},
+        {"query_bytes_read_threshold", [&](const JSONObjectType & value) { query_bytes_read_threshold = value.getUInt64(); }},
         {"flush_log_wait_time", [&](const JSONObjectType & value) { flush_log_wait_time = value.getUInt64(); }},
         {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
@@ -339,6 +341,8 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, const Per
         const String time_res2 = formatReadableTime(static_cast<double>(res2.query_duration_ms * 1000000));
         const String mem_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(res1.memory_usage));
         const String mem_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(res2.memory_usage));
+        const String bytes_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(res1.read_bytes));
+        const String bytes_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(res2.read_bytes));
 
         if (this->query_time_minimum < res1.query_duration_ms
             && res1.query_duration_ms
@@ -346,7 +350,7 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, const Per
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
-                "{}: ClickHouse peer server query was faster than the target server: {} vs {}",
+                "{}: ClickHouse peer server query time: {} was faster than the target server: {}",
                 oracle_name,
                 time_res1,
                 time_res2);
@@ -357,13 +361,25 @@ void FuzzConfig::comparePerformanceResults(const String & oracle_name, const Per
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
-                "{}: ClickHouse peer server query used less memory than the target server: {} vs {}",
+                "{}: ClickHouse peer server query peak memory usage: {} was less than the target server: {}",
                 oracle_name,
                 mem_res1,
                 mem_res2);
         }
-        LOG_INFO(log, "{}: peer query time: {} vs server query time {}", oracle_name, time_res1, time_res2);
-        LOG_INFO(log, "{}: peer query memory usage: {} vs server query memory usage {}", oracle_name, mem_res1, mem_res2);
+        if (this->query_bytes_read_minimum < res1.read_bytes
+            && res1.read_bytes
+                > static_cast<uint64_t>(res2.read_bytes * (1 + (static_cast<double>(this->query_bytes_read_threshold) / 100.0f))))
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BUZZHOUSE,
+                "{}: ClickHouse peer server query bytes read: {} was less than the target server: {}",
+                oracle_name,
+                bytes_res1,
+                bytes_res2);
+        }
+        LOG_INFO(log, "{}: peer query time: {} vs server query time: {}", oracle_name, time_res1, time_res2);
+        LOG_INFO(log, "{}: peer query memory usage: {} vs server query memory usage: {}", oracle_name, mem_res1, mem_res2);
+        LOG_INFO(log, "{}: peer query bytes read: {} vs server query bytes read: {}", oracle_name, bytes_res1, bytes_res2);
     }
 }
 
