@@ -1603,10 +1603,10 @@ The following settings can be configured by sub-tags:
 | Sub-tags             | Definition                                                                                                                                        |
 |----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
 | `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                           |
-| `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
 | `methods`            | To match request methods, you can use commas to separate multiple method matches (optional)                                                       |
 | `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
 | `handler`            | The request handler                                                                                                                               |
+| `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
 
 `handler` contains the following settings, which can be configured by sub-tags:
 
@@ -1691,7 +1691,7 @@ The `OPTIONS` method is used when making CORS preflight requests.
 
 For more information, see [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
 
-By default, it is set to:
+Example:
 
 ```xml
 <http_options_response>
