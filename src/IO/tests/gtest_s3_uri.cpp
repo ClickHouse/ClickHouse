@@ -204,6 +204,22 @@ TEST(S3UriTest, validPatterns)
         ASSERT_EQ("", uri.version_id);
         ASSERT_EQ(true, uri.is_virtual_hosted_style);
     }
+    {
+        S3::URI uri("https://bucket-test1.oss-cn-beijing-internal.aliyuncs.com/ab-test");
+        ASSERT_EQ("https://oss-cn-beijing-internal.aliyuncs.com", uri.endpoint);
+        ASSERT_EQ("bucket-test1", uri.bucket);
+        ASSERT_EQ("ab-test", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
+    {
+        S3::URI uri("https://bucket-test.cn-beijing-internal.oss-data-acc.aliyuncs.com/ab-test");
+        ASSERT_EQ("https://cn-beijing-internal.oss-data-acc.aliyuncs.com", uri.endpoint);
+        ASSERT_EQ("bucket-test", uri.bucket);
+        ASSERT_EQ("ab-test", uri.key);
+        ASSERT_EQ("", uri.version_id);
+        ASSERT_EQ(true, uri.is_virtual_hosted_style);
+    }
 }
 
 TEST_P(S3UriTest, invalidPatterns)
