@@ -120,7 +120,7 @@ void IBridge::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("stderr-path", "", "stderr log path, default console").argument("stderr-path").binding("logger.stderr"));
 
     options.addOption(
-        Poco::Util::Option("libraries-path", "", "A colon-separated (:) lists of paths from where we allow to load libraries. Subdirectories are also included. For security, this path should not be accessible for writing by user-controlled applications.").argument("libraries-path").binding("libraries-path"));
+        Poco::Util::Option("libraries-path", "", "A colon-separated (:) lists of paths from where we allow to load libraries. Subdirectories are also included. To prevent security risks, ensure this path is strictly read-only and not writable by user-controlled applications.").argument("libraries-path").binding("libraries-path"));
 
     using Me = std::decay_t<decltype(*this)>;
 
