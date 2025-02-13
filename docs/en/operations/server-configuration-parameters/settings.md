@@ -3730,7 +3730,8 @@ Default: `/var/lib/clickhouse/access/`.
 ## allow_plaintext_password
 
 Sets whether plaintext-password types (insecure) are allowed or not.
-By default, it is set `1` (true) which means that authType plaintext_password is allowed.
+
+Default: `1` (authType plaintext_password is allowed)
 
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
@@ -3738,8 +3739,9 @@ By default, it is set `1` (true) which means that authType plaintext_password is
 
 ## allow_no_password
 
-Sets whether an insecure password type of no_password is allowed or not.
-By default, it is set `1` (true) which means that authType no_password is allowed.
+Sets whether an insecure password type of no_password is allowed or not. 
+
+Default: `1` (authType no_password is allowed)
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -3749,7 +3751,7 @@ By default, it is set `1` (true) which means that authType no_password is allowe
 
 Forbids creating a user with no password unless 'IDENTIFIED WITH no_password' is explicitly specified.
 
-By default, it is set to `1`:
+Default: `1`
 
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
