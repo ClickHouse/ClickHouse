@@ -1329,8 +1329,7 @@ std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDa
     }
 }
 
-bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
-    const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
+bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableDatabase pt, PerformanceResult & res)
 {
     String buf;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
@@ -1361,8 +1360,8 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
             }
             const auto tabchar = buf.find('\t');
 
-            query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
-            memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
+            res.query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
+            res.memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
             return true;
         }
     }

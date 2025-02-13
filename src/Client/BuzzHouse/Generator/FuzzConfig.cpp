@@ -331,23 +331,18 @@ FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partit
     return res;
 }
 
-void FuzzConfig::comparePerformanceResults(
-    const String & oracle_name,
-    const uint64_t query_duration_ms1,
-    const uint64_t memory_usage1,
-    const uint64_t query_duration_ms2,
-    const uint64_t memory_usage2) const
+void FuzzConfig::comparePerformanceResults(const String & oracle_name, const PerformanceResult & res1, const PerformanceResult & res2) const
 {
     if (this->measure_performance)
     {
-        String time_res1 = formatReadableTime(static_cast<double>(query_duration_ms1 * 1000000));
-        String time_res2 = formatReadableTime(static_cast<double>(query_duration_ms2 * 1000000));
-        String mem_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage1));
-        String mem_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(memory_usage2));
+        const String time_res1 = formatReadableTime(static_cast<double>(res1.query_duration_ms * 1000000));
+        const String time_res2 = formatReadableTime(static_cast<double>(res2.query_duration_ms * 1000000));
+        const String mem_res1 = formatReadableSizeWithBinarySuffix(static_cast<double>(res1.memory_usage));
+        const String mem_res2 = formatReadableSizeWithBinarySuffix(static_cast<double>(res2.memory_usage));
 
-        if (this->query_time_minimum < query_duration_ms1
-            && query_duration_ms1
-                > static_cast<uint64_t>(query_duration_ms2 * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
+        if (this->query_time_minimum < res1.query_duration_ms
+            && res1.query_duration_ms
+                > static_cast<uint64_t>(res2.query_duration_ms * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,
@@ -356,8 +351,9 @@ void FuzzConfig::comparePerformanceResults(
                 time_res1,
                 time_res2);
         }
-        if (this->query_memory_minimum < memory_usage1
-            && memory_usage1 > static_cast<uint64_t>(memory_usage2 * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
+        if (this->query_memory_minimum < res1.memory_usage
+            && res1.memory_usage
+                > static_cast<uint64_t>(res2.memory_usage * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
         {
             throw DB::Exception(
                 DB::ErrorCodes::BUZZHOUSE,

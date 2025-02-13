@@ -337,16 +337,13 @@ bool Client::processWithFuzzing(const String & full_query)
         }
 #if USE_BUZZHOUSE
         bool peer_success = true;
-        uint64_t memory_usage1 = 0;
-        uint64_t memory_usage2 = 0;
-        uint64_t query_duration_ms1 = 0;
-        uint64_t query_duration_ms2 = 0;
+        BuzzHouse::PerformanceResult res1;
+        BuzzHouse::PerformanceResult res2;
 
         measure_performance &= !have_error;
         if (measure_performance)
         {
-            measure_performance
-                &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, query_duration_ms1, memory_usage1);
+            measure_performance &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, res1);
             /// Replicate settings, so both servers have same configuration
             ei->replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
         }
@@ -359,11 +356,11 @@ bool Client::processWithFuzzing(const String & full_query)
         if (measure_performance)
         {
             measure_performance &= peer_success
-                && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_duration_ms2, memory_usage2);
+                && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, res2);
 
             if (measure_performance)
             {
-                fc->comparePerformanceResults("AST fuzzer", query_duration_ms1, memory_usage1, query_duration_ms2, memory_usage2);
+                fc->comparePerformanceResults("AST fuzzer", res1, res2);
             }
         }
 #endif

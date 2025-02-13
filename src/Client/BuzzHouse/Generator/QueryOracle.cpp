@@ -646,7 +646,8 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_success = other_steps_sucess = true;
     can_test_query_success = fc.compare_success_results;
-    query_duration_ms1 = memory_usage1 = query_duration_ms2 = memory_usage2 = 0;
+    res1 = PerformanceResult();
+    res2 = PerformanceResult();
 }
 
 void QueryOracle::setIntermediateStepSuccess(const bool success)
@@ -660,8 +661,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
     {
         if (measure_performance)
         {
-            measure_performance
-                &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
+            measure_performance &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
         }
         else
         {
@@ -683,10 +683,9 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
         {
             if (measure_performance)
             {
-                if (ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2))
+                if (ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->res2))
                 {
-                    fc.comparePerformanceResults(
-                        oracle_name, this->query_duration_ms1, this->memory_usage1, this->query_duration_ms2, this->memory_usage2);
+                    fc.comparePerformanceResults(oracle_name, this->res1, this->res2);
                 }
             }
             else

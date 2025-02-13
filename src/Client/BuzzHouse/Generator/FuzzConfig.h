@@ -88,6 +88,12 @@ public:
     ServerCredentials & operator=(ServerCredentials && c) noexcept = default;
 };
 
+class PerformanceResult
+{
+public:
+    uint64_t query_duration_ms, memory_usage;
+};
+
 class FuzzConfig
 {
 private:
@@ -132,12 +138,7 @@ public:
 
     String tableGetRandomPartitionOrPart(bool detached, bool partition, const String & database, const String & table) const;
 
-    void comparePerformanceResults(
-        const String & oracle_name,
-        uint64_t query_duration_ms1,
-        uint64_t memory_usage1,
-        uint64_t query_duration_ms2,
-        uint64_t memory_usage2) const;
+    void comparePerformanceResults(const String & oracle_name, const PerformanceResult & res1, const PerformanceResult & res2) const;
 };
 
 }
