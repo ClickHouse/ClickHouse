@@ -219,7 +219,7 @@ Default: `0`
 
 ## bcrypt_workfactor
 
-Work factor for the bcrypt_password authentication type.
+Work factor for the bcrypt_password authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 
 Default: `12`
 
