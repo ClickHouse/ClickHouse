@@ -2364,9 +2364,13 @@ Default: ""
 
 Setting to reallocate memory for machine code ("text") using huge pages.
 
+Default: `false`
+
 :::note
-This feature is highly experimental, and therefore set `false` by default.
+This feature is highly experimental.
 :::
+
+Example: 
 
 ```xml
 <remap_executable>false</remap_executable>
@@ -2391,6 +2395,8 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 Maximum session timeout, in seconds. 
 
 Default: `3600`
+
+Example:
 
 ```xml
 <max_session_timeout>3600</max_session_timeout>
@@ -2622,7 +2628,7 @@ Settings for the [`opentelemetry_span_log`](../system-tables/opentelemetry_span_
 
 <SystemLogParameters/>
 
-The default settings are:
+Example:
 
 ```xml
 <opentelemetry_span_log>
