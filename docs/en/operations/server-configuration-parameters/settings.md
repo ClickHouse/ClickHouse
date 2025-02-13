@@ -2253,7 +2253,7 @@ Example:
 
 ## storage_configuration
 
-Allows for multi-disk configuration of storage. It can be specified in `config.xml` or in a separate file in directory `config.d`.
+Allows for multi-disk configuration of storage.
 
 Storage configuration follows the structure:
 
