@@ -7,6 +7,7 @@
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>
 #include <Storages/Hive/HiveFile.h>
+#include <Poco/URI.h>
 
 
 namespace DB

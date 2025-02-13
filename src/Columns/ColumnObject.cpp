@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
@@ -264,6 +266,81 @@ Field ColumnObject::operator[](size_t n) const
 void ColumnObject::get(size_t n, Field & res) const
 {
     res = (*this)[n];
+}
+
+std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
+{
+    WriteBufferFromOwnString wb;
+    wb << '{';
+
+    bool first = true;
+
+    for (const auto & [path, column] : typed_paths)
+    {
+        const auto & [value, type] = column->getValueNameAndType(n);
+
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        writeDoubleQuoted(path, wb);
+        wb << ": " << value;
+    }
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+    {
+        /// Output only non-null values from dynamic paths. We cannot distinguish cases when
+        /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
+        if (column->isNullAt(n))
+            continue;
+
+        const auto & [value, type] = column->getValueNameAndType(n);
+
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        writeDoubleQuoted(path, wb);
+        wb << ": " << value;
+    }
+
+    const auto & shared_data_offsets = getSharedDataOffsets();
+    const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
+    size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
+    size_t end = shared_data_offsets[n];
+    for (size_t i = start; i != end; ++i)
+    {
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+
+        String path = shared_paths->getDataAt(i).toString();
+        writeDoubleQuoted(path, wb);
+
+        auto value_data = shared_values->getDataAt(i);
+        ReadBufferFromMemory buf(value_data.data, value_data.size);
+        auto decoded_type = decodeDataType(buf);
+
+        if (isNothing(decoded_type))
+        {
+            wb << ": NULL";
+            continue;
+        }
+
+        const auto column = decoded_type->createColumn();
+        decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
+
+        const auto & [value, type] = column->getValueNameAndType(0);
+
+        wb << ": " << value;
+    }
+
+    wb << "}";
+
+    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const
@@ -684,7 +761,7 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }
 
-void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const
+void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column)
 {
     auto value_data = shared_data_values->getDataAt(n);
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -1179,7 +1256,7 @@ void ColumnObject::protect()
     shared_data->protect();
 }
 
-void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
+void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
@@ -1191,18 +1268,44 @@ void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
     callback(shared_data);
 }
 
-void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
+void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
     {
         callback(*column);
-        column->forEachSubcolumnRecursively(callback);
+        column->forEachMutableSubcolumnRecursively(callback);
     }
     for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
-        column->forEachSubcolumnRecursively(callback);
+        column->forEachMutableSubcolumnRecursively(callback);
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+    }
+    callback(*shared_data);
+    shared_data->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
+{
+    for (const auto & [_, column] : typed_paths)
+        callback(column);
+    for (const auto & [path, column] : dynamic_paths)
+        callback(column);
+
+    callback(shared_data);
+}
+
+void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
+{
+    for (const auto & [_, column] : typed_paths)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);
@@ -1336,6 +1439,13 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
 
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
+
+    /// It might happen that current max_dynamic_paths is less then global_max_dynamic_paths
+    /// but the shared data is empty. For example if this block was deserialized from Native format.
+    /// In this case we should set max_dynamic_paths = global_max_dynamic_paths, so during squashing we
+    /// will insert new types to SharedVariant only when the global limit is reached.
+    if (getSharedDataPathsAndValues().first->empty())
+        max_dynamic_paths = global_max_dynamic_paths;
 
     /// Check if the number of all dynamic paths exceeds the limit.
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)

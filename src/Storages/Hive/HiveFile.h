@@ -12,6 +12,7 @@
 
 #include <Core/Field.h>
 #include <Core/Block.h>
+#include <Common/CacheBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
 

@@ -15,9 +15,13 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
-#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
+#if defined(OS_DARWIN) && defined(__GNUC__)
 #   include <machine/endian.h>
+#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#   include <machine/endian.h>
+#   include <sys/endian.h>
 #else
 #   include <endian.h>
 #endif

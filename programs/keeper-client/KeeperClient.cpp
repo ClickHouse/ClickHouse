@@ -2,8 +2,9 @@
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
-#include "Common/VersionNumber.h"
+#include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Client/ClientApplicationBase.h>
 #include <Common/EventNotifier.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -143,6 +144,11 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("port", "p", "server port. default `9181`")
             .argument("<port>")
             .binding("port"));
+
+    options.addOption(
+        Poco::Util::Option("password", "", "password to connect to keeper server")
+            .argument("<password>")
+            .binding("password"));
 
     options.addOption(
         Poco::Util::Option("query", "q", "will execute given query, then exit.")
@@ -328,7 +334,8 @@ void KeeperClient::runInteractiveReplxx()
         query_extenders,
         query_delimiters,
         word_break_characters,
-        /* highlighter_= */ {});
+        /* highlighter_= */ {}
+    );
     lr.enableBracketedPaste();
 
     while (true)
@@ -420,6 +427,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     zk_args.session_timeout_ms = config().getInt("session-timeout", 10) * 1000;
     zk_args.operation_timeout_ms = config().getInt("operation-timeout", 10) * 1000;
     zk_args.use_xid_64 = config().hasOption("use-xid-64");
+    zk_args.password = config().getString("password", "");
     zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(zk_args);
 
     if (config().has("no-confirmation") || config().has("query"))

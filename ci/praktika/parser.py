@@ -51,6 +51,7 @@ class WorkflowYaml:
     secret_names_gh: List[str]
     enable_cache: bool
     cron_schedules: List[str]
+    dispatch_inputs: List[Workflow.Config.InputConfig]
 
 
 class WorkflowConfigParser:
@@ -77,6 +78,7 @@ class WorkflowConfigParser:
             artifact_to_config={},
             enable_cache=False,
             cron_schedules=config.cron_schedules,
+            dispatch_inputs=config.inputs,
         )
 
     def parse(self):
@@ -234,7 +236,7 @@ class WorkflowConfigParser:
                     ), f"Artifact [{artifact_name}] has unsupported type [{artifact.type}]"
             if not artifact.required_by and artifact.type != Artifact.Type.PHONY:
                 print(
-                    f"WARNING: Artifact [{artifact_name}] provided by job [{artifact.provided_by}] not required by any job in workflow [{self.workflow_name}]"
+                    f"WARNING: Artifact [{artifact_name}] provided by job [{artifact.provided_by}] in workflow [{self.workflow_name}] has no job that requires it"
                 )
             if artifact.type == Artifact.Type.GH:
                 self.workflow_yaml_config.job_to_config[

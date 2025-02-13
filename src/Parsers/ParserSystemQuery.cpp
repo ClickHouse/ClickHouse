@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 
 namespace DB

@@ -4,10 +4,12 @@
 #include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -37,6 +39,11 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
+
+namespace ExpressionActionsChainSteps
+{
+struct Step;
+}
 
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
@@ -401,7 +408,7 @@ private:
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
