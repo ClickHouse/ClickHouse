@@ -1,4 +1,7 @@
 <clickhouse>
+    <logger>
+        <level>trace</level>
+    </logger>
     <storage_configuration>
         <disks>
             <log_local>
