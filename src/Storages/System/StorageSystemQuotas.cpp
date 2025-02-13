@@ -52,7 +52,7 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
             "or use the quota_key parameter in the client configuration file. "
             "When using HTTP interface, use the X-ClickHouse-Quota header, "
             "['user_name', 'client_key'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`, "
-            "['client_key', 'ip_address'] — Connections with the same client_key share the same quota. If a key isn’t provided by a client, the quota is tracked for ip_address."
+            "['client_key', 'ip_address'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for ip_address."
         },
         {"durations", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "Time interval lengths in seconds."},
         {"apply_to_all", std::make_shared<DataTypeUInt8>(),

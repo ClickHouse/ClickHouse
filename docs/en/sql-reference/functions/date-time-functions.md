@@ -4300,8 +4300,8 @@ Result:
 
 For a time interval starting at 'StartTime' and continuing for 'Duration' seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the 'Size' in seconds. 'Size' is an optional parameter set to 1800 (30 minutes) by default.
 This is necessary, for example, when searching for pageviews in the corresponding session.
-Accepts DateTime and DateTime64 as 'StartTime' argument. For DateTime, 'Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
-Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
+Accepts DateTime and DateTime64 as 'StartTime' argument. For DateTime, 'Duration' and 'Size' arguments must be `UInt32`. For 'DateTime64' they must be `Decimal64`.
+Returns an array of DateTime/DateTime64 (return type matches the type of 'StartTime'). For DateTime64, the return value's scale can differ from the scale of 'StartTime' --- the highest scale among all given arguments is taken.
 
 **Syntax**
 
@@ -4377,14 +4377,14 @@ Using replacement fields, you can define a pattern for the resulting string. "Ex
 | %l       | hour in 12h format (01-12), see 'Note 4' below                                                                                                                                                      | 09        |
 | %m       | month as an integer number (01-12)                                                                                                                                                                  | 01        |
 | %M       | full month name (January-December), see 'Note 3' below                                                                                                                                              | January   |
-| %n       | new-line character ('’)                                                                                                                                                                             |           |
+| %n       | new-line character ('')                                                                                                                                                                             |           |
 | %p       | AM or PM designation                                                                                                                                                                                | PM        |
 | %Q       | Quarter (1-4)                                                                                                                                                                                       | 1         |
 | %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p                                                                                                                                                    | 10:30 PM  |
 | %R       | 24-hour HH:MM time, equivalent to %H:%i                                                                                                                                                             | 22:33     |
 | %s       | second (00-59)                                                                                                                                                                                      | 44        |
 | %S       | second (00-59)                                                                                                                                                                                      | 44        |
-| %t       | horizontal-tab character (’)                                                                                                                                                                        |           |
+| %t       | horizontal-tab character (')                                                                                                                                                                        |           |
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S                                                                                                                                             | 22:33:44  |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)                                                                                                                                                   | 2         |
 | %V       | ISO 8601 week number (01-53)                                                                                                                                                                        | 01        |

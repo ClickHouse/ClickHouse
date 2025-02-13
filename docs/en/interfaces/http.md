@@ -528,7 +528,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
 
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://’ or 'config://’, find the content from the file or configuration sends to client.
+    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration sends to client.
 
 Next are the configuration methods for different `type`.
 
