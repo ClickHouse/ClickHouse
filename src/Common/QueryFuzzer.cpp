@@ -1223,8 +1223,8 @@ ASTPtr QueryFuzzer::addJoinClause()
             = {JoinStrictness::Unspecified,
                JoinStrictness::Any,
                JoinStrictness::All,
-               JoinStrictness::Anti,
                JoinStrictness::Asof,
+               JoinStrictness::Anti,
                JoinStrictness::Semi};
         static const std::vector<JoinStrictness> right_strictness_values
             = {JoinStrictness::Unspecified, JoinStrictness::RightAny, JoinStrictness::All, JoinStrictness::Semi, JoinStrictness::Anti};
@@ -1247,7 +1247,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 break;
             case JoinKind::Inner:
                 /// Semi inner join not possible
-                table_join->strictness = all_strictness_values[fuzz_rand() % (all_strictness_values.size() - 1)];
+                table_join->strictness = all_strictness_values[fuzz_rand() % (all_strictness_values.size() - 2)];
                 break;
             case JoinKind::Right:
                 table_join->strictness = right_strictness_values[fuzz_rand() % right_strictness_values.size()];
