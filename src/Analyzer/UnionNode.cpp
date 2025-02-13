@@ -25,6 +25,7 @@
 
 #include <Interpreters/Context.h>
 
+#include <Analyzer/IQueryOrUnionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Utils.h>
 
@@ -39,7 +40,7 @@ namespace ErrorCodes
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
-    : IQueryTreeNode(children_size)
+    : IQueryOrUnionNode(children_size)
     , context(std::move(context_))
     , union_mode(union_mode_)
 {

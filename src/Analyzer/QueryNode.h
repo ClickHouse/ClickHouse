@@ -6,6 +6,7 @@
 #include <Core/Field.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/IQueryOrUnionNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
 
@@ -59,7 +60,7 @@ namespace DB
 class QueryNode;
 using QueryNodePtr = std::shared_ptr<QueryNode>;
 
-class QueryNode final : public IQueryTreeNode
+class QueryNode final : public IQueryOrUnionNode
 {
 public:
     /// Construct query node with context and changed settings
