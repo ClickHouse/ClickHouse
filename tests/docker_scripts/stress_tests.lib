@@ -201,7 +201,10 @@ function stop_server()
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
       kill -TERM "$(pidof gdb)" ||:
 
-      # If gdb run was fast we could have a false detection of hung check so to remove noise we add sleep just in case
+      # We are waiting 60 seconds until the server will be terminated, since
+      # - gdb detach can be slow
+      # - server may do some work at shutdown
+      # - main use case it not to mark failure as hung check when server exits abnormally with sanitizer/crash
       kill -s CONT "$pid" ||:
       kill -s 0 "$pid" && sleep 60 
 
