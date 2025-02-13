@@ -83,13 +83,12 @@ backup_id_counter = 0
 
 def next_backup_name(storage):
     global backup_id_counter
-    timestamp = time.time_ns()
     if storage == "local":
         backup_id_counter += 1
-        return f"Disk('default', '{backup_id_counter}_{timestamp}/')"
+        return f"Disk('default', '{backup_id_counter}/')"
     elif storage == "remote":
         backup_id_counter += 1
-        return f"S3(s3, '{backup_id_counter}_{timestamp}/')"
+        return f"S3(s3, '{backup_id_counter}/')"
     else:
         raise Exception(storage)
 

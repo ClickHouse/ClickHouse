@@ -3778,7 +3778,12 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    ThrottlerPtr throttler = shared->remote_read_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->remote_read_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3791,7 +3796,12 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    ThrottlerPtr throttler = shared->remote_write_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->remote_write_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3855,7 +3865,7 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
 {
     if (read_bandwidth)
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(shared->mutex);
         if (!shared->remote_read_throttler)
             shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth);
     }
@@ -3865,7 +3875,7 @@ void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_ba
 
     if (write_bandwidth)
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(shared->mutex);
         if (!shared->remote_write_throttler)
             shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth);
     }
