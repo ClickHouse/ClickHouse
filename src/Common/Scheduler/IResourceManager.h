@@ -59,7 +59,12 @@ public:
 
     /// Obtain a classifier instance required to get access to resources.
     /// Note that it holds resource configuration, so should be destructed when query is done.
-    virtual ClassifierPtr acquire(const String & classifier_name, const ClassifierSettings & settings = {}) = 0;
+    virtual ClassifierPtr acquire(const String & classifier_name, const ClassifierSettings & settings) = 0;
+
+    ClassifierPtr acquire(const String & classifier_name)
+    {
+        return acquire(classifier_name, {});
+    }
 
     /// For introspection, see `system.scheduler` table
     using VisitorFunc = std::function<void(const String & resource, const String & path, ISchedulerNode * node)>;
