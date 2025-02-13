@@ -585,7 +585,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageS3Configuration::setFunctionArgs(ASTs & args) const
+void StorageS3Configuration::getTableFunctionArguments(ASTs & args) const
 {
     if (!args.empty())
     { /// Just check

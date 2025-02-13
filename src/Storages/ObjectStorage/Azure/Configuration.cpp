@@ -459,7 +459,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageAzureConfiguration::setFunctionArgs(ASTs & args) const
+void StorageAzureConfiguration::getTableFunctionArguments(ASTs & args) const
 {
     if (!args.empty())
     { /// Just check

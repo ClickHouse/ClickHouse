@@ -37,6 +37,18 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
+    /*
+    In case the table was created with `object_storage_cluster` setting,
+    modify the AST query object so that it uses the table function implementation
+    by mapping the engine name to table function name and setting `object_storage_cluster`.
+    For table like
+    CREATE TABLE table ENGINE=S3(...) SETTINGS object_storage_cluster='cluster'
+    coverts request
+    SELECT * FROM table
+    to
+    SELECT * FROM s3(...) SETTINGS object_storage_cluster='cluster'
+    to make distributed request over cluster 'cluster'.
+    */
     void updateQueryForDistributedEngineIfNeeded(ASTPtr & query);
 
     const String engine_name;

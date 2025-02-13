@@ -235,7 +235,7 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageHDFSConfiguration::setFunctionArgs(ASTs & args) const
+void StorageHDFSConfiguration::getTableFunctionArguments(ASTs & args) const
 {
     if (!args.empty())
     { /// Just check

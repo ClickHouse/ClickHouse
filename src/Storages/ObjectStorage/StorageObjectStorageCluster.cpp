@@ -108,6 +108,13 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
         return;
 
     auto * tables = select_query->tables()->as<ASTTablesInSelectQuery>();
+
+    if (tables->children.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Expected SELECT query from table with engine {}, got '{}'",
+            configuration->getEngineName(), queryToString(query));
+
     auto * table_expression = tables->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>();
     if (!table_expression->database_and_table_name)
         return;
@@ -116,7 +123,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
 
     auto table_alias = table_identifier_typed.tryGetAlias();
 
-    std::unordered_map<std::string, std::string> engine_to_function = {
+    static std::unordered_map<std::string, std::string> engine_to_function = {
         {"S3", "s3"},
         {"Azure", "azureBlobStorage"},
         {"HDFS", "hdfs"},
@@ -153,7 +160,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
             queryToString(query));
     }
 
-    configuration->setFunctionArgs(arguments->children);
+    configuration->getTableFunctionArguments(arguments->children);
 
     function_ast->arguments = arguments;
     function_ast->children.push_back(arguments);
@@ -163,7 +170,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
 
     table_expression->database_and_table_name = nullptr;
     table_expression->table_function = function_ast_ptr;
-    table_expression->children[0].swap(function_ast_ptr);
+    table_expression->children[0] = function_ast_ptr;
 
     auto settings = select_query->settings();
     if (settings)

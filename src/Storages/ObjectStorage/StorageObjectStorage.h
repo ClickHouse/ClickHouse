@@ -247,9 +247,9 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    virtual void setFunctionArgs(ASTs & /* args */) const
+    virtual void getTableFunctionArguments(ASTs & /* args */) const
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method setFunctionArgs is not supported by storage {}", getEngineName());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getTableFunctionArguments is not supported by storage {}", getEngineName());
     }
 
 protected:
