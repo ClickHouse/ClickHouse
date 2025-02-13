@@ -10,13 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-value_before=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveDataMutations'"`
+counters_query="SELECT active_on_fly_data_mutations FROM system.tables WHERE database = currentDatabase() AND table = 't_mutations_counters'"
 
 function wait_for_mutation_cleanup()
 {
     for _ in {0..50}; do
-        res=`$CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'ActiveDataMutations'"`
-        if [[ $res == "$value_before" ]]; then
+        res=`$CLICKHOUSE_CLIENT --query "$counters_query"`
+        if [[ $res == "0" ]]; then
             break
         fi
         sleep 0.5
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE t_mutations_counters UPDATE b = 100 WHERE a = 1;
     ALTER TABLE t_mutations_counters UPDATE b = 200 WHERE a = 2;
 
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
+    $counters_query;
     SYSTEM START MERGES t_mutations_counters;
 "
 
@@ -44,16 +44,16 @@ wait_for_mutation "t_mutations_counters" "mutation_3.txt"
 wait_for_mutation_cleanup
 
 $CLICKHOUSE_CLIENT --query "
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
+    $counters_query;
     SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_mutations_counters' AND NOT is_done;
     SELECT * FROM t_mutations_counters ORDER BY a;
 
     SYSTEM STOP MERGES t_mutations_counters;
     ALTER TABLE t_mutations_counters UPDATE b = 1000 WHERE a = 1;
 
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
+    $counters_query;
     KILL MUTATION WHERE mutation_id = 'mutation_4.txt' SYNC FORMAT Null;
-    SELECT metric, value - $value_before FROM system.metrics WHERE metric = 'ActiveDataMutations';
+    $counters_query;
 
     DROP TABLE t_mutations_counters;
 "

@@ -1,5 +1,6 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/SipHash.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
