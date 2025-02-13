@@ -1,6 +1,5 @@
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
-#include <Common/typeid_cast.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TableJoin.h>
