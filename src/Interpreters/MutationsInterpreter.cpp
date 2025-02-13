@@ -948,7 +948,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
             {
                 const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
-                if (column && !column->type->equals(*command.data_type))
+                if (column && command.data_type && !column->type->equals(*command.data_type))
                 {
                     for (const auto & projection : metadata_snapshot->getProjections())
                     {
