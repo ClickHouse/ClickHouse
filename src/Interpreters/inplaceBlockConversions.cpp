@@ -257,18 +257,6 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
                     if (offsets_column->size() != current_offsets_column->size() && inside_variant_element)
                         offsets_column = offsets_column->size() < current_offsets_column->size() ? offsets_column : current_offsets_column;
-#ifndef NDEBUG
-                    else
-                    {
-                        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-                        const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
-
-                        if (offsets_data != current_offsets_data)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                            "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
-                                            offsets_data.size(), current_offsets_data.size(), stream_name);
-                    }
-#endif
                 }
             }
         }, available_column->type, res_columns[i]);
