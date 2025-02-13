@@ -91,6 +91,7 @@ String BackupFileInfo::describe() const
     String result;
     result += fmt::format("file_name: {};\n", file_name);
     result += fmt::format("size: {};\n", size);
+    result += fmt::format("object_key: {};\n", object_key);
     result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("base_size: {};\n", base_size);
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
