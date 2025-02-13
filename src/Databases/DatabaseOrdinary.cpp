@@ -343,7 +343,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
         }
         catch (Coordination::Exception & e)
         {
-            if (!Coordination::isHardwareError(e.code()))
+            if (!Coordination::isHardwareError(e.code))
                 throw;
             tryLogCurrentException(log);
             sleepForSeconds(sleep_time);
