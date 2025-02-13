@@ -2241,6 +2241,16 @@ Example:
 </ssh_server>
 ```
 
+## tcp_ssh_port
+
+Port for the SSH server which allows the user to connect and execute queries in an interactive fashion using the embedded client over the PTY.
+
+Example: 
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+```
+
 ## storage_configuration
 
 Allows for multi-disk configuration of storage. It can be specified in `config.xml` or in a separate file in directory `config.d`.
