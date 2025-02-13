@@ -110,7 +110,7 @@ def fetch_and_insert_data(q, client):
             sleep_time = random.randint(50, 500)
             time.sleep(sleep_time / 1000.0)
     except ValueError as ex:
-        print(ex, file=sys.stderr)
+        print(ex, file=sys.stderr, flush=True)
         os._exit(1)
 
 
