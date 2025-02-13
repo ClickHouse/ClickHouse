@@ -1,4 +1,5 @@
 #include <Processors/ResizeProcessor.h>
+#include <Interpreters/Squashing.h>
 
 namespace DB
 {
@@ -7,7 +8,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ResizeProcessor::Status ResizeProcessor::prepare()
+ResizeProcessor::Status BaseResizeProcessor::prepareRoundRobin()
 {
     bool is_first_output = true;
     auto output_end = current_output;
@@ -156,21 +157,33 @@ ResizeProcessor::Status ResizeProcessor::prepare()
     return get_status_if_no_inputs();
 }
 
-IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
 {
+    /// 1) One-time init
     if (!initialized)
     {
         initialized = true;
 
+        /// Build input_ports / output_ports
+        input_ports.reserve(inputs.size());
         for (auto & input : inputs)
             input_ports.push_back({.port = &input, .status = InputStatus::NotActive});
 
+        output_ports.reserve(outputs.size());
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
 
+    /// 2) Possibly do concurrency logic (virtual call)
+    concurrencyControlLogic();
+
+    /// 3) Check updated outputs
     for (const auto & output_number : updated_outputs)
     {
+        // If the derived class has "disabled" an output, skip
+        if (output_number < is_output_enabled.size() && !is_output_enabled[output_number])
+            continue;
+
         auto & output = output_ports[output_number];
         if (output.port->isFinished())
         {
@@ -193,6 +206,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         }
     }
 
+    /// 4) Trigger reading upstream if we have waiting outputs
     if (!is_reading_started && !waiting_outputs.empty())
     {
         for (auto & input : inputs)
@@ -200,14 +214,15 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         is_reading_started = true;
     }
 
+    /// 5) If all outputs finished => we are done
     if (num_finished_outputs == outputs.size())
     {
         for (auto & input : inputs)
             input.close();
-
         return Status::Finished;
     }
 
+    /// 6) Process updated inputs
     for (const auto & input_number : updated_inputs)
     {
         auto & input = input_ports[input_number];
@@ -231,15 +246,35 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         }
     }
 
+    /// 7) Match waiting outputs with inputs_with_data
     while (!waiting_outputs.empty() && !inputs_with_data.empty())
     {
-        auto & waiting_output = output_ports[waiting_outputs.front()];
+        const auto out_idx = waiting_outputs.front();
         waiting_outputs.pop();
+
+        // If the output got disabled in the meantime or it finished, skip it
+        if (out_idx < is_output_enabled.size() && !is_output_enabled[out_idx])
+            continue;
+
+        auto & waiting_output = output_ports[out_idx];
+        if (waiting_output.port->isFinished())
+            continue;
 
         auto & input_with_data = input_ports[inputs_with_data.front()];
         inputs_with_data.pop();
 
-        waiting_output.port->pushData(input_with_data.port->pullData());
+        Port::Data data = input_with_data.port->pullData();
+
+        if (isMemoryDependent() && chunk_size == 0 && !data.chunk.getChunkInfos().empty()) /// This should be done only on the first iteration
+        {
+            const auto & info_chunks = data.chunk.getChunkInfos().get<ChunksToSquash>()->chunks;
+            for (const auto & chunk : info_chunks)
+            {
+                chunk_size += chunk.bytes(); /// We have a vector of chunks to merge into one chunk as ChunkInfo
+            }                                /// , so we count the cumulative size of that vector as a size of the chunk
+        }
+
+        waiting_output.port->pushData(std::move(data));
         input_with_data.status = InputStatus::NotActive;
         waiting_output.status = OutputStatus::NotActive;
 
@@ -250,6 +285,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         }
     }
 
+    /// 8) If all inputs are finished => finish all outputs
     if (num_finished_inputs == inputs.size())
     {
         for (auto & output : outputs)
@@ -258,6 +294,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         return Status::Finished;
     }
 
+    /// 9) If we still have outputs wanting data => NeedData
     if (!waiting_outputs.empty())
         return Status::NeedData;
 
@@ -428,6 +465,119 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         return Status::NeedData;
 
     return Status::PortFull;
+}
+
+// Helper method to count how many outputs are active
+size_t MemoryDependentResizeProcessor::countActiveOutputs() const
+{
+    size_t active = 0;
+    for (size_t i = 0; i < output_ports.size(); ++i)
+    {
+        if (is_output_enabled[i] && output_ports[i].status != OutputStatus::Finished)
+            ++active;
+    }
+    return active;
+}
+
+IProcessor::Status MemoryDependentResizeProcessor::prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs)
+{
+    // Real definition here, or if you just want to delegate:
+    return prepareWithQueues(updated_inputs, updated_outputs);
+}
+
+Int64 MemoryDependentResizeProcessor::getFreeMemory()
+{
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+    {
+        if (auto * mem_tracker = memory_tracker_child->getParent())
+        {
+            Int64 used_memory = mem_tracker->get();
+            Int64 soft_limit = mem_tracker->getSoftLimit();
+
+            if (soft_limit == 0)  // No limit is set
+                return std::numeric_limits<Int64>::max();
+
+            // If used > soft_limit, free_memory is 0 or negative
+            if (used_memory < soft_limit)
+                return soft_limit - used_memory;
+            else
+                return 0;
+        }
+    }
+    return std::numeric_limits<Int64>::max();
+}
+
+/// This function calculates how many output ports we want to keep "active"
+/// based on how much free memory is available.
+/// It's just one example of a "desired concurrency" formula.
+size_t MemoryDependentResizeProcessor::calculateDesiredActiveOutputs(
+    Int64 free_memory,
+    size_t total_outputs,
+    size_t chunk_size_estimate,
+    double concurrency_factor)
+{
+    // If free_memory is extremely large, we allow maximum concurrency
+    if (free_memory == std::numeric_limits<Int64>::max())
+        return total_outputs;
+
+    // Heuristic: if free_memory < chunk_size_estimate * concurrency_factor * total_outputs,
+    // we reduce concurrency proportionally.
+    // For example:
+    //   desired_active = (free_memory / concurrency_factor) / chunk_size_estimate
+    // with a lower bound of at least 1 (unless we truly can't proceed).
+    if (chunk_size_estimate == 0)
+        chunk_size_estimate = 64 * 1024; // fallback if we haven't measured chunk sizes
+
+    double ratio = static_cast<double>(free_memory) / (chunk_size_estimate * concurrency_factor);
+    size_t desired = (ratio > 0) ? static_cast<size_t>(std::floor(ratio)) : 0;
+    // Cap at total_outputs
+    desired = std::min(desired, total_outputs);
+    return desired;
+}
+
+void MemoryDependentResizeProcessor::concurrencyControlLogic()
+{
+    // We do the same memory-based concurrency approach you had:
+    Int64 free_mem = getFreeMemory();
+    size_t desired_active = calculateDesiredActiveOutputs(
+        free_mem,
+        outputs.size(),
+        /* chunk_size_estimate */ chunk_size,
+        /* concurrency_factor */ 0.8
+    );
+
+    // Count how many are currently active
+    size_t current_active = 0;
+    for (size_t i = 0; i < output_ports.size(); ++i)
+    {
+        if (is_output_enabled[i] && !output_ports[i].port->isFinished())
+            ++current_active;
+    }
+
+    if (desired_active < current_active)
+    {
+        size_t to_disable = current_active - desired_active;
+        for (size_t i = 0; i < output_ports.size() && to_disable > 0; ++i)
+        {
+            if (is_output_enabled[i] && !output_ports[i].port->isFinished())
+            {
+                is_output_enabled[i] = false;
+                to_disable--;
+            }
+        }
+    }
+    else if (desired_active > current_active)
+    {
+        size_t to_enable = desired_active - current_active;
+        for (size_t i = 0; i < output_ports.size() && to_enable > 0; ++i)
+        {
+            if (!is_output_enabled[i] && !output_ports[i].port->isFinished())
+            {
+                is_output_enabled[i] = true;
+                to_enable--;
+            }
+        }
+    }
 }
 
 }
