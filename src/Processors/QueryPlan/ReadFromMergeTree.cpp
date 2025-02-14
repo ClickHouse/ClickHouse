@@ -850,6 +850,14 @@ Pipe ReadFromMergeTree::readByLayers(const RangesInDataParts & parts_with_ranges
                 0 /* min_marks_for_concurrent_read */,
                 info.use_uncompressed_cache);
 
+            if (pipe.empty())
+            {
+                auto header = MergeTreeSelectProcessor::transformHeader(
+                    storage_snapshot->getSampleBlockForColumns(in_order_column_names_to_read),
+                    query_info.prewhere_info);
+                pipe = Pipe(std::make_shared<NullSource>(header));
+            }
+
             pipe.addSimpleTransform([sorting_expr](const Block & header)
             {
                 return std::make_shared<ExpressionTransform>(header, sorting_expr);

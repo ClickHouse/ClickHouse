@@ -116,14 +116,24 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
         rhs_outputs.emplace(output->result_name, output);
 
     const auto & lhs_pk_dag = lhs_pk.expression->getActionsDAG();
+    const auto & lhs_pk_colum_names = lhs_pk.column_names;
     auto lhs_matches = matchTrees(lhs_pk_dag.getOutputs(), lhs_dag, false);
     const auto & rhs_pk_dag = rhs_pk.expression->getActionsDAG();
+    const auto & rhs_pk_colum_names = rhs_pk.column_names;
     auto rhs_matches = matchTrees(rhs_pk_dag.getOutputs(), rhs_dag, false);
 
     size_t useful_pk_columns = 0;
 
-    for (size_t pos = 0; pos < lhs_pk_dag.getOutputs().size() && pos < rhs_pk_dag.getOutputs().size(); ++pos)
+    for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
+        // std::cerr << "Checking pos " << pos << std::endl;
+
+        const auto * lhs_pk_output = lhs_pk_dag.tryFindInOutputs(lhs_pk_colum_names[pos]);
+        const auto * rhs_pk_output = rhs_pk_dag.tryFindInOutputs(rhs_pk_colum_names[pos]);
+
+        if (!lhs_pk_output || !rhs_pk_output)
+            break;
+
         size_t keys_size = clause.key_names_left.size();
 
         for (size_t i = 0; i < keys_size && useful_pk_columns <= pos; ++i)
@@ -131,7 +141,7 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
             const auto & left_name = clause.key_names_left[i];
             const auto & right_name = clause.key_names_right[i];
 
-            // std::cerr << left_name << ' ' << right_name << std::endl;
+            std::cerr << left_name << ' ' << right_name << std::endl;
 
             auto it = lhs_outputs.find(left_name);
             auto jt = rhs_outputs.find(right_name);
@@ -146,8 +156,13 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
             if (lhs_match->second.monotonicity || rhs_match->second.monotonicity)
                 continue;
 
-            if (lhs_match->second.node == lhs_pk_dag.getOutputs()[pos] && rhs_match->second.node == rhs_pk_dag.getOutputs()[pos])
+            if (lhs_match->second.node == lhs_pk_output && rhs_match->second.node == rhs_pk_output)
+            {
+                // std::cerr << lhs_pk_dag.dumpDAG() << std::endl;
+                // std::cerr << rhs_pk_dag.dumpDAG() << std::endl;
+                // std::cerr << "==== match\n";
                 ++useful_pk_columns;
+            }
         }
 
         if (useful_pk_columns <= pos)
