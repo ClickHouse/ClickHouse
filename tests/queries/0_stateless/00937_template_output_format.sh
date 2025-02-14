@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-mkdir $CLICKHOUSE_TEST_UNIQUE_NAME
+mkdir $CURDIR/$CLICKHOUSE_TEST_UNIQUE_NAME
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS template";
 $CLICKHOUSE_CLIENT --query="CREATE TABLE template (s1 String, s2 String, \`s 3\` String, \"s 4\" String, n UInt64, d Date) ENGINE = Memory";
@@ -24,5 +24,5 @@ format_template_row = '$CURDIR/$CLICKHOUSE_TEST_UNIQUE_NAME/00937_template_outpu
 format_template_rows_between_delimiter = ';\n'";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE template";
-rm -r $CLICKHOUSE_TEST_UNIQUE_NAME
+rm -r $CURDIR/$CLICKHOUSE_TEST_UNIQUE_NAME
 
