@@ -4,6 +4,10 @@
 
 #if USE_BUZZHOUSE
 #    include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+namespace BuzzHouse
+{
+extern void loadFuzzerServerSettings(const FuzzConfig & fc);
+}
 #endif
 
 namespace DB

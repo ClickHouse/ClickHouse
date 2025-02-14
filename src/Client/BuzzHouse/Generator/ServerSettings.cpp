@@ -7,7 +7,10 @@ const std::function<String(RandomGenerator &)> probRange
     = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
 std::unordered_map<String, CHSetting> performanceSettings
-    = {{"count_distinct_optimization", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    = {{"compile_aggregate_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"count_distinct_optimization", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"enable_optimize_predicate_expression", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"enable_optimize_predicate_expression_to_final_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"join_any_take_last_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -120,8 +123,11 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"split_intersecting_parts_ranges_into_layers_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"split_parts_ranges_into_intersecting_and_non_intersecting_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"transform_null_in", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_concurrency_control", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)}};
+       {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"use_uncompressed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)}};
 
 std::unordered_map<String, CHSetting> serverSettings = {
     {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -171,9 +177,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"collect_hash_table_stats_during_joins", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"compatibility_ignore_auto_increment_in_create_table", CHSetting(trueOrFalse, {}, false)},
     {"compatibility_ignore_collation_in_create_table", CHSetting(trueOrFalse, {}, false)},
-    {"compile_aggregate_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"composed_data_type_output_format_mode",
      CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'default'" : "'spark'"; }, {}, false)},
     {"convert_query_to_cnf", CHSetting(trueOrFalse, {}, false)},
@@ -950,10 +953,8 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"use_cache_for_count_from_files", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_client_time_zone", CHSetting(trueOrFalse, {}, false)},
        {"use_compact_format_in_distributed_parts_names", CHSetting(trueOrFalse, {}, false)},
-       {"use_concurrency_control", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_hedged_requests", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_hive_partitioning", CHSetting(trueOrFalse, {}, false)},
-       {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_local_cache_for_remote_storage", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_query_cache",
@@ -968,7 +969,6 @@ static std::unordered_map<String, CHSetting> serverSettings3
             {},
             false)},
        {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
-       {"use_uncompressed_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
        {"use_with_fill_by_sorting_prefix", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"validate_experimental_and_suspicious_types_inside_nested_types", CHSetting(trueOrFalse, {}, false)},
@@ -979,6 +979,10 @@ static std::unordered_map<String, CHSetting> serverSettings3
 
 void loadFuzzerServerSettings(const FuzzConfig & fc)
 {
+    if (!fc.clusters.empty())
+    {
+        performanceSettings.insert({{"enable_parallel_replicas", CHSetting(trueOrFalse, {"0", "1"}, false)}});
+    }
     for (auto & setting : performanceSettings)
     {
         serverSettings.insert(setting);
@@ -1003,8 +1007,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.insert(
             {{"allow_experimental_parallel_reading_from_replicas", CHSetting(zeroOneTwo, {"0", "1", "2"}, false)},
              {"cluster_for_parallel_replicas",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(fc.clusters) + "'"; }, {}, false)},
-             {"enable_parallel_replicas", CHSetting(trueOrFalse, {"0", "1"}, false)}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(fc.clusters) + "'"; }, {}, false)}});
     }
 }
 
