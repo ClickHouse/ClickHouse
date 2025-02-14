@@ -1451,8 +1451,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             aj->kind = aj->kind == ASTArrayJoin::Kind::Inner ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
         }
-
-        fuzz(fn->children);
     }
     else if (auto * tj = typeid_cast<ASTTableJoin *>(ast.get()))
     {
@@ -1464,8 +1462,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             fuzzColumnLikeExpressionList(tj->using_expression_list.get());
         }
-
-        fuzz(fn->children);
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
