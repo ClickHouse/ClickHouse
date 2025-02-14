@@ -8054,6 +8054,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     size_t parts_processed = 0;
     for (const auto & part : data_parts)
     {
+        if (local_context->isCurrentQueryKilled())
+            return result;
         if (!matcher(part->info.partition_id))
             continue;
 
