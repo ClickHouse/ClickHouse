@@ -473,6 +473,19 @@ class ClickhouseIntegrationTestsRunner:
         return list(sorted(skip_list_tests))
 
     @staticmethod
+    def _get_broken_tests_list(repo_path: str) -> dict:
+        skip_list_file_path = f"{repo_path}/tests/broken_tests.json"
+        if (
+            not os.path.isfile(skip_list_file_path)
+            or os.path.getsize(skip_list_file_path) == 0
+        ):
+            return {}
+
+        with open(skip_list_file_path, "r", encoding="utf-8") as skip_list_file:
+            skip_list_tests = json.load(skip_list_file)
+        return skip_list_tests
+
+    @staticmethod
     def group_test_by_file(tests):
         result = {}  # type: Dict
         for test in tests:
@@ -957,6 +970,9 @@ class ClickhouseIntegrationTestsRunner:
             len(not_found_tests),
             " ".join(not_found_tests[:3]),
         )
+
+        known_broken_tests = self._get_broken_tests_list(self.repo_path)
+
         grouped_tests = self.group_test_by_file(filtered_sequential_tests)
         i = 0
         for par_group in chunks(filtered_parallel_tests, PARALLEL_GROUP_SIZE):
@@ -986,6 +1002,26 @@ class ClickhouseIntegrationTestsRunner:
             group_counters, group_test_times, log_paths = self.try_run_test_group(
                 group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
+
+            for fail_status in ("ERROR", "FAILED"):
+                for failed_test in group_counters[fail_status]:
+                    if failed_test in known_broken_tests.keys():
+                        fail_message = known_broken_tests[failed_test].get("message")
+                        if not fail_message:
+                            mark_as_broken = True
+                        else:
+                            mark_as_broken = False
+                            for log_path in log_paths:
+                                if log_path.endswith(".log"):
+                                    with open(log_path) as log_file:
+                                        if fail_message in log_file.read():
+                                            mark_as_broken = True
+                                            break
+
+                        if mark_as_broken:
+                            group_counters[fail_status].remove(failed_test)
+                            group_counters["BROKEN"].append(failed_test)
+
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info(
