@@ -87,31 +87,30 @@ def generate_data(q, total_number, use_token):
             if end >= total_number:
                 break
     # wait all the tasks is done.
-    q.join()
+    for i in range(3):
+        q.put("end")
 
 
 def fetch_and_insert_data(q, client):
-    try:
-        while True:
-            insert = q.get()
-            content = client.query(
-                insert[0],
-                settings={
-                    "async_insert": 1,
-                    "async_insert_deduplicate": 1,
-                    "wait_for_async_insert": 1,
-                    "async_insert_busy_timeout_ms": 1500,
-                    "insert_keeper_fault_injection_probability": 0,
-                    "insert_deduplication_token": insert[1],
-                },
-                with_retries=False,
-            )
-            q.task_done()
-            sleep_time = random.randint(50, 500)
-            time.sleep(sleep_time / 1000.0)
-    except ValueError as ex:
-        print(ex, file=sys.stderr, flush=True)
-        os._exit(1)
+    while True:
+        insert = q.get()
+        if insert == "end":
+            return
+        content = client.query(
+            insert[0],
+            settings={
+                "async_insert": 1,
+                "async_insert_deduplicate": 1,
+                "wait_for_async_insert": 1,
+                "async_insert_busy_timeout_ms": 1500,
+                "insert_keeper_fault_injection_probability": 0,
+                "insert_deduplication_token": insert[1],
+            },
+            with_retries=False,
+        )
+        q.task_done()
+        sleep_time = random.randint(50, 500)
+        time.sleep(sleep_time / 1000.0)
 
 
 # main process
@@ -137,11 +136,15 @@ if len(sys.argv) >= 3 and sys.argv[2] == "token":
 gen = Thread(target=generate_data, args=[q, total_number, use_token])
 gen.start()
 
+insert_threads = []
 for i in range(3):
     insert = Thread(target=fetch_and_insert_data, args=[q, client])
     insert.start()
+    insert_threads.append(insert)
 
 gen.join()
+for insert_thread in insert_threads:
+    insert_thread.join()
 
 retry = 0
 
@@ -165,7 +168,6 @@ while True:
     # retry several times to get stable results.
     if err and retry >= 5:
         raise Exception(errMsg)
-        os._exit(1)
     elif err:
         retry += 1
         continue
@@ -177,7 +179,6 @@ result = client.query(
 result = int(result.split()[0])
 if result <= 0:
     raise Exception(f"AsyncInsertCacheSize should > 0, but got {result}")
-    os._exit(1)
 
 result = client.query(
     "SELECT value FROM system.events where event = 'AsyncInsertCacheHits'"
@@ -185,8 +186,6 @@ result = client.query(
 result = int(result.split()[0])
 if result <= 0:
     raise Exception(f"AsyncInsertCacheHits should > 0, but got {result}")
-    os._exit(1)
 
 client.query("DROP TABLE IF EXISTS t_async_insert_dedup SYNC")
 
-os._exit(os.EX_OK)
