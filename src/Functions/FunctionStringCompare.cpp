@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
@@ -39,14 +40,26 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeInt8>(); }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        FunctionArgumentDescriptors mandatory_args{
+            {"str1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+            {"str2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"str1_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&FunctionStrncmp::isConstColumn), "UInt"},
+            {"str2_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&FunctionStrncmp::isConstColumn), "UInt"},
+            {"n", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&FunctionStrncmp::isConstColumn), "UInt"},
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        return std::make_shared<DataTypeInt8>();
+    }
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeInt8>(); }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
-        checkArguments(arguments);
         auto compare_result_column = ColumnInt8::create();
         compare_result_column->getData().resize(arguments[0].column->size());
 
@@ -128,45 +141,9 @@ public:
     }
 
 private:
-    void checkArguments(const ColumnsWithTypeAndName & args) const
+    static bool isConstColumn(const IColumn & column)
     {
-        if (args.size() != 5)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} requires 5 arguments, but got {}.", getName(), args.size());
-
-        if (!WhichDataType(args[0].type).isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The first argument of function {} must be a string, but got {}.",
-                getName(),
-                args[0].type->getName());
-
-        if (!WhichDataType(args[1].type).isNativeUInt() || !args[1].column->isConst())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The second argument of function {} must be a constant non-negative, but got {}.",
-                getName(),
-                args[1].column->getName());
-
-        if (!WhichDataType(args[2].type).isStringOrFixedString())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The third argument of function {} must be a string, but got {}.",
-                getName(),
-                args[2].column->getName());
-
-        if (!WhichDataType(args[3].type).isNativeUInt() || !args[3].column->isConst())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The fourth argument of function {} must be a constant non-negative, but got {}.",
-                getName(),
-                args[3].column->getName());
-
-        if (!WhichDataType(args[4].type).isNativeUInt() || !args[4].column->isConst())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The fifth argument of function {} must be a constant non-negative, but got {}.",
-                getName(),
-                args[4].column->getName());
+        return column.isConst();
     }
 
     template <bool positive>
