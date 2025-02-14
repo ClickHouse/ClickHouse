@@ -3,7 +3,6 @@
 #include <atomic>
 #include <unordered_map>
 #include <IO/WriteSettings.h>
-#include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
@@ -36,6 +35,7 @@ namespace zkutil
 namespace DB
 {
 
+class Block;
 struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;

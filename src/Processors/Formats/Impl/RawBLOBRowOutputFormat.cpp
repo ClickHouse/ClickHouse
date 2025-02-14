@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/RawBLOBRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>
 
