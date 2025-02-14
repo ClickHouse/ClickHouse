@@ -30,6 +30,13 @@ enum class PeerTableDatabase
     ClickHouse = 4
 };
 
+enum class PeerQuery
+{
+    None = 0,
+    ClickHouseOnly = 1,
+    AllPeers = 2
+};
+
 struct SQLColumn
 {
 public:
@@ -43,7 +50,7 @@ public:
     SQLColumn(const SQLColumn & c)
     {
         this->cname = c.cname;
-        this->tp = TypeDeepCopy(c.tp);
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -51,7 +58,7 @@ public:
     SQLColumn(SQLColumn && c) noexcept
     {
         this->cname = c.cname;
-        this->tp = TypeDeepCopy(c.tp);
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -64,7 +71,7 @@ public:
         }
         this->cname = c.cname;
         delete this->tp;
-        this->tp = TypeDeepCopy(c.tp);
+        this->tp = c.tp->typeDeepCopy();
         this->special = c.special;
         this->nullable = std::optional<bool>(c.nullable);
         this->dmod = std::optional<DModifier>(c.dmod);
@@ -102,6 +109,7 @@ public:
     DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
+    uint32_t zoo_path_counter;
 
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 };
@@ -116,7 +124,7 @@ public:
     std::optional<TableEngineOption> toption = std::nullopt;
     TableEngineValues teng = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
-    std::string file_comp;
+    String file_comp;
     InOutFormat file_format;
 
     bool isMergeTreeFamily() const
@@ -167,11 +175,16 @@ public:
 
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
+    bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine();
+            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
+            || isDistributedEngine();
     }
+
+    bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
 
     bool hasDatabasePeer() const { return peer_table != PeerTableDatabase::None; }
 
@@ -188,10 +201,10 @@ struct SQLTable : SQLBase
 {
 public:
     uint32_t col_counter = 0, idx_counter = 0, proj_counter = 0, constr_counter = 0, freeze_counter = 0;
-    std::map<uint32_t, SQLColumn> cols, staged_cols;
-    std::map<uint32_t, SQLIndex> idxs, staged_idxs;
-    std::set<uint32_t> projs, staged_projs, constrs, staged_constrs;
-    std::map<uint32_t, std::string> frozen_partitions;
+    std::unordered_map<uint32_t, SQLColumn> cols, staged_cols;
+    std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
+    std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
+    std::unordered_map<uint32_t, String> frozen_partitions;
 
     size_t numberOfInsertableColumns() const
     {
@@ -235,10 +248,14 @@ public:
 struct ColumnPathChainEntry
 {
 public:
-    const std::string cname;
+    const String cname;
     SQLType * tp = nullptr;
 
-    ColumnPathChainEntry(const std::string cn, SQLType * t) : cname(cn), tp(t) { }
+    ColumnPathChainEntry(const String cn, SQLType * t)
+        : cname(cn)
+        , tp(t)
+    {
+    }
 };
 
 struct ColumnPathChain
@@ -251,11 +268,14 @@ public:
 
     ColumnPathChain(
         const std::optional<bool> nu, const ColumnSpecial cs, const std::optional<DModifier> dm, const std::vector<ColumnPathChainEntry> p)
-        : nullable(nu), special(cs), dmod(dm), path(p)
+        : nullable(nu)
+        , special(cs)
+        , dmod(dm)
+        , path(p)
     {
     }
 
-    const std::string & getBottomName() const { return path[path.size() - 1].cname; }
+    const String & getBottomName() const { return path[path.size() - 1].cname; }
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
 };

@@ -6,9 +6,9 @@ import os
 import re
 import subprocess
 import sys
-import time
+import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,7 +17,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_buddy import CIBuddy
 from ci_cache import CiCache
-from ci_config import CI
+from ci_config import BUILD_NAMES_MAPPING, CI
 from ci_metadata import CiMetadata
 from ci_settings import CiSettings
 from ci_utils import GH, Envs, Utils
@@ -63,7 +63,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,too-many-branches
 
 
 def get_check_name(check_name: str, batch: int, num_batches: int) -> str:
@@ -108,6 +108,12 @@ def parse_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
     )
     parser.add_argument(
         "--run",
+        action="store_true",
+        help="Action that executes run action for specified --job-name. run_command must be configured for a given "
+        "job name.",
+    )
+    parser.add_argument(
+        "--run-from-praktika",
         action="store_true",
         help="Action that executes run action for specified --job-name. run_command must be configured for a given "
         "job name.",
@@ -647,9 +653,12 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             if CI.is_build_job(job):
                 # no GH status for build jobs
                 continue
-            job_config = CI.get_job_config(job)
-            if not job_config:
-                # there might be a new job that does not exist on this branch - skip it
+            try:
+                job_config = CI.get_job_config(job)
+            except Exception as e:
+                print(
+                    f"WARNING: Failed to get job config for [{job}], it might have been removed from main branch, ex: [{e}]"
+                )
                 continue
             for batch in range(job_config.num_batches):
                 future = executor.submit(
@@ -663,17 +672,10 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             except Exception as e:
                 raise e
     print("Going to update overall CI report")
-    for retry in range(2):
-        try:
-            set_status_comment(commit, pr_info)
-            break
-        except Exception as e:
-            print(
-                f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
-            )
-            time.sleep(1)
-    else:
-        print("ERROR: All retry attempts failed.")
+    try:
+        set_status_comment(commit, pr_info)
+    except Exception as e:
+        print(f"WARNING: Failed to update CI Running status, ex [{e}]")
     print("... CI report update - done")
 
 
@@ -1126,6 +1128,16 @@ def main() -> int:
             args.workflow,
         )
 
+        # Early post the version to have it before await
+        ch_helper = ClickHouseHelper()
+        _add_build_to_version_history(
+            pr_info,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            version,
+            ci_cache.job_digests[CI.BuildNames.PACKAGE_RELEASE],
+            ch_helper,
+        )
+
         ci_cache.print_status()
         if IS_CI and pr_info.is_pr and not ci_settings.no_ci_cache:
             ci_cache.filter_out_not_affected_jobs()
@@ -1163,14 +1175,6 @@ def main() -> int:
                 },
             }
         result["docker_data"] = docker_data
-        ch_helper = ClickHouseHelper()
-        _add_build_to_version_history(
-            pr_info,
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            result["version"],
-            result["build"],
-            ch_helper,
-        )
     ### CONFIGURE action: end
 
     ### PRE action: start
@@ -1226,7 +1230,8 @@ def main() -> int:
                 # upload binaries only for normal builds in PRs
                 upload_binary = (
                     not pr_info.is_pr
-                    or CI.get_job_ci_stage(args.job_name) == CI.WorkflowStages.BUILDS_1
+                    or CI.get_job_ci_stage(args.job_name)
+                    not in (CI.WorkflowStages.BUILDS_2,)
                     or CiSettings.create_from_run_config(indata).upload_all
                 )
 
@@ -1398,6 +1403,52 @@ def main() -> int:
             _set_pending_statuses(pr_info)
         else:
             assert False, "BUG! Not supported scenario"
+
+    ### RUN action for migration to praktika: start
+    # temporary mode for migration to new ci workflow
+    elif args.run_from_praktika:
+        check_name = os.environ["JOB_NAME"]
+        check_name = BUILD_NAMES_MAPPING.get(check_name, check_name)
+        assert check_name
+        os.environ["CHECK_NAME"] = check_name
+        start_time = datetime.now(timezone.utc)
+        try:
+            jr = JobReport.create_dummy(status="error", job_skipped=False)
+            jr.dump()
+            exit_code = _run_test(check_name, args.run_command)
+            job_report = JobReport.load() if JobReport.exist() else None
+            assert (
+                job_report
+            ), "BUG. There must be job report either real report, or pre-report if job was killed"
+            job_report.exit_code = exit_code
+            job_report.dump()
+        except Exception:
+            traceback.print_exc()
+            print("Run failed")
+
+        # post
+        try:
+            if JobReport.load().dummy:
+                print("ERROR: Job was killed - generate evidence")
+                job_report.duration = (
+                    start_time - datetime.now(timezone.utc)
+                ).total_seconds()
+                if Utils.is_killed_with_oom():
+                    print("WARNING: OOM while job execution")
+                    print(subprocess.run("sudo dmesg -T", check=False))
+                    error_description = (
+                        f"Out Of Memory, exit_code {job_report.exit_code}"
+                    )
+                else:
+                    error_description = f"Unknown, exit_code {job_report.exit_code}"
+                CIBuddy().post_job_error(
+                    error_description + f" after {int(job_report.duration)}s",
+                    job_name=_get_ext_check_name(args.job_name),
+                )
+        except Exception:
+            traceback.print_exc()
+            print("Post failed")
+    ### RUN FROM PRAKTIKA action: end
 
     ### print results
     _print_results(result, args.outfile, args.pretty)

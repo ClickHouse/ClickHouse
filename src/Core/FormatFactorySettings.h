@@ -330,6 +330,10 @@ Mode of schema inference. 'default' - assume that all files have the same schema
 Controls making inferred types `Nullable` in schema inference.
 If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 )", 0) \
+    DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
+Controls making inferred JSON types `Nullable` in schema inference.
+If this setting is enabled together with schema_inference_make_columns_nullable, inferred JSON type will be `Nullable`.
+)", 0) \
     DECLARE(Bool, input_format_json_read_bools_as_numbers, true, R"(
 Allow parsing bools as numbers in JSON input formats.
 
@@ -850,7 +854,7 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values in JSON output format will be printed in pretty format.
+When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
 
 Enabled by default.
 )", 0) \
@@ -991,7 +995,24 @@ Target page size in bytes, before compression.
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
-Add a possibility to write page index into parquet files.
+Write column index and offset index (i.e. statistics about each data page, which may be used for filter pushdown on read) into parquet files.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_bloom_filter, true, R"(
+Write bloom filters in parquet files. Requires output_format_parquet_use_custom_encoder = true.
+)", 0) \
+    DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
+Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
+  *  6   bits - 10%
+  * 10.5 bits -  1%
+  * 16.9 bits -  0.1%
+  * 26.4 bits -  0.01%
+  * 41   bits -  0.001%
+)", 0) \
+    DECLARE(UInt64, output_format_parquet_bloom_filter_flush_threshold_bytes, 128 * 1024 * 1024, R"(
+Where in the parquet file to place the bloom filters. Bloom filters will be written in groups of approximately this size. In particular:
+  * if 0, each row group's bloom filters are written immediately after the row group,
+  * if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
+  * otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
 )", 0) \
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
@@ -1128,11 +1149,14 @@ If not, they will be rendered as is, potentially deforming the table (one upside
 If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
 See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
 )", 0) \
-    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 100, R"(
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 10, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
