@@ -803,19 +803,19 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 }
 
 template <typename ReturnType, bool is_us_style, bool strict = false>
-ReturnType parseTime64BestEffortImpl(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, const char * allowed_date_delimiters = nullptr)
+ReturnType parseTime64BestEffortImpl(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, [[maybe_unused]]const char * allowed_date_delimiters = nullptr)
 {
     time_t whole;
     DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
 
     if constexpr (std::is_same_v<ReturnType, bool>)
     {
-        if (!parseDateTimeBestEffortImpl<bool, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters))
+        if (!parseTimeBestEffortImpl<bool, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond))
             return false;
     }
     else
     {
-        parseDateTimeBestEffortImpl<ReturnType, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond, allowed_date_delimiters);
+        parseTimeBestEffortImpl<ReturnType, is_us_style, strict, true>(whole, in, local_time_zone, utc_time_zone, &subsecond);
     }
 
 
@@ -1097,6 +1097,7 @@ ReturnType parseTimeBestEffortImpl(
 
         return ReturnType(true);
     }
+    return ReturnType(true);
 }
 }
 
@@ -1153,6 +1154,11 @@ bool tryParseTime64BestEffort(Time64 & res, UInt32 scale, ReadBuffer & in, const
 void parseTime64BestEffort(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     parseTime64BestEffortImpl<void, false>(res, scale, in, local_time_zone, utc_time_zone);
+}
+
+bool tryParseTime64BestEffortUS(Time64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseTime64BestEffortImpl<bool, true>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 bool tryParseDateTime64BestEffortUS(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

@@ -908,7 +908,7 @@ struct ToStartOfSecondImpl
     static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl &)
     {
         // See the implementation for DateTime64 above.
-        auto fractional_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(time64, scale_multiplier);
+        auto fractional_with_sign = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier);
 
         if (fractional_with_sign < 0)
             fractional_with_sign += scale_multiplier;
@@ -976,7 +976,7 @@ struct ToStartOfMillisecondImpl
         }
 
         auto droppable_part_with_sign
-            = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(time64, scale_multiplier / 1000);
+            = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier / 1000);
 
         if (droppable_part_with_sign < 0)
             droppable_part_with_sign += scale_multiplier;
@@ -1041,7 +1041,7 @@ struct ToStartOfMicrosecondImpl
         }
 
         auto droppable_part_with_sign
-            = DecimalUtils::getFractionalPartWithScaleMultiplier<DateTime64, true>(time64, scale_multiplier / 1000000);
+            = DecimalUtils::getFractionalPartWithScaleMultiplier<Time64, true>(time64, scale_multiplier / 1000000);
 
         if (droppable_part_with_sign < 0)
             droppable_part_with_sign += scale_multiplier;

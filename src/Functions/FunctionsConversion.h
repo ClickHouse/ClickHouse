@@ -953,7 +953,7 @@ inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuf
 }
 
 template <>
-[[maybe_unused]] inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
     time_t time = 0;
     readTimeText(time, rb, *time_zone);
@@ -1584,7 +1584,7 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
-            if (std::is_same_v<ToDataType, DataTypeDateTime>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
@@ -1597,7 +1597,7 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime>))
         {
-            if (std::is_same_v<ToDataType, DataTypeDateTime>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
@@ -1611,7 +1611,7 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeInt64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            if (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
             else
@@ -1621,7 +1621,7 @@ struct ConvertImpl
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            if (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
             else
@@ -1633,7 +1633,7 @@ struct ConvertImpl
                 || std::is_same_v<FromDataType, DataTypeFloat64>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
-            if (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformFloat<FromDataType, typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
             else
@@ -1663,8 +1663,7 @@ struct ConvertImpl
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeDate>
                 || std::is_same_v<FromDataType, DataTypeDate32>
-                || std::is_same_v<FromDataType, DataTypeDateTime>
-                || std::is_same_v<FromDataType, DataTypeTime>)
+                || std::is_same_v<FromDataType, DataTypeDateTime>)
             && std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
@@ -1860,7 +1859,7 @@ struct ConvertImpl
                             else
                                 is_ok = FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
+                        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
                         {
                             if (cut_trailing_zeros_align_to_groups_of_thousands)
                                 writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);
@@ -1894,7 +1893,7 @@ struct ConvertImpl
                             else
                                 FormatImpl<FromDataType>::template execute<bool>(vec_from[i], write_buffer, &type, time_zone);
                         }
-                        if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
+                        else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>)
                         {
                             if (cut_trailing_zeros_align_to_groups_of_thousands)
                                 writeTime64TextCutTrailingZerosAlignToGroupOfThousands(Time64(vec_from[i]), type.getScale(), write_buffer);

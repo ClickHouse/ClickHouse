@@ -88,23 +88,23 @@ static inline void readText(Time64 & x, UInt32 scale, ReadBuffer & istr, const F
     }
 }
 
-static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+static inline bool tryReadText(Time64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            return tryReadDateTime64Text(x, scale, istr, time_zone);
+            return tryReadTime64Text(x, scale, istr, time_zone);
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            return tryParseDateTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
+            return tryParseTime64BestEffort(x, scale, istr, time_zone, utc_time_zone);
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            return tryParseDateTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
+            return tryParseTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
     }
 }
 
 
 bool SerializationTime64::tryDeserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x = 0;
+    Time64 x = 0;
     if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !istr.eof())
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -120,7 +120,7 @@ void SerializationTime64::deserializeTextEscaped(IColumn & column, ReadBuffer & 
 
 bool SerializationTime64::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x = 0;
+    Time64 x = 0;
     if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone))
         return false;
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -151,7 +151,7 @@ void SerializationTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & i
 
 bool SerializationTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x = 0;
+    Time64 x = 0;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
@@ -190,7 +190,7 @@ void SerializationTime64::deserializeTextJSON(IColumn & column, ReadBuffer & ist
 
 bool SerializationTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x = 0;
+    Time64 x = 0;
     if (checkChar('"', istr))
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
@@ -251,7 +251,7 @@ void SerializationTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr
 
 bool SerializationTime64::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    DateTime64 x = 0;
+    Time64 x = 0;
 
     if (istr.eof())
         return false;
