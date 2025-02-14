@@ -1930,7 +1930,7 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::query_cache_max_size_in_bytes],
                                 settings[Setting::query_cache_max_entries]));
             
-            auto stream_into_query_cache_step = std::make_unique<StreamInQueryCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_cache_writer, key.query_string);
+            auto stream_into_query_cache_step = std::make_unique<StreamInQueryCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_cache_writer);
             query_plan.addStep(std::move(stream_into_query_cache_step));
         }
     }
