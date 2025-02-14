@@ -2,6 +2,7 @@
 
 #include "MaterializedPostgreSQLConsumer.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/PostgreSQL/Utils.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -105,6 +106,8 @@ private:
 
     void assertInitialized() const;
 
+    void execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const;
+
     LoggerPtr log;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
@@ -141,9 +144,9 @@ private:
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     ConsumerPtr consumer;
 
-    BackgroundSchedulePool::TaskHolder startup_task;
-    BackgroundSchedulePool::TaskHolder consumer_task;
-    BackgroundSchedulePool::TaskHolder cleanup_task;
+    BackgroundSchedulePoolTaskHolder startup_task;
+    BackgroundSchedulePoolTaskHolder consumer_task;
+    BackgroundSchedulePoolTaskHolder cleanup_task;
 
     const UInt64 reschedule_backoff_min_ms;
     const UInt64 reschedule_backoff_max_ms;
@@ -156,6 +159,8 @@ private:
     MaterializedStorages materialized_storages;
 
     bool replication_handler_initialized = false;
+
+    float fault_injection_probability = 0.;
 };
 
 }

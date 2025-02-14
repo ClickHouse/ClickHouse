@@ -1,9 +1,11 @@
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -277,6 +279,15 @@ void StorageNATS::incrementReader()
 void StorageNATS::decrementReader()
 {
     --readers_count;
+}
+
+
+void StorageNATS::startStreaming()
+{
+    if (!mv_attached)
+    {
+        streaming_task->activateAndSchedule();
+    }
 }
 
 
