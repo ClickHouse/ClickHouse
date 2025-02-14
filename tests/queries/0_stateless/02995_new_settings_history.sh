@@ -21,17 +21,6 @@ then
   IGNORE_SETTINGS_FOR_SANITIZERS="name NOT IN ('query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns')"
 fi
 
-# We'll need to make an exception for setting 'join_algorithm', sorry.
-# - In 24.12, the _meaning_ of value 'default' for setting 'join_algorithm' was changed from 'direct,hash' to 'direct,parallel_hash,hash'. The
-#   value of the setting itself did not change. Accordingly nothing was recorded in the settings changes history.
-# - In Feb 25, CPU and memory regressions were detected. To address this, the meaning of 'join_algorithm = default' was restored to its
-#   pre-24.12 semantics. At the same time, the _value_ of 'join_algorithm' was changed from 'default' to 'direct,parallel_hash,hash'. This
-#   was also retroactively recorded in the settings changes history for 24.12.
-# - Below query checks settings changes against a baseline of the settings in the most recent published release. It complains that
-#   'join_algorithm' changed but it doesn't see the corresponding entry in settings change history because it is too old. As a workaround,
-#   exclude `join_algorithm` from the check.
-IGNORE_JOIN_ALGORITHM_SETTING="name != 'join_algorithm'"
-
 # Note that this is a broad check. A per version check is done in the upgrade test
 # Baselines generated with v25.1.4.32 (pre-release)
 # clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_25_1_4.tsv
@@ -83,29 +72,22 @@ $CLICKHOUSE_LOCAL --query "
             SELECT 'PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_settings.default || ' TO ' || new_settings.default
             FROM new_settings
             LEFT JOIN old_settings ON new_settings.name = old_settings.name
-            WHERE (new_settings.default != old_settings.default)
-                AND (name NOT IN (
-                    SELECT arrayJoin(tupleElement(changes, 'name'))
-                    FROM system.settings_changes
-                    WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1)
-                )
-                AND ${IGNORE_JOIN_ALGORITHM_SETTING}
-                AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
+            WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
+                SELECT arrayJoin(tupleElement(changes, 'name'))
+                FROM system.settings_changes
+                WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+            )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
         (
             SELECT 'PLEASE ADD THE MERGE_TREE_SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_merge_tree_settings.default || ' TO ' || new_merge_tree_settings.default
             FROM new_merge_tree_settings
             LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
-            WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default)
-                AND (name NOT IN (
-                    SELECT arrayJoin(tupleElement(changes, 'name'))
-                    FROM system.settings_changes
-                    WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1)
-                )
-                AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
+            WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default) AND (name NOT IN (
+                SELECT arrayJoin(tupleElement(changes, 'name'))
+                FROM system.settings_changes
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+            )) AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
         )
     )
 "
-
-# (*) 
