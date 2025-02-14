@@ -1431,7 +1431,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         if (AggregateUtils::isAggregateFunction(*fn))
         {
-            if (!fn->children.empty() && fuzz_rand() % 30 == 0)
+            if (fn->arguments && !fn->arguments->children.empty() && fuzz_rand() % 30 == 0)
             {
                 ///Add or remove distinct to aggregate
                 static const String distinct_suffix = "Distinct";
