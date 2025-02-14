@@ -93,6 +93,8 @@ private:
     void processQuery();
 
     static bool isEmptyQuery(const String & query);
+
+    static std::string ConvertPGDataToCH(const String & initial_data);
 };
 
 }
