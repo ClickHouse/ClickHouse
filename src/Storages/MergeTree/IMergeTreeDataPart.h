@@ -129,10 +129,10 @@ public:
     bool hasSecondaryIndex(const String & index_name) const;
 
     /// Return information about column size on disk for all columns in part
-    ColumnSize getTotalColumnsSize() const { return total_columns_size; }
+    ColumnSize getTotalColumnsSize() const;
 
     /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSecondaryIndicesSize() const { return total_secondary_indices_size; }
+    IndexSize getTotalSecondaryIndicesSize() const;
 
     virtual std::optional<String> getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -446,7 +446,7 @@ public:
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
 
     /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
 
     std::optional<String> getRelativePathForPrefix(const String & prefix, bool detached = false, bool broken = false) const;
 
@@ -486,6 +486,7 @@ public:
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
+    bool areChecksumsLoaded() const { return !checksums.empty(); }
 
     void setBrokenReason(const String & message, int code) const;
 
@@ -629,16 +630,21 @@ protected:
     mutable std::mutex index_mutex;
     mutable IndexPtr index;
 
+private:
+    /// Columns and secondary indices sizes can be calculated lazily on first request.
+    mutable std::mutex columns_and_secondary_indices_sizes_mutex;
+    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
+
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
-    ColumnSize total_columns_size;
-
+    mutable ColumnSize total_columns_size;
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
-    ColumnSizeByName columns_sizes;
+    mutable ColumnSizeByName columns_sizes;
 
-    ColumnSize total_secondary_indices_size;
+    mutable ColumnSize total_secondary_indices_size;
 
-    IndexSizeByName secondary_index_sizes;
+    mutable IndexSizeByName secondary_index_sizes;
 
+protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
@@ -730,9 +736,9 @@ private:
 
     void loadPartitionAndMinMaxIndex();
 
-    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt);
+    void calculateColumnsSizesOnDisk(std::optional<Block> columns_sample = std::nullopt) const;
 
-    void calculateSecondaryIndicesSizesOnDisk();
+    void calculateSecondaryIndicesSizesOnDisk() const;
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
