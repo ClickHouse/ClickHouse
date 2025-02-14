@@ -13,7 +13,13 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/named_collections.xml",
+        "certs/ca.pem",
+        "certs/client-key.pem",
+        "certs/client-cert.pem",
+    ],
     user_configs=["configs/users.xml"],
     with_mysql8=True,
 )
@@ -882,6 +888,52 @@ def test_joins(started_cluster):
 
     node1.query("DROP TABLE test_joins_table_users")
     node1.query("DROP TABLE test_joins_table_tickets")
+
+
+def test_mysql_ssl_auth(started_cluster):
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            CREATE USER 'ssl_user'@'{}' REQUIRE X509;
+            """.format(
+                node1.ip_address
+            )
+        )
+        cursor.execute(
+            """
+            GRANT ALL PRIVILEGES ON *.* TO 'ssl_user'@'{}' WITH GRANT OPTION;
+            """.format(
+                node1.ip_address
+            )
+        )
+
+    node1.query(
+        """
+        DROP TABLE IF EXISTS test_table;
+        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32) ENGINE MySQL(mysql_with_ssl);
+        SELECT * FROM test_table;
+        DROP TABLE test_table;
+        """
+    )
+
+    with conn.cursor() as cursor:
+        cursor.execute(
+            """
+            DROP USER 'ssl_user'@'{}';
+            """.format(
+                node1.ip_address
+            )
+        )
+        cursor.execute(
+            """
+            FLUSH PRIVILEGES;
+            """
+        )
 
 
 if __name__ == "__main__":

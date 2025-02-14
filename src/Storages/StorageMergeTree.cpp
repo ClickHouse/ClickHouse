@@ -48,12 +48,6 @@
 #include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
-
 namespace DB
 {
 
@@ -251,9 +245,6 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
 
 void StorageMergeTree::read(
@@ -2699,6 +2690,18 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     }
 
     return res;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()
