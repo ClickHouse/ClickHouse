@@ -1966,11 +1966,11 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
 )", 0) \
     \
     DECLARE(Bool, query_plan_optimize_join_read_by_layers, true, R"(
-Enable join by independent layers optimiztion
+Enable join by independent layers optimization
  )", 0) \
     \
     DECLARE(Bool, query_plan_optimize_full_sorting_merge_join_by_layers, true, R"(
-Enable join by independent layers optimiztion for full sorting merge join algorithm
+Enable join by independent layers optimization for full sorting merge join algorithm
  )", 0) \
     \
     DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(

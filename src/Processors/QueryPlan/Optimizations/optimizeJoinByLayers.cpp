@@ -176,7 +176,7 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
 {
     std::list<JoinStep *> joins;
     std::list<ReadFromMergeTree *> sources;
-    std::list<SortingStep *> sortings;
+    std::list<SortingStep *> sorting_steps;
     size_t common_prefix = std::numeric_limits<size_t>::max();
 };
 
@@ -243,7 +243,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     for (const auto & join_step : data.joins)
         join_step->enableJoinByLayers(data.common_prefix);
 
-    for (const auto & sorting_step : data.sortings)
+    for (const auto & sorting_step : data.sorting_steps)
         sorting_step->convertToPartitionedFinishSorting();
 }
 
@@ -331,7 +331,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root, bool allow_full_sorting_join)
                 result->joins.joins.emplace_back(join_step);
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
-                result->joins.sortings.splice(result->joins.sortings.end(), std::move(frame.results.back()->joins.sortings));
+                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
 
                 /// Here we choose the minimal common prefix.
                 /// Applying optimization to more joins is potentially better.
@@ -363,7 +363,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root, bool allow_full_sorting_join)
         {
             // std::cerr << "============ Apply for sorting\n";
             result = std::move(frame.results[0]);
-            result->joins.sortings.push_back(sorting);
+            result->joins.sorting_steps.push_back(sorting);
         }
         else if (frame.results.size() == 1 && frame.results[0])
         {
