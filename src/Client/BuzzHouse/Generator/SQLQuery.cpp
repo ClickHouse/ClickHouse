@@ -312,7 +312,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     const uint32_t view = 20 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
     const uint32_t engineudf = 5 * static_cast<uint32_t>(this->allow_engine_udf && (has_table || has_view));
     const uint32_t tudf = 5;
-    const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
+    const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t mudf = 3;
     const uint32_t cudf = 4 * static_cast<uint32_t>(!fc.clusters.empty() && (has_table || has_view));
     const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table + mudf + cudf;
