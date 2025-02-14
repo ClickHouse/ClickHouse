@@ -191,18 +191,23 @@ bool Client::processWithFuzzing(const String & full_query)
 
     String query_to_execute;
     ASTPtr fuzz_base = orig_ast;
+#if USE_BUZZHOUSE
+    BuzzHouse::PerformanceResult res1;
+    BuzzHouse::PerformanceResult res2;
+    const bool has_buzzhouse_settings = fc && (fc->measure_performance || fc->compare_success_results) && ei;
+    const bool try_measure_performance_in_loop
+        = has_buzzhouse_settings && fc->measure_performance && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
+    auto insert_into = std::make_shared<ASTInsertQuery>();
+    insert_into->table_function = makeASTFunction("file", std::make_shared<ASTLiteral>("/dev/null"), std::make_shared<ASTLiteral>("CSV"));
+#endif
 
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
     {
 #if USE_BUZZHOUSE
         bool peer_success = true;
-        BuzzHouse::PerformanceResult res1;
-        BuzzHouse::PerformanceResult res2;
+        bool measure_performance = try_measure_performance_in_loop;
         ASTPtr old_settings = nullptr;
         ASTSelectQuery * select_query = nullptr;
-        const bool has_buzzhouse_settings = fc && (fc->measure_performance || fc->compare_success_results) && ei;
-        bool measure_performance = has_buzzhouse_settings && fc->measure_performance
-            && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
 #endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
@@ -217,6 +222,14 @@ bool Client::processWithFuzzing(const String & full_query)
             {
                 fuzzer.fuzzMain(ast_to_process);
             }
+
+            query_to_execute = ast_to_process->formatForErrorMessage();
+            if (fuzz_step > 0 && query_to_execute == base_before_fuzz)
+            {
+                fmt::print(stderr, "Got boring AST\n");
+                continue;
+            }
+
 #if USE_BUZZHOUSE
             if (measure_performance)
             {
@@ -253,11 +266,9 @@ bool Client::processWithFuzzing(const String & full_query)
                         fuzzer.getRandomSettings(set_query->changes);
                     }
                     /// Dump into /dev/null, we are not interested in sending the results back to the client
-                    auto insert = std::make_shared<ASTInsertQuery>();
-                    insert->table_function
-                        = makeASTFunction("file", std::make_shared<ASTLiteral>("/dev/null"), std::make_shared<ASTLiteral>("CSV"));
-                    insert->select = ast_to_process;
-                    ast_to_process = insert;
+                    insert_into->select = ast_to_process;
+                    ast_to_process = insert_into;
+                    query_to_execute = ast_to_process->formatForErrorMessage();
                 }
                 else
                 {
@@ -304,16 +315,26 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 #endif
 
-            query_to_execute = ast_to_process->formatForErrorMessage();
-            if (fuzz_step > 0 && query_to_execute == base_before_fuzz)
-            {
-                fmt::print(stderr, "Got boring AST\n");
-                continue;
-            }
-
-            fmt::print(stderr, "Dump of fuzzed AST:\n{}\n", query_to_execute);
+            fmt::print(stdout, "Dump of fuzzed AST:\n{}\n", query_to_execute);
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
+
+#if USE_BUZZHOUSE
+            if (measure_performance)
+            {
+                /// Don't keep insert into in the AST
+                ast_to_process = insert_into->select;
+                /// Don't keep performance settings in AST
+                if (select_query && old_settings)
+                {
+                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
+                }
+                else if (select_query)
+                {
+                    select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+                }
+            }
+#endif
         }
         catch (...)
         {
@@ -341,7 +362,7 @@ bool Client::processWithFuzzing(const String & full_query)
         if (has_buzzhouse_settings)
         {
             /// Always run query on peer server
-            fmt::print(stderr, "Running query on peer server\n");
+            fmt::print(stdout, "Running query on peer server\n");
             peer_success &= ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
         }
         if (has_buzzhouse_settings && fc->compare_success_results && peer_success != !have_error)
@@ -351,22 +372,9 @@ bool Client::processWithFuzzing(const String & full_query)
         if (measure_performance)
         {
             measure_performance &= peer_success && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, res2);
-
             if (measure_performance)
             {
                 fc->comparePerformanceResults("AST fuzzer", res1, res2);
-            }
-        }
-        if (select_query)
-        {
-            /// Don't keep performance settings in AST
-            if (old_settings)
-            {
-                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
-            }
-            else
-            {
-                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
         }
 #endif
