@@ -5,7 +5,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string.hpp>
-
+#include <boost/endian/conversion.hpp>
 
 namespace DB
 {
@@ -72,6 +72,11 @@ void GTIDSets::parse(String gtid_format)
 
 void GTIDSets::update(const GTID & other)
 {
+    GTID non_const_other = other;
+    if (boost::endian::order::native == boost::endian::order::big)
+    {
+       non_const_other.seq_no = boost::endian::native_to_little(non_const_other.seq_no);
+    }
     for (GTIDSet & set : sets)
     {
         if (set.uuid == other.uuid)
@@ -81,29 +86,29 @@ void GTIDSets::update(const GTID & other)
                 auto & current = set.intervals[i];
 
                 /// Already Contained.
-                if (other.seq_no >= current.start && other.seq_no < current.end)
+                if (non_const_other.seq_no >= current.start && non_const_other.seq_no < current.end)
                 {
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "GTIDSets updates other: {} invalid successor to {}",
-                        std::to_string(other.seq_no), std::to_string(current.end));
+                        std::to_string(non_const_other.seq_no), std::to_string(current.end));
                 }
 
                 /// Try to shrink Sequence interval.
                 GTIDSet::tryShrink(set, i, current);
 
                 /// Sequence, extend the interval.
-                if (other.seq_no == current.end)
+                if (non_const_other.seq_no == current.end)
                 {
-                    set.intervals[i].end = other.seq_no + 1;
+                    set.intervals[i].end = non_const_other.seq_no + 1;
                     set.tryMerge(i);
                     return;
                 }
             }
 
             /// Add new interval.
-            GTIDSet::Interval new_interval{other.seq_no, other.seq_no + 1};
+            GTIDSet::Interval new_interval{non_const_other.seq_no, non_const_other.seq_no + 1};
             for (auto it = set.intervals.begin(); it != set.intervals.end(); ++it)
             {
-                if (other.seq_no < (*it).start)
+                if (non_const_other.seq_no < (*it).start)
                 {
                     set.intervals.insert(it, new_interval);
                     return;
@@ -115,7 +120,7 @@ void GTIDSets::update(const GTID & other)
     }
 
     GTIDSet set;
-    GTIDSet::Interval interval{other.seq_no, other.seq_no + 1};
+    GTIDSet::Interval interval{non_const_other.seq_no, non_const_other.seq_no + 1};
     set.uuid = other.uuid;
     set.intervals.emplace_back(interval);
     sets.emplace_back(set);
