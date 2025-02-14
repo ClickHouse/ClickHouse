@@ -112,10 +112,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
         info.context = interpreter.getContext();
         info.before_aggregation = aggregation_analysis_result.before_aggregation_actions->dag.clone();
 
-        Names aggregation_key_names;
-        aggregation_key_names.reserve(aggregation_analysis_result.aggregation_keys.size());
-        for (const NameAndTypePair & column : aggregation_analysis_result.aggregation_keys)
-            aggregation_key_names.push_back(column.name);
+        Names aggregation_key_names = aggregation_analysis_result.getAggregationKeyNames();
 
         info.keys = std::move(aggregation_key_names);
         info.aggregates = aggregation_analysis_result.aggregate_descriptions;

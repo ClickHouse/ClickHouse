@@ -32,6 +32,15 @@ struct FilterAnalysisResult
 
 struct AggregationAnalysisResult
 {
+    Names getAggregationKeyNames() const
+    {
+        Names result;
+        result.reserve(aggregation_keys.size());
+        for (const auto & key : aggregation_keys)
+            result.push_back(key.name);
+        return result;
+    }
+
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
     NamesAndTypes aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
@@ -87,6 +96,11 @@ public:
     bool hasAggregation() const
     {
         return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
+    }
+
+    AggregationAnalysisResult & getAggregation()
+    {
+        return aggregation_analysis_result;
     }
 
     const AggregationAnalysisResult & getAggregation() const
