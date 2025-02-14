@@ -256,11 +256,6 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
-
-            WriteBufferFromOwnString dump_of_cloned_ast;
-            ast_to_process->dumpTree(dump_of_cloned_ast);
-            fmt::print(stderr, "Dump of fuzzed AST:\n{}\n", dump_of_cloned_ast.str());
-
 #if 0
             /// Somehow this code is not running
             /// `base_after_fuzz` should format from `ast_to_process`
@@ -300,14 +295,14 @@ bool Client::processWithFuzzing(const String & full_query)
             }
 #endif
 
-            auto fuzzed_text = ast_to_process->formatForErrorMessage();
-            if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)
+            query_to_execute = ast_to_process->formatForErrorMessage();
+            if (fuzz_step > 0 && query_to_execute == base_before_fuzz)
             {
                 fmt::print(stderr, "Got boring AST\n");
                 continue;
             }
 
-            query_to_execute = ast_to_process->formatForErrorMessage();
+            fmt::print(stderr, "Dump of fuzzed AST:\n{}\n", query_to_execute);
             if (auto res = processFuzzingStep(query_to_execute, ast_to_process, true))
                 return *res;
         }
