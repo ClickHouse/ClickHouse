@@ -96,7 +96,7 @@ def fetch_and_insert_data(q, client):
         insert = q.get()
         if insert == "end":
             return
-        content = client.query(
+        client.query(
             insert[0],
             settings={
                 "async_insert": 1,
