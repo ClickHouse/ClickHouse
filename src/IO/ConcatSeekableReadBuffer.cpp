@@ -1,5 +1,6 @@
 #include <IO/ConcatSeekableReadBuffer.h>
 
+#include <Common/Exception.h>
 
 namespace DB
 {
