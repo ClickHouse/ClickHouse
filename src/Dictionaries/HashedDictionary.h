@@ -12,7 +12,7 @@
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
 #include <Dictionaries/HashedDictionaryParallelLoader.h>
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 
 #include <Common/ArenaUtils.h>
