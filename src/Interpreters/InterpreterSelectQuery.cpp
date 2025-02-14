@@ -1130,7 +1130,6 @@ BlockIO InterpreterSelectQuery::execute()
 {
     BlockIO res;
     QueryPlan query_plan;
-    LOG_TRACE(getLogger("QueryCache"), "Use old select query interpreter");
 
     buildQueryPlan(query_plan);
 

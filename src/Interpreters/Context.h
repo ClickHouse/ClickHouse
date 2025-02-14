@@ -103,7 +103,6 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryCache;
-enum class QueryCacheUsage : uint8_t;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;

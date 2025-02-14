@@ -586,8 +586,6 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
-        LOG_TRACE(getLogger("QueryCache"),
-                        "Create analyzer for subquery");
         auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
         if (only_analyze)
@@ -686,8 +684,9 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
             logProcessorProfile(context, io.pipeline.getProcessors());
 
-            /// Finalize write to save scalar subquery result in QueryCache
-            io.pipeline.finalizeWriteInQueryCache();
+            /// Finalize write in query cache to save scalar subquery result
+            if (context->getCanUseQueryCache())
+                io.pipeline.finalizeWriteInQueryCache();
         }
 
         scalars_cache.emplace(node_with_hash, scalar_block);

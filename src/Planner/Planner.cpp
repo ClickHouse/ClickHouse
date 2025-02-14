@@ -1,4 +1,3 @@
-#include <memory>
 #include <Planner/Planner.h>
 
 #include <Columns/ColumnConst.h>

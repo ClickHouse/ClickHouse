@@ -1,5 +1,4 @@
 #include "Interpreters/Cache/QueryCache.h"
-#include <algorithm>
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -210,6 +209,8 @@ bool isQueryCacheRelatedSetting(const String & setting_name)
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
+/// Some additional settings are set for subqueries, they don't affect the result of SELECT queries,
+/// however with them similar subqueries can sometimes mismatch, so ignore this settings.
 bool isSubquerySpecificSetting(const String & setting_name)
 {
     return setting_name == "use_structure_from_insertion_table_in_table_functions";
@@ -290,6 +291,8 @@ public:
 
 using RemoveTableAliasVisitor = InDepthNodeVisitor<RemoveTableAliasMatcher, true>;
 
+/// QueryTree is used for caching subqueries, therefore ast has unnecessary aliases (__table1, __table2, ...)
+/// Remove these aliases from ast before using it for caching.
 ASTPtr removeTableAliases(ASTPtr ast)
 {
     RemoveTableAliasVisitor::Data visitor_data;
@@ -308,15 +311,10 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     SipHash hash;
     ast->updateTreeHash(hash, /*ignore_aliases=*/ false);
 
-    auto h1 = getSipHash128AsPair(hash);
-    LOG_TRACE(getLogger("QueryCache"), "only ast hash: {} {}", h1.high64, h1.low64);
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
     hash.update(current_database);
 
-    auto h2 = getSipHash128AsPair(hash);
-    LOG_TRACE(getLogger("QueryCache"), "ast db hash: {} {}", h2.high64, h2.low64);
-    LOG_TRACE(getLogger("QueryCache"), "extremes {} max_result_bytes {} {}", settings[Setting::extremes], settings[Setting::max_result_bytes], settings[Setting::max_result_rows]);
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
     /// Therefore, collect and sort the settings first, then hash them.
@@ -327,8 +325,6 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
         const String & name = change.name;
         if (!isQueryCacheRelatedSetting(name) && !isSubquerySpecificSetting(name)) /// see removeQueryCacheSettings() and isSubquerySpecificSetting() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
-        else
-            LOG_TRACE(getLogger("QueryCache"), "unused setting: {} {}", change.name, change.value);
     }
 
     /// Some specific settings are added to subqueries (extremes 0, max_result_bytes 0, max_result_rows 0),
@@ -350,14 +346,11 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
     {
-        LOG_TRACE(getLogger("QueryCache"), "changed setting: {} {}", setting.first, setting.second);
         hash.update(setting.first);
         hash.update(setting.second);
     }
 
-    auto h = getSipHash128AsPair(hash);
-    LOG_TRACE(getLogger("QueryCache"), "hash: {} {}", h.high64, h.low64);
-    return h;
+    return getSipHash128AsPair(hash);
 }
 
 String queryStringFromAST(ASTPtr ast)
@@ -510,8 +503,6 @@ void QueryCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
 
 void QueryCacheWriter::finalizeWrite()
 {
-    LOG_TRACE(logger, "Finalize write for query {}", doubleQuoteString(key.query_string));
-
     if (skip_insert)
         return;
 

@@ -6,7 +6,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/String.h>
-#include "Common/logger_useful.h"
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
@@ -131,7 +130,6 @@ IAST::Hash IAST::getTreeHash(bool ignore_aliases) const
 void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
     updateTreeHashImpl(hash_state, ignore_aliases);
-    LOG_TRACE(getLogger("QueryCache"), "Ast hash impl children size: {}", children.size());
     hash_state.update(children.size());
     for (const auto & child : children)
         child->updateTreeHash(hash_state, ignore_aliases);
@@ -141,7 +139,6 @@ void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 void IAST::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
     auto id = getID();
-    LOG_TRACE(getLogger("QueryCache"), "Ast hash impl: {}", id);
     hash_state.update(id.data(), id.size());
 }
 

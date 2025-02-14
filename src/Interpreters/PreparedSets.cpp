@@ -233,7 +233,9 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
-    pipeline.finalizeWriteInQueryCache();
+    /// Finalize write in query cache to save subquery result
+    if (context->getCanUseQueryCache())
+        pipeline.finalizeWriteInQueryCache();
 }
 
 SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
@@ -278,7 +280,10 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         return nullptr;
 
     logProcessorProfile(context, pipeline.getProcessors());
-    pipeline.finalizeWriteInQueryCache();
+
+    /// Finalize write in query cache to save subquery result
+    if (context->getCanUseQueryCache())
+        pipeline.finalizeWriteInQueryCache();
 
     return set_and_key->set;
 }

@@ -14,7 +14,7 @@ StreamInQueryCacheTransform::StreamInQueryCacheTransform(
 }
 
 void StreamInQueryCacheTransform::transform(Chunk & chunk)
-{               
+{
     query_cache_writer->buffer(chunk.clone(), chunk_type);
 }
 

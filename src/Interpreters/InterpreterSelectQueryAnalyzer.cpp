@@ -136,8 +136,10 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const StoragePtr & storage)
 {
     auto query_tree = buildQueryTree(query, context);
+
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
+
     /// We should not apply any query tree level optimizations on shards
     /// because it can lead to a changed header.
     if (select_query_options.ignore_ast_optimizations
@@ -145,8 +147,10 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
         query_tree_pass_manager.runOnlyResolve(query_tree);
     else
         query_tree_pass_manager.run(query_tree);
+
     if (storage)
         replaceStorageInQueryTree(query_tree, context, storage);
+
     return query_tree;
 }
 
@@ -235,6 +239,7 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
     auto pipeline_builder = buildQueryPipeline();
+    
     BlockIO result;
     result.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 

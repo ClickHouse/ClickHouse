@@ -1397,14 +1397,10 @@ static BlockIO executeQueryImpl(
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
                 }
 
-                 LOG_TRACE(getLogger("QueryCache"), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get())) {
                     interpreter_with_analyzer->getQueryPlan();
-                    LOG_TRACE(getLogger("QueryCache"), "Analyzer query plan get");
-                    LOG_TRACE(getLogger("QueryCache"), "Can use query cache context2 {}", context->getCanUseQueryCache());
                 }
 
                 if (!interpreter->ignoreQuota() && !quota_checked)
@@ -1458,7 +1454,6 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
-                    
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryCache(out_ast, context))
@@ -1549,6 +1544,7 @@ static BlockIO executeQueryImpl(
             {
                 /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                 /// partial/garbage results in case of exceptions during query execution.
+                /// Should call this even if QueryCacheUsage::Read, because QueryCache may be used for write in subqueries.
                 if (context->getCanUseQueryCache())
                     query_pipeline.finalizeWriteInQueryCache();
 
