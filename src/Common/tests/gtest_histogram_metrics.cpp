@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 #include <Common/Histogram.h>
 
-using namespace Histogram;
+using namespace DB::Histogram;
 
 const Buckets test_buckets = {1, 5, 10};
 
 MetricFamily & family = Factory::instance().registerMetric(
-    "KeeperResponseTime",
+    "keeper_response_time",
     "Keeper response time",
     test_buckets,
     {"operation"}

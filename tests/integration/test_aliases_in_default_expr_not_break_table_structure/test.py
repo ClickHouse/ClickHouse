@@ -69,3 +69,13 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
     assert node.query(f"SELECT col2 FROM {table_name}").strip() == "col2-val"
 
     node.query(f"DROP TABLE {table_name}")
+
+    # smoke tests for the keeper_response_time_ms metric
+    sums_ok = int(node.query("SELECT sum(value) > 0 WHERE name = 'keeper_response_time_ms_sum'").strip())
+    assert sums_ok
+
+    counts_ok = int(node.query("SELECT sum(value) > 0 WHERE name = 'keeper_response_time_ms_count'").strip())
+    assert counts_ok
+
+    buckets_ok = int(node.query("SELECT sum(value) > 0 WHERE name = 'keeper_response_time_ms_bucket'").strip())
+    assert buckets_ok
