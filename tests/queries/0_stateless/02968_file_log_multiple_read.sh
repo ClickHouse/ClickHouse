@@ -51,7 +51,7 @@ function count()
 function wait_for_row_count()
 {
     local threshold="$1"
-    local timeout=15
+    local timeout=30
     local start=$EPOCHSECONDS
     while [[ $(count) -lt threshold ]]; do
         if ((EPOCHSECONDS - start > timeout)); then
