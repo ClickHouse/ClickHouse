@@ -1326,8 +1326,6 @@ Planner::Planner(const QueryTreeNodePtr & query_tree_,
 
 void Planner::buildQueryPlanIfNeeded()
 {
-    LOG_TRACE(getLogger("QueryCache"), "build query plan");
-
     if (query_plan.isInitialized())
         return;
 
@@ -1470,8 +1468,6 @@ void Planner::buildPlanForQueryNode()
     ProfileEvents::increment(ProfileEvents::SelectQueriesWithSubqueries);
     ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
-    LOG_TRACE(getLogger("QueryCache"), "buildPlanForQueryNode");
-
     auto & query_node = query_tree->as<QueryNode &>();
     const auto & query_context = planner_context->getQueryContext();
 
@@ -1485,11 +1481,9 @@ void Planner::buildPlanForQueryNode()
     SelectQueryInfo select_query_info = buildSelectQueryInfo();
     const Settings & settings = query_context->getSettingsRef();
 
-    /// Try to use query cache for subquery. If find, add read from cache step instead of building rest of the plan.
     QueryCachePtr query_cache = planner_context->getMutableQueryContext()->getQueryCache();
     bool can_use_query_cache = query_context->getCanUseQueryCache();
     ASTPtr ast = select_query_info.query;
-    // ASTPtr ast = query_node.getOriginalAST();
 
     /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
     /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
@@ -1500,25 +1494,17 @@ void Planner::buildPlanForQueryNode()
     if (can_use_query_cache)
         settings_copy = settings;
 
-    /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
-    /// a pipeline with a source populated by the query cache.
-
+    /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryCacheStep instead of building the rest of the plan.
     if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
     {
-        LOG_TRACE(getLogger("QueryCache"), "Try to read from subquery cache");
         QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles());
         auto reader = std::make_shared<QueryCacheReader>(query_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
-            LOG_TRACE(getLogger("QueryCache"), "Entry found");
             addReadFromQueryCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());            
-            // Should somehow add info about cache usage in subqueries to logs 
             return;
         }
-    } else {
-        LOG_TRACE(getLogger("QueryCache"), "No read from subquery cache {} {}", can_use_query_cache, settings[Setting::enable_reads_from_query_cache]);
     }
-
 
     StorageLimitsList current_storage_limits = storage_limits;
     select_query_info.local_storage_limits = buildStorageLimits(*query_context, select_query_options);

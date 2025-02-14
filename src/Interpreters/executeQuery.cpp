@@ -162,9 +162,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -1549,13 +1547,9 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                LOG_TRACE(getLogger("QueryCache"),
-                        "Query cache usage {}",
-                        query_cache_usage);
-
-                // if (query_cache_usage == QueryCacheUsage::Write)
-                    /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
-                    /// partial/garbage results in case of exceptions during query execution.
+                /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
+                /// partial/garbage results in case of exceptions during query execution.
+                if (context->getCanUseQueryCache())
                     query_pipeline.finalizeWriteInQueryCache();
 
                 logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
