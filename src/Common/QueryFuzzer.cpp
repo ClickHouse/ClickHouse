@@ -87,7 +87,7 @@ static String pickRandomlyFromSet(pcg64 & rand, const std::unordered_set<String>
 void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 {
 #if USE_BUZZHOUSE
-    if (fuzz_rand() % 30 == 0)
+    if (fuzz_rand() % 4 == 0)
     {
         const uint32_t nsettings
             = (fuzz_rand() % std::min(static_cast<uint32_t>(BuzzHouse::performanceSettings.size()), UINT32_C(10))) + UINT32_C(1);
@@ -105,7 +105,6 @@ void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
     UNUSED(settings_changes);
 #endif
 }
-
 
 Field QueryFuzzer::getRandomField(int type)
 {
@@ -1465,7 +1464,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
-        ASTPtr new_join;
         IAST * sel_tables = select->tables().get();
 
         fuzzColumnLikeExpressionList(select->select().get());
@@ -1474,11 +1472,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             select->distinct = !select->distinct;
         }
-        /// Add a join only when tables in FROM are already present
-        if (sel_tables && !sel_tables->children.empty() && fuzz_rand() % 50 == 0 && (new_join = addJoinClause()))
+        if (sel_tables)
         {
-            select->refTables()->children.emplace_back(new_join);
+            ASTPtr new_join;
+            const int next_action = fuzz_rand() % 50;
+
+            /// Add a join or remove a table only when tables in FROM are already present
+            if (next_action == 0 && !select->refTables()->children.empty() && (new_join = addJoinClause()))
+            {
+                select->refTables()->children.emplace_back(new_join);
+            }
+            else if (next_action == 1 && select->refTables()->children.size() > 1)
+            {
+                ASTs children = select->refTables()->children;
+
+                children.erase(children.begin() + (fuzz_rand() % children.size()));
+            }
         }
+
         if (select->groupBy().get())
         {
             if (fuzz_rand() % 50 == 0)
