@@ -69,6 +69,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
+            {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
+            {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
             {"optimize_and_compare_chain", true, false, "A new setting"},
             {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
@@ -654,6 +656,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            {"columns_and_secondary_indices_sizes_lazy_calculation", true, true, "New setting to calculate columns and indices sizes lazily"},
             {"table_disk", false, false, "New setting"},
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
         });
