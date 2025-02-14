@@ -745,12 +745,12 @@ void KeeperStorage<Container>::UncommittedState::rollbackDelta(const Delta & del
 }
 
 template <typename Container>
-UInt64 KeeperStorage<Container>::UncommittedState::updateNodesDigest(UInt64 current_digest, UInt64 zxid) const
+UInt64 KeeperStorage<Container>::UncommittedState::updateNodesDigest(UInt64 current_digest, UInt64 current_zxid) const
 {
     if (!storage.keeper_context->digestEnabled())
         return current_digest;
 
-    auto nodes_it = zxid_to_nodes.find(zxid);
+    auto nodes_it = zxid_to_nodes.find(current_zxid);
     if (nodes_it == zxid_to_nodes.end())
         return current_digest;
 

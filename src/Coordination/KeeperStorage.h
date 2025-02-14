@@ -549,7 +549,7 @@ public:
         void rollbackDelta(const Delta & delta);
 
         /// Update digest with new nodes
-        UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
+        UInt64 updateNodesDigest(UInt64 current_digest, UInt64 current_zxid) const;
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
