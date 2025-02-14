@@ -35,6 +35,7 @@ LABEL_CATEGORIES = {
     ],
     "pr-performance": ["Performance Improvement"],
     "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
+    "pr-experimental": ["Experimental Feature"]
 }
 
 CATEGORY_TO_LABEL = {
@@ -57,6 +58,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_EXPERIMENTAL = "pr-experimental"
     PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
