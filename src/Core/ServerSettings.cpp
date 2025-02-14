@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -1001,10 +1002,18 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        if (config.has(name))
-            set(name, config.getString(name));
-        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
-            set(name, config.getString("profiles.default." + name));
+        try
+        {
+            if (config.has(name))
+                set(name, config.getString(name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
+                set(name, config.getString("profiles.default." + name));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while parsing setting '{}' value", name);
+            throw;
+        }
     }
 }
 
@@ -1087,6 +1096,11 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
+
+            {"max_remote_read_network_bandwidth_for_server",
+             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_remote_write_network_bandwidth_for_server",
+             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
