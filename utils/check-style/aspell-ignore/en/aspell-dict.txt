@@ -2797,7 +2797,7 @@ stringJaccardIndex
 stringJaccardIndexUTF
 stringToH
 stripelog
-strncmp
+stringCompare
 strtod
 strtoll
 strtoull

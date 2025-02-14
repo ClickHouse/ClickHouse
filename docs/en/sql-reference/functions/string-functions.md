@@ -2539,37 +2539,43 @@ Result:
 │ foo                        │
 └────────────────────────────┘
 ```
-## strncmp
+## stringCompare
 
-Compare two strings.
+Compare two strings lexicographically.
 
 **Syntax**
 ```sql
-strncmp(a_str, a_offset, b_str, b_offset, n);
+stringComare(str1, str2, str1_off, str2_off, n);
+stringComare(str1, str2)
 ```
 
 **Arguments**
-- `a_str` — The first string to compare.
-- `a_offset` — The starting position (zero-based index) in `a_str` from which the comparison begins.
-- `b_str` — The second string to compare.
-- `b_offset` — The starting position (zero-based index) in `b_str` from which the comparison begins.
-- `n` — The number of bytes to compare in both strings, starting from their respective offsets.
+- `str1` — Required, string. One of the strings to be compared.
+- `str2` - Required, string. One of the strings to be compared.
+- `str1_off` — Optional, positive number. The starting position (zero-based index) in `str1` from which the comparison begins.
+- `str2_off` — Optional, positive number. The starting position (zero-based index) in `str2` from which the comparison begins.
+- `n` — The number of bytes to compare in both strings, starting from their respective offsets. `str_off` + `n` could be larger then the length of string, we will align it to the end of the string.
 
 **Returned value**
-- -1 — If `a_str`[`a_offset`: `a_offset` + `n`] < `b_str`[`b_offset`:`b_offset` + `n`].
-- 0 — If `a_str`[`a_offset`: `a_offset` + `n`] = `b_str`[`b_offset`:`b_offset` + `n`].
-- 1 — If `a_str`[`a_offset`: `a_offset` + `n`] > `b_str`[`b_offset`:`b_offset` + `n`].
+- -1 — If `str1`[`str1_off`: `str1_off` + `n`] < `str2`[`str2_off`:`str2_off` + `n`] and `str1_off` < len(`str1`) and `str2_off` < len(`str2`).
+If `str1_off` >= len(`str1`) and `str2_off` < len(`str2`).
+- 0 — If `str1`[`str1_off`: `str1_off` + `n`] = `str2`[`str2_off`:`str2_off` + `n`] and `str1_off` < len(`str1`) and `str2_off` < len(`str2`).
+If `str1_off` >= len(`str1`) and `str2_off` >= len(`str2`).
+- 1 — If `str1`[`str1_off`: `str1_off` + `n`] > `str2`[`str2_off`:`str2_off` + `n`] and `str1_off` < len(`str1`) and `str2_off` < len(`str2`).
+If `str1_off` < len(`str1`) and `str2_off` >= len(`str2`).
+
+
 
 **Example**
 ```sql
 SELECT
-    strncmp('123', 0, '123', 0, 3),
-    strncmp('124', 0, '123', 0, 3),
-    strncmp('121', 0, '123', 0, 3)
+    stringCompare('123', '123', 0, 0, 3),
+    stringCompare('124', '123', 0, 0, 3),
+    stringCompare('121', '123', 0, 0, 3)
 ```
 Result:
 ```result
-   ┌─strncmp('123⋯123', 0, 3)─┬─strncmp('124⋯123', 0, 3)─┬─strncmp('121⋯123', 0, 3)─┐
+   ┌─stringCompar⋯', 0, 0, 3)─┬─stringCompar⋯', 0, 0, 3)─┬─stringCompar⋯', 0, 0, 3)─┐
 1. │                        0 │                        1 │                       -1 │
    └──────────────────────────┴──────────────────────────┴──────────────────────────┘
 ```
