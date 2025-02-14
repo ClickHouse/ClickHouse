@@ -150,7 +150,7 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
                 ++useful_pk_columns;
         }
 
-        if (useful_pk_columns < pos)
+        if (useful_pk_columns <= pos)
             break;
     }
 
