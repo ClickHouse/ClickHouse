@@ -42,6 +42,10 @@ public:
      */
     virtual off_t getPosition() = 0;
 
+    /// Returns the current position in the file corresponding to the buffer.
+    /// This function is like getPosition(), but it returns std::nullopt instead of throwing exception.
+    std::optional<off_t> tryGetPosition();
+
     virtual String getInfoForLog() { return ""; }
 
     /// NOTE: This method should be thread-safe against seek(), since it can be

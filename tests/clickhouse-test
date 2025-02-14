@@ -578,14 +578,11 @@ def cleanup_child_processes(pid):
     # But we are hoping that nobody creates session in the tests (though it is
     # possible via timeout(), but we are assuming that they will be killed by
     # timeout).
-    processes = subprocess.check_output(
+    pgrep = subprocess.check_output(
         f"pgrep --parent {pid}", shell=True, stderr=subprocess.STDOUT
     )
-    processes = processes.decode("utf-8")
-    processes = processes.strip()
-    processes = processes.split("\n")
-    processes = map(lambda x: int(x.strip()), processes)
-    processes = list(processes)
+    proc_list = pgrep.decode("utf-8").strip().split("\n")
+    processes = list(map(lambda x: int(x.strip()), proc_list))
     for child in processes:
         child_pgid = os.getpgid(child)
         if child_pgid != pgid:
@@ -1087,8 +1084,8 @@ class SettingsRandomizer:
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
-        "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
+        "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -2124,6 +2121,7 @@ class TestCase:
         drop_database_query = f"DROP DATABASE IF EXISTS {database}"
         if args.replicated_database:
             drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+        drop_database_query += " SYNC"
 
         # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
         for _ in range(1, 60):
@@ -2462,7 +2460,7 @@ def run_tests_array(
         multiprocessing.sharedctypes.Synchronized,
         multiprocessing.synchronize.Event,
         multiprocessing.managers.ListProxy,
-    ]
+    ],
 ):
     (
         all_tests,
@@ -2542,6 +2540,8 @@ def run_tests_array(
         try:
             description = ""
             test_case_name = removesuffix(test_case.name, ".gen", ".sql") + ": "
+            # A value to store the cleaning children output to not mess up with the description
+            cleanup_output = io.StringIO()
 
             if is_concurrent:
                 description = f"{test_case_name:72}"
@@ -2557,7 +2557,8 @@ def run_tests_array(
                 # This is the upper level timeout
                 # It helps with completely frozen processes, like in case of gdb errors
                 def timeout_handler(_signum, _frame):
-                    stop_tests()
+                    with redirect_stdout(cleanup_output):
+                        stop_tests()
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
@@ -2582,6 +2583,11 @@ def run_tests_array(
 
             if description and not description.endswith("\n"):
                 description += "\n"
+
+            if cleanup_output.getvalue():
+                description += cleanup_output.getvalue()
+                if not cleanup_output.getvalue().endswith("\n"):
+                    description += "\n"
 
             sys.stdout.write(description)
             sys.stdout.flush()

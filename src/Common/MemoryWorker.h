@@ -38,7 +38,7 @@ struct ICgroupsReader
 class MemoryWorker
 {
 public:
-    MemoryWorker(uint64_t period_ms_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_);
+    MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_);
 
     enum class MemoryUsageSource : uint8_t
     {
@@ -66,6 +66,7 @@ private:
     LoggerPtr log;
 
     uint64_t period_ms;
+    bool correct_tracker = false;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 

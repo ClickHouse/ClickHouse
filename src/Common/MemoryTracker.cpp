@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
@@ -48,6 +49,11 @@ bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
     return !LockMemoryExceptionInThread::isBlocked(level, fault_injection) && !std::uncaught_exceptions();
 }
 
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTrackingUncorrected;
 }
 
 namespace DB
@@ -256,7 +262,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
       * So, we allow over-allocations.
       */
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
-    Int64 will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
+    Int64 will_be_rss = 0;
+    if (level == VariableContext::Global)
+        will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -345,8 +353,8 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
                     formatReadableSizeWithBinarySuffix(size),
-                    formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
-                    page_cache_ptr ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
+                    level == VariableContext::Global ? formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)) : "N/A",
+                    (level == VariableContext::Global && page_cache_ptr) ? ", userspace page cache " + formatReadableSizeWithBinarySuffix(page_cache_ptr->sizeInBytes()) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                     overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
                     overcommit_result_ignore ? "" : toDescription(overcommit_result));
@@ -540,15 +548,20 @@ void MemoryTracker::updateRSS(Int64 rss_)
     total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
 }
 
-void MemoryTracker::updateAllocated(Int64 allocated_)
+void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
 {
     Int64 new_amount = allocated_;
-    LOG_INFO(
-        getLogger("MemoryTracker"),
-        "Correcting the value of global memory tracker from {} to {}",
-        ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-        ReadableSize(allocated_));
-    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
+    if (log_change)
+        LOG_INFO(
+            getLogger("MemoryTracker"),
+            "Correcting the value of global memory tracker from {} to {}",
+            ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
+            ReadableSize(allocated_));
+
+    auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
+    total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
+    total_memory_tracker.last_corrected_amount = new_amount;
+    CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
