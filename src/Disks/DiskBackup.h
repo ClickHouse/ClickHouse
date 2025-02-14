@@ -15,6 +15,15 @@
 namespace DB
 {
 
+/** DiskBackup adapts backup interface to disk interface and additionally performs paths translation.
+  *
+  * It is used internally by DatabaseBackup. For MergeTree tables DatabaseBackup creates special storage policy
+  * that uses DiskBackup. Additional path translation layer is required because database relative path inside the backup
+  * will be completely different from the DatabaseBackup relative path.
+  *
+  * For example when the MergeTree table inside the database Backup tries to read some file, it uses the relative path of the
+  * database Backup that gets translated inside the DiskBackup to a proper path that can be used to query files/directories in backup.
+  */
 class DiskBackup final : public IDisk
 {
 public:

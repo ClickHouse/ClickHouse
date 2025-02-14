@@ -60,12 +60,12 @@ off_t ReadBufferFromMemoryHelper<Derived>::getPositionImpl()
 template class ReadBufferFromMemoryHelper<ReadBufferFromMemory>;
 template class ReadBufferFromMemoryHelper<ReadBufferFromMemoryFileBase>;
 
-ReadBufferFromMemoryFileBase::ReadBufferFromMemoryFileBase(ReadBufferFromMemoryFileMemoryOwnershipStrategy memory_ownership_strategy,
+ReadBufferFromMemoryFileBase::ReadBufferFromMemoryFileBase(bool owns_memory,
     String file_name_,
     std::string_view data)
     : ReadBufferFromFileBase(
         data.size() /*buf_size*/,
-        memory_ownership_strategy == ReadBufferFromMemoryFileMemoryOwnershipStrategy::OwnsMemory
+        owns_memory
             ? nullptr
             : const_cast<char *>(data.data()) /*existing_memory*/,
         0 /*alignment*/,
@@ -74,7 +74,7 @@ ReadBufferFromMemoryFileBase::ReadBufferFromMemoryFileBase(ReadBufferFromMemoryF
 {
     chassert(data.size() == internal_buffer.size());
 
-    if (memory_ownership_strategy == ReadBufferFromMemoryFileMemoryOwnershipStrategy::OwnsMemory)
+    if (owns_memory)
         std::memcpy(internal_buffer.begin(), data.data(), data.size());
 
     working_buffer = internal_buffer;

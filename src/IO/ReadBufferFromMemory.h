@@ -45,16 +45,10 @@ private:
     friend class ReadBufferFromMemoryHelper<ReadBufferFromMemory>;
 };
 
-enum class ReadBufferFromMemoryFileMemoryOwnershipStrategy
-{
-    OwnsMemory,
-    DoesNotOwnMemory
-};
-
 class ReadBufferFromMemoryFileBase : public ReadBufferFromFileBase, private ReadBufferFromMemoryHelper<ReadBufferFromMemoryFileBase>
 {
 protected:
-    ReadBufferFromMemoryFileBase(ReadBufferFromMemoryFileMemoryOwnershipStrategy memory_ownership_strategy,
+    ReadBufferFromMemoryFileBase(bool owns_memory,
         String file_name_,
         std::string_view data);
 
@@ -93,7 +87,7 @@ public:
     using Base = ReadBufferFromMemoryFileBase;
 
     ReadBufferFromOwnMemoryFile(String file_name_, std::string_view data)
-        : Base(ReadBufferFromMemoryFileMemoryOwnershipStrategy::OwnsMemory, std::move(file_name_), data)
+        : Base(true /*owns_memory*/, std::move(file_name_), data)
     {
     }
 };
@@ -107,7 +101,7 @@ public:
     using Base = ReadBufferFromMemoryFileBase;
 
     ReadBufferFromOutsideMemoryFile(String file_name_, std::string_view data)
-        : Base(ReadBufferFromMemoryFileMemoryOwnershipStrategy::DoesNotOwnMemory, std::move(file_name_), data)
+        : Base(false /*owns_memory*/, std::move(file_name_), data)
     {
     }
 };

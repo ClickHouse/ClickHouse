@@ -7,6 +7,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromFileBase.h>
@@ -102,15 +103,22 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
 {
     auto * storage = create_query->storage;
 
-    bool is_replicated_engine = false;
+    bool is_replicated_or_shared_engine = false;
     auto engine = std::make_shared<ASTFunction>();
 
     static constexpr std::string_view replicated_engine_prefix = "Replicated";
 
+    static constexpr std::string_view shared_engine_prefix = "Shared";
+
     if (storage->engine->name.starts_with(replicated_engine_prefix))
     {
-        is_replicated_engine = true;
+        is_replicated_or_shared_engine = true;
         engine->name = storage->engine->name.substr(replicated_engine_prefix.size());
+    }
+    else if (storage->engine->name.starts_with(shared_engine_prefix))
+    {
+        is_replicated_or_shared_engine = true;
+        engine->name = storage->engine->name.substr(shared_engine_prefix.size());
     }
     else
     {
@@ -123,7 +131,7 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
     if (storage->engine->arguments)
     {
         /// Ignore first two arguments for replicated engine
-        size_t i = is_replicated_engine ? 2 : 0;
+        size_t i = is_replicated_or_shared_engine ? 2 : 0;
         for (; i < storage->engine->arguments->children.size(); ++i)
             args->children.push_back(storage->engine->arguments->children[i]->clone());
     }
@@ -237,11 +245,11 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
 
 void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMetadata & metadata, bool)
 {
-    size_t prev_tables_count = metadata.parsed_tables.size();
-    size_t prev_total_dictionaries = metadata.total_dictionaries;
-
     if (!backup)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not initialized");
+
+    size_t prev_tables_count = metadata.parsed_tables.size();
+    size_t prev_total_dictionaries = metadata.total_dictionaries;
 
     std::vector<std::string> metadata_files;
 
@@ -292,16 +300,18 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
     auto process_metadata_file = [&metadata, &current_database_name, local_context, this](const String & file_name)
     {
         std::filesystem::path metadata_path("/metadata/" + config.database_name);
-        std::filesystem::path full_path = metadata_path / file_name;
+        std::filesystem::path metadata_file_path = metadata_path / file_name;
 
         try
         {
-            auto buffer = backup->readFile(full_path.string());
+            auto buffer = backup->readFile(metadata_file_path.string());
 
             String query;
             readStringUntilEOF(query, *buffer);
 
-            auto ast = DatabaseOnDisk::parseQueryFromMetadata(log, local_context, full_path.string(), query);
+            /// We do not pass logger here, because we do not want to log warnings about backup metadata files
+            /// containing both UUID and table name, this is expected
+            auto ast = DatabaseOnDisk::parseQueryFromMetadata({}, local_context, metadata_file_path.string(), query);
             if (!ast)
                 return;
 
@@ -328,14 +338,14 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
             updateCreateQueryWithDatabaseBackupStoragePolicy(create_query, config, local_context);
 
-            QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
-
             NormalizeSelectWithUnionQueryVisitor::Data data{local_context->getSettingsRef()[Setting::union_default_mode]};
             NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
 
+            QualifiedTableName qualified_name{current_database_name, create_query->getTable()};
+
             {
                 std::lock_guard lock{metadata.mutex};
-                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
+                metadata.parsed_tables[qualified_name] = ParsedTableMetadata{metadata_file_path.string(), ast};
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
 
@@ -346,7 +356,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot parse definition from metadata file " + full_path.string());
+            e.addMessage("Cannot parse definition from metadata file " + metadata_file_path.string());
             throw;
         }
     };
@@ -356,22 +366,22 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DatabaseBackup");
+
     const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
 
     for (auto it = metadata_files.begin(); it < metadata_files.end(); std::advance(it, batch_size))
     {
         std::span batch{it, std::min(std::next(it, batch_size), metadata_files.end())};
-        pool.scheduleOrThrow(
-            [batch, &process_metadata_file]() mutable
+        runner([batch, &process_metadata_file]() mutable
             {
-                setThreadName("DatabaseBackup");
                 for (const auto & file : batch)
                     process_metadata_file(file);
             },
             Priority{},
             getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
     }
-    pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
