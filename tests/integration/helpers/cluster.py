@@ -3078,28 +3078,36 @@ class ClickHouseCluster:
                 )
 
             self.is_up = True
+            self.save_logs()
 
         except BaseException as e:
             logging.debug("Failed to start cluster: ")
             logging.debug(str(e))
             logging.debug(traceback.print_exc())
+            self.save_logs()
             self.shutdown()
             raise
+
+    def save_logs(self) -> None:
+        # Launch the `docker-compose logs` in background to collect all the logs
+        # into the docker_logs_path file during the run
+        # Create directory log
+        os.makedirs(p.dirname(self.docker_logs_path), exist_ok=True)
+        # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
+        docker_logs_path = open(self.docker_logs_path, "w+", errors="replace")
+        subprocess.Popen(
+            self.base_cmd + ["logs", "--follow"],
+            stdout=docker_logs_path,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+        )
 
     def shutdown(self, kill=True, ignore_fatal=True):
         sanitizer_assert_instance = None
         fatal_log = None
 
         if self.up_called:
-            # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
-            with open(self.docker_logs_path, "w+", errors="replace") as f:
-                try:
-                    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                        self.base_cmd + ["logs"], stdout=f
-                    )
-                except Exception as e:
-                    logging.debug("Unable to get logs from docker.")
-                f.seek(0)
+            with open(self.docker_logs_path, "r") as f:
                 for line in f:
                     if SANITIZER_SIGN in line:
                         sanitizer_assert_instance = line.split("|")[0].strip()
