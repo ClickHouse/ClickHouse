@@ -205,12 +205,12 @@ void MemoryTracker::debugLogBigAllocationWithoutCheck(Int64 size [[maybe_unused]
     if (size < 0)
         return;
 
-    constexpr Int64 threshold = 8 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
+    constexpr Int64 threshold = 16 * 1024 * 1024;   /// The choice is arbitrary (maybe we should decrease it)
     if (size < threshold)
         return;
 
     MemoryTrackerBlockerInThread blocker(VariableContext::Global);
-    LOG_DEBUG(
+    LOG_TEST(
         getLogger("MemoryTracker"),
         "Too big allocation ({} bytes) without checking memory limits, "
         "it may lead to OOM. Stack trace: {}",
@@ -231,9 +231,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
 
     if (!isSizeOkForSampling(size))
         _sample_probability = 0;
-
-    if (level == VariableContext::Global)
-        debugLogBigAllocationWithoutCheck(size);
 
     if (MemoryTrackerBlockerInThread::isBlocked(level))
     {

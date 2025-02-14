@@ -1,7 +1,4 @@
 #include <Processors/Transforms/CopyTransform.h>
-#include "Common/Logger.h"
-#include "Common/logger_useful.h"
-#include "base/scope_guard.h"
 
 #include <Processors/Port.h>
 
@@ -20,8 +17,7 @@ IProcessor::Status CopyTransform::prepare()
 
     while (status == Status::Ready)
     {
-        status = !has_data ? prepareConsume()
-                           : prepareGenerate();
+        status = bool(data) ? prepareGenerate() : prepareConsume();
     }
 
     return status;
@@ -63,7 +59,6 @@ IProcessor::Status CopyTransform::prepareConsume()
         return Status::NeedData;
 
     data = input.pullData();
-    has_data = true;
 
     for (auto & was_processed : was_output_processed)
         was_processed = false;
@@ -73,8 +68,6 @@ IProcessor::Status CopyTransform::prepareConsume()
 
 IProcessor::Status CopyTransform::prepareGenerate()
 {
-    LOG_DEBUG(getLogger("CopyTransform"), "enter in at iteration iteration {}", iteration);
-
     bool all_outputs_processed = true;
 
     size_t output_number = 0;
@@ -100,18 +93,12 @@ IProcessor::Status CopyTransform::prepareGenerate()
         else
             output.push(data.chunk.clone());
 
-        LOG_DEBUG(getLogger("CopyTransform"), "pushed in {} at iteration {} lines in chunk {} and bytes {}", output_number, iteration
-        , data.exception ? 0 : data.chunk.getNumRows()
-        , data.exception ? 0 : data.chunk.bytes());
-
         was_processed = true;
     }
 
-    ++iteration;
-
     if (all_outputs_processed)
     {
-        has_data = false;
+        data = {};
         return Status::Ready;
     }
 

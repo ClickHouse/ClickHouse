@@ -1239,7 +1239,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will {} ({} rows) messages for {} channels", write_failed ? "nack" : "ack", rows, sources.size());
+        LOG_TEST(log, "Will {} {} messages for {} channels", write_failed ? "nack" : "ack", rows, sources.size());
 
         /// Commit
         for (auto & source : sources)
@@ -1268,15 +1268,10 @@ bool StorageRabbitMQ::tryStreamToViews()
                 */
                 if (write_failed ? source->sendNack() : source->sendAck())
                 {
-                    LOG_ERROR(log, "{} got true", write_failed ? "nack" : "ack");
                     /// Iterate loop to activate error callbacks if they happened
                     connection->getHandler().iterateLoop();
                     if (!connection->isConnected())
                         break;
-                }
-                else
-                {
-                    LOG_ERROR(log, "{} got false", write_failed ? "nack" : "ack");
                 }
 
                 connection->getHandler().iterateLoop();

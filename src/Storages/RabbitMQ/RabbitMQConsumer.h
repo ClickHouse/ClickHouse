@@ -35,8 +35,6 @@ public:
         LoggerPtr log_,
         uint32_t queue_size_);
 
-    ~RabbitMQConsumer();
-
     struct CommitInfo
     {
         UInt64 delivery_tag = 0;
@@ -108,7 +106,6 @@ private:
         ERROR,
     };
     std::atomic<State> state = State::NONE;
-    size_t subscriptions_num = 0;
 
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;

@@ -41,7 +41,7 @@ class NullSinkToStorage : public SinkToStorage
 public:
     using SinkToStorage::SinkToStorage;
     std::string getName() const override { return "NullSinkToStorage"; }
-    void consume(Chunk &) override {}
+    void consume(Chunk &) override { /* no op */ }
 };
 
 using SinkPtr = std::shared_ptr<SinkToStorage>;

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-#Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -66,7 +65,7 @@ echo "create table out_01278 as data_01278 Engine=Merge('$CLICKHOUSE_DATABASE', 
 #
 function execute_insert()
 {
-    ${CLICKHOUSE_CLIENT} --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@" -q "
+    ${CLICKHOUSE_CLIENT} --parallel_view_processing=0 --max_memory_usage=$TEST_01278_MEMORY --optimize_trivial_insert_select='false' "$@" -q "
 insert into data_01278 select
     number,
     reinterpretAsString(number), // s1
@@ -77,7 +76,7 @@ insert into data_01278 select
     reinterpretAsString(number), // s6
     reinterpretAsString(number), // s7
     reinterpretAsString(number)  // s8
-from numbers(200000);" > /dev/null 2>&1
+from numbers(2000000);" > /dev/null 2>&1
     local ret_code=$?
     if [[ $ret_code -eq 0 ]];
     then
@@ -97,4 +96,4 @@ execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_m
 echo "Should pass 1"
 execute_insert --min_insert_block_size_rows=1
 echo "Should pass 2"
-execute_insert --min_insert_block_size_rows_for_materialized_views=1
+execute_insert --min_insert_block_size_rows=1 --min_insert_block_size_rows_for_materialized_views=1

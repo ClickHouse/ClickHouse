@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <base/sleep.h>
-#include "Common/StackTrace.h"
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -129,11 +128,10 @@ void RabbitMQSource::updateChannel()
 
 Chunk RabbitMQSource::generate()
 {
-    LOG_DEBUG(log, "generate");
     auto chunk = generateImpl();
     if (!chunk && ack_in_suffix)
     {
-        LOG_DEBUG(log, "Will send ack on select");
+        LOG_TEST(log, "Will send ack on select");
         sendAck();
     }
 
@@ -150,7 +148,7 @@ Chunk RabbitMQSource::generateImpl()
 
     if (is_finished || !consumer || consumer->isConsumerStopped())
     {
-        LOG_DEBUG(log, "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
+        LOG_TRACE(log, "RabbitMQSource is stopped (is_finished: {}, consumer_stopped: {})",
                   is_finished, consumer ? toString(consumer->isConsumerStopped()) : "No consumer");
         return {};
     }
@@ -303,7 +301,6 @@ bool RabbitMQSource::sendAck()
 
 bool RabbitMQSource::sendNack()
 {
-    LOG_DEBUG(log, "sendNack has consumer {}", bool(consumer));
     return consumer && consumer->nackMessages(commit_info);
 }
 

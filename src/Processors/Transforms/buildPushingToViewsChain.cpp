@@ -39,11 +39,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstddef>
 #include <exception>
-#include <iterator>
 #include <memory>
-#include <ranges>
 
 
 namespace ProfileEvents
@@ -205,7 +202,7 @@ public:
 
     String getName() const override { return "BeginingViewsTransform"; }
 
-    void transform(Chunk &) override { /* no op*/ }
+    void transform(Chunk &) override { /* no op */ }
 
     struct ExternalException
     {
@@ -216,14 +213,6 @@ public:
     {
         e = std::make_exception_ptr(ExternalException{e});
     }
-
-    void setUpFinalizingProcessor(IProcessor * ptr)
-    {
-        finalizing_processor = ptr;
-    }
-
-private:
-    IProcessor * finalizing_processor = nullptr;
 };
 
 /// For every view, collect exception.
@@ -267,7 +256,6 @@ private:
     const bool materialized_views_ignore_errors = false;
     OutputPort & output;
     ViewsDataPtr views_data;
-    //std::vector<std::exception_ptr> exceptions;
     std::vector<ViewStatus> statuses;
     std::exception_ptr first_exception;
 };
@@ -504,7 +492,6 @@ std::optional<Chain> generateViewChain(
              executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
              out.addSource(std::move(executing_inner_query));
-
         }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -622,7 +609,6 @@ Chain buildPushingToViewsChain(
         connect(begining_view->getOutputPort(), copying_data->getInputPort());
 
         auto finalizing_views = std::make_shared<FinalizingViewsTransform>(std::move(headers), views_data);
-        begining_view->setUpFinalizingProcessor(finalizing_views.get());
         auto out = copying_data->getOutputs().begin();
         auto in = finalizing_views->getInputs().begin();
 
@@ -888,7 +874,6 @@ FinalizingViewsTransform::FinalizingViewsTransform(std::vector<Block> headers, V
     , output(outputs.front())
     , views_data(std::move(data))
 {
-    // exceptions.resize(views_data->views.size());
     statuses.resize(views_data->views.size());
 }
 
@@ -903,8 +888,6 @@ InputPorts FinalizingViewsTransform::initPorts(std::vector<Block> headers)
 
 IProcessor::Status FinalizingViewsTransform::prepare()
 {
-    LOG_DEBUG(getLogger("FinalizingViewsTransform"), "prepare");
-
     if (output.isFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot finalize views because output port is finished");
 
@@ -953,9 +936,6 @@ IProcessor::Status FinalizingViewsTransform::prepare()
 
         auto view = views_data->views.begin();
         std::advance(view, pos);
-        LOG_DEBUG(
-            getLogger("FinalizingViewsTransform"),
-                "unwrapExternalException is_external {} in storege {}", is_external, view->table_id.getFullTableName());
 
         if (is_external)
         {
@@ -979,7 +959,6 @@ IProcessor::Status FinalizingViewsTransform::prepare()
         }
     }
 
-    LOG_DEBUG(getLogger("FinalizingViewsTransform"), "prepare finished {}/{}", num_finished, inputs.size());
     if (num_finished == inputs.size())
         return Status::Ready;
 
@@ -1005,8 +984,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
 
 void FinalizingViewsTransform::work()
 {
-    LOG_DEBUG(getLogger("PushingToViews"), "work");
-
     size_t i = 0;
     for (auto & view : views_data->views)
     {
@@ -1041,8 +1018,6 @@ void FinalizingViewsTransform::work()
     }
 
     logQueryViews(views_data->views, views_data->context);
-
-    //exceptions.clear();
     statuses.clear();
 }
 }
