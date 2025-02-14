@@ -1,40 +1,34 @@
 engine : Atomic
 initial comment
-name=	comment_test_database	comment=	Test database with comment
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	Test database with comment
 
 change a comment
-name=	comment_test_database	comment=	new comment on a table
-
-remove a comment
-name=	comment_test_database	comment=	
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	new comment on a table
 
 add a comment back
-name=	comment_test_database	comment=	another comment on a table
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	another comment on a table
 
 detach database
 
 re-attach database
-name=	comment_test_database	comment=	another comment on a table
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	another comment on a table
 
 drop database
 
 engine : Lazy
 initial comment
-name=	comment_test_database	comment=	Test database with comment
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	Test database with comment
 
 change a comment
-name=	comment_test_database	comment=	new comment on a table
-
-remove a comment
-name=	comment_test_database	comment=	
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	new comment on a table
 
 add a comment back
-name=	comment_test_database	comment=	another comment on a table
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	another comment on a table
 
 detach database
 
 re-attach database
-name=	comment_test_database	comment=	another comment on a table
+name=	comment_test_database_03328_alter_database_modify_comment_test	comment=	another comment on a table
 
 drop database
 

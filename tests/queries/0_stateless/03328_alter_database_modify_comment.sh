@@ -6,7 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function get_database_comment_info()
 {
-    $CLICKHOUSE_CLIENT --query="SELECT 'name=', name, 'comment=', comment FROM system.databases where name='comment_test_database'"
+    $CLICKHOUSE_CLIENT --query="SELECT 'name=', name, 'comment=', comment \
+        FROM system.databases where name='comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME'"
     echo # just a newline
 }
 
@@ -15,12 +16,14 @@ function test_database_comments()
     local ENGINE_NAME="$1"
     echo "engine : ${ENGINE_NAME}"
 
-    $CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS comment_test_database";
+    $CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME";
 
     if [ "$ENGINE_NAME" = "Atomic" ]; then
-        $CLICKHOUSE_CLIENT --query="CREATE DATABASE comment_test_database ENGINE = Atomic COMMENT 'Test database with comment';"
+        $CLICKHOUSE_CLIENT --query="CREATE DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME
+            ENGINE = Atomic COMMENT 'Test database with comment';"
     elif [ "$ENGINE_NAME" = "Lazy" ]; then
-        $CLICKHOUSE_CLIENT --query="CREATE DATABASE comment_test_database ENGINE = Lazy(1) COMMENT 'Test database with comment';"
+        $CLICKHOUSE_CLIENT --query="CREATE DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME
+             ENGINE = Lazy(1) COMMENT 'Test database with comment';"
     else
         echo "Unknown ENGINE_NAME: $ENGINE_NAME"
     fi
@@ -29,27 +32,24 @@ function test_database_comments()
     get_database_comment_info
 
     echo change a comment
-    $CLICKHOUSE_CLIENT --query="ALTER DATABASE comment_test_database MODIFY COMMENT 'new comment on a table';"
-    get_database_comment_info
-
-    echo remove a comment
-    $CLICKHOUSE_CLIENT --query="ALTER DATABASE comment_test_database MODIFY COMMENT '';"
+    $CLICKHOUSE_CLIENT --query="ALTER DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME MODIFY COMMENT 'new comment on a table';"
     get_database_comment_info
 
     echo add a comment back
-    $CLICKHOUSE_CLIENT --query="ALTER DATABASE comment_test_database MODIFY COMMENT 'another comment on a table';"
+    $CLICKHOUSE_CLIENT --query="ALTER DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME
+        MODIFY COMMENT 'another comment on a table';"
     get_database_comment_info
 
     echo detach database
-    $CLICKHOUSE_CLIENT --query="DETACH DATABASE comment_test_database SYNC;"
+    $CLICKHOUSE_CLIENT --query="DETACH DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME SYNC;"
     get_database_comment_info
 
     echo re-attach database
-    $CLICKHOUSE_CLIENT --query="ATTACH DATABASE comment_test_database;"
+    $CLICKHOUSE_CLIENT --query="ATTACH DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME;"
     get_database_comment_info
 
     echo drop database
-    $CLICKHOUSE_CLIENT --query="DROP DATABASE comment_test_database";
+    $CLICKHOUSE_CLIENT --query="DROP DATABASE comment_test_database_$CLICKHOUSE_TEST_UNIQUE_NAME;"
     get_database_comment_info
 }
 
