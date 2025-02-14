@@ -27,11 +27,6 @@ if (NOT ENABLE_DELTA_KERNEL_RS)
   return()
 endif()
 
-file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp" CONTENT " ")
-set(SOURCES "${CMAKE_CURRENT_BINARY_DIR}/empty.cpp")
-
-add_library(_delta_kernel_rs STATIC ${SOURCES})
-
 set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/target6)
 
 if(ARCH_AMD64)
@@ -64,8 +59,8 @@ elseif(ARCH_LOONGARCH64)
     add_definitions(-DOPENSSL_CPUID_OBJ -DL_ENDIAN)
 endif()
 
-file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/${PLATFORM_DIRECTORY}/include/ DESTINATION ${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY})
-file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/ DESTINATION ${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY})
+file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/${PLATFORM_DIRECTORY}/include/ DESTINATION ${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY})
+file(COPY ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/ DESTINATION ${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY})
 
 if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
     SET(SSLNAME "ssld")
@@ -75,34 +70,24 @@ else()
     SET(CRYPTONAME "crypto")
 endif()
 
+if ("${CMAKE_BUILD_TYPE_UC}" STREQUAL "DEBUG")
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};release")
+else()
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE};debug")
+endif()
 
-ExternalProject_Add(
-  _delta_kernel_rs_target
-  CONFIGURE_COMMAND ""
-  GIT_REPOSITORY "file://${DELTA_KERNEL_RS_SOURCE_DIR}"
-  GIT_TAG 7254023ab8d58eddbb70fb065f7b5996455bcfc9
-  GIT_REMOTE_UPDATE_STRATEGY CHECKOUT
-  UPDATE_COMMAND ""
-  BUILD_IN_SOURCE 1
-  BUILD_COMMAND
-      ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH} OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME} OPENSSL_STATIC=1 OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/ OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_CMAKE_DIR}/${PLATFORM_DIRECTORY}
-      cargo build --verbose
-      --package delta_kernel_ffi
-      --all-features
-      --verbose
-      --target-dir "${DELTA_KERNEL_TARGET_PATH}"
-      --manifest-path=${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml
-  BUILD_BYPRODUCTS "${DELTA_KERNEL_TARGET_PATH}/debug/libdelta_kernel_ffi.a"
-  #BUILD_BYPRODUCTS "${DELTA_KERNEL_TARGET_PATH}/release/libdelta_kernel_ffi.a"
-  BUILD_BYPRODUCTS "${DELTA_KERNEL_TARGET_PATH}/delta_kernel_ffi.hpp"
-  INSTALL_COMMAND ""
-  LOG_BUILD ON)
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(profile "")
+else()
+    if (ENABLE_THINLTO)
+        set(profile "release-thinlto")
+    else()
+        set(profile "release")
+    endif()
+endif()
 
-#target_compile_options(_delta_kernel_rs PRIVATE -Wno-return-type-c-linkage)
-
-add_dependencies(_delta_kernel_rs _delta_kernel_rs_target)
-target_link_libraries(_delta_kernel_rs PRIVATE "${DELTA_KERNEL_TARGET_PATH}/debug/libdelta_kernel_ffi.a")
-#target_link_libraries(_delta_kernel_rs "${CMAKE_BINARY_DIR}/contrib/openssl-cmake/libssld.a")
-target_link_libraries (_delta_kernel_rs PRIVATE OpenSSL::Crypto OpenSSL::SSL)
-target_include_directories(_delta_kernel_rs INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
-add_library(ch_contrib::delta_kernel_rs ALIAS _delta_kernel_rs)
+corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} LOCKED FLAGS --offline)
+corrosion_set_env_vars(delta_kernel_ffi "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
+target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
+target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)
+add_library(ch_contrib::delta_kernel_rs ALIAS delta_kernel_ffi)
