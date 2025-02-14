@@ -138,22 +138,26 @@ JSON paths are stored flattened. This means that when a JSON object is formatted
 it is not possible to know whether the object should be constructed as `{ "a.b.c" : ... }` or `{ "a" " {"b" : {"c" : ... }}}`.
 Our implementation will always assume the latter.
 
-For example
+For example:
 
 ```sql
-SELECT map(4.2, 2)::JSON;
+SELECT CAST('{"a.b.c" : 42}', 'JSON') as json
 ```
 
 will return:
 
 ```response
-{"4":{"2":"2"}}
+   ┌─json───────────────────┐
+1. │ {"a":{"b":{"c":"42"}}} │
+   └────────────────────────┘
 ```
 
 and **not**:
 
 ```sql
-{"4.2":"2"}
+   ┌─json───────────┐
+1. │ {"a.b.c":"42"} │
+   └────────────────┘
 ```
 :::
 
