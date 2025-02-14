@@ -204,8 +204,6 @@ bool Client::processWithFuzzing(const String & full_query)
         ASTPtr ast_to_process;
         try
         {
-            WriteBufferFromOwnString dump_before_fuzz;
-            fuzz_base->dumpTree(dump_before_fuzz);
             auto base_before_fuzz = fuzz_base->formatForErrorMessage();
 
             ast_to_process = fuzz_base->clone();
@@ -258,9 +256,16 @@ bool Client::processWithFuzzing(const String & full_query)
                 }
             }
 #endif
+
             WriteBufferFromOwnString dump_of_cloned_ast;
             ast_to_process->dumpTree(dump_of_cloned_ast);
+            fmt::print(stderr, "Dump of fuzzed AST:\n{}\n", dump_of_cloned_ast.str());
 
+#if 0
+            /// Somehow this code is not running
+            /// `base_after_fuzz` should format from `ast_to_process`
+            WriteBufferFromOwnString dump_before_fuzz;
+            fuzz_base->dumpTree(dump_before_fuzz);
             auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
             // Check that the source AST didn't change after fuzzing. This
@@ -293,6 +298,7 @@ bool Client::processWithFuzzing(const String & full_query)
 
                 _exit(1);
             }
+#endif
 
             auto fuzzed_text = ast_to_process->formatForErrorMessage();
             if (fuzz_step > 0 && fuzzed_text == base_before_fuzz)

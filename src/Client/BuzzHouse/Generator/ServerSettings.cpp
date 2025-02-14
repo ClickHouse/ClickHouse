@@ -106,15 +106,6 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_convert_outer_join_to_inner_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_enable_multithreading_after_window_functions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_execute_functions_after_sorting", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"query_plan_join_swap_table",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
-                return rg.pickRandomlyFromVector(choices);
-            },
-            {"'false'", "'true'", "'auto'"},
-            false)},
        {"query_plan_lift_up_array_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_lift_up_union", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_merge_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
@@ -851,6 +842,15 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"query_cache_squash_partial_results", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_enable_optimizations", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"query_plan_filter_push_down", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"query_plan_join_swap_table",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'false'", "'true'", "'auto'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {"'false'", "'true'", "'auto'"},
+            false)},
        {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"read_from_page_cache_if_exists_otherwise_bypass_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"read_in_order_two_level_merge_threshold",
