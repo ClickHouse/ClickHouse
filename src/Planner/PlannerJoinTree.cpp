@@ -1413,7 +1413,14 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, planner_context->getQueryContext(), std::move(hash_table_stat_cache_key));
+    auto join_algorithm = chooseJoinAlgorithm(
+        table_join,
+        prepared_join_storage,
+        left_header,
+        right_header,
+        planner_context->getQueryContext(),
+        std::move(hash_table_stat_cache_key),
+        /*rhs_estimation=*/{});
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();

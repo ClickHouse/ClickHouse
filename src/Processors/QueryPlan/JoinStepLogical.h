@@ -69,7 +69,12 @@ public:
     void setSwapInputs() { swap_inputs = true; }
     bool areInputsSwapped() const { return swap_inputs; }
 
-    JoinPtr convertToPhysical(JoinActionRef & left_filter, JoinActionRef & right_filter, JoinActionRef & post_filter, bool is_explain_logical);
+    JoinPtr convertToPhysical(
+        JoinActionRef & left_filter,
+        JoinActionRef & right_filter,
+        JoinActionRef & post_filter,
+        bool is_explain_logical,
+        std::optional<UInt64> rhs_estimation);
 
     JoinExpressionActions & getExpressionActions() { return expression_actions; }
 

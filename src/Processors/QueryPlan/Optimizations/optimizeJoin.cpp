@@ -249,7 +249,11 @@ void addSortingForMergeJoin(
     add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
 }
 
-bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+bool convertLogicalJoinToPhysical(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    std::optional<UInt64> rhs_estimation)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -261,7 +265,7 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     JoinActionRef left_filter(nullptr);
     JoinActionRef right_filter(nullptr);
     JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(left_filter, right_filter, post_filter, keep_logical);
+    auto join_ptr = join_step->convertToPhysical(left_filter, right_filter, post_filter, keep_logical, rhs_estimation);
 
     if (join_ptr->isFilled())
     {
@@ -327,28 +331,31 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     return true;
 }
 
-bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
+std::optional<UInt64>
+optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
-        return false;
+        return {};
 
     if (join_step->hasPreparedJoinStorage())
-        return false;
+        return {};
 
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     bool need_swap = false;
+    auto lhs_estimation = estimateReadRowsCount(*node.children[0]);
+    auto rhs_estimation = estimateReadRowsCount(*node.children[1]);
+    LOG_TRACE(
+        getLogger("optimizeJoin"),
+        "Left table estimation: {}, right table estimation: {}",
+        lhs_estimation.transform(toString<UInt64>).value_or("unknown"),
+        rhs_estimation.transform(toString<UInt64>).value_or("unknown"));
+
     if (!optimization_settings.join_swap_table.has_value())
     {
-        auto lhs_extimation = estimateReadRowsCount(*node.children[0]);
-        auto rhs_extimation = estimateReadRowsCount(*node.children[1]);
-        LOG_TRACE(getLogger("optimizeJoin"), "Left table estimation: {}, right table estimation: {}",
-            lhs_extimation.transform(toString<UInt64>).value_or("unknown"),
-            rhs_extimation.transform(toString<UInt64>).value_or("unknown"));
-
-        if (lhs_extimation && rhs_extimation && *lhs_extimation < *rhs_extimation)
+        if (lhs_estimation && rhs_estimation && *lhs_estimation < *rhs_estimation)
             need_swap = true;
     }
     else if (optimization_settings.join_swap_table.value())
@@ -357,17 +364,17 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     }
 
     if (!need_swap)
-        return false;
+        return rhs_estimation;
 
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
     const auto & join_info = join_step->getJoinInfo();
     if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
-        return true;
+        return rhs_estimation;
 
     join_step->setSwapInputs();
 
-    return true;
+    return lhs_estimation;
 }
 
 }

@@ -57,6 +57,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
 }
 
 namespace ServerSetting
@@ -1090,7 +1091,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     ContextPtr query_context,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    IQueryTreeNode::HashState hash_table_key_hash,
+    std::optional<UInt64> rhs_estimation)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1115,7 +1117,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (table_join->allowParallelHashJoin())
+        const auto parallel_hash_threshold = query_context->getSettingsRef()[Setting::parallel_hash_join_threshold];
+        const bool use_parallel_hash_join
+            = table_join->allowParallelHashJoin() && (!rhs_estimation || (*rhs_estimation > parallel_hash_threshold));
+        if (use_parallel_hash_join)
         {
             const auto & settings = query_context->getSettingsRef();
             StatsCollectingParams params{
@@ -1166,7 +1171,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     ContextPtr query_context,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    IQueryTreeNode::HashState hash_table_key_hash,
+    std::optional<UInt64> rhs_estimation)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
@@ -1226,7 +1232,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             left_table_expression_header,
             right_table_expression_header,
             query_context,
-            hash_table_key_hash);
+            hash_table_key_hash,
+            rhs_estimation);
         if (join)
             return join;
     }
