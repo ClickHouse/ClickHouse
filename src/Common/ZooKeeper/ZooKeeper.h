@@ -1,18 +1,12 @@
 #pragma once
 
 #include "Types.h"
+
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
-#include <Common/thread_local_rng.h>
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
-
-#include <Poco/Util/LayeredConfiguration.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <future>
 #include <memory>
@@ -59,7 +53,6 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
 struct ShuffleHost;
-using ShuffleHosts = std::vector<ShuffleHost>;
 
 struct RemoveException
 {
@@ -229,7 +222,7 @@ public:
 
     ~ZooKeeper();
 
-    ShuffleHosts shuffleHosts() const;
+    std::vector<ShuffleHost> shuffleHosts() const;
 
     static Ptr create(const Poco::Util::AbstractConfiguration & config,
                       const std::string & config_name,

@@ -42,4 +42,6 @@ struct ShuffleHost
     }
 };
 
+using ShuffleHosts = std::vector<ShuffleHost>;
+
 }

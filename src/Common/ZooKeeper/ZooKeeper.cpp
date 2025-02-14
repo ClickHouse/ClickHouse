@@ -21,6 +21,7 @@
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/DNS.h>
+#include <Poco/Util/LayeredConfiguration.h>
 
 #include <chrono>
 #include <functional>
