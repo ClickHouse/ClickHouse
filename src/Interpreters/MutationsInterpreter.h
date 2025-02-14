@@ -2,7 +2,6 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Context.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
