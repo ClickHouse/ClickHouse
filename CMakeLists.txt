@@ -431,11 +431,24 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (NOT SANITIZE)
+# We enable position independent encoding for all build types except build with -flto=thin:
+# 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
+# multiple sophisticated problems like linking with sanitizers or linking of rust.
+# 2. Position independent binaries and libraries are a little bit slower, than position dependent. We consider
+# build with -flto=thin as trully "production" build where each % of performance is important.
+# 3. For some unknow reason -flto=thin lead to some other way of linkage. For example for rust libraries build
+# we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
+# -flto=thin we have relocation errors like:
+# rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
+#
+# NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
+if (NOT ENABLE_THINLTO)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 endif()
 
-if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE)
+if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND ENABLE_THINLTO)
     # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code
     # and keeping binary addresses constant even with ASLR enabled.
     # Disabled on Android as it requires PIE: https://source.android.com/docs/security/enhancements#android-5
