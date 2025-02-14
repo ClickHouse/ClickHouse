@@ -8,7 +8,7 @@ keywords: [global server settings]
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import SystemLogParameters from './_snippets/_system-log-parameters.md'
+import SystemLogParameters from '@site/docs/en/operations/server-configuration-parameters/_snippets/_system-log-parameters.md'
 
 # Global Server Settings
 
