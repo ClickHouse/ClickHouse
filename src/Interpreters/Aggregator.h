@@ -7,6 +7,8 @@
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>

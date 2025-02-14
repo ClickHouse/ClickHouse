@@ -3,7 +3,6 @@
 #include <atomic>
 #include <unordered_map>
 #include <IO/WriteSettings.h>
-#include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
@@ -25,6 +24,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 
 
 namespace zkutil
@@ -36,6 +36,7 @@ namespace zkutil
 namespace DB
 {
 
+class Block;
 struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
@@ -103,6 +104,7 @@ public:
         const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
+        DeserializationPrefixesCache * deserialization_prefixes_cache,
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints_,

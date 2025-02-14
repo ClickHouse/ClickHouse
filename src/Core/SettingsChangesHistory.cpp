@@ -71,6 +71,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
             {"query_plan_optimize_join_read_by_layers", false, true, "New setting"},
             {"query_plan_optimize_full_sorting_merge_join_by_layers", false, true, "New setting"},
+            {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
+            {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
             {"optimize_and_compare_chain", true, false, "A new setting"},
             {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
