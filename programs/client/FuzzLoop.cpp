@@ -8,6 +8,7 @@
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -241,14 +242,12 @@ bool Client::processWithFuzzing(const String & full_query)
                         set_query->changes.setSetting("log_comment", "measure_performance");
                         fuzzer.getRandomSettings(set_query->changes);
                     }
-                    /// This can't be done because I am using MySQL client
-                    /*auto * out_query = dynamic_cast<ASTQueryWithOutput *>(ast_to_process.get());
-                    if (out_query && !out_query->out_file)
-                    {
-                        /// Dump result into /dev/null
-                        out_query->out_file = std::make_shared<ASTLiteral>("/dev/null");
-                        out_query->is_outfile_truncate = true;
-                    }*/
+                    /// Dump into /dev/null, we are not interested in sending the results back to the client
+                    auto insert = std::make_shared<ASTInsertQuery>();
+                    insert->table_function
+                        = makeASTFunction("file", std::make_shared<ASTLiteral>("/dev/null"), std::make_shared<ASTLiteral>("CSV"));
+                    insert->select = ast_to_process;
+                    ast_to_process = insert;
                 }
                 else
                 {
