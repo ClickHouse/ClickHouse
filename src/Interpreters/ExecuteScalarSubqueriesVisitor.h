@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -11,6 +9,7 @@ namespace DB
 class ASTSubquery;
 class ASTFunction;
 struct ASTTableExpression;
+class Block;
 
 /** Replace subqueries that return exactly one row
     * ("scalar" subqueries) to the corresponding constants.
