@@ -7,7 +7,7 @@
 #include <Core/TypeId.h>
 
 #include <Interpreters/ActionsVisitor.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IdentifierSemantic.h>
