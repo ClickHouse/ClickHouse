@@ -8,6 +8,8 @@
 #include <Common/TypePromotion.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <city.h>
+
 #include <algorithm>
 #include <set>
 #include <list>
