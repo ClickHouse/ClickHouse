@@ -10,6 +10,7 @@
 #include <Common/SettingsChanges.h>
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
 #include <Common/randomSeed.h>
@@ -112,6 +113,7 @@ private:
     ASTPtr getRandomExpressionList();
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
+    void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast);
     void fuzzColumnLikeExpressionList(IAST * ast);

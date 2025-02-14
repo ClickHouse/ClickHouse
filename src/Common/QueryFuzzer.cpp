@@ -37,7 +37,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserOptimizeQuery.h>
@@ -1191,6 +1190,56 @@ ASTPtr QueryFuzzer::generatePredicate()
     return {};
 }
 
+void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
+{
+    static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
+    static const std::vector<JoinStrictness> all_strictness_values
+        = {JoinStrictness::Unspecified,
+           JoinStrictness::Any,
+           JoinStrictness::All,
+           JoinStrictness::Asof,
+           JoinStrictness::Anti,
+           JoinStrictness::Semi};
+    static const std::vector<JoinStrictness> right_strictness_values
+        = {JoinStrictness::Unspecified, JoinStrictness::RightAny, JoinStrictness::All, JoinStrictness::Semi, JoinStrictness::Anti};
+    static const std::vector<JoinKind> kind_values
+        = {JoinKind::Inner,
+        JoinKind::Left,
+        JoinKind::Right,
+        JoinKind::Full/*,
+        JoinKind::Paste,
+        JoinKind::Cross,
+        JoinKind::Comma*/};
+
+    table_join->locality = locality_values[fuzz_rand() % 2 == 0 ? 0 : (fuzz_rand() % locality_values.size())];
+    table_join->kind = kind_values[fuzz_rand() % 2 == 0 ? 0 : (fuzz_rand() % kind_values.size())];
+    if (fuzz_rand() % 2 == 0)
+    {
+        table_join->strictness = JoinStrictness::Unspecified;
+    }
+    else
+    {
+        switch (table_join->kind)
+        {
+            case JoinKind::Inner:
+                /// Semi inner join not possible
+                table_join->strictness = all_strictness_values[fuzz_rand() % (all_strictness_values.size() - 2)];
+                break;
+            case JoinKind::Left:
+                table_join->strictness = all_strictness_values[fuzz_rand() % all_strictness_values.size()];
+                break;
+            case JoinKind::Right:
+                table_join->strictness = right_strictness_values[fuzz_rand() % right_strictness_values.size()];
+                break;
+            case JoinKind::Full:
+                table_join->strictness = fuzz_rand() % 2 == 0 ? JoinStrictness::Unspecified : JoinStrictness::All;
+                break;
+            default:
+                break;
+        }
+    }
+}
+
 ASTPtr QueryFuzzer::addJoinClause()
 {
     decltype(table_like) tids;
@@ -1218,47 +1267,9 @@ ASTPtr QueryFuzzer::addJoinClause()
 
     if (!tids.empty() && !colids.empty())
     {
-        static const std::vector<JoinLocality> locality_values = {JoinLocality::Unspecified, JoinLocality::Local, JoinLocality::Global};
-        static const std::vector<JoinStrictness> all_strictness_values
-            = {JoinStrictness::Unspecified,
-               JoinStrictness::Any,
-               JoinStrictness::All,
-               JoinStrictness::Asof,
-               JoinStrictness::Anti,
-               JoinStrictness::Semi};
-        static const std::vector<JoinStrictness> right_strictness_values
-            = {JoinStrictness::Unspecified, JoinStrictness::RightAny, JoinStrictness::All, JoinStrictness::Semi, JoinStrictness::Anti};
-        static const std::vector<JoinKind> kind_values
-            = {JoinKind::Inner,
-            JoinKind::Left,
-            JoinKind::Right,
-            JoinKind::Full/*,
-            JoinKind::Paste,
-            JoinKind::Cross,
-            JoinKind::Comma*/};
-
         auto table_join = std::make_shared<ASTTableJoin>();
-        table_join->locality = locality_values[fuzz_rand() % locality_values.size()];
-        table_join->kind = kind_values[fuzz_rand() % 2 == 0 ? 0 : (fuzz_rand() % kind_values.size())];
-        switch (table_join->kind)
-        {
-            case JoinKind::Inner:
-                /// Semi inner join not possible
-                table_join->strictness = all_strictness_values[fuzz_rand() % (all_strictness_values.size() - 2)];
-                break;
-            case JoinKind::Left:
-                table_join->strictness = all_strictness_values[fuzz_rand() % all_strictness_values.size()];
-                break;
-            case JoinKind::Right:
-                table_join->strictness = right_strictness_values[fuzz_rand() % right_strictness_values.size()];
-                break;
-            case JoinKind::Full:
-                table_join->strictness = fuzz_rand() % 2 == 0 ? JoinStrictness::Unspecified : JoinStrictness::All;
-                break;
-            default:
-                break;
-        }
 
+        fuzzJoinType(table_join.get());
         /// Add a table to the query
         auto table_exp = std::make_shared<ASTTableExpression>();
         auto rand_table1 = tids.begin();
@@ -1439,6 +1450,19 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 30 == 0)
         {
             aj->kind = aj->kind == ASTArrayJoin::Kind::Inner ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
+        }
+
+        fuzz(fn->children);
+    }
+    else if (auto * tj = typeid_cast<ASTTableJoin *>(ast.get()))
+    {
+        if (fuzz_rand() % 30 == 0)
+        {
+            fuzzJoinType(tj);
+        }
+        if (tj->using_expression_list && fuzz_rand() % 30 == 0)
+        {
+            fuzzColumnLikeExpressionList(tj->using_expression_list.get());
         }
 
         fuzz(fn->children);
