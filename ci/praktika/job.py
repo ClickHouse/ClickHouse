@@ -16,6 +16,7 @@ class Job:
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
+        with_git_submodules: bool = False
 
     @dataclass
     class Config:
