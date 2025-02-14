@@ -181,6 +181,9 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     ASYNC_BACKGROUND_INTERNAL_RESTORE,
     ON_CLUSTER_COORDINATION_INTERNAL_BACKUP,
     ON_CLUSTER_COORDINATION_INTERNAL_RESTORE,
+
+    /// Remove locks of snapshot from keeper and unused object
+    UNLOCK_SNAPSHOT,
 };
 
 
@@ -229,6 +232,7 @@ public:
             }
 
             case ThreadPoolId::RESTORE:
+            case ThreadPoolId::UNLOCK_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_RESTORE:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_RESTORE:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE:
@@ -407,7 +411,7 @@ struct BackupsWorker::BackupStarter
         chassert(!backup);
         backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
-        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context,
+        backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
                                 on_cluster, cluster);
 
         backup_coordination->finish(/* throw_if_error = */ true);
@@ -509,6 +513,7 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
     backup_create_params.password = backup_settings.password;
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
+    backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
@@ -532,6 +537,7 @@ void BackupsWorker::doBackup(
     const BackupSettings & backup_settings,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -541,7 +547,7 @@ void BackupsWorker::doBackup(
     /// (If this is ON CLUSTER query executeDDLQueryOnCluster() will check access rights later.)
     auto required_access = BackupUtils::getRequiredAccessToBackup(backup_query->elements);
     if (!on_cluster)
-        context->checkAccess(required_access);
+        query_context->checkAccess(required_access);
 
     maybeSleepForTesting();
 
@@ -780,7 +786,7 @@ struct BackupsWorker::RestoreStarter
         }
         restore_coordination = backups_worker.makeRestoreCoordination(on_cluster, restore_settings, restore_context);
 
-        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context,
+        backups_worker.doRestore(restore_query, restore_id, backup_info, restore_settings, restore_coordination, restore_context, query_context,
                                  on_cluster, cluster);
 
         /// The restore coordination is not needed anymore.
@@ -874,6 +880,7 @@ void BackupsWorker::doRestore(
     RestoreSettings restore_settings,
     std::shared_ptr<IRestoreCoordination> restore_coordination,
     ContextMutablePtr context,
+    const ContextPtr & query_context,
     bool on_cluster,
     const ClusterPtr & cluster)
 {
@@ -901,7 +908,7 @@ void BackupsWorker::doRestore(
             String addr_database = address->default_database.empty() ? current_database : address->default_database;
             for (auto & element : restore_elements)
                 element.setCurrentDatabase(addr_database);
-            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, getThreadPool(ThreadPoolId::RESTORE), {}};
+            RestorerFromBackup dummy_restorer{restore_elements, restore_settings, nullptr, backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), {}};
             dummy_restorer.run(RestorerFromBackup::CHECK_ACCESS_ONLY);
         }
     }
@@ -933,7 +940,7 @@ void BackupsWorker::doRestore(
 
         /// Restore from the backup.
         RestorerFromBackup restorer{restore_query->elements, restore_settings, restore_coordination,
-                                    backup, context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
+                                    backup, context, query_context, getThreadPool(ThreadPoolId::RESTORE), after_task_callback};
         restorer.run(RestorerFromBackup::RESTORE);
     }
 }
@@ -990,6 +997,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     return std::make_shared<BackupCoordinationOnCluster>(
         *backup_settings.backup_uuid,
         !backup_settings.deduplicate_files,
+        backup_settings.experimental_lightweight_snapshot,
         root_zk_path,
         get_zookeeper,
         keeper_settings,

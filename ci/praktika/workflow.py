@@ -32,6 +32,7 @@ class Workflow:
         enable_cache: bool = False
         enable_report: bool = False
         enable_merge_ready_status: bool = False
+        enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
         enable_merge_commit: bool = False
         cron_schedules: List[str] = field(default_factory=list)

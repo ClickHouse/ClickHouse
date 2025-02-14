@@ -1,7 +1,8 @@
-#include <Processors/Transforms/ScatterByPartitionTransform.h>
-
-#include <Common/PODArray.h>
+#include <Columns/IColumn.h>
 #include <Core/ColumnNumbers.h>
+#include <Processors/Port.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <Common/PODArray.h>
 
 namespace DB
 {
