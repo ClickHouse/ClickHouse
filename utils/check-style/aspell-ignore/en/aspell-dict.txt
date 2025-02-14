@@ -1032,6 +1032,7 @@ SupersetDocker
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
+SystemLogParameters
 TABLUM
 TAVG
 TCPConnection
@@ -1338,6 +1339,7 @@ atan
 atanh
 atomicity
 auth
+authType
 authenticator
 authenticators
 autocompletion
@@ -2460,6 +2462,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+preflight
 preimage
 preloaded
 prem
@@ -2495,6 +2498,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protos
 protobuf
 protobuflist
 protobufsingle
@@ -3190,6 +3194,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+workfactor
 writability
 wrt
 wyHash

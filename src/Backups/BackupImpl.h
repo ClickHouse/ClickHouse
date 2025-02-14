@@ -37,7 +37,8 @@ public:
     BackupImpl(
         BackupFactory::CreateParams params_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_);
+        std::shared_ptr<IBackupReader> reader_,
+        std::shared_ptr<IBackupReader> lightweight_snapshot_reader_ = nullptr);
 
     /// BACKUP
     BackupImpl(
@@ -113,6 +114,9 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
+    /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
+    std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -120,6 +124,9 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// object_key -> file name, only used by lightweight snapshot
+    std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
     time_t timestamp = 0;

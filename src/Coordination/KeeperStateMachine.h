@@ -5,6 +5,7 @@
 #include <Coordination/KeeperContext.h>
 #include <Common/SharedMutex.h>
 
+#include <base/defines.h>
 #include <libnuraft/nuraft.hxx>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -122,9 +123,9 @@ protected:
     CommitCallback commit_callback;
     /// In our state machine we always have a single snapshot which is stored
     /// in memory in compressed (serialized) format.
-    SnapshotMetadataPtr latest_snapshot_meta = nullptr;
-    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info;
-    nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
+    SnapshotMetadataPtr latest_snapshot_meta TSA_GUARDED_BY(snapshots_lock) = nullptr;
+    std::shared_ptr<SnapshotFileInfo> latest_snapshot_info TSA_GUARDED_BY(snapshots_lock);
+    nuraft::ptr<nuraft::buffer> latest_snapshot_buf TSA_GUARDED_BY(snapshots_lock) = nullptr;
 
     CoordinationSettingsPtr coordination_settings;
 
