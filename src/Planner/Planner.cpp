@@ -1917,67 +1917,36 @@ void Planner::buildPlanForQueryNode()
     if (!select_query_options.only_analyze)
         addBuildSubqueriesForSetsStepIfNeeded(query_plan, select_query_options, planner_context, useful_sets);
 
-    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
-    /// top of the pipeline which stores the result in the query cache.
-    if (can_use_query_cache && settings[Setting::enable_writes_to_query_cache])
-    {
-        /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
-        LOG_TRACE(getLogger("QueryCache"), "Try to write subquery cache");
-        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, query_context);
-        const bool ast_contains_system_tables = astContainsSystemTables(ast, query_context);
+    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
+    /// then add a step which stores the result in the query cache.
+    if (checkCanWriteQueryCache(ast, query_context)) {
+        QueryCache::Key key(
+            ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
+            query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
+            settings[Setting::query_cache_share_between_users],
+            std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
+            settings[Setting::query_cache_compress_entries]);
 
-        const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling
-            = settings[Setting::query_cache_nondeterministic_function_handling];
-        const QueryCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
-
-        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
-                "The query result was not cached because the query contains a non-deterministic function."
-                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                "The query result was not cached because the query contains a system table."
-                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
-            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
+        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
         {
-            QueryCache::Key key(
-                ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
-                query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
-                settings[Setting::query_cache_share_between_users],
-                std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
-                settings[Setting::query_cache_compress_entries]);
-
-            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
-            if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
-            {
-                LOG_TRACE(getLogger("QueryCache"),
-                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                        num_query_runs, settings[Setting::query_cache_min_query_runs]);
-            }
-            else
-            {
-                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
-                                    key,
-                                    std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                    settings[Setting::query_cache_squash_partial_results],
-                                    settings[Setting::max_block_size],
-                                    settings[Setting::query_cache_max_size_in_bytes],
-                                    settings[Setting::query_cache_max_entries]));
-                
-                auto stream_into_query_cache_step = std::make_unique<StreamInQueryCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_cache_writer, key.query_string);
-                query_plan.addStep(std::move(stream_into_query_cache_step));
-                LOG_TRACE(getLogger("QueryCache"),
-                        "Write step added");
-                // Should somehow add info about cache usage in subqueries to logs 
-            }
-        } else {
-            LOG_TRACE(getLogger("QueryCache"), "AAA");
+            LOG_TRACE(getLogger("QueryCache"),
+                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                    num_query_runs, settings[Setting::query_cache_min_query_runs]);
         }
-    } else {
-        LOG_TRACE(getLogger("QueryCache"), "No write to subquery cache");
+        else
+        {
+            auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
+                                key,
+                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                settings[Setting::query_cache_squash_partial_results],
+                                settings[Setting::max_block_size],
+                                settings[Setting::query_cache_max_size_in_bytes],
+                                settings[Setting::query_cache_max_entries]));
+            
+            auto stream_into_query_cache_step = std::make_unique<StreamInQueryCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_cache_writer, key.query_string);
+            query_plan.addStep(std::move(stream_into_query_cache_step));
+        }
     }
 
     query_node_to_plan_step_mapping[&query_node] = query_plan.getRootNode();

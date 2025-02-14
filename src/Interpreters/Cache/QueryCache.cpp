@@ -37,10 +37,19 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsQueryCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
+    extern const SettingsQueryCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsString query_cache_tag;
+}
+
+namespace ErrorCodes
+{
+    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
+    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
 }
 
 namespace
@@ -162,6 +171,35 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);
     return finder_data.has_system_tables;
+}
+
+bool checkCanWriteQueryCache(ASTPtr ast, ContextPtr context) {
+    const Settings & settings = context->getSettingsRef();
+
+    if (context->getCanUseQueryCache() && settings[Setting::enable_writes_to_query_cache]) {
+        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
+        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
+
+        const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling
+            = settings[Setting::query_cache_nondeterministic_function_handling];
+        const QueryCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
+
+        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
+            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
+                "The query result was not cached because the query contains a non-deterministic function."
+                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
+            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
+                "The query result was not cached because the query contains a system table."
+                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
+
+        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
+            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
+            return true;
+    }
+
+    return false;
 }
 
 namespace

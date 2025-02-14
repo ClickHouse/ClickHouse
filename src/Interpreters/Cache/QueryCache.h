@@ -23,6 +23,11 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
 /// Does AST contain system tables like "system.processes"?
 bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
 
+/// Checks that query cache can be used for query.
+/// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
+/// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
+bool checkCanWriteQueryCache(ASTPtr ast, ContextPtr context);
+
 class QueryCacheWriter;
 class QueryCacheReader;
 
