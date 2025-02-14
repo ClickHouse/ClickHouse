@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-
 #include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -13,6 +11,9 @@ namespace DB
 
 class FunctionNode;
 struct IdentifierResolveScope;
+
+struct NameAndTypePair;
+using NamesAndTypes = std::vector<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);

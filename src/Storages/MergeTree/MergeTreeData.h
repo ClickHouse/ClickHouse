@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -553,6 +554,12 @@ public:
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
+
+    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
+
+    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
