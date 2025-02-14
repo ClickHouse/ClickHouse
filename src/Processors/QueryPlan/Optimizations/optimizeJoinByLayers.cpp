@@ -141,7 +141,7 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
             const auto & left_name = clause.key_names_left[i];
             const auto & right_name = clause.key_names_right[i];
 
-            std::cerr << left_name << ' ' << right_name << std::endl;
+            // std::cerr << left_name << ' ' << right_name << std::endl;
 
             auto it = lhs_outputs.find(left_name);
             auto jt = rhs_outputs.find(right_name);
