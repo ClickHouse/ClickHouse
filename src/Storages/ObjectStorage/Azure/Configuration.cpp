@@ -438,7 +438,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageAzureConfiguration::getTableFunctionArguments(ASTs & args) const
+void StorageAzureConfiguration::addPathAndAccessKeysToArgs(ASTs & args) const
 {
     if (!args.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");

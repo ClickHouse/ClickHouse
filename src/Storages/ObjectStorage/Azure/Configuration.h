@@ -79,7 +79,7 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-    void getTableFunctionArguments(ASTs & args) const override;
+    void addPathAndAccessKeysToArgs(ASTs & args) const override;
 
 protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;

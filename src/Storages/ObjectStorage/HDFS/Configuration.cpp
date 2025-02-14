@@ -235,7 +235,7 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageHDFSConfiguration::getTableFunctionArguments(ASTs & args) const
+void StorageHDFSConfiguration::addPathAndAccessKeysToArgs(ASTs & args) const
 {
     if (!args.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");

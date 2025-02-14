@@ -164,7 +164,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
             queryToString(query));
     }
 
-    configuration->getTableFunctionArguments(arguments->children);
+    configuration->addPathAndAccessKeysToArgs(arguments->children);
 
     function_ast->arguments = arguments;
     function_ast->children.push_back(arguments);
