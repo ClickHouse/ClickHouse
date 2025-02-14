@@ -392,7 +392,7 @@ def test_ssrf(ch_cluster):
     # Now do a server-side request forgery with the 'url' table function.
     # We should not get any information about files on the filesystem.
 
-    instance.query("""
+    instance.query_and_get_error("""
         INSERT INTO FUNCTION url('http://127.0.0.1:9012/catboost_request?version=1&method=catboost_GetTreeCount', TabSeparatedRaw, 'column1 String')
         VALUES ('library_path=%2Fvar%2Flib%2Fclickhouse%2Fuser_files%2Fmod_catboost.so&model_path=%2Fvar%2Flib%2Fclickhouse%2Fuser_files%2Fmod_catboost.so')
     """
