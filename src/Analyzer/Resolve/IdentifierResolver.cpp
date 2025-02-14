@@ -741,11 +741,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
 
     ColumnNodePtr result_column_node;
     bool can_resolve_directly_from_storage = false;
-    bool is_subcolumn = false;
     if (auto it = table_expression_data.column_name_to_column_node.find(identifier_full_name); it != table_expression_data.column_name_to_column_node.end())
     {
         can_resolve_directly_from_storage = true;
-        is_subcolumn = table_expression_data.subcolumn_names.contains(identifier_full_name);
         result_column_node = it->second;
     }
     /// Check if it's a dynamic subcolumn
@@ -759,23 +757,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             {
                 result_column_node = std::make_shared<ColumnNode>(NameAndTypePair{identifier_full_name, dynamic_subcolumn_type}, jt->second->getColumnSource());
                 can_resolve_directly_from_storage = true;
-                is_subcolumn = true;
             }
         }
     }
 
-    if (can_resolve_directly_from_storage && is_subcolumn)
-    {
-        /** In the case when we have an ARRAY JOIN, we should not resolve subcolumns directly from storage.
-          * For example, consider the following SQL query:
-          * SELECT ProfileEvents.Values FROM system.query_log ARRAY JOIN ProfileEvents
-          * In this case, ProfileEvents.Values should also be array joined, not directly resolved from storage.
-          */
-        auto * nearest_query_scope = scope.getNearestQueryScope();
-        auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
-        if (nearest_query_scope_query_node && nearest_query_scope_query_node->getJoinTree()->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
-            can_resolve_directly_from_storage = false;
-    }
 
     if (can_resolve_directly_from_storage)
     {
@@ -1504,6 +1489,24 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinExpression
     return array_join_resolved_expression;
 }
 
+namespace
+{
+
+std::optional<size_t> getCompoundIdentifierPrefixSize(const Identifier & identifier, const String & name)
+{
+    IdentifierView identifier_view(identifier);
+    while (identifier_view.getLength() > name.length())
+    {
+        identifier_view.popLast();
+    }
+
+    if (identifier_view.getLength() != name.length() || identifier_view.getFullName() != name)
+        return std::nullopt;
+    return identifier_view.getPartsSize();
+}
+
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -1532,10 +1535,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
             ? array_join_column_expression_typed.getAlias()
             : array_join_column_expression_typed.getColumnName();
 
-        if (identifier_view.front() == alias_or_name)
-            identifier_view.popFirst();
-        else if (identifier_view.getFullName() == alias_or_name)
-            identifier_view.popFirst(identifier_view.getPartsSize()); /// Clear
+        if (auto prefix_size = getCompoundIdentifierPrefixSize(identifier_lookup.identifier, alias_or_name))
+            identifier_view.popFirst(*prefix_size);
         else
             continue;
 

@@ -14,8 +14,6 @@ jepsen_keeper_job = Job.Config(
     requires=[binary_build_job.name],
 )
 
-# TODO: add concurrency lock for scheduled workflows
-
 # TODO: add alert on workflow failure
 
 workflow = Workflow.Config(

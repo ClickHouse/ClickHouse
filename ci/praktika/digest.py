@@ -57,8 +57,18 @@ class Digest:
             # respect docker digest in the job digest
             docker_digest = docker_digests[job_config.run_in_docker.split("+")[0]]
             digest = "-".join([docker_digest, digest])
+
+        job_config_dict = dataclasses.asdict(job_config)
+        drop_fields = [
+            "requires",
+            "enable_commit_status",
+            "allow_merge_on_failure",
+        ]
+        filtered_job_dict = {
+            k: v for k, v in job_config_dict.items() if k not in drop_fields
+        }
         config_digest = hashlib.md5(
-            json.dumps(dataclasses.asdict(job_config), sort_keys=True).encode()
+            json.dumps(filtered_job_dict, sort_keys=True).encode()
         ).hexdigest()[: min(Settings.CACHE_DIGEST_LEN // 4, 4)]
         return digest + "-" + config_digest
 
