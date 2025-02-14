@@ -1318,15 +1318,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             /// Check if we can still build projection from new metadata.
             auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, context);
             /// Check if new metadata has the same keys as the old one.
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            {
-                /// TODO: check GROUP BY keys query tree
-            }
-            else
-            {
-                if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
-            }
+            if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
+                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
             /// Check if new metadata is convertible from old metadata for projection.
             Block old_projection_block = projection.sample_block;
             performRequiredConversions(old_projection_block, new_projection.sample_block.getNamesAndTypesList(), context);

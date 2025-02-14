@@ -1,10 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/SelectQueryInfo.h>
+#include "Planner/PlannerExpressionAnalysis.h"
 
 namespace DB
 {
@@ -69,6 +71,7 @@ public:
     /// It is useful for parallel replicas analysis.
     using QueryNodeToPlanStepMapping = std::unordered_map<const QueryNode *, const QueryPlan::Node *>;
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
+    const PlannerExpressionsAnalysisResult & getExpressionAnalysisResult() const { return expression_analysis_result.value(); }
 
 private:
     void buildPlanForUnionNode();
@@ -78,6 +81,7 @@ private:
     QueryTreeNodePtr query_tree;
     SelectQueryOptions & select_query_options;
     PlannerContextPtr planner_context;
+    std::optional<PlannerExpressionsAnalysisResult> expression_analysis_result;
     QueryPlan query_plan;
     StorageLimitsList storage_limits;
     std::set<std::string> used_row_policies;

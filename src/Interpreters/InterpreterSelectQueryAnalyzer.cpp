@@ -30,6 +30,8 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include "Planner/PlannerContext.h"
+#include "Planner/PlannerExpressionAnalysis.h"
 
 namespace DB
 {
@@ -132,12 +134,32 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+namespace
+{
+
+struct StorageSubstituionOptions
+{
+    const StoragePtr & storage = nullptr;
+    const TableNodePtr & table = nullptr;
+};
+
+QueryTreeNodePtr buildQueryTreeAndRunPasses(
+    const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
-    const StoragePtr & storage)
+    StorageSubstituionOptions storage_options = {}
+)
 {
     auto query_tree = buildQueryTree(query, context);
+    if (storage_options.table)
+    {
+        auto * query_node = query_tree->as<QueryNode>();
+        if (!query_node || query_node->getJoinTree() != nullptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Invalid query provided during projection calculation: {}",
+                            query_node ? "Non-empty FROM clause" : "Received not a QueryNode");
+        query_node->getJoinTree() = storage_options.table;
+    }
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, select_query_options.only_analyze);
@@ -150,12 +172,13 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     else
         query_tree_pass_manager.run(query_tree);
 
-    if (storage)
-        replaceStorageInQueryTree(query_tree, context, storage);
+    if (storage_options.storage)
+        replaceStorageInQueryTree(query_tree, context, storage_options.storage);
 
     return query_tree;
 }
 
+}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
@@ -165,7 +188,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context))
     , planner(query_tree, select_query_options)
 {
 }
@@ -179,10 +202,23 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     : query(normalizeAndValidateQuery(query_, column_names))
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
-    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, { .storage = storage_ }))
     , planner(query_tree, select_query_options)
 {
 }
+
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const ASTPtr & query_,
+    const ContextPtr & context_,
+    TableNodePtr table_,
+    const SelectQueryOptions & select_query_options_
+)
+    : query(normalizeAndValidateQuery(query_, {}))
+    , context(buildContext(context_, select_query_options_))
+    , select_query_options(select_query_options_)
+    , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, { .table = table_ }))
+    , planner(query_tree, select_query_options)
+{}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const QueryTreeNodePtr & query_tree_,
@@ -237,10 +273,17 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
     return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};
 }
 
-const Names & InterpreterSelectQueryAnalyzer::getRequiredColumns() const
+const Names & InterpreterSelectQueryAnalyzer::getRequiredColumns()
 {
+    planner.buildQueryPlanIfNeeded();
     auto const & table_expression_data = planner.getPlannerContext()->getTableExpressionDataOrThrow(query_tree);
     return table_expression_data.getSelectedColumnsNames();
+}
+
+const PlannerExpressionsAnalysisResult & InterpreterSelectQueryAnalyzer::getExpressionAnalysisResult()
+{
+    planner.buildQueryPlanIfNeeded();
+    return planner.getExpressionAnalysisResult();
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()

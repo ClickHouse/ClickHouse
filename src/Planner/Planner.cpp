@@ -1578,7 +1578,8 @@ void Planner::buildPlanForQueryNode()
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
-    auto expression_analysis_result = buildExpressionAnalysisResult(query_tree,
+    expression_analysis_result = buildExpressionAnalysisResult(
+        query_tree,
         query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
         planner_context,
         query_processing_info);

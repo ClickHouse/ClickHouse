@@ -18,6 +18,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
+#include "Storages/StorageValues.h"
 #include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -33,6 +34,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
+    extern const SettingsBool allow_experimental_analyzer;
 }
 }
 
@@ -69,6 +71,12 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     const StorageMetadataPtr & metadata_snapshot,
     const Block & key_virtual_columns)
 {
+    AggregateProjectionInfo info;
+
+    auto select_query_options = SelectQueryOptions{QueryProcessingStage::WithMergeableState}
+        .ignoreASTOptimizations()
+        .ignoreSettingConstraints();
+
     /// This is a bad approach.
     /// We'd better have a separate interpreter for projections.
     /// Now it's not obvious we didn't miss anything here.
@@ -76,20 +84,58 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     /// Setting ignoreASTOptimizations is used because some of them are invalid for projections.
     /// Example: 'SELECT min(c0), max(c0), count() GROUP BY -c0' for minmax_count projection can be rewritten to
     /// 'SELECT min(c0), max(c0), count() GROUP BY c0' which is incorrect cause we store a column '-c0' in projection.
-    InterpreterSelectQuery interpreter(
-        projection.query_ast,
-        context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlockWithSubcolumns())),
-        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
+            context,
+            [&metadata_snapshot](const StorageID & table_id)
+            {
+                auto block = metadata_snapshot->getSampleBlockWithSubcolumns();
+                return std::make_shared<StorageValues>(
+                    table_id,
+                    ColumnsDescription::fromNamesAndTypes(block.getNamesAndTypes()),
+                    block);
+            });
+        StoragePtr storage = external_storage_holder->getTable();
+        auto fake_table = std::make_shared<TableNode>(storage, context);
 
-    const auto & analysis_result = interpreter.getAnalysisResult();
-    const auto & query_analyzer = interpreter.getQueryAnalyzer();
+        InterpreterSelectQueryAnalyzer interpreter(
+            projection.query_ast,
+            context,
+            fake_table,
+            select_query_options
+        );
 
-    AggregateProjectionInfo info;
-    info.context = interpreter.getContext();
-    info.before_aggregation = analysis_result.before_aggregation->dag.clone();
-    info.keys = query_analyzer->aggregationKeys().getNames();
-    info.aggregates = query_analyzer->aggregates();
+        const auto & expression_analysis = interpreter.getExpressionAnalysisResult();
+        auto aggregation_analysis_result = expression_analysis.getAggregation();
+
+        info.context = interpreter.getContext();
+        info.before_aggregation = aggregation_analysis_result.before_aggregation_actions->dag.clone();
+
+        Names aggregation_key_names;
+        aggregation_key_names.reserve(aggregation_analysis_result.aggregation_keys.size());
+        for (const NameAndTypePair & column : aggregation_analysis_result.aggregation_keys)
+            aggregation_key_names.push_back(column.name);
+
+        info.keys = std::move(aggregation_key_names);
+        info.aggregates = aggregation_analysis_result.aggregate_descriptions;
+    }
+    else
+    {
+        InterpreterSelectQuery interpreter(
+            projection.query_ast,
+            context,
+            Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlockWithSubcolumns())),
+            SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
+
+        const auto & analysis_result = interpreter.getAnalysisResult();
+        const auto & query_analyzer = interpreter.getQueryAnalyzer();
+
+        info.context = interpreter.getContext();
+        info.before_aggregation = analysis_result.before_aggregation->dag.clone();
+        info.keys = query_analyzer->aggregationKeys().getNames();
+        info.aggregates = query_analyzer->aggregates();
+    }
 
     /// Add part/partition virtual columns to projection aggregation keys.
     /// We can do it because projection is stored for every part separately.

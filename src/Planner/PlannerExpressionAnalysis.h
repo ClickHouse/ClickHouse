@@ -10,6 +10,7 @@
 #include <Planner/PlannerAggregation.h>
 #include <Planner/PlannerWindowFunctions.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include "Core/NamesAndTypes.h"
 
 namespace DB
 {
@@ -32,7 +33,7 @@ struct FilterAnalysisResult
 struct AggregationAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
-    Names aggregation_keys;
+    NamesAndTypes aggregation_keys;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;
@@ -88,7 +89,7 @@ public:
         return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
     }
 
-    AggregationAnalysisResult & getAggregation()
+    const AggregationAnalysisResult & getAggregation() const
     {
         return aggregation_analysis_result;
     }

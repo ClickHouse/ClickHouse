@@ -103,7 +103,7 @@ struct ProjectionDescription
     String getDirectoryName() const { return name + ".proj"; }
 
 private:
-    static StorageInMemoryMetadata buildMetadataAndFillProjectionKeys(
+    static void buildMetadataAndFillProjectionKeys(
         ProjectionDescription & current,
         const ContextPtr & context,
         const ASTProjectionSelectQuery & projection_query,

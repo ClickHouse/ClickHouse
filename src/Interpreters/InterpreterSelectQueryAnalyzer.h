@@ -6,6 +6,8 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Planner/Planner.h>
 #include <Interpreters/Context_fwd.h>
+#include <Analyzer/TableNode.h>
+#include <Planner/PlannerExpressionAnalysis.h>
 
 namespace DB
 {
@@ -29,6 +31,16 @@ public:
         const SelectQueryOptions & select_query_options_,
         const Names & column_names = {});
 
+    /* Initialize interpreter with query AST and fake table node.
+     * This constructor is used to calculate projections.
+     */
+    InterpreterSelectQueryAnalyzer(
+        const ASTPtr & query_,
+        const ContextPtr & context_,
+        TableNodePtr table_,
+        const SelectQueryOptions & select_query_options_
+    );
+
     /** Initialize interpreter with query tree.
       * No query tree passes are applied.
       */
@@ -43,7 +55,9 @@ public:
 
     Block getSampleBlock();
     std::pair<Block, PlannerContextPtr> getSampleBlockAndPlannerContext();
-    const Names & getRequiredColumns() const;
+
+    const Names & getRequiredColumns();
+    const PlannerExpressionsAnalysisResult & getExpressionAnalysisResult();
 
     static Block getSampleBlock(const ASTPtr & query,
         const ContextPtr & context,
