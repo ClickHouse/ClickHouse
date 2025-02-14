@@ -288,6 +288,8 @@ String toString(ClientInfo::Interface interface)
             return "TCP_INTERSERVER";
         case ClientInfo::Interface::PROMETHEUS:
             return "PROMETHEUS";
+        case ClientInfo::Interface::MONGODB:
+            return "MONGODB";
     }
 
     return std::format("Unknown server interface ({}).", static_cast<int>(interface));

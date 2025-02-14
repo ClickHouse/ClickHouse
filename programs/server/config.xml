@@ -179,6 +179,11 @@
     -->
     <postgresql_port>9005</postgresql_port>
 
+    <!-- Compatibility with MongoDB protocol.
+         ClickHouse will pretend to be MongoDB for applications connecting to this port.
+    -->
+    <mongodb_port>27017</mongodb_port>
+
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
          See the openSSL section below.
