@@ -397,12 +397,11 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
 
     if (names.empty())
     {
-        auto logs = getAllLogs();
-        for (size_t i = 0; i < logs.size(); ++i)
+        for (auto * log : getAllLogs())
         {
-            auto last_log_index = logs[i]->getLastLogIndex();
-            logs_to_wait.push_back({logs[i], logs[i]->getLastLogIndex()});
-            logs[i]->notifyFlush(last_log_index, should_prepare_tables_anyway);
+            auto last_log_index = log->getLastLogIndex();
+            logs_to_wait.push_back({log, log->getLastLogIndex()});
+            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
     else
