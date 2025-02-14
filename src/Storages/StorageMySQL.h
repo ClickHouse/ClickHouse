@@ -61,6 +61,10 @@ public:
         String database;
         String table;
 
+        String ssl_ca;
+        String ssl_cert;
+        String ssl_key;
+
         bool replace_query = false;
         String on_duplicate_clause;
 

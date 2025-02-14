@@ -18,7 +18,7 @@ from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI
-from env_helper import GITHUB_REPOSITORY, TEMP_PATH
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
 from pr_info import PRInfo
 from report import (
     ERROR,
@@ -151,8 +151,8 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
 
-    if pr_info.is_merge_queue:
-        # skip report creation for the MQ
+    if GITHUB_REPOSITORY == GITHUB_UPSTREAM_REPOSITORY or pr_info.is_merge_queue:
+        # CI Running status is deprecated for ClickHouse repo
         return
 
     # to reduce number of parameters, the Github is constructed on the fly

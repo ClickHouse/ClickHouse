@@ -35,6 +35,7 @@ LABEL_CATEGORIES = {
     ],
     "pr-performance": ["Performance Improvement"],
     "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
+    "pr-experimental": ["Experimental Feature"],
 }
 
 CATEGORY_TO_LABEL = {
@@ -57,6 +58,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_EXPERIMENTAL = "pr-experimental"
     PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
@@ -88,8 +90,8 @@ def check_category(pr_body: str) -> Tuple[bool, str]:
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
     # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
-    if [True for line in lines if re.match(rf"\AReverts [A-Za-z0-9_.-]+#\d+\Z", line)]:
-        return True
+    if [True for line in lines if re.match(rf"\AReverts [A-Za-z0-9_.-/]+#\d+\Z", line)]:
+        return True, LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
     category = ""
     entry = ""
@@ -189,7 +191,7 @@ def check_labels(category, info):
     if pr_labels_to_add:
         print(f"Add labels [{pr_labels_to_add}]")
         for label in pr_labels_to_add:
-            cmd += f" --add-label {label}"
+            cmd += f" --add-label '{label}'"
             if label in info.pr_labels:
                 info.pr_labels.append(label)
             info.dump()
@@ -197,7 +199,7 @@ def check_labels(category, info):
     if pr_labels_to_remove:
         print(f"Remove labels [{pr_labels_to_remove}]")
         for label in pr_labels_to_remove:
-            cmd += f" --remove-label {label}"
+            cmd += f" --remove-label '{label}'"
             if label in info.pr_labels:
                 info.pr_labels.remove(label)
             info.dump()
