@@ -343,6 +343,10 @@ void DatabaseOrdinary::loadTableFromMetadata(
         }
         catch (Coordination::Exception & e)
         {
+            e.addMessage(
+                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+                + " from query " + serializeAST(query));
+
             if (!Coordination::isHardwareError(e.code))
                 throw;
             tryLogCurrentException(log);
