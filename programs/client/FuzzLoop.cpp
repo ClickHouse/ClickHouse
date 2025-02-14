@@ -36,6 +36,7 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int SYNTAX_ERROR;
 extern const int TOO_DEEP_RECURSION;
+extern const int BUZZHOUSE;
 }
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
@@ -189,10 +190,14 @@ bool Client::processWithFuzzing(const String & full_query)
     for (size_t fuzz_step = 0; fuzz_step < this_query_runs; ++fuzz_step)
     {
 #if USE_BUZZHOUSE
+        bool peer_success = true;
+        BuzzHouse::PerformanceResult res1;
+        BuzzHouse::PerformanceResult res2;
         ASTPtr old_settings = nullptr;
         ASTSelectQuery * select_query = nullptr;
-        const bool has_buzzhouse_settings = fc && fc->measure_performance && ei;
-        bool measure_performance = has_buzzhouse_settings && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
+        const bool has_buzzhouse_settings = fc && (fc->measure_performance || fc->compare_success_results) && ei;
+        bool measure_performance = has_buzzhouse_settings && fc->measure_performance
+            && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
 #endif
         fmt::print(stderr, "Fuzzing step {} out of {}\n", fuzz_step, this_query_runs);
 
@@ -256,7 +261,7 @@ bool Client::processWithFuzzing(const String & full_query)
             WriteBufferFromOwnString dump_of_cloned_ast;
             ast_to_process->dumpTree(dump_of_cloned_ast);
 
-            auto base_after_fuzz = ast_to_process->formatForErrorMessage();
+            auto base_after_fuzz = fuzz_base->formatForErrorMessage();
 
             // Check that the source AST didn't change after fuzzing. This
             // helps debug AST cloning errors, where the cloned AST doesn't
@@ -315,6 +320,46 @@ bool Client::processWithFuzzing(const String & full_query)
             have_error = true;
         }
 
+#if USE_BUZZHOUSE
+        measure_performance &= !have_error;
+        if (measure_performance)
+        {
+            measure_performance &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, res1);
+            /// Replicate settings, so both servers have same configuration
+            ei->replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
+        }
+        if (has_buzzhouse_settings)
+        {
+            /// Always run query on peer server
+            fmt::print(stderr, "Running query on peer server\n");
+            peer_success &= ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
+        }
+        if (has_buzzhouse_settings && fc->compare_success_results && peer_success != !have_error)
+        {
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "AST Fuzzer: The peer server got a different success result");
+        }
+        if (measure_performance)
+        {
+            measure_performance &= peer_success && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, res2);
+
+            if (measure_performance)
+            {
+                fc->comparePerformanceResults("AST fuzzer", res1, res2);
+            }
+        }
+        if (select_query)
+        {
+            /// Don't keep performance settings in AST
+            if (old_settings)
+            {
+                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
+            }
+            else
+            {
+                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
+        }
+#endif
         // The server is still alive, so we're going to continue fuzzing.
         // Determine what we're going to use as the starting AST.
         if (have_error)
@@ -339,46 +384,6 @@ bool Client::processWithFuzzing(const String & full_query)
             fmt::print(stderr, "Query succeeded, using this AST as a start\n");
             fuzz_base = ast_to_process;
         }
-#if USE_BUZZHOUSE
-        bool peer_success = true;
-        BuzzHouse::PerformanceResult res1;
-        BuzzHouse::PerformanceResult res2;
-
-        measure_performance &= !have_error;
-        if (measure_performance)
-        {
-            measure_performance &= ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::None, res1);
-            /// Replicate settings, so both servers have same configuration
-            ei->replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
-        }
-        if (has_buzzhouse_settings)
-        {
-            /// Always run query on peer server
-            fmt::print(stderr, "Running query on peer server\n");
-            peer_success &= ei->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
-        }
-        if (measure_performance)
-        {
-            measure_performance &= peer_success && ei->getPerformanceMetricsForLastQuery(BuzzHouse::PeerTableDatabase::ClickHouse, res2);
-
-            if (measure_performance)
-            {
-                fc->comparePerformanceResults("AST fuzzer", res1, res2);
-            }
-        }
-        if (select_query)
-        {
-            /// Don't keep performance settings in AST
-            if (old_settings)
-            {
-                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, std::move(old_settings));
-            }
-            else
-            {
-                select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-            }
-        }
-#endif
     }
 
     for (const auto & query : queries_for_fuzzed_tables)
