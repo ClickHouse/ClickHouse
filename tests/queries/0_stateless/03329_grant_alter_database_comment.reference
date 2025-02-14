@@ -1,4 +1,4 @@
-GRANT ALTER MODIFY DATABASE COMMENT ON test_database.* TO test_user
-GRANT ALTER MODIFY DATABASE COMMENT ON test_database.*
-test_database	test database with comment
-test_database	new comment on database
+GRANT ALTER MODIFY DATABASE COMMENT ON test_database_03329_grant_alter_database_comment_test.* TO test_user_03329_grant_alter_database_comment_test
+GRANT ALTER MODIFY DATABASE COMMENT ON test_database_03329_grant_alter_database_comment_test.*
+test_database_03329_grant_alter_database_comment_test	test database with comment
+test_database_03329_grant_alter_database_comment_test	new comment on database
