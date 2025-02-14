@@ -175,10 +175,18 @@ class HtmlRunnerHooks:
             skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
             job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
             results = []
+            info = Info()
             for job in _workflow.jobs:
                 if job.name in skip_jobs:
+                    cache_record = job_cache_records[job.name]
+                    report_link = info.get_specific_report_url(
+                        pr_number=cache_record.pr_number,
+                        branch=cache_record.branch,
+                        sha=cache_record.sha,
+                        job_name=job.name,
+                    )
                     result = Result.generate_skipped(
-                        job.name, job_cache_records[job.name]
+                        job.name, [report_link], "reused from cache"
                     )
                     results.append(result)
             if results:

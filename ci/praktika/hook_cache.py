@@ -21,6 +21,9 @@ class CacheRunnerHooks:
         artifact_digest_map = {}
         job_digest_map = {}
         for job in workflow.jobs:
+            if job.name in workflow_config.cache_success:
+                # job set as skipped by workflow config hook
+                continue
             digest = cache.digest.calc_job_digest(
                 job_config=job, docker_digests=docker_digests
             )

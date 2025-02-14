@@ -289,7 +289,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"
 
-    # config:
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
@@ -307,6 +306,42 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(
                 name="Calculate docker digests", status=res, stopwatch=sw_
+            )
+        )
+
+    if workflow.workflow_config_hooks:
+        sw_ = Utils.Stopwatch()
+        try:
+            job_results = []
+            for job in workflow.jobs:
+                for hook in workflow.workflow_config_hooks:
+                    should_skip, reason = hook(job.name)
+                    if should_skip:
+                        print(
+                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                        )
+                        workflow_config.cache_success.append(job_name)
+                        workflow_config.cache_success_base64.append(
+                            Utils.to_base64(job_name)
+                        )
+                        job_result = Result.generate_skipped(job.name, info=reason)
+                        job_results.append(job_result)
+                        continue
+            if job_results:
+                assert _ResultS3.update_workflow_results(
+                    workflow.name, new_sub_results=job_results
+                )
+            status = Result.Status.SUCCESS
+            workflow_config.dump()
+            info = ""
+        except Exception as e:
+            status = Result.Status.ERROR
+            print(f"ERROR: Exception in workflow config hook: {e}")
+            traceback.print_exc()
+            info = f"{traceback.print_exc()}"
+        results.append(
+            Result.create_from(
+                name="Workflow Config Hook", status=status, stopwatch=sw_, info=info
             )
         )
 

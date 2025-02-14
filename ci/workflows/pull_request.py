@@ -1,5 +1,6 @@
 from praktika import Workflow
 
+from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, SECRETS, JobNames
 from ci.workflows.job_configs import JobConfigs
@@ -52,6 +53,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
     ],
+    workflow_config_hooks=[should_skip_job],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
     ],
