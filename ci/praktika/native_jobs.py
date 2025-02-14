@@ -32,6 +32,7 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
+    timeout=600,
 )
 
 _docker_build_job = Job.Config(
@@ -413,10 +414,10 @@ def _finish_workflow(workflow, job_name):
 
     if failed_results:
         failed_jobs_csv = ",".join(failed_results)
-        if len(failed_jobs_csv) < 50:
+        if len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
-            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
+            ready_for_merge_description = f"Failed: {len(failed_results)} required jobs"
 
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()

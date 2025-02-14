@@ -3132,3 +3132,95 @@ def test_failed_commit(started_cluster):
             f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
         )
     )
+
+
+def test_failure_in_the_middle(started_cluster):
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_failure_in_the_middle"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 1
+
+    format = "column1 String, column2 String"
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        format=format,
+        additional_settings={"keeper_path": keeper_path, "s3queue_loading_retries": 10000},
+    )
+    values = []
+    num_rows = 1000000
+    for _ in range(num_rows):
+        values.append(
+            ["".join("a" for i in range(1000)), "".join("a" for i in range(1000))]
+        )
+    values_csv = (
+        "\n".join((",".join(map(str, row)) for row in values)) + "\n"
+    ).encode()
+
+    file_name = f"{table_name}_file.csv"
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", values_csv)
+
+    node.query(
+        f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+    )
+
+    create_mv(node, table_name, dst_table_name, format=format)
+
+    def check_failpoint():
+        return node.contains_in_log(
+            f"StorageS3Queue (default.{table_name}): Got an error while pulling chunk: Code: 1002. DB::Exception: Failed to read file. Processed rows:"
+        )
+
+    for _ in range(40):
+        if check_failpoint():
+            break
+        time.sleep(1)
+
+    assert check_failpoint()
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 == int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
+        )
+    )
+
+    assert 1 <= int(
+        node.query(
+            f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
+        )
+    )
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    assert 0 == get_count()
+
+    node.query(
+        f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_in_the_middle_of_file"
+    )
+
+    processed = False
+    for _ in range(40):
+        node.query("SYSTEM FLUSH LOGS")
+        processed = int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
+            )
+        )
+        if processed == 1:
+            break
+        time.sleep(1)
+
+    assert processed == 1
+    assert num_rows == int(
+        node.query(
+            f"SELECT rows_processed FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
+        )
+    )

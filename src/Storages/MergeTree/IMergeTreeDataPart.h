@@ -3,7 +3,6 @@
 #include <atomic>
 #include <unordered_map>
 #include <IO/WriteSettings.h>
-#include <Core/Block.h>
 #include <base/types.h>
 #include <base/defines.h>
 #include <Core/NamesAndTypes.h>
@@ -25,7 +24,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
@@ -37,6 +35,7 @@ namespace zkutil
 namespace DB
 {
 
+class Block;
 struct ColumnSize;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
@@ -50,6 +49,9 @@ class MergeTreeTransaction;
 
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
+
+class PrimaryIndexCache;
+using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
 
 enum class DataPartRemovalState : uint8_t
 {

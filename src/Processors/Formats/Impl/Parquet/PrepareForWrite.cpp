@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>

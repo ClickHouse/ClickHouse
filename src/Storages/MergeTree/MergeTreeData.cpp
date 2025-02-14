@@ -37,6 +37,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
@@ -49,6 +50,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
@@ -76,6 +78,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -147,8 +150,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
 }
 
 
@@ -200,6 +201,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
     extern const MergeTreeSettingsBool disable_freeze_partition_for_zero_copy_replication;
     extern const MergeTreeSettingsString disk;
+    extern const MergeTreeSettingsBool table_disk;
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
@@ -342,14 +344,21 @@ static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool
 
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
-    relative_data_path = relative_data_path_;
+    auto settings = getSettings();
+    if ((*settings)[MergeTreeSetting::table_disk])
+    {
+        LOG_TRACE(log, "Table is located directly on disk (without database layer)");
+    }
+    else
+    {
+        relative_data_path = relative_data_path_;
+        if (relative_data_path.empty())
+            throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "MergeTree storages require data path");
+    }
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (date_column_name.empty())
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
-
-    if (relative_data_path.empty())
-        throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "MergeTree storages require data path");
 
     const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
     std::optional<UInt32> read_format_version;
@@ -3227,19 +3236,34 @@ void MergeTreeData::dropAllData()
     /// MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(),
     /// however removing part requires moveDirectory() as well.
     if (isStaticStorage())
+    {
+        LOG_INFO(log, "dropAllData: Skip cleanup due to all disks are either read-only or write-once");
         return;
+    }
 
     LOG_TRACE(log, "dropAllData: waiting for locks.");
     auto settings_ptr = getSettings();
 
     auto lock = lockParts();
 
+    size_t skipped_parts = 0;
     DataPartsVector all_parts;
     for (auto it = data_parts_by_info.begin(); it != data_parts_by_info.end(); ++it)
     {
+        /// NOTE: this includes write-once disks as well, but this should be
+        /// OK, since removing parts requires hardlinks, plus there is a check
+        /// that assumes the same at the beginning - isStaticStorage()
+        if ((*it)->isStoredOnReadonlyDisk())
+        {
+            LOG_TRACE(log, "dropAllData: Skip removing part {}, it is located on read-only disk", (*it)->name);
+            ++skipped_parts;
+            continue;
+        }
         modifyPartState(it, DataPartState::Deleting);
         all_parts.push_back(*it);
     }
+    if (skipped_parts > 0)
+        LOG_WARNING(log, "dropAllData: {} parts had been skipped", skipped_parts);
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to clear caches (that are keyed by filesystem path) because collision is not possible.
@@ -3285,7 +3309,7 @@ void MergeTreeData::dropAllData()
         try
         {
             bool keep_shared = removeDetachedPart(part.disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / part.dir_name / "", part.dir_name);
-            LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
+            LOG_DEBUG(log, "dropAllData: Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
         }
         catch (...)
         {
@@ -3299,7 +3323,15 @@ void MergeTreeData::dropAllData()
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
+        {
+            LOG_TRACE(log, "dropAllData: Skip cleanup on broken disk {}", disk->getName());
             continue;
+        }
+        if (disk->isReadOnly())
+        {
+            LOG_TRACE(log, "dropAllData: Skip cleanup on read-only disk {}", disk->getName());
+            continue;
+        }
 
         /// It can naturally happen if we cannot drop table from the first time
         /// i.e. get exceptions after remove recursive
@@ -7721,7 +7753,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
     auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
-    auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
     auto src_part_storage = src_part->getDataPartStoragePtr();
 
     scope_guard src_flushed_tmp_dir_lock;
@@ -9208,8 +9239,6 @@ static void updateMutationsCounters(
 
             if (num_data_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
-
-            CurrentMetrics::add(CurrentMetrics::ActiveDataMutations, increment);
         }
 
         if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
@@ -9219,8 +9248,6 @@ static void updateMutationsCounters(
 
             if (num_metadata_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
-
-            CurrentMetrics::add(CurrentMetrics::ActiveMetadataMutations, increment);
         }
     }
 }

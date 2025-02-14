@@ -66,9 +66,15 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
             {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
+            {"optimize_and_compare_chain", true, false, "A new setting"},
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
+            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
+            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
+            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -87,9 +93,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
-            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
-            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
-            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"use_hive_partitioning", false, true, "Enabled the setting by default."},
             {"query_plan_try_use_vector_search", false, true, "New setting."},
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
@@ -112,7 +115,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
-            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
@@ -136,6 +138,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
+            {"use_concurrency_control", false, true, "Enable concurrency control by default"},
             /// Release closed. Please use 25.1
         });
         addSettingsChanges(settings_changes_history, "24.11",
@@ -652,6 +655,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            {"table_disk", false, false, "New setting"},
+            {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {

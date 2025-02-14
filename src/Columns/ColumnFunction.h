@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Columns/IColumn.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Field.h>
 #include <Common/WeakHash.h>
 
 

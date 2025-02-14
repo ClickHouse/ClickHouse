@@ -1,13 +1,12 @@
 #pragma once
 
-#include <Common/Allocator.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/ParallelReadBuffer.h>
+#include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Core/NamesAndTypes.h>
+#include <Common/Allocator.h>
 
 #include <boost/noncopyable.hpp>
 
