@@ -3083,7 +3083,7 @@ class ClickHouseCluster:
         except BaseException as e:
             logging.debug("Failed to start cluster: ")
             logging.debug(str(e))
-            logging.debug(traceback.print_exc())
+            logging.debug(traceback.format_exc())
             self.save_logs()
             self.shutdown()
             raise
