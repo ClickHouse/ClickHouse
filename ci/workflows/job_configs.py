@@ -79,6 +79,7 @@ class JobConfigs:
                 "./tests/ci/build_check.py",
                 "./tests/performance",
             ],
+            with_git_submodules=True,
         ),
     ).parametrize(
         parameter=[
