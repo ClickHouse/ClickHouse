@@ -1,5 +1,4 @@
 #include <Common/PoolId.h>
-#include <Common/ThreadPool.h>
 #include <Common/thread_local_rng.h>
 
 #include <Parsers/ParserCreateQuery.h>
@@ -308,6 +307,10 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
 static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
+    /// If it is already loaded.
+    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
+        return;
+
     auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
 
     String database_name_escaped = escapeForFileName(database_name);
