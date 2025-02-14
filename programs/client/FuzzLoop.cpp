@@ -23,6 +23,10 @@
 #    include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #    include <Client/BuzzHouse/Generator/QueryOracle.h>
 #    include <Client/BuzzHouse/Generator/StatementGenerator.h>
+namespace BuzzHouse
+{
+extern void loadFuzzerServerSettings(const FuzzConfig & fc);
+}
 #endif
 
 namespace DB
@@ -219,6 +223,12 @@ bool Client::processWithFuzzing(const String & full_query)
                 /// Add tag to find query later on
                 auto * union_sel = ast_to_process->as<ASTSelectWithUnionQuery>();
 
+                if (!loaded_server_config)
+                {
+                    fc->loadServerConfigurations();
+                    loadFuzzerServerSettings(*fc);
+                    loaded_server_config = true;
+                }
                 if ((select_query
                      = typeid_cast<ASTSelectQuery *>(union_sel ? union_sel->list_of_selects->children[0].get() : ast_to_process.get())))
                 {

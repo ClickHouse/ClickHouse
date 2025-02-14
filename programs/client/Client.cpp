@@ -858,8 +858,6 @@ void Client::processOptions(
             fc = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
             ei = std::make_unique<BuzzHouse::ExternalIntegrations>(*fc);
 
-            fc->loadServerConfigurations();
-            loadFuzzerServerSettings(*fc);
             if (fc->seed)
             {
                 fuzzer.setSeed(fc->seed);

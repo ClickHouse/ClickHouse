@@ -4,10 +4,6 @@
 
 #if USE_BUZZHOUSE
 #    include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
-namespace BuzzHouse
-{
-extern void loadFuzzerServerSettings(const FuzzConfig & fc);
-}
 #endif
 
 namespace DB
@@ -60,6 +56,7 @@ private:
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
+    bool loaded_server_config = false;
     std::unique_ptr<BuzzHouse::FuzzConfig> fc;
     std::unique_ptr<BuzzHouse::ExternalIntegrations> ei;
 
