@@ -588,9 +588,7 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
 void StorageS3Configuration::getTableFunctionArguments(ASTs & args) const
 {
     if (!args.empty())
-    { /// Just check
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");
-    }
 
     args.push_back(std::make_shared<ASTLiteral>(url.uri_str));
     if (auth_settings[S3AuthSetting::no_sign_request])

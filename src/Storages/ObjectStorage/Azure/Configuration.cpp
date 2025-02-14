@@ -132,8 +132,6 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 
     String connection_url;
     String container_name;
-    std::optional<String> account_name;
-    std::optional<String> account_key;
 
     if (collection.has("connection_string"))
         connection_url = collection.get<String>("connection_string");
@@ -154,14 +152,6 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
     blobs_paths = {blob_path};
-    if (account_name && account_key)
-    {
-        if (saved_params.empty())
-        {
-            saved_params.push_back(*account_name);
-            saved_params.push_back(*account_key);
-        }
-    }
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
@@ -184,9 +174,6 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
     String container_name = checkAndGetLiteralArgument<String>(engine_args[1], "container");
     blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
-
-    std::optional<String> account_name;
-    std::optional<String> account_key;
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
@@ -286,14 +273,6 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     }
 
     blobs_paths = {blob_path};
-    if (account_name && account_key)
-    {
-        if (saved_params.empty())
-        {
-            saved_params.push_back(*account_name);
-            saved_params.push_back(*account_key);
-        }
-    }
     connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, context);
 }
 
@@ -462,16 +441,15 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
 void StorageAzureConfiguration::getTableFunctionArguments(ASTs & args) const
 {
     if (!args.empty())
-    { /// Just check
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");
-    }
 
     args.push_back(std::make_shared<ASTLiteral>(connection_params.endpoint.storage_account_url));
     args.push_back(std::make_shared<ASTIdentifier>(connection_params.endpoint.container_name));
     args.push_back(std::make_shared<ASTLiteral>(blob_path));
-    for (const auto & arg : saved_params)
+    if (account_name && account_key)
     {
-        args.push_back(std::make_shared<ASTLiteral>(arg));
+        args.push_back(std::make_shared<ASTLiteral>(*account_name));
+        args.push_back(std::make_shared<ASTLiteral>(*account_key));
     }
 }
 

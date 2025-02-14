@@ -88,7 +88,8 @@ protected:
     std::string blob_path;
     std::vector<String> blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
-    std::vector<std::string> saved_params;
+    std::optional<std::string> account_name;
+    std::optional<std::string> account_key;
 };
 
 }

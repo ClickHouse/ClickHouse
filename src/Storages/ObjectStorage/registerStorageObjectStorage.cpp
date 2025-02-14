@@ -75,9 +75,6 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         partition_by = args.storage_def->partition_by->clone();
 
     if (cluster_name.empty())
-        cluster_name = context->getSettingsRef()[Setting::object_storage_cluster].value;
-
-    if (cluster_name.empty())
     {
         return std::make_shared<StorageObjectStorage>(
             configuration,

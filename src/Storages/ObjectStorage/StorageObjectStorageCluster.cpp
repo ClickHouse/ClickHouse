@@ -116,6 +116,10 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
             configuration->getEngineName(), queryToString(query));
 
     auto * table_expression = tables->children[0]->as<ASTTablesInSelectQueryElement>()->table_expression->as<ASTTableExpression>();
+
+    if (!table_expression)
+        return;
+
     if (!table_expression->database_and_table_name)
         return;
 
