@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
+#include <Common/SharedMutex.h>
 
 #include <mutex>
 
