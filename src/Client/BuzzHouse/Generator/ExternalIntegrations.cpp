@@ -1334,6 +1334,7 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
     String buf;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
+    res.metrics.clear();
     if (std::remove(out_path.generic_string().c_str()) && errno != ENOENT)
     {
         char buffer[1024];
@@ -1362,9 +1363,10 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
             const auto substr = buf.substr(tabchar1 + 1);
             const auto tabchar2 = substr.find('\t');
 
-            res.query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
-            res.memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar1 + 1)));
-            res.read_bytes = static_cast<uint64_t>(std::stoull(substr.substr(tabchar2 + 1)));
+            res.metrics.insert(
+                {{"query_time", static_cast<uint64_t>(std::stoull(buf))},
+                 {"query_memory", static_cast<uint64_t>(std::stoull(buf.substr(tabchar1 + 1)))},
+                 {"query_bytes_read", static_cast<uint64_t>(std::stoull(substr.substr(tabchar2 + 1)))}});
             return true;
         }
     }

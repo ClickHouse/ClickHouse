@@ -56,6 +56,32 @@ static std::optional<ServerCredentials> loadServerCredentials(
         ServerCredentials(hostname, port, mysql_port, unix_socket, user, password, database, user_files_dir, query_log_file));
 }
 
+static PerformanceMetric
+loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t default_threshold, const uint32_t default_minimum)
+{
+    bool enabled = false;
+    uint32_t threshold = default_minimum;
+    uint32_t minimum = default_threshold;
+
+    static const SettingEntries metric_entries
+        = {{"enabled", [&](const JSONObjectType & value) { enabled = value.getBool(); }},
+           {"threshold", [&](const JSONObjectType & value) { threshold = value.getUInt64(); }},
+           {"minimum", [&](const JSONObjectType & value) { minimum = value.getUInt64(); }}};
+
+    for (const auto [key, value] : jobj.getObject())
+    {
+        const String & nkey = String(key);
+
+        if (metric_entries.find(nkey) == metric_entries.end())
+        {
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
+        }
+        metric_entries.at(nkey)(value);
+    }
+
+    return PerformanceMetric(enabled, threshold, minimum);
+}
+
 FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     : cb(c)
     , log(getLogger("BuzzHouse"))
@@ -95,19 +121,16 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
-        {"query_time_minimum", [&](const JSONObjectType & value) { query_time_minimum = value.getUInt64(); }},
-        {"query_memory_minimum", [&](const JSONObjectType & value) { query_memory_minimum = value.getUInt64(); }},
-        {"query_bytes_read_minimum", [&](const JSONObjectType & value) { query_bytes_read_minimum = value.getUInt64(); }},
-        {"query_time_threshold", [&](const JSONObjectType & value) { query_time_threshold = value.getUInt64(); }},
-        {"query_memory_threshold", [&](const JSONObjectType & value) { query_memory_threshold = value.getUInt64(); }},
-        {"query_bytes_read_threshold", [&](const JSONObjectType & value) { query_bytes_read_threshold = value.getUInt64(); }},
+        {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
+        {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
+        {"query_bytes_read",
+         [&](const JSONObjectType & value) { metrics.insert({{"query_bytes_read", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"flush_log_wait_time", [&](const JSONObjectType & value) { flush_log_wait_time = value.getUInt64(); }},
         {"time_to_run", [&](const JSONObjectType & value) { time_to_run = static_cast<uint32_t>(value.getUInt64()); }},
         {"fuzz_floating_points", [&](const JSONObjectType & value) { fuzz_floating_points = value.getBool(); }},
         {"test_with_fill", [&](const JSONObjectType & value) { test_with_fill = value.getBool(); }},
         {"use_dump_table_oracle", [&](const JSONObjectType & value) { use_dump_table_oracle = value.getBool(); }},
         {"compare_success_results", [&](const JSONObjectType & value) { compare_success_results = value.getBool(); }},
-        {"measure_performance", [&](const JSONObjectType & value) { measure_performance = value.getBool(); }},
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
@@ -191,6 +214,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             "min_nested_rows value ({}) is higher than max_nested_rows value ({})",
             std::to_string(min_nested_rows),
             std::to_string(max_nested_rows));
+    }
+    for (const auto & [_, entry] : metrics)
+    {
+        measure_performance |= entry.enabled;
     }
 }
 
@@ -333,54 +360,44 @@ FuzzConfig::tableGetRandomPartitionOrPart(const bool detached, const bool partit
     return res;
 }
 
-void FuzzConfig::comparePerformanceResults(
-    const String & oracle_name, const PerformanceResult & server, const PerformanceResult & peer) const
+void FuzzConfig::comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const
 {
+    server.result_strings.clear();
+    peer.result_strings.clear();
+    server.result_strings.insert(
+        {{"query_time", formatReadableTime(static_cast<double>(server.metrics.at("query_time") * 1000000))},
+         {"query_memory", formatReadableSizeWithBinarySuffix(static_cast<double>(server.metrics.at("query_memory")))},
+         {"query_bytes_read", formatReadableSizeWithBinarySuffix(static_cast<double>(server.metrics.at("query_bytes_read")))}});
+    peer.result_strings.insert(
+        {{"query_time", formatReadableTime(static_cast<double>(peer.metrics.at("query_time") * 1000000))},
+         {"query_memory", formatReadableSizeWithBinarySuffix(static_cast<double>(peer.metrics.at("query_memory")))},
+         {"query_bytes_read", formatReadableSizeWithBinarySuffix(static_cast<double>(peer.metrics.at("query_bytes_read")))}});
+
     if (this->measure_performance)
     {
-        const String time_server = formatReadableTime(static_cast<double>(server.query_duration_ms * 1000000));
-        const String time_peer = formatReadableTime(static_cast<double>(peer.query_duration_ms * 1000000));
-        const String mem_server = formatReadableSizeWithBinarySuffix(static_cast<double>(server.memory_usage));
-        const String mem_peer = formatReadableSizeWithBinarySuffix(static_cast<double>(peer.memory_usage));
-        const String bytes_server = formatReadableSizeWithBinarySuffix(static_cast<double>(server.read_bytes));
-        const String bytes_peer = formatReadableSizeWithBinarySuffix(static_cast<double>(peer.read_bytes));
-
-        if (this->query_time_minimum < server.query_duration_ms
-            && server.query_duration_ms
-                > static_cast<uint64_t>(peer.query_duration_ms * (1 + (static_cast<double>(this->query_time_threshold) / 100.0f))))
+        for (const auto & [key, val] : metrics)
         {
-            throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE,
-                "{}: ClickHouse peer server query time: {} was faster than the target server: {}",
-                oracle_name,
-                time_peer,
-                time_server);
+            if (val.enabled)
+            {
+                if (val.minimum < server.metrics.at(key)
+                    && server.metrics.at(key)
+                        > static_cast<uint64_t>(peer.metrics.at(key) * (1 + (static_cast<double>(val.threshold) / 100.0f))))
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::BUZZHOUSE,
+                        "{}: ClickHouse peer server {}: {} was less than the target server: {}",
+                        oracle_name,
+                        key,
+                        peer.result_strings.at(key),
+                        server.result_strings.at(key));
+                }
+            }
         }
-        if (this->query_memory_minimum < server.memory_usage
-            && server.memory_usage
-                > static_cast<uint64_t>(peer.memory_usage * (1 + (static_cast<double>(this->query_memory_threshold) / 100.0f))))
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE,
-                "{}: ClickHouse peer server query peak memory usage: {} was less than the target server: {}",
-                oracle_name,
-                mem_peer,
-                mem_server);
-        }
-        if (this->query_bytes_read_minimum < server.read_bytes
-            && server.read_bytes
-                > static_cast<uint64_t>(peer.read_bytes * (1 + (static_cast<double>(this->query_bytes_read_threshold) / 100.0f))))
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::BUZZHOUSE,
-                "{}: ClickHouse peer server query bytes read: {} was less than the target server: {}",
-                oracle_name,
-                bytes_peer,
-                bytes_server);
-        }
-        LOG_INFO(log, "{}: server query time: {} vs peer query time: {}", oracle_name, time_server, time_peer);
-        LOG_INFO(log, "{}: server query memory usage: {} vs peer query memory usage: {}", oracle_name, mem_server, mem_peer);
-        LOG_INFO(log, "{}: server query bytes read: {} vs peer query bytes read: {}", oracle_name, bytes_server, bytes_peer);
+    }
+    for (const auto & [key, val] : metrics)
+    {
+        LOG_INFO(
+            log, "{}: server {}: {} vs peer {}: {}", oracle_name, key, server.result_strings.at(key), key, peer.result_strings.at(key));
     }
 }
 
