@@ -235,12 +235,11 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageHDFSConfiguration::addPathAndAccessKeysToArgs(ASTs & args) const
+ASTPtr StorageHDFSConfiguration::createArgsWithAccessData() const
 {
-    if (!args.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");
-
-    args.push_back(std::make_shared<ASTLiteral>(url + path));
+    auto arguments = std::make_shared<ASTExpressionList>();
+    arguments->children.push_back(std::make_shared<ASTLiteral>(url + path));
+    return arguments;
 }
 
 }

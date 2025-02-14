@@ -152,7 +152,6 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
 
     auto function_ast = std::make_shared<ASTFunction>();
     function_ast->name = table_function_name;
-    auto arguments = std::make_shared<ASTExpressionList>();
 
     auto cluster_name = getClusterName();
 
@@ -164,10 +163,8 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
             queryToString(query));
     }
 
-    configuration->addPathAndAccessKeysToArgs(arguments->children);
-
-    function_ast->arguments = arguments;
-    function_ast->children.push_back(arguments);
+    function_ast->arguments = configuration->createArgsWithAccessData();
+    function_ast->children.push_back(function_ast->arguments);
     function_ast->setAlias(table_alias);
 
     ASTPtr function_ast_ptr(function_ast);

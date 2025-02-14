@@ -585,27 +585,28 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageS3Configuration::addPathAndAccessKeysToArgs(ASTs & args) const
+ASTPtr StorageS3Configuration::createArgsWithAccessData() const
 {
-    if (!args.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");
+    auto arguments = std::make_shared<ASTExpressionList>();
 
-    args.push_back(std::make_shared<ASTLiteral>(url.uri_str));
+    arguments->children.push_back(std::make_shared<ASTLiteral>(url.uri_str));
     if (auth_settings[S3AuthSetting::no_sign_request])
     {
-        args.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
+        arguments->children.push_back(std::make_shared<ASTLiteral>("NOSIGN"));
     }
     else
     {
-        args.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::access_key_id].value));
-        args.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::secret_access_key].value));
+        arguments->children.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::access_key_id].value));
+        arguments->children.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::secret_access_key].value));
         if (!auth_settings[S3AuthSetting::session_token].value.empty())
-            args.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::session_token].value));
+            arguments->children.push_back(std::make_shared<ASTLiteral>(auth_settings[S3AuthSetting::session_token].value));
         if (format != "auto")
-            args.push_back(std::make_shared<ASTLiteral>(format));
+            arguments->children.push_back(std::make_shared<ASTLiteral>(format));
         if (!compression_method.empty())
-            args.push_back(std::make_shared<ASTLiteral>(compression_method));
+            arguments->children.push_back(std::make_shared<ASTLiteral>(compression_method));
     }
+
+    return arguments;
 }
 
 }

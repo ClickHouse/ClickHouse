@@ -438,19 +438,20 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
-void StorageAzureConfiguration::addPathAndAccessKeysToArgs(ASTs & args) const
+ASTPtr StorageAzureConfiguration::createArgsWithAccessData() const
 {
-    if (!args.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments are not empty");
+    auto arguments = std::make_shared<ASTExpressionList>();
 
-    args.push_back(std::make_shared<ASTLiteral>(connection_params.endpoint.storage_account_url));
-    args.push_back(std::make_shared<ASTIdentifier>(connection_params.endpoint.container_name));
-    args.push_back(std::make_shared<ASTLiteral>(blob_path));
+    arguments->children.push_back(std::make_shared<ASTLiteral>(connection_params.endpoint.storage_account_url));
+    arguments->children.push_back(std::make_shared<ASTIdentifier>(connection_params.endpoint.container_name));
+    arguments->children.push_back(std::make_shared<ASTLiteral>(blob_path));
     if (account_name && account_key)
     {
-        args.push_back(std::make_shared<ASTLiteral>(*account_name));
-        args.push_back(std::make_shared<ASTLiteral>(*account_key));
+        arguments->children.push_back(std::make_shared<ASTLiteral>(*account_name));
+        arguments->children.push_back(std::make_shared<ASTLiteral>(*account_key));
     }
+
+    return arguments;
 }
 
 }
