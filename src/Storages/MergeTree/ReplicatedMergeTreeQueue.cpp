@@ -10,10 +10,12 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/ReplicatedMergeTreeMergePredicate.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/noexcept_scope.h>
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
@@ -54,7 +56,6 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     log = getLogger(logger_name);
 }
 
-
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
@@ -66,6 +67,8 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
+    num_data_mutations_to_apply = 0;
+    num_metadata_mutations_to_apply = 0;
 }
 
 void ReplicatedMergeTreeQueue::setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch)
@@ -1087,9 +1090,12 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
             alter_sequence.finishDataAlter(entry->alter_version, state_lock);
         }
 
-        mutations_by_znode.erase(it);
-        /// decrementMutationsCounters() will be called in updateMutations()
+        if (mutation_was_active)
+        {
+            decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, entry->commands);
+        }
 
+        mutations_by_znode.erase(it);
         LOG_DEBUG(log, "Removed mutation {} from local state.", entry->znode_name);
     }
 
@@ -2067,6 +2073,18 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     }
 
     return res;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(

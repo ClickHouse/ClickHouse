@@ -180,7 +180,7 @@ left(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
@@ -227,7 +227,7 @@ leftUTF8(s, offset)
 **Parameters**
 
 - `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
@@ -344,7 +344,7 @@ right(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
@@ -391,7 +391,7 @@ rightUTF8(s, offset)
 **Parameters**
 
 - `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
 
 **Returned value**
 
@@ -831,6 +831,10 @@ Result:
 │ 42144           │
 └─────────────────┘
 ```
+
+:::note `||` operator
+Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
+:::
 
 ## concatAssumeInjective
 
@@ -1469,7 +1473,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
+- `trim_character` — The characters to trim. [String](../data-types/string.md).
 - `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
@@ -1497,14 +1501,15 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimLeft(input_string)
+trimLeft(input_string[, trim_characters])
 ```
 
-Alias: `ltrim(input_string)`.
+Alias: `ltrim`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../data-types/string.md).
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1531,14 +1536,15 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimRight(input_string)
+trimRight(input_string[, trim_characters])
 ```
 
-Alias: `rtrim(input_string)`.
+Alias: `rtrim`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../data-types/string.md).
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1565,14 +1571,15 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from both
 **Syntax**
 
 ``` sql
-trimBoth(input_string)
+trimBoth(input_string[, trim_characters])
 ```
 
-Alias: `trim(input_string)`.
+Alias: `trim`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../data-types/string.md).
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 

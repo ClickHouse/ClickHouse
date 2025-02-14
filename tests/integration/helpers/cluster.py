@@ -228,11 +228,14 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
 
 
 def subprocess_check_call(
-    args: Union[Sequence[str], str], detach: bool = False, nothrow: bool = False
+    args: Union[Sequence[str], str],
+    detach: bool = False,
+    nothrow: bool = False,
+    **kwargs,
 ) -> str:
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
-    return run_and_check(args, detach=detach, nothrow=nothrow)
+    return run_and_check(args, detach=detach, nothrow=nothrow, **kwargs)
 
 
 def get_odbc_bridge_path():
@@ -1957,12 +1960,12 @@ class ClickHouseCluster:
     def restart_instance_with_ip_change(self, node, new_ip):
         if "::" in new_ip:
             if node.ipv6_address is None:
-                raise Exception("You should specity ipv6_address in add_node method")
+                raise Exception("You should specify ipv6_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
             node.ipv6_address = new_ip
         else:
             if node.ipv4_address is None:
-                raise Exception("You should specity ipv4_address in add_node method")
+                raise Exception("You should specify ipv4_address in add_node method")
             self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
             node.ipv4_address = new_ip
         run_and_check(self.base_cmd + ["stop", node.name])
@@ -2029,9 +2032,11 @@ class ClickHouseCluster:
         detach: bool = False,
         nothrow: bool = False,
         use_cli: bool = True,
+        get_exec_id: bool = False,
         **kwargs: Any,
     ) -> str:
         if use_cli:
+            assert not get_exec_id
             logging.debug(
                 f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
             )
@@ -2040,8 +2045,18 @@ class ClickHouseCluster:
                 exec_cmd += ["-u", kwargs["user"]]
             if "privileged" in kwargs:
                 exec_cmd += ["--privileged"]
+
+            env = None
+            if "environment" in kwargs:
+                env = kwargs.pop("environment", None)
+                for k, v in env.items():
+                    exec_cmd += ["--env", k + "=" + v]
+
+            exec_cmd += [container_id]
+            exec_cmd += list(cmd)
+
             result = subprocess_check_call(
-                exec_cmd + [container_id] + list(cmd), detach=detach, nothrow=nothrow
+                exec_cmd, detach=detach, nothrow=nothrow, env=env
             )
             return result
         else:
@@ -2069,8 +2084,9 @@ class ClickHouseCluster:
                 else:
                     raise Exception(message)
             if not detach:
+                assert not get_exec_id
                 return output.decode()
-            return output
+            return exec_id if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -2589,7 +2605,7 @@ class ClickHouseCluster:
                 logging.info(
                     f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}"
                 )
-                check = self.exec_in_container(
+                self.exec_in_container(
                     self.cassandra_id,
                     [
                         "bash",
@@ -3166,7 +3182,7 @@ class ClickHouseCluster:
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name):
+    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
@@ -3180,8 +3196,14 @@ class ClickHouseCluster:
         logging.debug(
             f"get_kazoo_client: {zoo_instance_name}, ip:{ip}, port:{port}, use_ssl:{use_ssl}"
         )
+        kazoo_retry = {
+            "max_tries": retries,
+        }
         zk = KazooClient(
             hosts=f"{ip}:{port}",
+            timeout=timeout,
+            connection_retry=kazoo_retry,
+            command_retry=kazoo_retry,
             use_ssl=use_ssl,
             verify_certs=False,
             certfile=self.zookeeper_certfile,
@@ -3845,7 +3867,7 @@ class ClickHouseInstance:
                         [
                             "bash",
                             "-c",
-                            f"gdb -batch -ex 'thread apply all bt full' -p {pid} > {os.path.join(self.path, 'logs/stdout.log')}",
+                            f"gdb -batch -ex 'thread apply all bt full' -p {pid} > /var/log/clickhouse-server/stdout.log",
                         ],
                         user="root",
                     )
@@ -3870,6 +3892,7 @@ class ClickHouseInstance:
             )
         start_time = time.time()
         time_to_sleep = 0.5
+        exec_id = None
 
         while start_time + start_wait_sec >= time.time():
             # sometimes after SIGKILL (hard reset) server may refuse to start for some time
@@ -3877,9 +3900,12 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
-                self.exec_in_container(
-                    ["bash", "-c", self.clickhouse_start_command_in_daemon],
+                exec_id = self.exec_in_container(
+                    ["bash", "-c", self.clickhouse_start_command],
                     user=str(os.getuid()),
+                    detach=True,
+                    use_cli=False,
+                    get_exec_id=True,
                 )
                 if expected_to_fail:
                     self.wait_start_failed(start_wait_sec + start_time - time.time())
@@ -3892,7 +3918,7 @@ class ClickHouseInstance:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
                     self.wait_start(start_wait_sec + start_time - time.time())
-                    return
+                    return exec_id
                 except Exception as e:
                     logging.warning(
                         f"Current start attempt failed. Will kill {pid} just in case."
@@ -3933,11 +3959,11 @@ class ClickHouseInstance:
         )
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
-        # if pid is not None:
-        #     self.exec_in_container(
-        #         ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
-        #         user="root",
-        #     )
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                user="root",
+            )
         if last_err is not None:
             raise last_err
 
