@@ -93,6 +93,7 @@ private:
     virtual void updateImpl(TimePoint update_time, TimePoint current_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values) = 0;
     virtual void logImpl(AsynchronousMetricValues &) { }
     static auto tryGetMetricValue(const AsynchronousMetricValues & values, const String & metric, size_t default_value = 0);
+    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
 
     ProtocolServerMetricsFunc protocol_server_metrics_func;
 
@@ -244,8 +245,6 @@ private:
         double num_cpus_to_normalize,
         const ProcStatValuesCPU & delta_values_all_cpus,
         double multiplier);
-    void processWarningForMutationStats(const AsynchronousMetricValues & new_values) const;
-
 #endif
 
     void run();

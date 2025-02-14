@@ -932,9 +932,12 @@ struct ContextSharedPart : boost::noncopyable
 
     void removeWarningMessage(const String & warning) TSA_REQUIRES(mutex)
     {
-        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", warnings[warning]);
-        warnings.erase(warning);
+        if (warnings.contains(warning))
+        {
+            /// While removing the warning, log it with INFO level before it's removed from the `system.warnings` table.
+            LOG_INFO(log, "Removing warning {}", warnings[warning]);
+            warnings.erase(warning);
+        }
     }
 
     void configureServerWideThrottling()
