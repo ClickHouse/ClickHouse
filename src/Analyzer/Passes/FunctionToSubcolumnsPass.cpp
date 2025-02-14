@@ -11,15 +11,17 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/Utils.h>
+#include <Analyzer/Identifier.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 
@@ -386,7 +388,10 @@ private:
     void enterImpl(const TableNode & table_node)
     {
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-        if (processed_tables.emplace(table_name).second)
+
+        /// If table occurs in query several times (e.g., in subquery), process only once
+        /// because we collect only static properties of the table, which are the same for each occurrence.
+        if (!processed_tables.emplace(table_name).second)
             return;
 
         auto add_key_columns = [&](const auto & key_columns)

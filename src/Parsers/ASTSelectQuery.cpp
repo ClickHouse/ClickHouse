@@ -215,9 +215,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
         limitByLength()->format(ostr, s, state, frame);
         ostr << (s.hilite ? hilite_keyword : "") << " BY" << (s.hilite ? hilite_none : "");
-        s.one_line
-            ? limitBy()->format(ostr, s, state, frame)
-            : limitBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        if (limitBy())
+            s.one_line ? limitBy()->format(ostr, s, state, frame)
+                       : limitBy()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
     }
 
     if (limitLength())

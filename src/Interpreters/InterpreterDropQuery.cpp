@@ -21,10 +21,6 @@
 
 #include "config.h"
 
-#if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#endif
-
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
@@ -428,7 +424,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// Flush should not be done if shouldBeEmptyOnDetach() == false,
         /// since in this case getTablesIterator() may do some additional work,
-        /// see DatabaseMaterializedMySQL::getTablesIterator()
+        /// see DatabaseMaterialized...SQL::getTablesIterator()
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
 

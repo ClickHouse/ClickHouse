@@ -442,6 +442,32 @@ bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
 }
 
+bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
+}
+
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    switch (path[path.size() - 1].type)
+    {
+        case SubstreamType::DynamicStructure: [[fallthrough]];
+        case SubstreamType::ObjectStructure: [[fallthrough]];
+        case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
+        case SubstreamType::DictionaryKeys: [[fallthrough]];
+        case SubstreamType::VariantDiscriminators:
+            return true;
+        default:
+            return false;
+    }
+}
+
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     assert(prefix_len <= path.size());
@@ -455,8 +481,8 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
         const auto & creator = path[i].creator;
         if (creator)
         {
+            res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
-            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
             res.column = res.column ? creator->create(res.column) : res.column;
         }
     }

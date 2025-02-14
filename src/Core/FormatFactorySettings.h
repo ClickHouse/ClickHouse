@@ -330,6 +330,10 @@ Mode of schema inference. 'default' - assume that all files have the same schema
 Controls making inferred types `Nullable` in schema inference.
 If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
 )", 0) \
+    DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
+Controls making inferred JSON types `Nullable` in schema inference.
+If this setting is enabled together with schema_inference_make_columns_nullable, inferred JSON type will be `Nullable`.
+)", 0) \
     DECLARE(Bool, input_format_json_read_bools_as_numbers, true, R"(
 Allow parsing bools as numbers in JSON input formats.
 
@@ -849,6 +853,11 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_json_pretty_print, true, R"(
+When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
+
+Enabled by default.
+)", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
 The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
@@ -892,11 +901,27 @@ Rows limit for Pretty formats.
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
 Maximum width to pad all values in a column in Pretty formats.
 )", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_cut_to, 24, R"(
+If the column name is too long, cut it to this length.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_max_column_name_width_min_chars_to_cut, 4, R"(
+Minimum characters to cut if the column name is too long.
+The column will be cut if it is longer than `output_format_pretty_max_column_name_width_cut_to` plus `output_format_pretty_max_column_name_width_min_chars_to_cut`.
+)", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width, 10000, R"(
 Maximum width of value to display in Pretty formats. If greater - it will be cut.
+The value 0 means - never cut.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_value_width_apply_for_single_value, false, R"(
 Only cut values (see the `output_format_pretty_max_value_width` setting) when it is not a single value in a block. Otherwise output it entirely, which is useful for the `SHOW CREATE TABLE` query.
+)", 0) \
+DECLARE(UInt64, output_format_pretty_squash_consecutive_ms, 50, R"(
+Wait for the next block for up to specified number of milliseconds and squash it to the previous before writing.
+This avoids frequent output of too small blocks, but still allows to display data in a streaming fashion.
+)", 0) \
+DECLARE(UInt64, output_format_pretty_squash_max_wait_ms, 1000, R"(
+Output the pending block in pretty formats if more than the specified number of milliseconds has passed since the previous output.
 )", 0) \
     DECLARE(UInt64Auto, output_format_pretty_color, "auto", R"(
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
@@ -970,7 +995,27 @@ Target page size in bytes, before compression.
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
-Add a possibility to write page index into parquet files.
+Write column index and offset index (i.e. statistics about each data page, which may be used for filter pushdown on read) into parquet files.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_bloom_filter, true, R"(
+Write bloom filters in parquet files. Requires output_format_parquet_use_custom_encoder = true.
+)", 0) \
+    DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
+Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
+  *  6   bits - 10%
+  * 10.5 bits -  1%
+  * 16.9 bits -  0.1%
+  * 26.4 bits -  0.01%
+  * 41   bits -  0.001%
+)", 0) \
+    DECLARE(UInt64, output_format_parquet_bloom_filter_flush_threshold_bytes, 128 * 1024 * 1024, R"(
+Where in the parquet file to place the bloom filters. Bloom filters will be written in groups of approximately this size. In particular:
+  * if 0, each row group's bloom filters are written immediately after the row group,
+  * if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
+  * otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
+Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1079,12 +1124,6 @@ Field escaping rule (for Regexp format)
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
 Skip lines unmatched by regular expression (for Regexp format)
 )", 0) \
-    \
-    DECLARE(Bool, output_format_enable_streaming, false, R"(
-Enable streaming in output formats that support it.
-
-Disabled by default.
-)", 0) \
     DECLARE(Bool, output_format_write_statistics, true, R"(
 Write statistics about read rows, bytes, time elapsed in suitable output formats.
 
@@ -1098,6 +1137,26 @@ If enabled and if output is a terminal, highlight every digit corresponding to t
 )", 0) \
     DECLARE(UInt64, output_format_pretty_single_large_number_tip_threshold, 1'000'000, R"(
 Print a readable number tip on the right side of the table if the block consists of a single number which exceeds this value (except 0)
+)", 0) \
+    DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
+If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
+)", 0) \
+    DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
+If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
+If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
+)", 0) \
+    DECLARE(Bool, output_format_pretty_fallback_to_vertical, true, R"(
+If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
+See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 10, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
+)", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
@@ -1150,6 +1209,9 @@ Target row index stride in ORC output format
 )", 0) \
     DECLARE(Double, output_format_orc_dictionary_key_size_threshold, 0.0, R"(
 For a string column in ORC output format, if the number of distinct values is greater than this fraction of the total number of non-null rows, turn off dictionary encoding. Otherwise dictionary encoding is enabled
+)", 0) \
+    DECLARE(String, output_format_orc_writer_time_zone_name, "GMT", R"(
+The time zone name for ORC writer, the default ORC writer's time zone is GMT.
 )", 0) \
     \
     DECLARE(CapnProtoEnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::CapnProtoEnumComparingMode::BY_VALUES, R"(
@@ -1235,9 +1297,9 @@ Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date3
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. The result is random.
-- `throw` — Throw an exception in case of conversion overflow.
-- `saturate` — Silently saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+- `ignore` — Silently ignore overflows. Result are undefined.
+- `throw` — Throw an exception in case of overflow.
+- `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
 
 Default value: `ignore`.
 )", 0) \
@@ -1251,36 +1313,6 @@ Set the quoting rule for identifiers in SHOW CREATE query
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
 )", 0) \
-    DECLARE(String, composed_data_type_output_format_mode, "default", R"(
-Set output format mode for composed data types like Array, Map, Tuple. Possible values: 'default', 'spark'.
-
-In 'default' mode, the output format is the same as in the previous versions of ClickHouse,
-    - Arrays are displayed without spaces between elements.
-    - Maps use curly braces `{}` and colons `:` to separate keys and values.
-    - Tuples are displayed with single quotes around string elements.
-
-Example of 'default' mode:
-
-```
-┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
-│ [1,2,3]   │ {'a':1,'b':2}       │ (123,'abc')  │
-└───────────┴─────────────────────┴──────────────┘
-```
-
-In 'spark' mode, the output format is similar to Apache Spark:
-    - Arrays are displayed with spaces between elements.
-    - Maps use curly braces `{}` and arrows `->` to separate keys and values.
-    - Tuples are displayed without single quotes around string elements.
-
-Example of 'spark' mode:
-
-```
-┌─[1, 2, 3]─┬─map('a', 1, 'b', 2)─┬─(123, 'abc')─┐
-│ [1, 2, 3] │ {a -> 1, b -> 2}    │ (123, abc)   │
-└───────────┴─────────────────────┴──────────────┘
-```
-
-)", 0) \
 
 // End of FORMAT_FACTORY_SETTINGS
 
@@ -1288,11 +1320,11 @@ Example of 'spark' mode:
     /** Obsolete format settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     MAKE_OBSOLETE(M, Bool, input_format_arrow_import_nested, false) \
     MAKE_OBSOLETE(M, Bool, input_format_parquet_import_nested, false) \
-    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false)                                                                          \
+    MAKE_OBSOLETE(M, Bool, input_format_orc_import_nested, false) \
+    MAKE_OBSOLETE(M, Bool, output_format_enable_streaming, false) \
 
 #endif // __CLION_IDE__
 
 #define LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
     FORMAT_FACTORY_SETTINGS(M, ALIAS) \
     OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
-

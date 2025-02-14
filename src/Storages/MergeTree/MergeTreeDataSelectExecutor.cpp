@@ -20,6 +20,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -204,14 +205,12 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    bool final = false;
     std::optional<ASTSampleRatio::Rational> sample_size_ratio;
     std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
 
     if (select_query_info.table_expression_modifiers)
     {
         const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
-        final = table_expression_modifiers.hasFinal();
         sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
         sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
     }
@@ -219,7 +218,6 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     {
         auto & select = select_query_info.query->as<ASTSelectQuery &>();
 
-        final = select.final();
         auto select_sample_size = select.sampleSize();
         auto select_sample_offset = select.sampleOffset();
 
@@ -401,23 +399,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
             std::shared_ptr<ASTFunction> lower_function;
             std::shared_ptr<ASTFunction> upper_function;
 
-            /// If sample and final are used together no need to calculate sampling expression twice.
-            /// The first time it was calculated for final, because sample key is a part of the PK.
-            /// So, assume that we already have calculated column.
-            ASTPtr sampling_key_ast;
-
-            if (final)
-            {
-                sampling_key_ast = std::make_shared<ASTIdentifier>(sampling_key.column_names[0]);
-                /// We do spoil available_real_columns here, but it is not used later.
-                available_real_columns.emplace_back(sampling_key.column_names[0], std::move(sampling_column_type));
-            }
-            else
-            {
-                sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
-            }
-
-            chassert(sampling_key_ast != nullptr);
+            chassert(metadata_snapshot->getSamplingKeyAST() != nullptr);
+            ASTPtr sampling_key_ast = metadata_snapshot->getSamplingKeyAST()->clone();
 
             if (has_lower_limit)
             {
@@ -676,10 +659,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     struct IndexStat
     {
-        std::atomic<size_t> total_granules{0};
-        std::atomic<size_t> granules_dropped{0};
-        std::atomic<size_t> total_parts{0};
-        std::atomic<size_t> parts_dropped{0};
+        std::atomic<size_t> total_granules = 0;
+        std::atomic<size_t> granules_dropped = 0;
+        std::atomic<size_t> total_parts = 0;
+        std::atomic<size_t> parts_dropped = 0;
     };
 
     std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
@@ -694,6 +677,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
+        auto skipping_index_cache = context->getSkippingIndexCache();
 
         auto query_status = context->getProcessListElement();
 
@@ -751,6 +735,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     mark_cache.get(),
                     uncompressed_cache.get(),
+                    skipping_index_cache.get(),
                     log);
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -772,7 +757,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     indices_and_condition.indices, indices_and_condition.condition,
                     part, ranges.ranges,
                     settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), log);
+                    mark_cache.get(), uncompressed_cache.get(), skipping_index_cache.get(), log);
 
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -1393,6 +1378,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
+    SkippingIndexCache * skipping_index_cache,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1428,6 +1414,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         index_ranges,
         mark_cache,
         uncompressed_cache,
+        skipping_index_cache,
         reader_settings);
 
     MarkRanges res;
@@ -1445,13 +1432,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     {
         const MarkRange & index_range = index_ranges[i];
 
-        if (last_index_mark != index_range.begin || !granule)
-            reader.seek(index_range.begin);
-
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                reader.read(granule);
+                granule = reader.read(index_mark);
 
             if (index_helper->isVectorSimilarityIndex())
             {
@@ -1513,6 +1497,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
+    SkippingIndexCache * skipping_index_cache,
     LoggerPtr log)
 {
     for (const auto & index_helper : indices)
@@ -1535,6 +1520,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
+    MarkRanges index_ranges;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
+        index_ranges.push_back(index_range);
+    }
+
     std::vector<std::unique_ptr<MergeTreeIndexReader>> readers;
     for (const auto & index_helper : indices)
     {
@@ -1543,9 +1537,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 index_helper,
                 part,
                 index_marks_count,
-                ranges,
+                index_ranges,
                 mark_cache,
                 uncompressed_cache,
+                skipping_index_cache,
                 reader_settings));
     }
 
@@ -1562,17 +1557,13 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             range.begin / index_granularity,
             (range.end + index_granularity - 1) / index_granularity);
 
-        if (last_index_mark != index_range.begin || !granules_filled)
-            for (auto & reader : readers)
-                reader->seek(index_range.begin);
-
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granules_filled || last_index_mark != index_range.begin)
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    readers[i]->read(granules[i]);
+                    granules[i] = readers[i]->read(index_mark);
                     granules_filled = true;
                 }
             }

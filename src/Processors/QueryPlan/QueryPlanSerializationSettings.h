@@ -28,6 +28,9 @@ struct QueryPlanSerializationSettings
     QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings);
     ~QueryPlanSerializationSettings();
 
+    void writeChangedBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
 private:

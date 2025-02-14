@@ -2,7 +2,6 @@
 
 #include <optional>
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -12,6 +11,7 @@
 namespace DB
 {
 
+class Block;
 class CSVFormatReader;
 
 /** A stream for inputting data in csv format.
@@ -76,7 +76,6 @@ public:
     void skipPrefixBeforeHeader() override;
 
     bool checkForEndOfRow() override;
-    bool allowVariableNumberOfColumns() const override;
 
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }

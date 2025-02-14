@@ -43,11 +43,20 @@ if (LINKER_NAME MATCHES "gold")
     message (FATAL_ERROR "Linking with gold is unsupported. Please use lld.")
 endif ()
 
+macro(ch_find_program var)
+    if (USING_DUMMY_LAUNCHERS)
+        set(${var} "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+    else()
+        unset(${var})
+        find_program(${var} ${ARGN})
+    endif()
+endmacro()
+
 if (NOT LINKER_NAME)
     if (OS_LINUX AND NOT ARCH_S390X)
-        find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
+        ch_find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     elseif (OS_DARWIN)
-        find_program (LLD_PATH NAMES "ld")
+        ch_find_program (LLD_PATH NAMES "ld")
         # Duplicate libraries passed to the linker is not a problem.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
     endif ()
@@ -60,7 +69,7 @@ if (NOT LINKER_NAME)
 endif()
 
 if (LINKER_NAME)
-    find_program (LLD_PATH NAMES ${LINKER_NAME})
+    ch_find_program (LLD_PATH NAMES ${LINKER_NAME})
     if (NOT LLD_PATH)
         message (FATAL_ERROR "Using linker ${LINKER_NAME} but can't find its path.")
     endif ()
@@ -76,28 +85,28 @@ else ()
 endif ()
 
 # Archiver
-find_program (LLVM_AR_PATH NAMES "llvm-ar-${COMPILER_VERSION_MAJOR}" "llvm-ar")
+ch_find_program (LLVM_AR_PATH NAMES "llvm-ar-${COMPILER_VERSION_MAJOR}" "llvm-ar")
 if (LLVM_AR_PATH)
     set (CMAKE_AR "${LLVM_AR_PATH}")
 endif ()
 message(STATUS "Using archiver: ${CMAKE_AR}")
 
 # Ranlib
-find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib-${COMPILER_VERSION_MAJOR}" "llvm-ranlib")
+ch_find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib-${COMPILER_VERSION_MAJOR}" "llvm-ranlib")
 if (LLVM_RANLIB_PATH)
     set (CMAKE_RANLIB "${LLVM_RANLIB_PATH}")
 endif ()
 message(STATUS "Using ranlib: ${CMAKE_RANLIB}")
 
 # Install Name Tool
-find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool-${COMPILER_VERSION_MAJOR}" "llvm-install-name-tool")
+ch_find_program (LLVM_INSTALL_NAME_TOOL_PATH NAMES "llvm-install-name-tool-${COMPILER_VERSION_MAJOR}" "llvm-install-name-tool")
 if (LLVM_INSTALL_NAME_TOOL_PATH)
     set (CMAKE_INSTALL_NAME_TOOL "${LLVM_INSTALL_NAME_TOOL_PATH}")
 endif ()
 message(STATUS "Using install-name-tool: ${CMAKE_INSTALL_NAME_TOOL}")
 
 # Objcopy
-find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
+ch_find_program (OBJCOPY_PATH NAMES "llvm-objcopy-${COMPILER_VERSION_MAJOR}" "llvm-objcopy" "objcopy")
 if (OBJCOPY_PATH)
     message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
 else ()
@@ -105,7 +114,7 @@ else ()
 endif ()
 
 # Strip
-find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
+ch_find_program (STRIP_PATH NAMES "llvm-strip-${COMPILER_VERSION_MAJOR}" "llvm-strip" "strip")
 if (STRIP_PATH)
     message (STATUS "Using strip: ${STRIP_PATH}")
 else ()
