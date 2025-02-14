@@ -67,5 +67,5 @@ def test_settings_from_server(started_cluster):
     node.query("drop user u")
 
     # send_settings_to_client = false
-    res = node_no_send.query("select 42::UInt64 as x format JSON")
-    assert '"x": "42"' in res, "should be quoted"
+    res = node_no_send.query("select 42::UInt64 as x format JSON", user="second_user")
+    assert '"x": 42' in res, "should be unquoted"
