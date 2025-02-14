@@ -37,7 +37,7 @@ permissions: write-all\
         TEMPLATE_ENV_CHECKOUT_REF_PR = """\
   DISABLE_CI_MERGE_COMMIT: ${{{{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}}}
   DISABLE_CI_CACHE: ${{{{ vars.DISABLE_CI_CACHE || '0' }}}}
-  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && '' || github.event.pull_request.head.sha }}}}\
+  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && github.event.pull_request.head.sha || '' }}}}\
 """
         TEMPLATE_ENV_CHECKOUT_REF_PUSH = """\
   CHECKOUT_REF: ${{{{ github.head_ref }}}}
@@ -53,6 +53,9 @@ name: {NAME}
 on:
   schedule:{CRON_TEMPLATES}
   workflow_dispatch:
+
+concurrency:
+  group: ${{{{{{{{ github.workflow }}}}}}}}
 
 env:
   PYTHONUNBUFFERED: 1
