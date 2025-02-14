@@ -441,6 +441,147 @@ def get_topic_postfix(generator):
     raise Exception("Unexpected generator")
 
 
+def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
+    try_count = 0
+    while True:
+        logging.debug(f"Inserting, try_count is {try_count}")
+        try:
+            try_count += 1
+            instance.query(f"INSERT INTO test.{table_name} VALUES {values}")
+            break
+        except QueryRuntimeException as e:
+            if "Local: Timed out." in str(e) and try_count < max_try_count:
+                continue
+            else:
+                raise
+
+
+def random_string(size=8):
+    return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
+
+
+def gen_normal_json():
+    return '{"i":1000, "s":"ABC123abc"}'
+
+
+def gen_malformed_json():
+    return '{"i":"n1000", "s":"1000"}'
+
+
+def gen_message_with_jsons(jsons=10, malformed=0):
+    s = io.StringIO()
+
+    # we don't care on which position error will be added
+    # (we skip whole broken message), but we need to be
+    # sure that at least one error will be added,
+    # otherwise test will fail.
+    error_pos = random.randint(0, jsons - 1)
+
+    for i in range(jsons):
+        if malformed and i == error_pos:
+            s.write(gen_malformed_json())
+        else:
+            s.write(gen_normal_json())
+        s.write(" ")
+    return s.getvalue()
+
+
+# Since everything is async and shaky when receiving messages from Kafka,
+# we may want to try and check results multiple times in a loop.
+def kafka_check_result(result, check=False, ref_file="test_kafka_json.reference"):
+    fpath = p.join(p.dirname(__file__), ref_file)
+    with open(fpath) as reference:
+        if check:
+            assert TSV(result) == TSV(reference)
+        else:
+            return TSV(result) == TSV(reference)
+
+
+def decode_avro(message):
+    b = io.BytesIO(message)
+    ret = avro.datafile.DataFileReader(b, avro.io.DatumReader())
+
+    output = io.StringIO()
+    for record in ret:
+        print(record, file=output)
+    return output.getvalue()
+
+
+# https://stackoverflow.com/a/57692111/1555175
+def describe_consumer_group(kafka_cluster, name):
+    client = BrokerConnection("localhost", kafka_cluster.kafka_port, socket.AF_INET)
+    client.connect_blocking()
+
+    list_members_in_groups = DescribeGroupsRequest_v1(groups=[name])
+    future = client.send(list_members_in_groups)
+    while not future.is_done:
+        for resp, f in client.recv():
+            f.success(resp)
+
+    (
+        error_code,
+        group_id,
+        state,
+        protocol_type,
+        protocol,
+        members,
+    ) = future.value.groups[0]
+
+    res = []
+    for member in members:
+        (member_id, client_id, client_host, member_metadata, member_assignment) = member
+        member_info = {}
+        member_info["member_id"] = member_id
+        member_info["client_id"] = client_id
+        member_info["client_host"] = client_host
+        member_topics_assignment = []
+        for topic, partitions in MemberAssignment.decode(member_assignment).assignment:
+            member_topics_assignment.append({"topic": topic, "partitions": partitions})
+        member_info["assignment"] = member_topics_assignment
+        res.append(member_info)
+    return res
+
+
+# Fixtures
+@pytest.fixture(scope="module")
+def kafka_cluster():
+    try:
+        cluster.start()
+        kafka_id = instance.cluster.kafka_docker_id
+        print(("kafka_id is {}".format(kafka_id)))
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def kafka_setup_teardown():
+    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
+    admin_client = get_admin_client(cluster)
+
+    def get_topics_to_delete():
+        return [t for t in admin_client.list_topics() if not t.startswith("_")]
+
+    topics = get_topics_to_delete()
+    logging.debug(f"Deleting topics: {topics}")
+    result = admin_client.delete_topics(topics)
+    for topic, error in result.topic_error_codes:
+        if error != 0:
+            logging.warning(f"Received error {error} while deleting topic {topic}")
+        else:
+            logging.info(f"Deleted topic {topic}")
+
+    retries = 0
+    topics = get_topics_to_delete()
+    while len(topics) != 0:
+        logging.info(f"Existing topics: {topics}")
+        if retries >= 5:
+            raise Exception(f"Failed to delete topics {topics}")
+        retries += 1
+        time.sleep(0.5)
+    yield  # run test
+
+
 # Tests
 @pytest.mark.parametrize(
     "create_query_generator, do_direct_read",
@@ -1087,105 +1228,6 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
         kafka_delete_topic(get_admin_client(kafka_cluster), topic_name)
 
 
-# Since everything is async and shaky when receiving messages from Kafka,
-# we may want to try and check results multiple times in a loop.
-def kafka_check_result(result, check=False, ref_file="test_kafka_json.reference"):
-    fpath = p.join(p.dirname(__file__), ref_file)
-    with open(fpath) as reference:
-        if check:
-            assert TSV(result) == TSV(reference)
-        else:
-            return TSV(result) == TSV(reference)
-
-
-def decode_avro(message):
-    b = io.BytesIO(message)
-    ret = avro.datafile.DataFileReader(b, avro.io.DatumReader())
-
-    output = io.StringIO()
-    for record in ret:
-        print(record, file=output)
-    return output.getvalue()
-
-
-# https://stackoverflow.com/a/57692111/1555175
-def describe_consumer_group(kafka_cluster, name):
-    client = BrokerConnection("localhost", kafka_cluster.kafka_port, socket.AF_INET)
-    client.connect_blocking()
-
-    list_members_in_groups = DescribeGroupsRequest_v1(groups=[name])
-    future = client.send(list_members_in_groups)
-    while not future.is_done:
-        for resp, f in client.recv():
-            f.success(resp)
-
-    (
-        error_code,
-        group_id,
-        state,
-        protocol_type,
-        protocol,
-        members,
-    ) = future.value.groups[0]
-
-    res = []
-    for member in members:
-        (member_id, client_id, client_host, member_metadata, member_assignment) = member
-        member_info = {}
-        member_info["member_id"] = member_id
-        member_info["client_id"] = client_id
-        member_info["client_host"] = client_host
-        member_topics_assignment = []
-        for topic, partitions in MemberAssignment.decode(member_assignment).assignment:
-            member_topics_assignment.append({"topic": topic, "partitions": partitions})
-        member_info["assignment"] = member_topics_assignment
-        res.append(member_info)
-    return res
-
-
-# Fixtures
-
-
-@pytest.fixture(scope="module")
-def kafka_cluster():
-    try:
-        cluster.start()
-        kafka_id = instance.cluster.kafka_docker_id
-        print(("kafka_id is {}".format(kafka_id)))
-        yield cluster
-    finally:
-        cluster.shutdown()
-
-
-@pytest.fixture(autouse=True)
-def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
-    yield  # run test
-
-
-# Tests
 def test_kafka_issue11308(kafka_cluster):
     # Check that matview does respect Kafka SETTINGS
     kafka_produce(
@@ -2267,21 +2309,6 @@ def test_kafka_virtual_columns_with_materialized_view(
             DROP TABLE test.view;
         """
         )
-
-
-def insert_with_retry(instance, values, table_name="kafka", max_try_count=5):
-    try_count = 0
-    while True:
-        logging.debug(f"Inserting, try_count is {try_count}")
-        try:
-            try_count += 1
-            instance.query(f"INSERT INTO test.{table_name} VALUES {values}")
-            break
-        except QueryRuntimeException as e:
-            if "Local: Timed out." in str(e) and try_count < max_try_count:
-                continue
-            else:
-                raise
 
 
 @pytest.mark.parametrize(
@@ -3855,10 +3882,6 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
     kafka_check_result(result, True)
 
 
-def random_string(size=8):
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=size))
-
-
 @pytest.mark.parametrize(
     "create_query_generator",
     [generate_old_create_table_query, generate_new_create_table_query],
@@ -3924,32 +3947,6 @@ def test_kafka_engine_put_errors_to_stream(kafka_cluster, create_query_generator
             DROP TABLE test.kafka_errors;
         """
         )
-
-
-def gen_normal_json():
-    return '{"i":1000, "s":"ABC123abc"}'
-
-
-def gen_malformed_json():
-    return '{"i":"n1000", "s":"1000"}'
-
-
-def gen_message_with_jsons(jsons=10, malformed=0):
-    s = io.StringIO()
-
-    # we don't care on which position error will be added
-    # (we skip whole broken message), but we need to be
-    # sure that at least one error will be added,
-    # otherwise test will fail.
-    error_pos = random.randint(0, jsons - 1)
-
-    for i in range(jsons):
-        if malformed and i == error_pos:
-            s.write(gen_malformed_json())
-        else:
-            s.write(gen_normal_json())
-        s.write(" ")
-    return s.getvalue()
 
 
 @pytest.mark.parametrize(
