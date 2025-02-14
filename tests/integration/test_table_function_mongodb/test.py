@@ -14,6 +14,7 @@ def started_cluster(request):
             with_mongo=True,
             main_configs=[
                 "configs/named_collections.xml",
+                "configs/feature_flag.xml",
             ],
             user_configs=["configs/users.xml"],
         )

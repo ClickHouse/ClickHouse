@@ -15,7 +15,7 @@ void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
         ostr << " = ";
         if (definer)
-            definer->formatImpl(ostr, settings, state, frame);
+            definer->format(ostr, settings, state, frame);
         else
             ostr << "CURRENT_USER";
         ostr << " ";

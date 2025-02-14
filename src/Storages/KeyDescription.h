@@ -1,11 +1,14 @@
 #pragma once
 
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
 {
@@ -14,7 +17,7 @@ struct KeyDescription
     /// primary key in merge tree can be part of sorting key)
     ASTPtr definition_ast;
 
-    /// ASTExpressionList with key fields, example: (x, toStartOfMonth(date))).
+    /// ASTExpressionList with key fields, example: (x DESC, toStartOfMonth(date))).
     ASTPtr expression_list_ast;
 
     /// Expression from expression_list_ast created by ExpressionAnalyzer. Useful,
@@ -26,6 +29,9 @@ struct KeyDescription
 
     /// Column names in key definition, example: x, toStartOfMonth(date), a * b.
     Names column_names;
+
+    /// Indicator of key column being sorted reversely, example: x DESC, y -> {1, 0}.
+    std::vector<bool> reverse_flags;
 
     /// Types from sample block ordered in columns order.
     DataTypes data_types;
@@ -67,6 +73,8 @@ struct KeyDescription
         const ColumnsDescription & columns,
         ContextPtr context);
 
+    ASTPtr getOriginalExpressionList() const;
+
     KeyDescription() = default;
 
     /// We need custom copy constructors because we don't want
@@ -78,7 +86,7 @@ struct KeyDescription
     static bool moduloToModuloLegacyRecursive(ASTPtr node_expr);
 
     /// Parse description from string
-    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
+    static KeyDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, bool allow_order);
 };
 
 }

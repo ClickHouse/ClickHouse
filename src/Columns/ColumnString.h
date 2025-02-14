@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include <DataTypes/DataTypeString.h>
+#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
@@ -28,6 +30,8 @@ class ColumnString final : public COWHelper<IColumnHelper<ColumnString>, ColumnS
 public:
     using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
+
+    static constexpr size_t min_size_to_compress = 4096;
 
 private:
     friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
@@ -106,6 +110,13 @@ public:
     {
         chassert(n < size());
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
+    }
+
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        WriteBufferFromOwnString wb;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1}, wb);
+        return {wb.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -272,7 +283,7 @@ public:
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void reserve(size_t n) override;
     size_t capacity() const override;

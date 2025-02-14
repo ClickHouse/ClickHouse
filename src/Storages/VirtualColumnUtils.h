@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -13,8 +12,9 @@
 namespace DB
 {
 
+class Block;
+class Chunk;
 class NamesAndTypesList;
-
 
 namespace VirtualColumnUtils
 {
@@ -75,7 +75,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     const std::string & sample_path = "",
     std::optional<FormatSettings> format_settings_ = std::nullopt);
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 

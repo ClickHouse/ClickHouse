@@ -45,7 +45,7 @@ void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSetting
 
     if (expression)
     {
-        expression->formatImpl(ostr, settings, state, frame);
+        expression->format(ostr, settings, state, frame);
         ostr << ".";
     }
 
@@ -55,7 +55,7 @@ void ASTColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const FormatSetting
 
     if (transformers)
     {
-        transformers->formatImpl(ostr, settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
@@ -107,7 +107,7 @@ void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (expression)
     {
-        expression->formatImpl(ostr, settings, state, frame);
+        expression->format(ostr, settings, state, frame);
         ostr << ".";
     }
 
@@ -119,13 +119,13 @@ void ASTColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings 
         {
             ostr << ", ";
         }
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
     ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(ostr, settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
@@ -171,7 +171,7 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const Form
 {
     ostr << (settings.hilite ? hilite_keyword : "");
 
-    qualifier->formatImpl(ostr, settings, state, frame);
+    qualifier->format(ostr, settings, state, frame);
 
     ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
     ostr << quoteString(pattern);
@@ -179,7 +179,7 @@ void ASTQualifiedColumnsRegexpMatcher::formatImpl(WriteBuffer & ostr, const Form
 
     if (transformers)
     {
-        transformers->formatImpl(ostr, settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 
@@ -217,7 +217,7 @@ void ASTQualifiedColumnsListMatcher::appendColumnName(WriteBuffer & ostr) const
 void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << (settings.hilite ? hilite_keyword : "");
-    qualifier->formatImpl(ostr, settings, state, frame);
+    qualifier->format(ostr, settings, state, frame);
     ostr << ".COLUMNS" << (settings.hilite ? hilite_none : "") << "(";
 
     for (ASTs::const_iterator it = column_list->children.begin(); it != column_list->children.end(); ++it)
@@ -225,13 +225,13 @@ void ASTQualifiedColumnsListMatcher::formatImpl(WriteBuffer & ostr, const Format
         if (it != column_list->children.begin())
             ostr << ", ";
 
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
     ostr << ")";
 
     if (transformers)
     {
-        transformers->formatImpl(ostr, settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 

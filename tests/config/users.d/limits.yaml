@@ -16,10 +16,8 @@ profiles:
     max_bytes_to_read: 1T
     max_bytes_to_read_leaf: 1T
     max_rows_to_group_by: 10G
-    max_bytes_before_external_group_by: 10G
     max_rows_to_sort: 10G
     max_bytes_to_sort: 10G
-    max_bytes_before_external_sort: 10G
     max_result_rows: 1G
     max_result_bytes: 1G
     max_execution_time: 600

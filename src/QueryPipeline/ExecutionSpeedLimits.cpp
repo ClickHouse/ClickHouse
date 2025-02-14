@@ -119,19 +119,17 @@ static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<A
     }
 }
 
-bool ExecutionSpeedLimits::checkTimeLimit(const Stopwatch & stopwatch, OverflowMode overflow_mode) const
+bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const
 {
     if (max_execution_time != 0)
     {
-        auto elapsed_ns = stopwatch.elapsed();
-
         if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
             return handleOverflowMode(
                 overflow_mode,
                 ErrorCodes::TIMEOUT_EXCEEDED,
-                "Timeout exceeded: elapsed {} seconds, maximum: {}",
-                static_cast<double>(elapsed_ns) / 1000000000ULL,
-                max_execution_time.totalMicroseconds() / 1000000.0);
+                "Timeout exceeded: elapsed {} ms, maximum: {} ms",
+                static_cast<double>(elapsed_ns) / 1000000ULL,
+                max_execution_time.totalMilliseconds());
     }
 
     return true;

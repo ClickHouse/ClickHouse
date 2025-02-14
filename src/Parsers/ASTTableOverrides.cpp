@@ -32,7 +32,7 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
     if (is_standalone)
     {
         ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
-        ASTIdentifier(table_name).formatImpl(ostr, settings, state, frame);
+        ASTIdentifier(table_name).format(ostr, settings, state, frame);
     }
     auto override_frame = frame;
     if (is_standalone)
@@ -47,7 +47,7 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
         FormatStateStacked columns_frame = override_frame;
         columns_frame.expression_list_always_start_on_new_line = true;
         ostr << indent_str << hl_keyword << "COLUMNS" << hl_none << nl_or_ws << indent_str << "(";
-        columns->formatImpl(ostr, settings, state, columns_frame);
+        columns->format(ostr, settings, state, columns_frame);
         ostr << nl_or_nothing << indent_str << ")";
         ++override_elems;
     }
@@ -60,7 +60,7 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
                 ostr << (override_elems++ ? nl_or_ws : "")
                               << indent_str
                               << hl_keyword << elem_name << hl_none << ' ';
-                elem->formatImpl(ostr, settings, state, override_frame);
+                elem->format(ostr, settings, state, override_frame);
             }
         };
         format_storage_elem(storage->partition_by, "PARTITION BY");
@@ -133,7 +133,7 @@ void ASTTableOverrideList::formatImpl(WriteBuffer & ostr, const FormatSettings &
             ostr << (settings.one_line ? ", " : ",\n");
         }
 
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 }
 

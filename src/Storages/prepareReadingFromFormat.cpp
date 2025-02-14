@@ -2,6 +2,7 @@
 #include <Formats/FormatFactory.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 
@@ -20,18 +21,9 @@ ReadFromFormatInfo prepareReadingFromFormat(const Strings & requested_columns, c
     Strings columns_to_read;
     for (const auto & column_name : requested_columns)
     {
-        bool is_virtual = false;
-        for (const auto & virtual_column : *storage_snapshot->virtual_columns)
-        {
-            if (column_name == virtual_column.name)
-            {
-                info.requested_virtual_columns.emplace_back(virtual_column.name, virtual_column.type);
-                is_virtual = true;
-                break;
-            }
-        }
-
-        if (!is_virtual)
+        if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+            info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
+        else
             columns_to_read.push_back(column_name);
     }
 

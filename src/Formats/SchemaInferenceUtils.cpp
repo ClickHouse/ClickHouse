@@ -1573,7 +1573,7 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
     return type;
 }
 
-static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable)
+static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullable, const FormatSettings & settings)
 {
     if (!type)
         return nullptr;
@@ -1586,7 +1586,7 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        auto nested_type = adjustNullableRecursively(array_type->getNestedType(), make_nullable);
+        auto nested_type = adjustNullableRecursively(array_type->getNestedType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
     }
 
@@ -1597,7 +1597,7 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         for (const auto & nested_type: variant_type->getVariants())
         {
             if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
-                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable));
+                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
             else
                 nested_types.push_back(nested_type);
         }
@@ -1610,7 +1610,7 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         DataTypes nested_types;
         for (const auto & element : tuple_type->getElements())
         {
-            auto nested_type = adjustNullableRecursively(element, make_nullable);
+            auto nested_type = adjustNullableRecursively(element, make_nullable, settings);
             if (!nested_type)
                 return nullptr;
             nested_types.push_back(nested_type);
@@ -1625,15 +1625,15 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable);
-        auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable);
+        auto key_type = adjustNullableRecursively(map_type->getKeyType(), make_nullable, settings);
+        auto value_type = adjustNullableRecursively(map_type->getValueType(), make_nullable, settings);
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
-        auto nested_type = adjustNullableRecursively(lc_type->getDictionaryType(), make_nullable);
+        auto nested_type = adjustNullableRecursively(lc_type->getDictionaryType(), make_nullable, settings);
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
     }
 
@@ -1645,24 +1645,27 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), make_nullable);
     }
 
+    if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)
+        return type;
+
     return make_nullable ? makeNullableSafe(type) : type;
 }
 
-DataTypePtr makeNullableRecursively(DataTypePtr type)
+DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
 {
-    return adjustNullableRecursively(type, true);
+    return adjustNullableRecursively(type, true, settings);
 }
 
-DataTypePtr removeNullableRecursively(DataTypePtr type)
+DataTypePtr removeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
 {
-    return adjustNullableRecursively(type, false);
+    return adjustNullableRecursively(type, false, settings);
 }
 
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings)
 {
     NamesAndTypesList result;
     for (auto & [name, type] : header.getNamesAndTypesList())
-        result.emplace_back(name, makeNullableRecursively(type));
+        result.emplace_back(name, makeNullableRecursively(type, settings));
     return result;
 }
 

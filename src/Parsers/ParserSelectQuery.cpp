@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTWithElement.h>
 #include <Poco/String.h>
 
 
@@ -72,6 +73,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false);
     ParserNotEmptyExpressionList exp_list_for_select_clause(/*allow_alias_without_as_keyword*/ true, /*allow_trailing_commas*/ true);
+    ParserAliasesExpressionList exp_list_for_aliases;
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
     ParserGroupingSetsExpressionList grouping_sets_list;
@@ -83,6 +85,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr with_expression_list;
     ASTPtr select_expression_list;
     ASTPtr tables;
+    ASTPtr expression_list_for_aliases;
+    ASTPtr expression_list_for_cte_aliases;
     ASTPtr prewhere_expression;
     ASTPtr where_expression;
     ASTPtr group_expression_list;
@@ -111,6 +115,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
             if (with_expression_list->children.empty())
                 return false;
+
+            for (const auto & child : with_expression_list->children) /// For cases: WITH _ (a, b) AS ...      <- (a, b) are aliases
+            {
+                if (auto * with_element = child->as<ASTWithElement>())
+                    if (with_element->aliases)
+                        expression_list_for_cte_aliases = with_element->aliases;
+            }
         }
     }
 
@@ -186,6 +197,15 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!tables && s_from.ignore(pos, expected))
     {
         if (!ParserTablesInSelectQuery().parse(pos, tables, expected))
+            return false;
+    }
+
+    if (tables && open_bracket.ignore(pos, expected))
+    {
+        if (!exp_list_for_aliases.parse(pos, expression_list_for_aliases, expected))
+            return false;
+
+        if (!close_bracket.ignore(pos, expected))
             return false;
     }
 
@@ -500,6 +520,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    select_query->setExpression(ASTSelectQuery::Expression::ALIASES, std::move(expression_list_for_aliases));
+    select_query->setExpression(ASTSelectQuery::Expression::CTE_ALIASES, std::move(expression_list_for_cte_aliases));
     select_query->setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_expression));
     select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_expression_list));

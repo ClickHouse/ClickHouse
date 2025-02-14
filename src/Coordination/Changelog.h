@@ -3,12 +3,14 @@
 #include <libnuraft/ptr.hxx>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/SharedMutex.h>
 
 #include <map>
 #include <variant>
 #include <unordered_map>
 #include <unordered_set>
 #include <future>
+#include <vector>
 
 namespace nuraft
 {
@@ -77,6 +79,8 @@ struct ChangelogFileDescription
     DiskPtr disk;
     std::string path;
 
+    bool broken_at_end = false;
+
     std::mutex file_mutex;
 
     bool deleted = false;
@@ -116,7 +120,8 @@ struct LogLocation
 {
     ChangelogFileDescriptionPtr file_description;
     size_t position;
-    size_t size;
+    size_t entry_size;
+    size_t size_in_file;
 };
 
 struct PrefetchedCacheEntry
@@ -131,7 +136,8 @@ private:
     mutable std::shared_future<LogEntryPtr> log_entry;
 };
 
-using CacheEntry = std::variant<LogEntryPtr, PrefetchedCacheEntry>;
+using PrefetchedCacheEntryPtr = std::shared_ptr<PrefetchedCacheEntry>;
+using CacheEntry = std::variant<LogEntryPtr, PrefetchedCacheEntryPtr>;
 using IndexToCacheEntry = std::unordered_map<uint64_t, CacheEntry>;
 using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
 
@@ -146,7 +152,7 @@ using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
   * - for committing
   *
   * First cache will store latest logs in memory, limited by the latest_logs_cache_size_threshold coordination setting.
-  * Once the log is persisted to the disk, we store it's location in the file and allow the storage
+  * Once the log is persisted to the disk, we store its location in the file and allow the storage
   * to evict that log from cache if it's needed.
   * Latest logs cache should have a high hit rate in "normal" operation for both replication and committing.
   *
@@ -201,9 +207,9 @@ struct LogEntryStorage
 private:
     void prefetchCommitLogs();
 
-    void startCommitLogsPrefetch(uint64_t last_committed_index) const;
+    void startCommitLogsPrefetch(uint64_t last_committed_index) const TSA_REQUIRES(commit_logs_cache_mutex);
 
-    bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size);
+    bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size) TSA_REQUIRES(commit_logs_cache_mutex);
 
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
@@ -224,7 +230,7 @@ private:
 
         CacheEntry * getCacheEntry(uint64_t index);
         const CacheEntry * getCacheEntry(uint64_t index) const;
-        PrefetchedCacheEntry & getPrefetchedCacheEntry(uint64_t index);
+        PrefetchedCacheEntryPtr getPrefetchedCacheEntry(uint64_t index);
 
         void cleanUpTo(uint64_t index);
         void cleanAfter(uint64_t index);
@@ -244,7 +250,9 @@ private:
     };
 
     InMemoryCache latest_logs_cache;
-    mutable InMemoryCache commit_logs_cache;
+
+    mutable SharedMutex commit_logs_cache_mutex;
+    mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
 
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;

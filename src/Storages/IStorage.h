@@ -71,6 +71,8 @@ class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
 
+class ActionsDAG;
+
 struct ColumnSize
 {
     size_t marks = 0;
@@ -287,6 +289,10 @@ public:
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
+    /// Add engine args that were inferred during storage creation to create query to avoid the same
+    /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
+    virtual void addInferredEngineArgsToCreateQuery(ASTs & /*args*/, const ContextPtr & /*context*/) const {}
+
 private:
     StorageID storage_id;
 
@@ -374,7 +380,7 @@ public:
         size_t /*num_streams*/);
 
     /// Returns true if FINAL modifier must be added to SELECT query depending on required columns.
-    /// It's needed for ReplacingMergeTree wrappers such as MaterializedMySQL and MaterializedPostrgeSQL
+    /// It's needed for ReplacingMergeTree wrappers such as MaterializedPostrgeSQL
     virtual bool needRewriteQueryWithFinal(const Names & /*column_names*/) const { return false; }
 
 private:
@@ -766,7 +772,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
         ContextPtr context,
-        std::string storage_name);
+        std::shared_ptr<IStorage> storage_);
 
 private:
     /// Lock required for alter queries (lockForAlter).

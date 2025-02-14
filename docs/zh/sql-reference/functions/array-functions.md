@@ -337,6 +337,24 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 设置为«NULL»的元素将作为普通的元素值处理。
 
+## indexOfAssumeSorted(arr, x)
+
+返回数组中第一个’x’元素的索引（从1开始），如果’x’元素不存在在数组中，则返回0.
+该函数应用于不按降序排序的数组，因为二进制搜索用于搜索。
+如果内部数组类型为空，则将使用’indexOf’函数。
+
+示例:
+
+``` sql
+SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
+```
+
+``` text
+┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
+│                                 5    │
+└──────────────────────────────────--─-┘
+```
+
 ## arrayCount(\[func,\] arr1, ...) {#array-count}
 
 `func`将arr数组作为参数，其返回结果为非零值的数量。如果未指定“func”，则返回数组中非零元素的数量。

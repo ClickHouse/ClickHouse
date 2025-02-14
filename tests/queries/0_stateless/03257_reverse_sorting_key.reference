@@ -1,0 +1,75 @@
+3
+8
+Sorting (Sorting for ORDER BY)
+Prefix sort description: __table1.i DESC
+Result sort description: __table1.i DESC
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+99
+98
+97
+96
+95
+Sorting (Sorting for ORDER BY)
+Prefix sort description: __table1.i ASC
+Result sort description: __table1.i ASC
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        ReverseTransform
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InReverseOrder) 0 → 1
+0
+1
+2
+3
+4
+3	1003
+6
+Sorting (Sorting for ORDER BY)
+Prefix sort description: __table1.i ASC, __table1.j DESC
+Result sort description: __table1.i ASC, __table1.j DESC
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+      (Expression)
+      ExpressionTransform
+        (ReadFromMergeTree)
+        MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+0	1090
+0	1080
+0	1070
+0	1060
+0	1050
+Sorting (Sorting for ORDER BY)
+Prefix sort description: __table1.i ASC
+Result sort description: __table1.i ASC, __table1.j ASC
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Sorting)
+    FinishSortingTransform
+      PartialSortingTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromMergeTree)
+          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) 0 → 1
+0	1000
+0	1010
+0	1020
+0	1030
+0	1040

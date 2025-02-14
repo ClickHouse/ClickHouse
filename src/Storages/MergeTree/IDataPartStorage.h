@@ -1,6 +1,7 @@
 #pragma once
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
@@ -231,7 +232,6 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
-        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs,

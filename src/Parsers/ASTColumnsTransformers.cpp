@@ -25,7 +25,7 @@ void ASTColumnsTransformerList::formatImpl(WriteBuffer & ostr, const FormatSetti
     for (const auto & child : children)
     {
         ostr << ' ';
-        child->formatImpl(ostr, settings, state, frame);
+        child->format(ostr, settings, state, frame);
     }
 }
 
@@ -54,7 +54,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
 
     if (lambda)
     {
-        lambda->formatImpl(ostr, settings, state, frame);
+        lambda->format(ostr, settings, state, frame);
     }
     else
     {
@@ -65,7 +65,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
             auto nested_frame = frame;
             nested_frame.expression_list_prepend_whitespace = false;
             ostr << "(";
-            parameters->formatImpl(ostr, settings, state, nested_frame);
+            parameters->format(ostr, settings, state, nested_frame);
             ostr << ")";
         }
     }
@@ -177,7 +177,7 @@ void ASTColumnsExceptTransformer::formatImpl(WriteBuffer & ostr, const FormatSet
         {
             ostr << ", ";
         }
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 
     if (pattern)
@@ -296,7 +296,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
 {
     assert(children.size() == 1);
 
-    children[0]->formatImpl(ostr, settings, state, frame);
+    children[0]->format(ostr, settings, state, frame);
     ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
@@ -329,7 +329,7 @@ void ASTColumnsReplaceTransformer::formatImpl(WriteBuffer & ostr, const FormatSe
         if (it != children.begin())
             ostr << ", ";
 
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
     ostr << ")";
 }

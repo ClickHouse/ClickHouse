@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 
@@ -15,7 +17,6 @@ void registerDatabaseReplicated(DatabaseFactory & factory);
 
 #if USE_MYSQL
 void registerDatabaseMySQL(DatabaseFactory & factory);
-void registerDatabaseMaterializedMySQL(DatabaseFactory & factory);
 #endif
 
 #if USE_LIBPQXX
@@ -36,6 +37,10 @@ void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
+#if USE_AVRO
+void registerDatabaseIceberg(DatabaseFactory & factory);
+#endif
+
 void registerDatabases()
 {
     auto & factory = DatabaseFactory::instance();
@@ -49,7 +54,6 @@ void registerDatabases()
 
 #if USE_MYSQL
     registerDatabaseMySQL(factory);
-    registerDatabaseMaterializedMySQL(factory);
 #endif
 
 #if USE_LIBPQXX
@@ -67,6 +71,10 @@ void registerDatabases()
 
 #if USE_HDFS
     registerDatabaseHDFS(factory);
+#endif
+
+#if USE_AVRO
+    registerDatabaseIceberg(factory);
 #endif
 }
 }

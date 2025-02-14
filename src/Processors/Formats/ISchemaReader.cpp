@@ -54,9 +54,9 @@ void checkFinalInferredType(
     }
 
     if (settings.schema_inference_make_columns_nullable == 0)
-        type = removeNullableRecursively(type);
+        type = removeNullableRecursively(type, settings);
     else if (settings.schema_inference_make_columns_nullable != 2)
-        type = makeNullableRecursively(type);
+        type = makeNullableRecursively(type, settings);
 }
 
 void ISchemaReader::transformTypesIfNeeded(DB::DataTypePtr & type, DB::DataTypePtr & new_type)

@@ -134,17 +134,17 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     if (database_and_table_name)
     {
         ostr << " ";
-        database_and_table_name->formatImpl(ostr, settings, state, frame);
+        database_and_table_name->format(ostr, settings, state, frame);
     }
     else if (table_function && !(table_function->as<ASTFunction>()->prefer_subquery_to_function_formatting && subquery))
     {
         ostr << " ";
-        table_function->formatImpl(ostr, settings, state, frame);
+        table_function->format(ostr, settings, state, frame);
     }
     else if (subquery)
     {
         ostr << settings.nl_or_ws << indent_str;
-        subquery->formatImpl(ostr, settings, state, frame);
+        subquery->format(ostr, settings, state, frame);
     }
 
     if (final)
@@ -157,13 +157,13 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     {
         ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str
             << "SAMPLE " << (settings.hilite ? hilite_none : "");
-        sample_size->formatImpl(ostr, settings, state, frame);
+        sample_size->format(ostr, settings, state, frame);
 
         if (sample_offset)
         {
             ostr << (settings.hilite ? hilite_keyword : "") << ' '
                 << "OFFSET " << (settings.hilite ? hilite_none : "");
-            sample_offset->formatImpl(ostr, settings, state, frame);
+            sample_offset->format(ostr, settings, state, frame);
         }
     }
 }
@@ -252,7 +252,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
     {
         ostr << (settings.hilite ? hilite_keyword : "") << " USING " << (settings.hilite ? hilite_none : "");
         ostr << "(";
-        using_expression_list->formatImpl(ostr, settings, state, frame);
+        using_expression_list->format(ostr, settings, state, frame);
         ostr << ")";
     }
     else if (on_expression)
@@ -262,7 +262,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
         bool on_has_alias = !on_expression->tryGetAlias().empty();
         if (on_has_alias)
             ostr << "(";
-        on_expression->formatImpl(ostr, settings, state, frame);
+        on_expression->format(ostr, settings, state, frame);
         if (on_has_alias)
             ostr << ")";
     }
@@ -288,7 +288,7 @@ void ASTArrayJoin::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         << (kind == Kind::Left ? "LEFT " : "") << "ARRAY JOIN" << (settings.hilite ? hilite_none : "");
 
     settings.one_line
-        ? expression_list->formatImpl(ostr, settings, state, frame)
+        ? expression_list->format(ostr, settings, state, frame)
         : expression_list->as<ASTExpressionList &>().formatImplMultiline(ostr, settings, state, frame);
 }
 
@@ -300,14 +300,14 @@ void ASTTablesInSelectQueryElement::formatImpl(WriteBuffer & ostr, const FormatS
         if (table_join)
             table_join->as<ASTTableJoin &>().formatImplBeforeTable(ostr, settings, state, frame);
 
-        table_expression->formatImpl(ostr, settings, state, frame);
+        table_expression->format(ostr, settings, state, frame);
 
         if (table_join)
             table_join->as<ASTTableJoin &>().formatImplAfterTable(ostr, settings, state, frame);
     }
     else if (array_join)
     {
-        array_join->formatImpl(ostr, settings, state, frame);
+        array_join->format(ostr, settings, state, frame);
     }
 }
 
@@ -315,7 +315,7 @@ void ASTTablesInSelectQueryElement::formatImpl(WriteBuffer & ostr, const FormatS
 void ASTTablesInSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     for (const auto & child : children)
-        child->formatImpl(ostr, settings, state, frame);
+        child->format(ostr, settings, state, frame);
 }
 
 }

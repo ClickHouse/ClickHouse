@@ -17,11 +17,17 @@
 #include <IO/SharedThreadPools.h>
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include "CommonPathPrefixKeyGenerator.h"
+
+#if USE_AZURE_BLOB_STORAGE
+#    include <azure/storage/common/storage_exception.hpp>
+#endif
 
 
 namespace DB
@@ -30,6 +36,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+extern const char plain_rewritable_object_storage_azure_not_found_on_init[];
 }
 
 namespace
@@ -126,72 +137,96 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
 
     std::mutex mutex;
     InMemoryDirectoryPathMap::Map map;
-    for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
+    try
     {
-        ++num_files;
-        auto file = iterator->current();
-        String path = file->getPath();
-        auto remote_metadata_path = std::filesystem::path(path);
-        if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
-            continue;
+        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
+        {
+            ++num_files;
+            auto file = iterator->current();
+            String path = file->getPath();
+            auto remote_metadata_path = std::filesystem::path(path);
+            if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
+                continue;
 
-        runner(
-            [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
-            {
-                setThreadName("PlainRWMetaLoad");
-
-                StoredObject object{path};
-                String local_path;
-                Poco::Timestamp last_modified{};
-
-                try
+            runner(
+                [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
                 {
-                    auto read_buf = object_storage->readObject(object, settings);
-                    readStringUntilEOF(local_path, *read_buf);
-                    auto object_metadata = object_storage->tryGetObjectMetadata(path);
-                    /// It ok if a directory was removed just now.
-                    /// We support attaching a filesystem that is concurrently modified by someone else.
-                    if (!object_metadata)
-                        return;
-                    /// Assuming that local and the object storage clocks are synchronized.
-                    last_modified = object_metadata->last_modified;
-                }
-#if USE_AWS_S3
-                catch (const S3Exception & e)
-                {
-                    /// It is ok if a directory was removed just now.
-                    if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
-                        return;
-                    throw;
-                }
+                    setThreadName("PlainRWMetaLoad");
+
+                    StoredObject object{path};
+                    String local_path;
+                    Poco::Timestamp last_modified{};
+
+                    try
+                    {
+                        auto read_buf = object_storage->readObject(object, settings);
+                        readStringUntilEOF(local_path, *read_buf);
+                        auto object_metadata = object_storage->tryGetObjectMetadata(path);
+                        /// It ok if a directory was removed just now.
+                        /// We support attaching a filesystem that is concurrently modified by someone else.
+                        if (!object_metadata)
+                            return;
+                        /// Assuming that local and the object storage clocks are synchronized.
+                        last_modified = object_metadata->last_modified;
+#if USE_AZURE_BLOB_STORAGE
+                        fiu_do_on(FailPoints::plain_rewritable_object_storage_azure_not_found_on_init, {
+                            std::bernoulli_distribution fault(0.25);
+                            if (fault(thread_local_rng))
+                            {
+                                LOG_TEST(log, "Fault injection");
+                                throw Azure::Storage::StorageException::CreateFromResponse(std::make_unique<Azure::Core::Http::RawResponse>(
+                                    1, 0, Azure::Core::Http::HttpStatusCode::NotFound, "Fault injected"));
+                            }
+                        });
 #endif
-                catch (...)
-                {
-                    throw;
-                }
+                    }
+#if USE_AWS_S3
+                    catch (const S3Exception & e)
+                    {
+                        /// It is ok if a directory was removed just now.
+                        if (e.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY)
+                            return;
+                        throw;
+                    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+                    catch (const Azure::Storage::StorageException & e)
+                    {
+                        if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+                            return;
+                        throw;
+                    }
+#endif
+                    catch (...)
+                    {
+                        throw;
+                    }
 
-                chassert(remote_metadata_path.has_parent_path());
-                chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
-                auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
-                auto rel_path = std::filesystem::path(std::move(suffix));
-                std::pair<Map::iterator, bool> res;
-                {
+                    chassert(remote_metadata_path.has_parent_path());
+                    chassert(remote_metadata_path.string().starts_with(metadata_key_prefix));
+                    auto suffix = remote_metadata_path.string().substr(metadata_key_prefix.size());
+                    auto rel_path = std::filesystem::path(std::move(suffix));
                     std::lock_guard lock(mutex);
-                    res = map.emplace(
+                    std::pair<Map::iterator, bool> res = map.emplace(
                         std::filesystem::path(local_path).parent_path(),
                         InMemoryDirectoryPathMap::RemotePathInfo{rel_path.parent_path(), last_modified.epochTime(), {}});
-                }
 
-                /// This can happen if table replication is enabled, then the same local path is written
-                /// in `prefix.path` of each replica.
-                if (!res.second)
-                    LOG_WARNING(
-                        log,
-                        "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
-                        local_path,
-                        res.first->second.path,
-                        rel_path.parent_path().string());
-            });
+                    /// This can happen if table replication is enabled, then the same local path is written
+                    /// in `prefix.path` of each replica.
+                    if (!res.second)
+                        LOG_WARNING(
+                            log,
+                            "The local path '{}' is already mapped to a remote path '{}', ignoring: '{}'",
+                            local_path,
+                            res.first->second.path,
+                            rel_path.parent_path().string());
+                });
+        }
+    }
+    catch (...)
+    {
+        runner.waitForAllToFinish();
+        throw;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();

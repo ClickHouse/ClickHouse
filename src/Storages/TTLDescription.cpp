@@ -1,9 +1,11 @@
 #include <Storages/TTLDescription.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -191,7 +193,7 @@ static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndType
     dag.getOutputs() = {col};
     dag.removeUnusedActions();
 
-    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context_copy));
+    result.expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context_copy));
     result.sets = analyzer.getPreparedSets();
 
     return result;
@@ -275,7 +277,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             for (size_t i = 0; i < ttl_element->group_by_key.size(); ++i)
             {
                 if (ttl_element->group_by_key[i]->getColumnName() != pk_columns[i])
-                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key");
+                    throw Exception(ErrorCodes::BAD_TTL_EXPRESSION, "TTL Expression GROUP BY key should be a prefix of primary key {} {}", ttl_element->group_by_key[i]->getColumnName(), pk_columns[i]);
 
                 used_primary_key_columns_set.insert(pk_columns[i]);
             }
@@ -434,7 +436,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     return result;
 }
 
-TTLTableDescription TTLTableDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key)
+TTLTableDescription TTLTableDescription::parse(
+    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -444,7 +447,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, is_attach);
 }
 
 }

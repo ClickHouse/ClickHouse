@@ -6,7 +6,7 @@ i8	Int8
 i16	Int16					
 i32	Int32					
 i64	Int64					
-date	UInt16					
+date	Date32					
 date32	Date32					
 datetime	UInt32					
 datetime64	DateTime64(3, \'UTC\')					
@@ -26,6 +26,9 @@ decimal128	Decimal(38, 20)
 decimal256	Decimal(76, 40)					
 ipv4	UInt32					
 ipv6	FixedString(16)					
+0
+datetime	DateTime64(3, \'UTC\')					
+0
 0
 0
 0
