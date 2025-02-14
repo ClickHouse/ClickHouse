@@ -1087,7 +1087,6 @@ class SettingsRandomizer:
         "optimize_functions_to_subcolumns": lambda: random.randint(0, 1),
         "parallel_replicas_local_plan": lambda: random.randint(0, 1),
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
-        "output_format_native_write_json_as_string": lambda: random.randint(0, 1),
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
@@ -2125,6 +2124,7 @@ class TestCase:
         drop_database_query = f"DROP DATABASE IF EXISTS {database}"
         if args.replicated_database:
             drop_database_query += " ON CLUSTER test_cluster_database_replicated"
+        drop_database_query += " SYNC"
 
         # It's possible to get an error "New table appeared in database being dropped or detached. Try again."
         for _ in range(1, 60):

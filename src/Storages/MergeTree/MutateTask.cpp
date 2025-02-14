@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
@@ -210,8 +211,12 @@ static void splitAndModifyMutationCommands(
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
                         dropped_columns.emplace(command.column_name);
                 }
+                else if (command.type == MutationCommand::READ_COLUMN)
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
             }
-
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.

@@ -22,6 +22,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -9569,6 +9570,16 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
     return queue.getMutationsSnapshot(params);
+}
+
+UInt64 StorageReplicatedMergeTree::getNumberOnFlyDataMutations() const
+{
+    return queue.getNumberOnFlyDataMutations();
+}
+
+UInt64 StorageReplicatedMergeTree::getNumberOnFlyMetadataMutations() const
+{
+    return queue.getNumberOnFlyMetadataMutations();
 }
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()

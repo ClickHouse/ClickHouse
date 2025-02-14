@@ -305,6 +305,67 @@ def test_incremental_backup():
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
 
 
+def test_incremental_backup_after_settings_change():
+    def get_table_ddl(tablename: str):
+        """
+        Return single-line DDL
+        """
+        ddl = instance.query(
+            f"SELECT create_table_query FROM system.tables WHERE name = '{tablename}' AND database = 'test' SETTINGS show_table_uuid_in_table_create_query_if_not_nil=1, show_create_query_identifier_quoting_rule='when_necessary', show_create_query_identifier_quoting_style='Backticks'"
+        )
+        return re.sub(
+            r"[\\\n]", "", ddl
+        )  # remove quoted backslash and the last end of line, the same format in test/table.sql file in a backup
+
+    backup_name = new_backup_name()
+    increment_backup_name = new_backup_name()
+    increment_backup_name2 = new_backup_name()
+    create_and_fill_table(n=1)
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == TSV([["1", "0"]])
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    metadata_path = os.path.join(
+        get_path_to_backup(backup_name), "metadata/test/table.sql"
+    )
+
+    with open(metadata_path) as metadata:
+        ddl = metadata.read()
+
+        assert ddl == get_table_ddl("table")
+
+    instance.query("ALTER TABLE test.table ADD COLUMN new_col String")
+
+    instance.query(
+        f"BACKUP TABLE test.table TO {increment_backup_name} SETTINGS base_backup = {backup_name}"
+    )
+
+    increment_backup_metadata_path = os.path.join(
+        get_path_to_backup(increment_backup_name), "metadata/test/table.sql"
+    )
+
+    with open(increment_backup_metadata_path) as metadata:
+        ddl = metadata.read()
+        assert ddl == get_table_ddl("table")
+
+    instance.query(
+        "ALTER TABLE test.table MODIFY SETTING non_replicated_deduplication_window = 0"
+    )
+
+    instance.query(
+        f"BACKUP TABLE test.table TO {increment_backup_name2} SETTINGS base_backup = {increment_backup_name}"
+    )
+
+    increment_backup_metadata_path2 = os.path.join(
+        get_path_to_backup(increment_backup_name2), "metadata/test/table.sql"
+    )
+
+    with open(increment_backup_metadata_path2) as metadata:
+        ddl = metadata.read()
+        # If checksums for the first part of the files are equal only the diff will be written
+        assert ddl == ", non_replicated_deduplication_window = 0"
+
+
 def test_increment_backup_without_changes():
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()
@@ -1558,6 +1619,7 @@ def test_backup_all(exclude_system_log_tables):
             "asynchronous_insert_log",
             "backup_log",
             "error_log",
+            "latency_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 

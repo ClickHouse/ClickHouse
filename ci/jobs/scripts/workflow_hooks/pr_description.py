@@ -35,6 +35,7 @@ LABEL_CATEGORIES = {
     ],
     "pr-performance": ["Performance Improvement"],
     "pr-ci": ["CI Fix or Improvement (changelog entry is not required)"],
+    "pr-experimental": ["Experimental Feature"]
 }
 
 CATEGORY_TO_LABEL = {
@@ -57,6 +58,7 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
+    PR_EXPERIMENTAL = "pr-experimental"
     PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
@@ -172,7 +174,7 @@ def check_labels(category, info):
 
     if info.pr_number:
         changed_files_str = Shell.get_output(
-            "git diff --name-only $(git merge-base HEAD origin/master) --cached",
+            f"gh pr view {info.pr_number} --repo {info.repo_name} --json files --jq '.files[].path'",
             strict=True,
         )
         if "contrib/" in changed_files_str:
@@ -189,15 +191,15 @@ def check_labels(category, info):
     if pr_labels_to_add:
         print(f"Add labels [{pr_labels_to_add}]")
         for label in pr_labels_to_add:
-            cmd += f" --add-label {label}"
+            cmd += f" --add-label '{label}'"
             if label in info.pr_labels:
                 info.pr_labels.append(label)
             info.dump()
 
     if pr_labels_to_remove:
         print(f"Remove labels [{pr_labels_to_remove}]")
-        for label in pr_labels_to_add:
-            cmd += f" --remove-label {label}"
+        for label in pr_labels_to_remove:
+            cmd += f" --remove-label '{label}'"
             if label in info.pr_labels:
                 info.pr_labels.remove(label)
             info.dump()

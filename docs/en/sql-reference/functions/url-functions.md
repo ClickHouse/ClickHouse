@@ -275,9 +275,9 @@ Result:
 
 ### firstSignificantSubdomain
 
-Returns the “first significant subdomain”.
+Returns the "first significant subdomain".
 The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
-For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`.
+For example, `firstSignificantSubdomain ('https://news.clickhouse.com/’) = 'clickhouse’, firstSignificantSubdomain ('https://news.clickhouse.com.tr/’) = 'clickhouse’`.
 The list of "insignificant" second-level domains and other implementation details may change in the future.
 
 **Syntax**
@@ -312,9 +312,9 @@ Result:
 
 ### firstSignificantSubdomainRFC
 
-Returns the “first significant subdomain”.
+Returns the "first significant subdomain".
 The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
-For example, `firstSignificantSubdomain (‘https://news.clickhouse.com/’) = ‘clickhouse’, firstSignificantSubdomain (‘https://news.clickhouse.com.tr/’) = ‘clickhouse’`.
+For example, `firstSignificantSubdomain ('https://news.clickhouse.com/’) = 'clickhouse’, firstSignificantSubdomain ('https://news.clickhouse.com.tr/’) = 'clickhouse’`.
 The list of "insignificant" second-level domains and other implementation details may change in the future.
 Similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but conforms to RFC 1034.
 
@@ -352,7 +352,7 @@ Result:
 
 ### cutToFirstSignificantSubdomain
 
-Returns the part of the domain that includes top-level subdomains up to the [“first significant subdomain”](#firstsignificantsubdomain).
+Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](#firstsignificantsubdomain).
 
 **Syntax**
 
@@ -389,7 +389,7 @@ Result:
 
 ### cutToFirstSignificantSubdomainRFC
 
-Returns the part of the domain that includes top-level subdomains up to the [“first significant subdomain”](#firstsignificantsubdomain).
+Returns the part of the domain that includes top-level subdomains up to the ["first significant subdomain"](#firstsignificantsubdomain).
 Similar to [cutToFirstSignificantSubdomain](#cuttofirstsignificantsubdomain) but conforms to RFC 3986.
 
 **Syntax**
@@ -628,6 +628,7 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### cutToFirstSignificantSubdomainCustomWithWWWRFC
 
@@ -654,6 +655,7 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustom
 
@@ -706,6 +708,7 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustomRFC
 
@@ -732,6 +735,7 @@ firstSignificantSubdomainCustomRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### port
 

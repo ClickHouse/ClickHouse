@@ -1,5 +1,5 @@
 #include <Access/AccessControl.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -73,6 +73,19 @@ namespace DB
     )", 0) \
     DECLARE(UInt64, io_thread_pool_queue_size, 10000, R"(
     The maximum number of jobs that can be scheduled on the IO Thread pool.
+
+    :::note
+    A value of `0` means unlimited.
+    :::
+    )", 0) \
+    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_size, 100, R"(
+    ClickHouse uses threads from the prefixes deserialization Thread pool for parallel reading of metadata of columns and subcolumns from file prefixes in Wide parts in MergeTree. `max_prefixes_deserialization_thread_pool_size` limits the maximum number of threads in the pool.
+    )", 0) \
+    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_free_size, 0, R"(
+    If the number of **idle** threads in the prefixes deserialization Thread pool exceeds `max_prefixes_deserialization_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+    )", 0) \
+    DECLARE(UInt64, prefixes_deserialization_thread_pool_thread_pool_queue_size, 10000, R"(
+    The maximum number of jobs that can be scheduled on the prefixes deserialization Thread pool.
 
     :::note
     A value of `0` means unlimited.
@@ -827,7 +840,7 @@ namespace DB
     )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
-    DECLARE(Bool, format_alter_operations_with_parentheses, false, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
+    DECLARE(Bool, format_alter_operations_with_parentheses, true, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 
@@ -883,6 +896,9 @@ namespace DB
     DECLARE(UInt64, memory_worker_period_ms, 0, R"(
     Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source
     )", 0) \
+    DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
+    Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
+    )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
     )", 0) \
@@ -901,7 +917,7 @@ namespace DB
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
-    DECLARE(Bool, send_settings_to_client, true, R"(
+    DECLARE(Bool, send_settings_to_client, false, R"(
     Send user settings from server configuration to clients (in the server Hello message).
     )", 0) \
     \
@@ -999,10 +1015,18 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        if (config.has(name))
-            set(name, config.getString(name));
-        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
-            set(name, config.getString("profiles.default." + name));
+        try
+        {
+            if (config.has(name))
+                set(name, config.getString(name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
+                set(name, config.getString("profiles.default." + name));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while parsing setting '{}' value", name);
+            throw;
+        }
     }
 }
 
@@ -1085,6 +1109,11 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
+
+            {"max_remote_read_network_bandwidth_for_server",
+             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_remote_write_network_bandwidth_for_server",
+             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

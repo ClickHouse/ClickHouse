@@ -156,11 +156,11 @@ similarity indexes are constructed over granules and each indexed block consists
 for normal skip indexes). For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and
 `GRANULARITY = 2`, then each indexed block will contain 16384 rows. However, data structures and algorithms for approximate neighborhood
 search are inherently row-oriented. They store a compact representation of a set of rows and also return rows for vector search queries.
-This causes some rather unintuitive differences in the way vector vector similarity indexes behave compared to normal skip indexes.
+This causes some rather unintuitive differences in the way vector similarity indexes behave compared to normal skip indexes.
 
-When a user defines an vector similarity index on a column, ClickHouse internally creates an vector similarity "sub-index" for each index
+When a user defines a vector similarity index on a column, ClickHouse internally creates a vector similarity "sub-index" for each index
 block. The sub-index is "local" in the sense that it only knows about the rows of its containing index block. In the previous example and
-assuming that a column has 65536 rows, we obtain four index blocks (spanning eight granules) and an vector similarity sub-index for each
+assuming that a column has 65536 rows, we obtain four index blocks (spanning eight granules) and a vector similarity sub-index for each
 index block. A sub-index is theoretically able to return the rows with the N closest points within its index block directly. However, since
 ClickHouse loads data from disk to memory at the granularity of granules, sub-indexes extrapolate matching rows to granule granularity. This
 is different from regular skip indexes which skip data at the granularity of index blocks.
