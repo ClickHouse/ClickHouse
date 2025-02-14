@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
