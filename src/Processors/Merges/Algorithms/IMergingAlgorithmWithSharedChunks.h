@@ -2,6 +2,8 @@
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
+#include <Core/Block.h>
+#include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 
 namespace DB

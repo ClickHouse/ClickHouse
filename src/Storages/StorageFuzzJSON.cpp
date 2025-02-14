@@ -15,6 +15,8 @@
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeString.h>
+#include <Processors/ISource.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
