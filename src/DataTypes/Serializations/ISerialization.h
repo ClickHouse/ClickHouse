@@ -4,6 +4,7 @@
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -105,7 +106,12 @@ public:
 
     struct DeserializeBinaryBulkState
     {
+        DeserializeBinaryBulkState() = default;
+        DeserializeBinaryBulkState(const DeserializeBinaryBulkState &) = default;
+
         virtual ~DeserializeBinaryBulkState() = default;
+
+        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
     };
 
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
@@ -309,6 +315,13 @@ public:
         double avg_value_size_hint = 0;
 
         bool object_and_dynamic_read_statistics = false;
+
+        /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
+        StreamCallback dynamic_subcolumns_callback;
+        /// Callback to start prefetches for specific substreams during prefixes deserialization.
+        StreamCallback prefixes_prefetch_callback;
+        /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
+        ThreadPool * prefixes_deserialization_thread_pool = nullptr;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -467,6 +480,9 @@ public:
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
+
+    /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
+    static bool hasPrefix(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>
