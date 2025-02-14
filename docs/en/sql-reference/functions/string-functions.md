@@ -832,10 +832,6 @@ Result:
 └─────────────────┘
 ```
 
-:::note `||` operator
-Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
-:::
-
 ## concatAssumeInjective
 
 Like [concat](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective. Can be used for optimization of GROUP BY.

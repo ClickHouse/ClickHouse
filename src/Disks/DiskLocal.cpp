@@ -24,7 +24,6 @@
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 
 
@@ -718,7 +717,7 @@ void DiskLocal::setup()
             pcg32_fast rng(randomSeed());
             UInt32 magic_number = rng();
             {
-                auto buf = writeFile(disk_checker_path, 32, WriteMode::Rewrite, {});
+                auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
                 writeIntBinary(magic_number, *buf);
                 buf->finalize();
             }

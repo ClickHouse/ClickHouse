@@ -1,7 +1,7 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
-#include <base/defines.h>
 
+#include <cassert>
 #include <cmath>
 
 namespace BuzzHouse
@@ -52,7 +52,7 @@ static bool positiveHugeintIsBitSet(HugeInt lhs, uint8_t bit_position)
 
 static HugeInt positiveHugeintLeftShift(HugeInt lhs, uint32_t amount)
 {
-    chassert(amount > 0 && amount < 64);
+    assert(amount > 0 && amount < 64);
     HugeInt result;
     result.lower = lhs.lower << amount;
     result.upper = static_cast<int64_t>((static_cast<uint64_t>(lhs.upper) << amount) + (lhs.lower >> (64 - amount)));
@@ -61,37 +61,37 @@ static HugeInt positiveHugeintLeftShift(HugeInt lhs, uint32_t amount)
 
 static HugeInt divModPositive(HugeInt lhs, uint64_t rhs, uint64_t & remainder)
 {
-    chassert(lhs.upper >= 0);
-    /// DivMod code adapted from:
-    /// https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
+    assert(lhs.upper >= 0);
+    // divMod code adapted from:
+    // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
-    /// Initialize the result and remainder to 0
+    // initialize the result and remainder to 0
     HugeInt div_result;
     div_result.lower = 0;
     div_result.upper = 0;
     remainder = 0;
 
     uint8_t highest_bit_set = positiveHugeintHighestBit(lhs);
-    /// Now iterate over the amount of bits that are set in the LHS
+    // now iterate over the amount of bits that are set in the LHS
     for (uint8_t x = highest_bit_set; x > 0; x--)
     {
-        /// Left-shift the current result and remainder by 1
+        // left-shift the current result and remainder by 1
         div_result = positiveHugeintLeftShift(div_result, 1);
         remainder <<= 1;
-        /// We get the value of the bit at position X, where position 0 is the least-significant bit
+        // we get the value of the bit at position X, where position 0 is the least-significant bit
         if (positiveHugeintIsBitSet(lhs, x - 1))
         {
-            /// Increment the remainder
+            // increment the remainder
             remainder++;
         }
         if (remainder >= rhs)
         {
-            /// The remainder has passed the division multiplier: add one to the divide result
+            // the remainder has passed the division multiplier: add one to the divide result
             remainder -= rhs;
             div_result.lower++;
             if (div_result.lower == 0)
             {
-                /// Overflow
+                // overflow
                 div_result.upper++;
             }
         }
@@ -106,7 +106,7 @@ int sign(HugeInt n)
 
 HugeInt abs(HugeInt n)
 {
-    chassert(n != NumericLimits<HugeInt>::minimum());
+    assert(n != NumericLimits<HugeInt>::minimum());
     return (n * static_cast<HugeInt>(sign(n)));
 }
 
@@ -114,7 +114,7 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder);
 
 static HugeInt divModMinimum(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
 {
-    chassert(lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum());
+    assert(lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum());
     if (rhs == NumericLimits<HugeInt>::minimum())
     {
         if (lhs == NumericLimits<HugeInt>::minimum())
@@ -126,10 +126,10 @@ static HugeInt divModMinimum(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
         return HugeInt(0);
     }
 
-    /// Add 1 to minimum and run through divMod again
+    // Add 1 to minimum and run through divMod again
     HugeInt result = divMod(NumericLimits<HugeInt>::minimum() + HugeInt(1), rhs, remainder);
 
-    /// If the 1 mattered we need to adjust the result, otherwise the remainder
+    // If the 1 mattered we need to adjust the result, otherwise the remainder
     if (abs(remainder) + HugeInt(1) == abs(rhs))
     {
         result -= static_cast<HugeInt>(sign(rhs));
@@ -150,7 +150,7 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
         return HugeInt(0);
     }
 
-    /// Check if one of the sides is HugeInt minimum, as that can't be negated.
+    // Check if one of the sides is HugeInt minimum, as that can't be negated.
     if (lhs == NumericLimits<HugeInt>::minimum() || rhs == NumericLimits<HugeInt>::minimum())
     {
         return divModMinimum(lhs, rhs, remainder);
@@ -166,10 +166,10 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
     {
         negateInPlace(rhs);
     }
-    /// DivMod code adapted from:
-    /// https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
+    // divMod code adapted from:
+    // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
-    /// Initialize the result and remainder to 0
+    // initialize the result and remainder to 0
     HugeInt div_result;
     div_result.lower = 0;
     div_result.upper = 0;
@@ -177,21 +177,21 @@ static HugeInt divMod(HugeInt lhs, HugeInt rhs, HugeInt & remainder)
     remainder.upper = 0;
 
     uint8_t highest_bit_set = positiveHugeintHighestBit(lhs);
-    /// Now iterate over the amount of bits that are set in the LHS
+    // now iterate over the amount of bits that are set in the LHS
     for (uint8_t x = highest_bit_set; x > 0; x--)
     {
-        /// Left-shift the current result and remainder by 1
+        // left-shift the current result and remainder by 1
         div_result = positiveHugeintLeftShift(div_result, 1);
         remainder = positiveHugeintLeftShift(remainder, 1);
 
-        /// We get the value of the bit at position X, where position 0 is the least-significant bit
+        // we get the value of the bit at position X, where position 0 is the least-significant bit
         if (positiveHugeintIsBitSet(lhs, x - 1))
         {
             remainder += HugeInt(1);
         }
         if (remainder >= rhs)
         {
-            /// The remainder has passed the division multiplier: add one to the divide result
+            // the remainder has passed the division multiplier: add one to the divide result
             remainder -= rhs;
             div_result += HugeInt(1);
         }
@@ -216,9 +216,7 @@ static HugeInt divide(HugeInt lhs, HugeInt rhs)
 static HugeInt modulo(HugeInt lhs, HugeInt rhs)
 {
     HugeInt remainder;
-    /// Here it is interested in the remainder only
-    auto u = divMod(lhs, rhs, remainder);
-    UNUSED(u);
+    (void)divMod(lhs, rhs, remainder);
     return remainder;
 }
 
@@ -245,15 +243,15 @@ static HugeInt multiply(HugeInt lhs, HugeInt rhs)
     result.upper = int64_t(upper);
     result.lower = uint64_t(result_i128 & 0xffffffffffffffff);
 #else
-    /// Multiply code adapted from:
-    /// https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
+    // multiply code adapted from:
+    // https://github.com/calccrypto/uint128_t/blob/master/uint128_t.cpp
 
-    /// Split values into 4 32-bit parts
+    // split values into 4 32-bit parts
     uint64_t top[4] = {uint64_t(lhs.upper) >> 32, uint64_t(lhs.upper) & 0xffffffff, lhs.lower >> 32, lhs.lower & 0xffffffff};
     uint64_t bottom[4] = {uint64_t(rhs.upper) >> 32, uint64_t(rhs.upper) & 0xffffffff, rhs.lower >> 32, rhs.lower & 0xffffffff};
     uint64_t products[4][4];
 
-    /// Multiply each component of the values
+    // multiply each component of the values
     for (auto x = 0; x < 4; x++)
     {
         for (auto y = 0; y < 4; y++)
@@ -262,36 +260,36 @@ static HugeInt multiply(HugeInt lhs, HugeInt rhs)
         }
     }
 
-    /// First row
+    // first row
     uint64_t fourth32 = (products[3][3] & 0xffffffff);
     uint64_t third32 = (products[3][2] & 0xffffffff) + (products[3][3] >> 32);
     uint64_t second32 = (products[3][1] & 0xffffffff) + (products[3][2] >> 32);
     uint64_t first32 = (products[3][0] & 0xffffffff) + (products[3][1] >> 32);
 
-    /// Second row
+    // second row
     third32 += (products[2][3] & 0xffffffff);
     second32 += (products[2][2] & 0xffffffff) + (products[2][3] >> 32);
     first32 += (products[2][1] & 0xffffffff) + (products[2][2] >> 32);
 
-    /// Third row
+    // third row
     second32 += (products[1][3] & 0xffffffff);
     first32 += (products[1][2] & 0xffffffff) + (products[1][3] >> 32);
 
-    /// Fourth row
+    // fourth row
     first32 += (products[0][3] & 0xffffffff);
 
-    /// Move carry to next digit
+    // move carry to next digit
     third32 += fourth32 >> 32;
     second32 += third32 >> 32;
     first32 += second32 >> 32;
 
-    /// Remove carry from current digit
+    // remove carry from current digit
     fourth32 &= 0xffffffff;
     third32 &= 0xffffffff;
     second32 &= 0xffffffff;
     first32 &= 0xffffffff;
 
-    /// Combine components
+    // combine components
     result.lower = (third32 << 32) | fourth32;
     result.upper = (first32 << 32) | second32;
 #endif
@@ -417,13 +415,13 @@ HugeInt HugeInt::operator>>(const HugeInt & rhs) const
     }
     else if (shift < 64)
     {
-        /// Perform lower shift in unsigned integer, and mask away the most significant bit
+        // perform lower shift in unsigned integer, and mask away the most significant bit
         result.lower = (uint64_t(upper) << (64 - shift)) | (lower >> shift);
         result.upper = upper >> shift;
     }
     else
     {
-        chassert(shift < 128);
+        assert(shift < 128);
         result.lower = uint64_t(upper >> (shift - 64));
         result.upper = (upper < 0) ? -1 : 0;
     }
@@ -453,14 +451,14 @@ HugeInt HugeInt::operator<<(const HugeInt & rhs) const
     }
     else if (shift < 64)
     {
-        /// Perform upper shift in unsigned integer, and mask away the most significant bit
+        // perform upper shift in unsigned integer, and mask away the most significant bit
         uint64_t upper_shift = ((uint64_t(upper) << shift) + (lower >> (64 - shift))) & 0x7FFFFFFFFFFFFFFF;
         result.lower = lower << shift;
         result.upper = int64_t(upper_shift);
     }
     else
     {
-        chassert(shift < 128);
+        assert(shift < 128);
         result.lower = 0;
         result.upper = static_cast<int64_t>((lower << (shift - 64)) & 0x7FFFFFFFFFFFFFFF);
     }
@@ -563,20 +561,21 @@ HugeInt::operator bool() const
     return *this != HugeInt(0);
 }
 
-String HugeInt::toString() const
+void HugeInt::toString(std::string & res) const
 {
-    String res;
-    String prefix;
+    std::string in;
     uint64_t remainder;
     HugeInt input = *this;
 
     if (input == NumericLimits<HugeInt>::minimum())
     {
-        return "-170141183460469231731687303715884105728";
+        res += "-170141183460469231731687303715884105728";
+        return;
     }
-    if (input.upper < 0)
+    bool negative = input.upper < 0;
+    if (negative)
     {
-        prefix = "-";
+        res += "-";
         negateInPlace(input);
     }
     while (true)
@@ -586,10 +585,17 @@ String HugeInt::toString() const
             break;
         }
         input = divModPositive(input, 10, remainder);
-        res.insert(0, String(1, static_cast<char>('0' + remainder)));
+        in.insert(0, std::string(1, static_cast<char>('0' + remainder)));
     }
-    /// If empty then value is zero
-    return res.empty() ? "0" : (prefix + res);
+    if (in.empty())
+    {
+        // value is zero
+        res += "0";
+    }
+    else
+    {
+        res += in;
+    }
 }
 
 }

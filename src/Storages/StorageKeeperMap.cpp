@@ -1,5 +1,4 @@
 #include <memory>
-#include <IO/copyData.h>
 #include <Storages/StorageKeeperMap.h>
 
 #include <Columns/ColumnString.h>

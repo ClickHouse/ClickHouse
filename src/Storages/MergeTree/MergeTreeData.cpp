@@ -22,7 +22,6 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -399,7 +398,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             /// into it as well, to avoid leaving it after DROP.
             if (!disk->isReadOnly() && !disk->isWriteOnce())
             {
-                auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
+                auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
                 writeIntText(format_version.toUnderType(), *buf);
                 buf->finalize();
                 if (getContext()->getSettingsRef()[Setting::fsync_metadata])
@@ -2827,7 +2826,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.partition_id;
-            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+            {
+                WriteBufferFromString out(part_log_elem.partition);
+                part->partition.serializeText(part->storage, out, {});
+            }
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -5738,6 +5740,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     const DataPartsVector & data_parts,
     const String & data_path_in_backup,
     const BackupSettings & backup_settings,
+    const ReadSettings & read_settings,
     const ContextPtr & local_context)
 {
     MergeTreeData::PartsBackupEntries res;
@@ -5779,6 +5782,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
             part->getFileNamesWithoutChecksums(),
             data_path_in_backup,
             backup_settings,
+            read_settings,
             make_temporary_hard_links,
             backup_entries_from_part,
             &temp_dirs,
@@ -5791,6 +5795,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 projection_part.getFileNamesWithoutChecksums(),
                 fs::path{data_path_in_backup} / part->name,
                 backup_settings,
+                read_settings,
                 make_temporary_hard_links,
                 backup_entries_from_part,
                 &temp_dirs,
@@ -6300,10 +6305,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         DataPartPtr existing_part_in_partition = getAnyPartInPartition(partition_id, data_parts_lock);
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
+            WriteBufferFromOwnString buf;
+            partition.serializeText(*this, buf, FormatSettings{});
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
                             "doesn't match partition value for an existing part with the same partition ID: {}",
-                            partition_str, existing_part_in_partition->name);
+                            buf.str(), existing_part_in_partition->name);
         }
     }
 
@@ -8148,10 +8154,18 @@ try
     part_log_elem.table_uuid = table_id.uuid;
     part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).partition_id;
 
-    if (result_part)
-        part_log_elem.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
-    else if (!source_parts.empty())
-        part_log_elem.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
+    {
+        const DataPart * result_or_source_data_part = nullptr;
+        if (result_part)
+            result_or_source_data_part = result_part.get();
+        else if (!source_parts.empty())
+            result_or_source_data_part = source_parts.at(0).get();
+        if (result_or_source_data_part)
+        {
+            WriteBufferFromString out(part_log_elem.partition);
+            result_or_source_data_part->partition.serializeText(*this, out, {});
+        }
+    }
 
     part_log_elem.part_name = new_part_name;
 
@@ -9111,7 +9125,7 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-            auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
+            auto buf = disk->writeFile(format_version_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
             writeIntText(format_version.toUnderType(), *buf);
             buf->finalize();
             if (getContext()->getSettingsRef()[Setting::fsync_metadata])

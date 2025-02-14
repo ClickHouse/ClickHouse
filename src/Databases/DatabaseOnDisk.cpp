@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <iterator>
-#include <memory>
 #include <span>
 #include <Core/Settings.h>
 #include <Databases/DatabaseAtomic.h>
@@ -13,7 +12,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteSettings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -55,6 +53,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
+
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace ErrorCodes
 {
@@ -209,6 +209,7 @@ void DatabaseOnDisk::createTable(
 {
     createDirectories();
 
+    const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
 
@@ -260,14 +261,20 @@ void DatabaseOnDisk::createTable(
     }
 
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
+    String statement;
 
     {
-        String statement = getObjectDefinitionFromCreateQuery(query);
+        statement = getObjectDefinitionFromCreateQuery(query);
 
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
-        const auto & settings = local_context->getSettingsRef();
-        writeMetadataFile(
-            db_disk, /*file_path=*/table_metadata_tmp_path, /*content=*/statement, /*fsync_metadata=*/settings[Setting::fsync_metadata]);
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
+        if (settings[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
@@ -744,13 +751,20 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (!throw_on_error)
             return nullptr;
-        int ec = ErrorCodes::FILE_DOESNT_EXIST;
-        if (auto disk_local = std::dynamic_pointer_cast<DiskLocal>(db_disk))
-            ec = errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
-        ErrnoException::throwFromPath(ec, metadata_file_path, "Cannot open file {}", metadata_file_path);
+
+        ErrnoException::throwFromPath(
+            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
+            metadata_file_path,
+            "Cannot open file {}",
+            metadata_file_path);
     }
 
-    String query = readMetadataFile(db_disk, metadata_file_path);
+    ReadSettings read_settings = getReadSettings();
+    read_settings.local_fs_method = LocalFSReadMethod::read;
+    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+    auto read_buf = db_disk->readFile(metadata_file_path, read_settings);
+    String query;
+    readStringUntilEOF(query, *read_buf);
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.
@@ -888,8 +902,15 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
 
-    writeMetadataFile(
-        db_disk, /*file_path=*/metadata_file_tmp_path, /*content=*/statement, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
+
+    writeString(statement, *out);
+
+    out->next();
+    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+        out->sync();
+    out->finalize();
+    out.reset();
 
     db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }

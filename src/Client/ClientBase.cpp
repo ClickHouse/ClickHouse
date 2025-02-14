@@ -328,19 +328,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     if (is_interactive || ignore_error)
     {
         String message;
-        try
-        {
-            if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-            else
-                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-        }
-        catch (const Exception & e)
-        {
-            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception.reset(e.clone());
-            return nullptr;
-        }
+        if (dialect == Dialect::kusto)
+            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        else
+            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
 
         if (!res)
         {
@@ -1018,7 +1009,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     return !settings[Setting::async_insert];
 }
 
-bool ClientBase::processTextAsSingleQuery(const String & full_query)
+void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
@@ -1028,7 +1019,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         /*allow_multi_statements=*/ false);
 
     if (!parsed_query)
-        return false;
+        return;
 
     String query_to_execute;
 
@@ -1067,7 +1058,6 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
     if (have_error)
         processError(full_query);
-    return !have_error;
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -2408,8 +2398,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
         {
-            auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-            UNUSED(u);
+            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
         }
     }
 
@@ -2450,10 +2439,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             {
                 /// Compatible with old version when run interactive, e.g. "", "\ld"
                 if (is_first && is_interactive)
-                {
-                    auto u = processTextAsSingleQuery(all_queries_text);
-                    UNUSED(u);
-                }
+                    processTextAsSingleQuery(all_queries_text);
                 return true;
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
@@ -2501,9 +2487,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
 
                 ++script_query_number;
-                script_line_number += std::count(prev_query_begin, this_query_begin, '\n');
+                script_line_number += count_symbols<'\n'>(prev_query_begin, this_query_begin);
                 prev_query_begin = this_query_begin;
-                client_context->setScriptQueryAndLineNumber(script_query_number, 1 + script_line_number);
+                client_context->setScriptLineNumbers(script_query_number, 1 + script_line_number);
 
                 if (query_fuzzer_runs)
                 {

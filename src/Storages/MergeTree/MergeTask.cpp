@@ -431,7 +431,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
-
     /// Background temp dirs cleaner will not touch tmp projection directory because
     /// it's located inside part's directory
     if (!global_ctx->parent_part)

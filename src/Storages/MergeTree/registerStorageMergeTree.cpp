@@ -243,6 +243,21 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         bool is_replicated_database = local_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() == "Replicated";
 
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "It's not allowed to specify explicit zookeeper_path and replica_name "
+                            "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
+                            "specify them explicitly, enable setting "
+                            "database_replicated_allow_replicated_engine_arguments.");
+        }
+        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("registerStorageMergeTree"),
+                "It's not recommended to explicitly specify "
+                "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
+        }
 
         /// Get path and name from engine arguments
         auto * ast_zk_path = engine_args[arg_num]->as<ASTLiteral>();
@@ -252,31 +267,6 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_replica_name = engine_args[arg_num + 1]->as<ASTLiteral>();
         if (!ast_replica_name || ast_replica_name->value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica name must be a string literal{}", verbose_help_message);
-
-        if (!query.attach && is_replicated_database
-            && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 0)
-        {
-            /// Allow specifying engine arguments even with database_replicated_allow_replicated_engine_arguments=0 (not allowed) but only
-            /// throw an error if the specified replica path or replica name is not the same as the default values.
-            /// For example, for queries like `CREATE t1 TABLE AS t2 ..` the table structure of t1 is used to create table t2.
-            /// In such cases, the engine arguments might already be present in the create query but exceptions should not be thrown
-            /// when using database_replicated_allow_replicated_engine_arguments=0.
-            if (ast_zk_path->value.safeGet<String>() != server_settings[ServerSetting::default_replica_path].toString()
-                || ast_replica_name->value.safeGet<String>() != server_settings[ServerSetting::default_replica_name].toString())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "It's not allowed to specify explicit zookeeper_path and replica_name "
-                    "for ReplicatedMergeTree arguments in Replicated database. If you really want to "
-                    "specify them explicitly, enable setting "
-                    "database_replicated_allow_replicated_engine_arguments.");
-        }
-        if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
-        {
-            LOG_WARNING(
-                &Poco::Logger::get("registerStorageMergeTree"),
-                "It's not recommended to explicitly specify "
-                "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
-        }
 
         if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {

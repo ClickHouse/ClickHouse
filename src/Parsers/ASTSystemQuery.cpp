@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 
 
 namespace DB

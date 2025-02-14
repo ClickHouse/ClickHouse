@@ -103,8 +103,7 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
-    /// Returns true if query succeeded
-    bool processTextAsSingleQuery(const String & full_query);
+    void processTextAsSingleQuery(const String & full_query);
 
 protected:
     void runInteractive();

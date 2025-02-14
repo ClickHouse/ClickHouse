@@ -89,9 +89,7 @@ def main():
         from .mangle import _get_workflows
         from .runner import Runner
 
-        workflows = _get_workflows(
-            name=args.workflow or None, default=not bool(args.workflow)
-        )
+        workflows = _get_workflows(name=args.workflow or None)
         job_workflow_pairs = []
         for workflow in workflows:
             jobs = workflow.find_jobs(args.job, lazy=True)

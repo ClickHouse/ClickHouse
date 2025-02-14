@@ -38,7 +38,6 @@ CREATE TABLE system.clusters
 (
     `cluster` String,
     `shard_num` UInt32,
-    `shard_name` String,
     `shard_weight` UInt32,
     `internal_replication` UInt8,
     `replica_num` UInt32,

@@ -1,4 +1,3 @@
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -278,15 +277,6 @@ void StorageNATS::incrementReader()
 void StorageNATS::decrementReader()
 {
     --readers_count;
-}
-
-
-void StorageNATS::startStreaming()
-{
-    if (!mv_attached)
-    {
-        streaming_task->activateAndSchedule();
-    }
 }
 
 

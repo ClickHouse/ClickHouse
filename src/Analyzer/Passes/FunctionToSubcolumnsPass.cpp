@@ -12,15 +12,14 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Core/Settings.h>
 

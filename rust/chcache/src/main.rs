@@ -197,16 +197,12 @@ fn hash_preprocessed_compiler_output(compiler: String, args: &Vec<String>) -> St
         .args(preprocess_args)
         .output()
         .expect("Failed to execute command");
+    let output = String::from_utf8_lossy(&output.stdout);
 
-    let stdout_output = String::from_utf8_lossy(&output.stdout);
-    let stderr_output = String::from_utf8_lossy(&output.stderr);
-
-    if stdout_output.is_empty() {
-        panic!("{}", stderr_output);
-    }
+    assert!(output.len() > 0);
 
     let mut hasher = Hasher::new();
-    hasher.update(stdout_output.as_bytes());
+    hasher.update(output.as_bytes());
 
     let hash = hasher.finalize();
     hash.to_hex().to_string()
@@ -421,7 +417,7 @@ async fn compiler_cache_entrypoint(config: &Config) {
                         if !output.status.success() {
                             println!("{}", String::from_utf8_lossy(&output.stdout));
                             eprintln!("{}", String::from_utf8_lossy(&output.stderr));
-                            std::process::exit(output.status.code().unwrap_or(1));
+                            return;
                         }
                         fs::read(get_output_from_args(&rest_of_args)).expect("Unable to read file")
                     }
