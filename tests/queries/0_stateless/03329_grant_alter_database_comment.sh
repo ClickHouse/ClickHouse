@@ -4,38 +4,34 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS test_user_$CLICKHOUSE_TEST_UNIQUE_NAME";
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS test_database_$CLICKHOUSE_TEST_UNIQUE_NAME";
+databasename="test_database_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+username="test_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-${CLICKHOUSE_CLIENT} --query "CREATE USER test_user_$CLICKHOUSE_TEST_UNIQUE_NAME;";
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE test_database_$CLICKHOUSE_TEST_UNIQUE_NAME COMMENT 'test database with comment';";
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${username}";
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${databasename}";
 
-${CLICKHOUSE_CLIENT} --query "GRANT ALTER MODIFY DATABASE COMMENT ON \
-    test_database_$CLICKHOUSE_TEST_UNIQUE_NAME.* TO test_user_$CLICKHOUSE_TEST_UNIQUE_NAME;";
+${CLICKHOUSE_CLIENT} --query "CREATE USER ${username};";
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${databasename} COMMENT 'test database with comment';";
 
-${CLICKHOUSE_CLIENT} --query "SHOW GRANTS FOR test_user_$CLICKHOUSE_TEST_UNIQUE_NAME;";
+${CLICKHOUSE_CLIENT} --query "GRANT ALTER MODIFY DATABASE COMMENT ON ${databasename}.* TO ${username};";
 
-${CLICKHOUSE_CLIENT} --user=test_user_$CLICKHOUSE_TEST_UNIQUE_NAME \
-    --query "SHOW GRANTS FOR test_user_$CLICKHOUSE_TEST_UNIQUE_NAME" | sed 's/ TO.*//';
+${CLICKHOUSE_CLIENT} --query "SHOW GRANTS FOR ${username};";
 
-${CLICKHOUSE_CLIENT} --user=test_user_$CLICKHOUSE_TEST_UNIQUE_NAME \
-    --query "SELECT name, comment FROM system.databases WHERE name = 'test_database_$CLICKHOUSE_TEST_UNIQUE_NAME';";
+${CLICKHOUSE_CLIENT} --user="${username}" --query "SHOW GRANTS FOR ${username}" | sed 's/ TO.*//';
 
-${CLICKHOUSE_CLIENT} --user=test_user_$CLICKHOUSE_TEST_UNIQUE_NAME \
-    --query "ALTER DATABASE test_database_$CLICKHOUSE_TEST_UNIQUE_NAME MODIFY COMMENT 'new comment on database';"
+${CLICKHOUSE_CLIENT} --user="${username}" --query "SELECT name, comment FROM system.databases WHERE name = '${databasename}';";
 
-${CLICKHOUSE_CLIENT} --user=test_user_$CLICKHOUSE_TEST_UNIQUE_NAME \
-    --query "SELECT name, comment FROM system.databases WHERE name = 'test_database_$CLICKHOUSE_TEST_UNIQUE_NAME';";
+${CLICKHOUSE_CLIENT} --user="${username}" --query "ALTER DATABASE ${databasename} MODIFY COMMENT 'new comment on database';"
 
-${CLICKHOUSE_CLIENT} --query "REVOKE ALTER MODIFY DATABASE COMMENT ON \
-    test_database_$CLICKHOUSE_TEST_UNIQUE_NAME.* FROM test_user_$CLICKHOUSE_TEST_UNIQUE_NAME;";
+${CLICKHOUSE_CLIENT} --user="${username}" --query "SELECT name, comment FROM system.databases WHERE name = '${databasename}';";
 
-${CLICKHOUSE_CLIENT} --user=test_user_$CLICKHOUSE_TEST_UNIQUE_NAME --query "SHOW GRANTS FOR test_user_$CLICKHOUSE_TEST_UNIQUE_NAME;";
+${CLICKHOUSE_CLIENT} --query "REVOKE ALTER MODIFY DATABASE COMMENT ON ${databasename}.* FROM ${username};";
 
-${CLICKHOUSE_CLIENT} --user=test_user_$CLICKHOUSE_TEST_UNIQUE_NAME \
-    --query "ALTER DATABASE test_database_$CLICKHOUSE_TEST_UNIQUE_NAME MODIFY COMMENT 'test alter comment after revoking;' \
+${CLICKHOUSE_CLIENT} --user="${username}" --query "SHOW GRANTS FOR ${username};";
+
+${CLICKHOUSE_CLIENT} --user="${username}" --query "ALTER DATABASE ${databasename} MODIFY COMMENT 'test alter comment after revoking;' \
     -- { serverError ACCESS_DENIED } ";
 
-${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS test_user_$CLICKHOUSE_TEST_UNIQUE_NAME";
+${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${username}";
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS test_database_$CLICKHOUSE_TEST_UNIQUE_NAME";
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${databasename}";
