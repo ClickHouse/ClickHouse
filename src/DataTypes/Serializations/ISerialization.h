@@ -276,13 +276,7 @@ public:
 
         bool position_independent_encoding = true;
 
-        /// True if data type names should be serialized in binary encoding.
-        bool data_types_binary_encoding = false;
-
         bool use_compact_variant_discriminators_serialization = false;
-
-        /// Serialize JSON column as single String column with serialized JSON values.
-        bool write_json_as_string = false;
 
         enum class ObjectAndDynamicStatisticsMode
         {
@@ -294,6 +288,9 @@ public:
 
         /// Use old V1 serialization of JSON and Dynamic types. Needed for compatibility.
         bool use_v1_object_and_dynamic_serialization = false;
+
+        bool native_format = false;
+        const FormatSettings * format_settings = nullptr;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -306,10 +303,8 @@ public:
 
         bool position_independent_encoding = true;
 
-        /// True if data type names should be deserialized in binary encoding.
-        bool data_types_binary_encoding = false;
-
         bool native_format = false;
+        const FormatSettings * format_settings;
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
