@@ -196,6 +196,8 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 sample_block);
         }
 
+        read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
+
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
             = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, settings);
