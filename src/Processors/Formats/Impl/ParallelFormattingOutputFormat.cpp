@@ -1,7 +1,8 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
-#include <Common/setThreadName.h>
+#include <Processors/Port.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
