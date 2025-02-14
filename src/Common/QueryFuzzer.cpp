@@ -1430,7 +1430,23 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
         if (AggregateUtils::isAggregateFunction(*fn))
+        {
+            if (!fn->children.empty() && fuzz_rand() % 30 == 0)
+            {
+                ///Add or remove distinct to aggregate
+                static const String distinct_suffix = "Distinct";
+
+                if (endsWith(fn->name, distinct_suffix))
+                {
+                    fn->name = fn->name.substr(0, fn->name.length() - distinct_suffix.size());
+                }
+                else
+                {
+                    fn->name = fn->name + distinct_suffix;
+                }
+            }
             fuzzNullsAction(fn->nulls_action);
+        }
 
         if (fn->is_window_function && fn->window_definition)
         {
