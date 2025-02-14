@@ -95,7 +95,7 @@ public:
     bool enabled = false;
     uint64_t threshold = 10, minimum = 1000;
 
-    PerformanceMetric() { }
+    PerformanceMetric() = default;
 
     PerformanceMetric(const bool e, const uint64_t t, const uint64_t m)
         : enabled(e)
@@ -118,7 +118,7 @@ public:
     /// The metrics and respective String representation (I can improve this)
     std::unordered_map<String, String> result_strings;
 
-    PerformanceResult() { }
+    PerformanceResult() = default;
 
     PerformanceResult(const PerformanceResult & c) = default;
     PerformanceResult(PerformanceResult && c) = default;
