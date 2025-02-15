@@ -366,8 +366,8 @@ def test_path_validation(ch_cluster):
 
 
 def test_ssrf(ch_cluster):
-    if instance.is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
+    if instance.is_built_with_sanitizer():
+        pytest.skip("Sanitizer cannot work with third-party shared libraries")
 
     # Create and query a dictionary, so the bridge will start up:
 
