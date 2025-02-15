@@ -1,6 +1,7 @@
 #include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ODBCDriver2BlockOutputFormat.h>
+#include <Processors/Port.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>

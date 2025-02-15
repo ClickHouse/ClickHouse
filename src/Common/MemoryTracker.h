@@ -96,6 +96,12 @@ private:
 
     bool isSizeOkForSampling(UInt64 size) const;
 
+    /// helper fields for analyzing MemoryTracker
+    /// amount which is not corrected by external source like RSS
+    int64_t uncorrected_amount = 0;
+    /// last corrected amount we set to memory tracker
+    int64_t last_corrected_amount = 0;
+
     /// allocImpl(...) and free(...) should not be used directly
     friend struct CurrentMemoryTracker;
     [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
@@ -246,7 +252,7 @@ public:
 
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
-    static void updateAllocated(Int64 allocated_);
+    static void updateAllocated(Int64 allocated_, bool log_change);
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();

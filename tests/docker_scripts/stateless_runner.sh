@@ -527,8 +527,6 @@ fi
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 rm -rf /var/lib/clickhouse/data/system/*/
-tar -chf /test_output/store.tar /var/lib/clickhouse/store ||:
-tar -chf /test_output/metadata.tar /var/lib/clickhouse/metadata/*.sql ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

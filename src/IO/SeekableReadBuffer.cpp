@@ -55,6 +55,19 @@ namespace
 }
 
 
+std::optional<off_t> SeekableReadBuffer::tryGetPosition()
+{
+    try
+    {
+        return getPosition();
+    }
+    catch (...)
+    {
+        return std::nullopt;
+    }
+}
+
+
 std::unique_ptr<SeekableReadBuffer> wrapSeekableReadBufferReference(SeekableReadBuffer & ref)
 {
     return std::make_unique<SeekableReadBufferWrapper<nullptr_t>>(ref, nullptr);
