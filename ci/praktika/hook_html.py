@@ -172,23 +172,29 @@ class HtmlRunnerHooks:
     def configure(cls, _workflow):
         # generate pending Results for all jobs in the workflow
         if _workflow.enable_cache:
-            skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
+            workflow_config = RunConfig.from_fs(_workflow.name)
+            skipped_jobs = workflow_config.cache_success
+            filtered_job_and_reason = workflow_config.filtered_jobs
             job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
             results = []
             info = Info()
-            for job in _workflow.jobs:
-                if job.name in skip_jobs:
-                    cache_record = job_cache_records[job.name]
+            for skipped_job in skipped_jobs:
+                if skipped_job not in filtered_job_and_reason:
+                    cache_record = job_cache_records[skipped_job]
                     report_link = info.get_specific_report_url(
                         pr_number=cache_record.pr_number,
                         branch=cache_record.branch,
                         sha=cache_record.sha,
-                        job_name=job.name,
+                        job_name=skipped_job,
                     )
                     result = Result.generate_skipped(
-                        job.name, [report_link], "reused from cache"
+                        skipped_job, [report_link], "reused from cache"
                     )
-                    results.append(result)
+                else:
+                    result = Result.generate_skipped(
+                        skipped_job, info=filtered_job_and_reason[skipped_job]
+                    )
+                results.append(result)
             if results:
                 assert _ResultS3.update_workflow_results(
                     _workflow.name, new_sub_results=results

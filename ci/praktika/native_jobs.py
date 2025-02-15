@@ -293,6 +293,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         cache_success_base64=[],
         cache_artifacts={},
         cache_jobs={},
+        filtered_jobs={},
         custom_data=custom_data,
     ).dump()
 
@@ -322,7 +323,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     if workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
-            job_results = []
             for job in workflow.jobs:
                 if _is_praktika_job(job.name):
                     continue
@@ -332,17 +332,8 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
                         print(
                             f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
                         )
-                        workflow_config.cache_success.append(job_name)
-                        workflow_config.cache_success_base64.append(
-                            Utils.to_base64(job_name)
-                        )
-                        job_result = Result.generate_skipped(job.name, info=reason)
-                        job_results.append(job_result)
+                        workflow_config.set_job_as_filtered(job.name, reason)
                         continue
-            if job_results:
-                assert _ResultS3.update_workflow_results(
-                    workflow.name, new_sub_results=job_results
-                )
             status = Result.Status.SUCCESS
             workflow_config.dump()
             info = ""

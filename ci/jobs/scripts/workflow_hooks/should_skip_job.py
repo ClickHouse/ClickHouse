@@ -6,9 +6,6 @@ from ci.workflows.defs import JobNames
 def only_docs(changed_files):
     for file in changed_files:
         file = file.removeprefix(".").removeprefix("/")
-        # TODO: remove
-        if file.startswith("ci/"):
-            continue
         if (
             file.startswith("docs/")
             or file.startswith("docker/docs")
@@ -27,10 +24,14 @@ ONLY_DOCS_JOBS = [
     JobNames.Docs,
 ]
 
+_info_cache = None
+
 
 def should_skip_job(job_name):
-    info = Info()
-    changed_files = info.get_custom_data("changed_files")
+    global _info_cache
+    if _info_cache is None:
+        _info_cache = Info()
+    changed_files = _info_cache.get_custom_data("changed_files")
     if not changed_files:
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
@@ -40,7 +41,7 @@ def should_skip_job(job_name):
 
     # skip ARM perf tests for non-performance update
     if (
-        "pr-performance" not in info.pr_labels
+        "pr-performance" not in _info_cache.pr_labels
         and JobNames.PERFORMANCE in job_name
         and "aarch64" in job_name
     ):
