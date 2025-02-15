@@ -126,10 +126,12 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     StoragePtr storage = external_storage_holder->getTable();
     if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        auto fake_table = std::make_shared<TableNode>(storage, query_context);
+
         InterpreterSelectQueryAnalyzer interpreter(
             result.query_ast,
             query_context,
-            storage,
+            fake_table,
             /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
             SelectQueryOptions{QueryProcessingStage::WithMergeableState}
                 .modify()
@@ -259,10 +261,12 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     StoragePtr storage = external_storage_holder->getTable();
     if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        auto fake_table = std::make_shared<TableNode>(storage, query_context);
+
         InterpreterSelectQueryAnalyzer interpreter(
             result.query_ast,
             query_context,
-            storage,
+            fake_table,
             /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
             SelectQueryOptions{QueryProcessingStage::WithMergeableState}
                 .modify()
