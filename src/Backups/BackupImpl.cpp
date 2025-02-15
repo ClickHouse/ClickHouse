@@ -55,7 +55,8 @@ namespace ErrorCodes
 namespace
 {
     const int INITIAL_BACKUP_VERSION = 1;
-    const int CURRENT_BACKUP_VERSION = 1;
+    /// We may use lightweight backup in version 2.
+    const int CURRENT_BACKUP_VERSION = 2;
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -90,7 +91,8 @@ namespace
 BackupImpl::BackupImpl(
     BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_)
+    std::shared_ptr<IBackupReader> reader_,
+    std::shared_ptr<IBackupReader> lightweight_snapshot_reader_)
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -98,10 +100,15 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
+    , lightweight_snapshot_reader(std::move(lightweight_snapshot_reader_))
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
+    if (params.is_lightweight_snapshot && !lightweight_snapshot_reader_)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create lightweight backup reader");
+    }
     open();
 }
 
@@ -186,6 +193,7 @@ void BackupImpl::close()
     closeArchive(/* finalize= */ false);
     writer.reset();
     reader.reset();
+    lightweight_snapshot_reader.reset();
     coordination.reset();
 }
 
@@ -321,7 +329,7 @@ void BackupImpl::writeBackupMetadata()
         out = writer->writeFile(".backup");
 
     *out << "<config>";
-    *out << "<version>" << CURRENT_BACKUP_VERSION << "</version>";
+    *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";

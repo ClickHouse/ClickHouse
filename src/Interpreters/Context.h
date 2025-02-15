@@ -1496,6 +1496,8 @@ public:
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;
 
+    void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+
     /// Kitchen sink
     using ContextData::KitchenSink;
     using ContextData::kitchen_sink;

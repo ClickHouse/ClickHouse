@@ -24,23 +24,26 @@ env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
 {ENV_CHECKOUT_REFERENCE}
+{ENV_SECRETS}
 {GH_TOKEN_PERMISSIONS}
 
 jobs:
 {JOBS}\
 """
         TEMPLATE_GH_TOKEN_PERMISSIONS = """\
-
 # Allow updating GH commit statuses and PR comments to post an actual job reports link
 permissions: write-all\
 """
         TEMPLATE_ENV_CHECKOUT_REF_PR = """\
   DISABLE_CI_MERGE_COMMIT: ${{{{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}}}
   DISABLE_CI_CACHE: ${{{{ vars.DISABLE_CI_CACHE || '0' }}}}
-  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && '' || github.event.pull_request.head.sha }}}}\
+  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && github.event.pull_request.head.sha || '' }}}}\
 """
         TEMPLATE_ENV_CHECKOUT_REF_PUSH = """\
   CHECKOUT_REF: ${{{{ github.head_ref }}}}
+"""
+        TEMPLATE_ENV_SECRET = """\
+  {SECRET_NAME}: ${{{{{{{{ secrets.{SECRET_NAME} }}}}}}}}
 """
 
         TEMPLATE_SCHEDULE = """\
@@ -50,6 +53,9 @@ name: {NAME}
 on:
   schedule:{CRON_TEMPLATES}
   workflow_dispatch:
+
+concurrency:
+  group: ${{{{{{{{ github.workflow }}}}}}}}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -388,6 +394,14 @@ class PullRequestPushYamlGen:
             assert (
                 False
             ), f"Invalid or Not implemented event [{self.workflow_config.event}]"
+
+        SECRET_ENVS = ""
+        for secret in self.parser.config.secrets:
+            if secret.is_gh():
+                SECRET_ENVS += YamlGenerator.Templates.TEMPLATE_ENV_SECRET.format(
+                    SECRET_NAME=secret.name
+                )
+        format_kwargs["ENV_SECRETS"] = SECRET_ENVS
 
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,

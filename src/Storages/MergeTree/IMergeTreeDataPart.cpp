@@ -82,6 +82,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsFloat primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
 }
 
 namespace ErrorCodes
@@ -852,7 +853,9 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
             index = loadIndex();
 
-        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+        if (!(*storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+            calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
         loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
         loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
         loadPartitionAndMinMaxIndex();
@@ -1526,6 +1529,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
+        nullptr,
         std::make_shared<AlterConversions>(),
         MergeTreeReaderSettings{},
         ValueSizeMap{},
@@ -2253,13 +2257,14 @@ void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metad
         proj_part->checkConsistency(require_part_metadata);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample)
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk(std::optional<Block> columns_sample) const
 {
     calculateColumnsSizesOnDisk(columns_sample);
     calculateSecondaryIndicesSizesOnDisk();
+    are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample)
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> columns_sample) const
 {
     if (getColumns().empty() || checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate columns sizes when columns or checksums are not initialized");
@@ -2267,7 +2272,7 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk(std::optional<Block> column
     calculateEachColumnSizes(columns_sizes, total_columns_size, columns_sample);
 }
 
-void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
+void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
 {
     if (checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate secondary indexes sizes when columns or checksums are not initialized");
@@ -2304,6 +2309,10 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
 
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
 {
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
     /// For some types of parts columns_size maybe not calculated
     auto it = columns_sizes.find(column_name);
     if (it != columns_sizes.end())
@@ -2312,13 +2321,35 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
     return ColumnSize{};
 }
 
+ColumnSize IMergeTreeDataPart::getTotalColumnsSize() const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && areChecksumsLoaded())
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    return total_columns_size;
+}
+
 IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const
 {
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
     auto it = secondary_index_sizes.find(secondary_index_name);
     if (it != secondary_index_sizes.end())
         return it->second;
 
     return ColumnSize{};
+}
+
+IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
+{
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
+        calculateColumnsAndSecondaryIndicesSizesOnDisk();
+
+    return total_secondary_indices_size;
 }
 
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name) const
@@ -2521,6 +2552,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
         storage.getContext()->getMarkCache().get(),
+        nullptr,
         std::make_shared<AlterConversions>(),
         settings,
         ValueSizeMap{},

@@ -1,9 +1,10 @@
 #include <Processors/Formats/Impl/ValuesRowOutputFormat.h>
-#include <Formats/FormatFactory.h>
 
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <Formats/FormatFactory.h>
+#include <IO/WriteHelpers.h>
+#include <Processors/Port.h>
 
 
 namespace DB
