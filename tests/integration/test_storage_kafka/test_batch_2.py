@@ -1,11 +1,7 @@
 """Long running tests"""
 
-import ast
 import json
 import logging
-import math
-import random
-import threading
 import time
 
 import avro.datafile
@@ -23,13 +19,10 @@ from kafka.admin import NewTopic
 from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV
 
 from . import common as k
-from . import message_with_repeated_pb2
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -991,3 +984,9 @@ def test_formats_errors(kafka_cluster):
 
             instance.query(f"DROP TABLE test.{table_name}")
             instance.query("DROP TABLE test.view")
+
+
+if __name__ == "__main__":
+    cluster.start()
+    input("Cluster created, press any key to destroy...")
+    cluster.shutdown()
