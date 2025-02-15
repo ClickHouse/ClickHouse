@@ -105,7 +105,15 @@
 
                     hilbertEncode(x, y) DIV 2 AS addr,
 
-                    extract(demangle(addressToSymbol(addr)), '(?:^| )(?:(?:DB|\\(anonymous namespace\\))::)?(\\w+)') AS name,
+                    replaceOne(
+                        replaceRegexpOne(
+                            demangle(addressToSymbol(addr)),
+                            '^([\\w\\*]+ )+', -- simple return types
+                            ''),
+                        '(anonymous namespace)::',
+                        '') AS full_name,
+
+                    extract(full_name, '(?:(?:DB|std|__1|detail|impl_?)::)?(\\w+)') AS name,
                     (empty(name) ? 0 : sipHash64(name)) AS hash,
                     hash MOD 256 AS r, hash DIV 256 MOD 256 AS g, hash DIV 65536 MOD 256 AS b
 
