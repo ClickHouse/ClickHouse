@@ -1,22 +1,13 @@
-#include <filesystem>
 #include <memory>
-#include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
-#include <Databases/DatabasesCommon.h>
 #include <Databases/IDatabase.h>
-#include <Disks/IDisk.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TableNameHints.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
 
-
-namespace fs = std::filesystem;
 
 namespace CurrentMetrics
 {
@@ -30,10 +21,13 @@ namespace ErrorCodes
 {
     extern const int CANNOT_BACKUP_TABLE;
     extern const int CANNOT_RESTORE_TABLE;
+<<<<<<< HEAD
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
+=======
+>>>>>>> 3d590c76968 (Update code and add test)
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
@@ -82,6 +76,7 @@ void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query,
                     getEngineName(), backQuoteIfNeed(getDatabaseName()),
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
+<<<<<<< HEAD
 
 void IDatabase::loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/, bool /*is_startup*/)
 {
@@ -219,4 +214,6 @@ ASTPtr IDatabase::getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*
 }
 
 
+=======
+>>>>>>> 3d590c76968 (Update code and add test)
 }
