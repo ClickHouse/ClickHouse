@@ -442,13 +442,20 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
 #
 # NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
-if (NOT ENABLE_THINLTO)
+#
+# For some sophisticated platforms we have different issues with fPIC:
+# For учфьзду riscv toolchain itself compiled without fPIC
+if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR (ARCH_AARC64 AND NOT NO_ARMV81_OR_HIGHER)))
+    set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
+endif()
+
+if (ENABLE_POSITION_INDEPENDENT_BINARY)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 endif()
 
-if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND ENABLE_THINLTO)
+if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENABLE_POSITION_INDEPENDENT_BINARY)
     # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code
     # and keeping binary addresses constant even with ASLR enabled.
     # Disabled on Android as it requires PIE: https://source.android.com/docs/security/enhancements#android-5
