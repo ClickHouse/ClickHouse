@@ -53,7 +53,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
     ],
-    workflow_config_hooks=[should_skip_job],
+    workflow_filter_hooks=[should_skip_job],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
     ],

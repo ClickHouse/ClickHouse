@@ -58,6 +58,16 @@ _final_job = Job.Config(
 )
 
 
+def _is_praktika_job(job_name):
+    if job_name in (
+        Settings.CI_CONFIG_JOB_NAME,
+        Settings.DOCKER_BUILD_JOB_NAME,
+        Settings.FINISH_WORKFLOW_JOB_NAME,
+    ):
+        return True
+    return False
+
+
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     dockers = workflow.dockers
@@ -309,12 +319,14 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if workflow.workflow_config_hooks:
+    if workflow.workflow_filter_hooks:
         sw_ = Utils.Stopwatch()
         try:
             job_results = []
             for job in workflow.jobs:
-                for hook in workflow.workflow_config_hooks:
+                if _is_praktika_job(job.name):
+                    continue
+                for hook in workflow.workflow_filter_hooks:
                     should_skip, reason = hook(job.name)
                     if should_skip:
                         print(
