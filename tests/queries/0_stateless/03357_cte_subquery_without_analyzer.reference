@@ -1,0 +1,19 @@
+-- Check subqueries are not propagated to remote
+20
+
+1	0
+
+-- Check scalar subqueries are propagated to remote
+1
+
+1	1
+
+-- Check expressions are propagated to remote
+2
+
+1	1
+
+-- Check only subqueries are not propagated to remote
+11
+
+1	0	1

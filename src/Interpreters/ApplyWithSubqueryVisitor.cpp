@@ -76,6 +76,27 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         if (child != ast.with())
             visit(child, new_data ? *new_data : data);
     }
+
+    // After CTE subquery substitution is completed, they should be
+    // removed from CTE clause to prevent their propagation to remote
+    // nodes via remote() calls or through Distributed tables
+    if (auto with = ast.with())
+    {
+        auto & children = with->children;
+        if (!children.empty())
+        {
+            for (auto * it = children.begin(); it != children.end();)
+            {
+                if ((*it)->as<ASTWithElement>())
+                    it = with->children.erase(it);
+                else
+                    ++it;
+            }
+
+            if (children.empty())
+                ast.setExpression(ASTSelectQuery::Expression::WITH, nullptr);
+        }
+    }
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectWithUnionQuery & ast, const Data & data)
