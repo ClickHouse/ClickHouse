@@ -1,21 +1,21 @@
-number	Nullable(Int64)
-i8	Nullable(Int8)
-i16	Nullable(Int16)
-i32	Nullable(Int32)
-i64	Nullable(Int64)
-date32	Nullable(Date32)
-dt64_ms	Nullable(DateTime64(9))
-dt64_us	Nullable(DateTime64(9))
-dt64_ns	Nullable(DateTime64(9))
-dt64_s	Nullable(DateTime64(9))
-dt64_cs	Nullable(DateTime64(9))
-f32	Nullable(Float32)
-f64	Nullable(Float64)
-s	Nullable(String)
-fs	Nullable(String)
-d32	Nullable(Decimal(9, 3))
-d64	Nullable(Decimal(18, 10))
-d128	Nullable(Decimal(38, 20))
+number	Nullable(Int64)					
+i8	Nullable(Int8)					
+i16	Nullable(Int16)					
+i32	Nullable(Int32)					
+i64	Nullable(Int64)					
+date32	Nullable(Date32)					
+dt64_ms	Nullable(DateTime64(9))					
+dt64_us	Nullable(DateTime64(9))					
+dt64_ns	Nullable(DateTime64(9))					
+dt64_s	Nullable(DateTime64(9))					
+dt64_cs	Nullable(DateTime64(9))					
+f32	Nullable(Float32)					
+f64	Nullable(Float64)					
+s	Nullable(String)					
+fs	Nullable(String)					
+d32	Nullable(Decimal(9, 3))					
+d64	Nullable(Decimal(18, 10))					
+d128	Nullable(Decimal(38, 20))					
 -- Go over all types individually
 -- { echoOn }
 select count(), sum(number) from file('02892.orc') where indexHint(i8 in (10, 15, -6));
@@ -196,7 +196,7 @@ select count(), min(string_or_null), max(string_or_null) from file('02892.orc') 
 select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, string_or_null String') where indexHint(string_or_null == '');
 1000	499500
 select count(), min(string_or_null), max(string_or_null) from file('02892.orc', ORC, 'number UInt64, string_or_null String') where (string_or_null == '');
-5
+5		
 select count(), sum(number) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where indexHint(nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
 1000	499500
 select count(), min(nEgAtIvE_oR_nUlL), max(nEgAtIvE_oR_nUlL) from file('02892.orc', ORC, 'number UInt64, nEgAtIvE_oR_nUlL Int64') where (nEgAtIvE_oR_nUlL > -50) settings input_format_orc_case_insensitive_column_matching = 1;
