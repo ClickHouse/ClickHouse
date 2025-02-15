@@ -20,6 +20,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -74,6 +75,12 @@ namespace ErrorCodes
     extern const int HAVE_DEPENDENT_OBJECTS;
     extern const int UNFINISHED;
     extern const int INFINITE_LOOP;
+    extern const int THERE_IS_NO_QUERY;
+}
+
+namespace Setting
+{
+    extern const SettingsBool fsync_metadata;
 }
 
 class DatabaseNameHints : public IHints<>
@@ -656,6 +663,47 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
         auto removed_loading_deps = loading_dependencies.removeDependencies(StorageID{old_name, table_name}, /* remove_isolated_tables= */ true);
         referential_dependencies.addDependencies(StorageID{new_name, table_name}, removed_ref_deps);
         loading_dependencies.addDependencies(StorageID{new_name, table_name}, removed_loading_deps);
+    }
+}
+
+void DatabaseCatalog::updateDatabaseComment(const String & database_name, const String & old_database_comment)
+{
+    std::lock_guard lock{databases_mutex};
+    auto it = databases.find(database_name);
+    assert(it != databases.end());
+    auto db = it->second;
+    if (!db)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+
+    ASTPtr ast = db->getCreateDatabaseQuery();
+    if (!ast)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+
+    auto * ast_create_query = ast->as<ASTCreateQuery>();
+    if (!ast_create_query->is_dictionary)
+        ast_create_query->attach = true;
+
+    WriteBufferFromOwnString statement_buf;
+    formatAST(*ast_create_query, statement_buf, false);
+    writeChar('\n', statement_buf);
+    String statement = statement_buf.str();
+
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
+    auto db_disk = getContext()->getDatabaseDisk();
+
+    writeMetadataFile(
+        db_disk, /*file_path=*/database_metadata_tmp_path, /*content=*/statement, getContext()->getSettingsRef()[Setting::fsync_metadata]);
+
+    try
+    {
+        /// rename atomically replaces the old file with the new one.
+        db_disk->replaceFile(database_metadata_tmp_path, database_metadata_path);
+    }
+    catch (...)
+    {
+        db_disk->removeFileIfExists(database_metadata_tmp_path);
+        db->setDatabaseComment(old_database_comment);
     }
 }
 
