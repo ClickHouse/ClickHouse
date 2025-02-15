@@ -658,6 +658,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
+    DB::Exception::initializeThreadFramePointers();
+
     // wait until the thread will be started
     while (thread_state.load(std::memory_order_relaxed) == ThreadState::Preparing)
     {
