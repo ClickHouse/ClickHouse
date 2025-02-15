@@ -26,7 +26,7 @@ public:
         BackupInfo backup_info;
     };
 
-    DatabaseBackup(const String & name, const Configuration & config, ContextPtr context);
+    DatabaseBackup(const String & name, const String & metadata_path, const Configuration & config, ContextPtr context);
 
     String getEngineName() const override { return "Backup"; }
 

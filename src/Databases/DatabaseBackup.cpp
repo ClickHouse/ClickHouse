@@ -84,14 +84,9 @@ String buildDataPath(const String & database_name)
     return std::filesystem::path("data") / escapeForFileName(database_name) / "";
 }
 
-String buildMetadataPath(const String & database_name)
-{
-    return std::filesystem::path("metadata") / escapeForFileName(database_name) / "";
-}
-
 String buildReplacementRelativePath(const DatabaseBackup::Configuration & config)
 {
-    return std::filesystem::path("data") / escapeForFileName(config.database_name) / "";
+    return buildDataPath(config.database_name);
 }
 
 String buildStoragePolicyName(const DatabaseBackup::Configuration & config)
@@ -165,8 +160,8 @@ void updateCreateQueryWithDatabaseBackupStoragePolicy(ASTCreateQuery * create_qu
 
 }
 
-DatabaseBackup::DatabaseBackup(const String & name_, const Configuration& config_, ContextPtr context_)
-    : DatabaseOrdinary(name_, buildMetadataPath(name_), buildDataPath(name_), "DatabaseBackup(" + name_ + ")", context_)
+DatabaseBackup::DatabaseBackup(const String & name_, const String & metadata_path_, const Configuration & config_, ContextPtr context_)
+    : DatabaseOrdinary(name_, metadata_path_, buildDataPath(name_), "DatabaseBackup(" + name_ + ")", context_)
     , config(config_)
 {
 }
@@ -477,7 +472,7 @@ void registerDatabaseBackup(DatabaseFactory & factory)
             engine_args = engine->arguments->children;
 
         auto config = parseArguments(engine_args, args.context);
-        return std::make_shared<DatabaseBackup>(args.database_name, config, args.context);
+        return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
     factory.registerDatabase("Backup", create_fn, {.supports_arguments = true});
