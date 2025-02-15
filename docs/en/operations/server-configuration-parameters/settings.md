@@ -1619,7 +1619,7 @@ The following settings can be configured by sub-tags:
 | `url`              | A location for redirect                                                                                                                                               |
 | `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
 | `status`           | Use with static type, response status code                                                                                                                            |
-| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params                             |
+| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params                             |
 | `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
 | `content_type`     | Use with static type, response content-type                                                                                                                           |
 | `response_content` | Use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
