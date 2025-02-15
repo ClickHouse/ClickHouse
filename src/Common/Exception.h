@@ -77,6 +77,7 @@ public:
 
     static ThreadFramePointersBase getThreadFramePointers();
     static void setThreadFramePointers(ThreadFramePointersBase frame_pointers);
+    static void clearThreadFramePointers();
 
     /// Callback for any exception
     static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;

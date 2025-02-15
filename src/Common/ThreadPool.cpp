@@ -763,12 +763,13 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         /// Set up tracing context for this thread by its parent context.
         DB::OpenTelemetry::TracingContextHolder thread_trace_context("ThreadPool::worker()", job_data->thread_trace_context);
 
+        DB::Exception::enable_job_stack_trace = job_data->enable_job_stack_trace;
+        if (DB::Exception::enable_job_stack_trace)
+            DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
+
         /// Run the job.
         try
         {
-            if (DB::Exception::enable_job_stack_trace)
-                DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
-
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
 
             if constexpr (!std::is_same_v<Thread, std::thread>)
@@ -817,6 +818,8 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// ensure that the Job destroyed before wait() returns.
             job_data.reset();
         }
+
+        DB::Exception::clearThreadFramePointers();
 
         job_is_done = true;
     }
