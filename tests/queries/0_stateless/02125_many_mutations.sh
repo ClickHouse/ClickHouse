@@ -18,7 +18,7 @@ select x, y from many_mutations order by x;
 
 job()
 {
-   yes "alter table many_mutations update y = y + 1 where 1;" | head -n 1000 | $CLICKHOUSE_CLIENT
+   yes "alter table many_mutations update y = y + 1 where 1;" | head -n 1000 | $CLICKHOUSE_CLIENT --lock_acquire_timeout 0
 }
 
 job &
