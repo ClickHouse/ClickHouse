@@ -22,8 +22,8 @@ def start_cluster():
 
 
 def backup_table(backup_name):
-    instance.query("CREATE DATABASE test")
-    instance.query("CREATE TABLE test.table(x UInt32) ENGINE=MergeTree ORDER BY x")
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("CREATE TABLE IF NOT EXISTS test.table(x UInt32) ENGINE=MergeTree ORDER BY x")
     instance.query("INSERT INTO test.table SELECT number FROM numbers(10)")
     return instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
 
@@ -62,7 +62,7 @@ def test_backup_log():
         )
 
     instance.query("SYSTEM FLUSH LOGS")
-    instance.query("drop table system.backup_log")
+    instance.query("DROP TABLE IF EXISTS system.backup_log SYNC")
 
     backup_name = "File('/backups/test_backup/')"
     assert instance.query("SELECT * FROM system.tables WHERE name = 'backup_log'") == ""
@@ -73,7 +73,7 @@ def test_backup_log():
         [["CREATING_BACKUP", 0, 0, 0, ""], ["BACKUP_CREATED", 0, 0, 0, ""]]
     )
 
-    instance.query("DROP TABLE test.table SYNC")
+    instance.query("DROP TABLE IF EXISTS test.table SYNC")
 
     restore_id = restore_table(backup_name)
     instance.query("SYSTEM FLUSH LOGS")
