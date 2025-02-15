@@ -9,6 +9,7 @@
 namespace DB
 {
 
+class Exception;
 class ReadBuffer;
 
 /** Basic functionality for implementation of
@@ -63,6 +64,9 @@ protected:
     /// This method can change location of `to` to avoid unnecessary copy if data is uncompressed.
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
+
+    /// Adds diagnostics to the error message.
+    void addDiagnostics(Exception & e) const;
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
