@@ -49,13 +49,13 @@ NO_CHANGES_MSG = "Nothing to run"
 # Examples:
 # - has_test(['foobar'], 'foobar[param]') == True
 # - has_test(['foobar[param]'], 'foobar') == True
-def has_test(tests, test_to_match):
+def has_test(tests: List[str], test_to_match: str) -> bool:
     for test in tests:
         if len(test_to_match) < len(test):
-            if test[0 : len(test_to_match)] == test_to_match:
+            if test.startswith(test_to_match):
                 return True
         else:
-            if test_to_match[0 : len(test)] == test:
+            if test_to_match.startswith(test):
                 return True
     return False
 
