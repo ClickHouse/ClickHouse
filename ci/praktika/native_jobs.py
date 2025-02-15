@@ -344,7 +344,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             info = f"{traceback.print_exc()}"
         results.append(
             Result.create_from(
-                name="Workflow Config Hook", status=status, stopwatch=sw_, info=info
+                name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
 
