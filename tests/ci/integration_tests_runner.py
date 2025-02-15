@@ -924,8 +924,14 @@ class ClickhouseIntegrationTestsRunner:
         logging.info(
             "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
         )
+        # For backward compatibility, use file names in filtered_sequential_tests
         filtered_sequential_tests = list(
-            filter(lambda test: has_test(all_tests, test), parallel_skip_tests)
+            set(
+                test_name.split("::", maxsplit=1)[0]
+                for test_name in filter(
+                    lambda test: has_test(parallel_skip_tests, test), all_tests
+                )
+            )
         )
         filtered_parallel_tests = list(
             filter(
