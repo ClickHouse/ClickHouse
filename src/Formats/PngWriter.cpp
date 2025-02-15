@@ -54,18 +54,18 @@ void PngWriter::startImage(size_t width_, size_t height_)
         [](png_structp, png_const_charp){ /* LOG_WARNING */}
     );
 
+    if (setjmp(png_jmpbuf(png_ptr)))
+    {
+        cleanup();
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error during startImage (setjmp triggered)");
+    }
+
     info_ptr = png_create_info_struct(png_ptr);
 
     if (!info_ptr) {
         png_destroy_write_struct(&png_ptr, nullptr);
         png_ptr = nullptr;
         throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng failed to create png info struct");
-    }
-
-    if (setjmp(png_jmpbuf(png_ptr)))
-    {
-        cleanup();
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "libpng error during startImage (setjmp triggered)");
     }
 
     png_set_write_fn(png_ptr, reinterpret_cast<void *>(this),

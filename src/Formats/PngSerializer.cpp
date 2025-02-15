@@ -65,9 +65,10 @@ struct Colors {
 class PngSerializer::SerializerImpl {
 public:    
     SerializerImpl(size_t width_, size_t height_, PngWriter & writer_) 
-        : width(width_), height(height_), writer(writer_), row_count(0)
+        : max_width(width_), max_height(height_), row_count(0), writer(writer_)
     {
-        pixels.resize(4 * width * height, static_cast<UInt8>(0));
+        /// TODO: reserve
+        pixels.resize(4 * max_width * max_height, static_cast<UInt8>(0));
     }
     
     void commonSetColumns(const ColumnPtr * columns, size_t num_columns, size_t expected)
@@ -83,23 +84,15 @@ public:
 
     void commonWriteRow(const RGBA & pixel)
     {
-        if (row_count >= width * height) 
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ROWS,
-                "Capacity exceeded: {}, got {}", width * height, row_count
-            );
-        }
-
         const auto offset = row_count * 4;
         pixels[offset]                  = pixel.r;
         pixels[offset + 1]              = pixel.g;
         pixels[offset + 2]              = pixel.b;
         pixels[offset + 3]              = pixel.a;
-    
         ++row_count;
     }
 
-    void commonFinalizeWrite()
+    void commonFinalizeWrite(size_t width, size_t height)
     {
         writer.startImage(width, height);
         writer.writeEntireImage(reinterpret_cast<const unsigned char *>(pixels.data()));
@@ -112,12 +105,12 @@ public:
         row_count = 0;
     }
  
-    size_t width;
-    size_t height;
+    size_t max_width;
+    size_t max_height;
+    size_t row_count;
     PngWriter & writer;
     std::vector<ColumnPtr> src_columns;
-    PODArray<UInt8> pixels;
-    size_t row_count;
+    PODArray<UInt8> pixels;  
 };
 
 PngSerializer::PngSerializer(size_t width_, size_t height_, PngWriter & writer_) 
@@ -126,14 +119,19 @@ PngSerializer::PngSerializer(size_t width_, size_t height_, PngWriter & writer_)
 
 PngSerializer::~PngSerializer() = default;
 
-void PngSerializer::finalizeWrite()
+void PngSerializer::finalizeWrite(size_t width, size_t height)
 {
-    impl->commonFinalizeWrite();
+    impl->commonFinalizeWrite(width, height);
 }
 
 void PngSerializer::reset()
 {
     impl->commonReset();
+}
+
+size_t & PngSerializer::getRowCount()
+{
+    return impl->row_count;
 }
 
 class PngSerializerBinary : public PngSerializer

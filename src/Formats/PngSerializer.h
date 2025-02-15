@@ -28,7 +28,9 @@ public:
 
     virtual void writeRow(size_t row_num) = 0;
 
-    void finalizeWrite();
+    void finalizeWrite(size_t width, size_t height);
+
+    size_t & getRowCount();
 
     void reset();
 
