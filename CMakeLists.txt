@@ -444,8 +444,8 @@ set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 # NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
 #
 # For some sophisticated platforms we have different issues with fPIC:
-# For учфьзду riscv toolchain itself compiled without fPIC
-if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR (ARCH_AARC64 AND NOT NO_ARMV81_OR_HIGHER)))
+# For example riscv toolchain itself compiled without fPIC
+if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 endif()
 
