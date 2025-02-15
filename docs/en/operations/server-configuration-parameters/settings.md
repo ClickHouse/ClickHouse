@@ -3940,7 +3940,7 @@ Default: false
 
 **Example**
 
-``` xml
+```xml
 <throw_on_unknown_workload>true</throw_on_unknown_workload>
 ```
 
