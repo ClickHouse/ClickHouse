@@ -2,7 +2,6 @@
 #include "base/types.h"
 
 #include "PngOutputFormat.h"
-
 #include <Formats/FormatFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Formats/FormatSettings.h>
@@ -10,13 +9,14 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Formats/PngSerializer.h>
-
+#include <iostream>
 
 namespace DB
 {
 
-namespace ErrorCode
+namespace ErrorCodes
 {
+    extern const int UNKNOWN_FORMAT;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int LOGICAL_ERROR;
@@ -30,16 +30,19 @@ namespace
 }
 
 PngOutputFormat::PngOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
-    : IOutputFormat(header_, out_), format_settings{settings_}, serializations(header_.getSerializations())
-{
-    height = format_settings.png_image.height;
-    width = format_settings.png_image.width;
+    : IOutputFormat(header_, out_), 
+    format_settings{settings_}, 
+    serializations(header_.getSerializations()) 
+{   
+    max_width = format_settings.png_image.max_width;
+    max_height = format_settings.png_image.max_height;
     output_format = validateFormat(format_settings.png_image.pixel_output_format);
-    writer = std::make_unique<PngWriter>(out_); 
+    writer = std::make_unique<PngWriter>(out_);
+
     /// TODO: Extra fields {column_names & data_types could be used in serializer for debug information}, i.e PngSerializer::dump method
     Strings column_names = header_.getNames();
     DataTypes data_types = header_.getDataTypes();
-    png_serializer = PngSerializer::create(column_names, data_types, width, height, output_format, *writer);
+    png_serializer = PngSerializer::create(column_names, data_types, max_width, max_height, output_format, *writer);
 }
 
 PngPixelFormat PngOutputFormat::validateFormat(const String & mode)
@@ -54,7 +57,7 @@ PngPixelFormat PngOutputFormat::validateFormat(const String & mode)
         return PngPixelFormat::RGBA;
     else
         throw Exception(
-            ErrorCodes::CANNOT_CONVERT_TYPE, 
+            ErrorCodes::UNKNOWN_FORMAT, 
             "Invalid pixel mode: {}", mode
         );
 }
@@ -82,20 +85,27 @@ void PngOutputFormat::consume(Chunk chunk)
     
     for (size_t i = 0; i < num_rows; ++i)
     {
-        if (row_count >= width * height)
-            throw Exception(ErrorCodes::TOO_MANY_ROWS,
-                "Received more rows than total pixels ({}).",
-                width * height
-            );
-
         png_serializer->writeRow(i);
-        ++row_count;
     } 
 }
 
 void PngOutputFormat::writeSuffix()
-{
-    png_serializer->finalizeWrite();
+{   
+    size_t total_row = png_serializer->getRowCount();
+    size_t ideal_width = static_cast<size_t>(
+        std::floor(std::sqrt(
+        static_cast<double>(total_row))
+    ));
+    size_t final_width = std::clamp(ideal_width, static_cast<size_t>(1), max_width);
+    size_t final_height = std::min(max_height, (total_row + final_width - 1) / final_width);
+    
+    LOG_DEBUG(
+        getLogger("PngOutputFormat"),
+        "Read rows: {}, Ideal png image width: {}, final width: {}, final height: {}",
+        total_row, ideal_width, final_width, final_height
+    );
+    
+    png_serializer->finalizeWrite(final_width, final_height);
 }
 
 void registerOutputFormatPNG(FormatFactory & factory)

@@ -27,10 +27,9 @@ private:
 
     PngPixelFormat validateFormat(const String &);
 
-    size_t width;
-    size_t height;
-    size_t row_count = 0; 
-
+    size_t max_width;
+    size_t max_height;
+    
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
