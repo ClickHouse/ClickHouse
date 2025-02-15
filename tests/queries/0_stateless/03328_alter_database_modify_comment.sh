@@ -34,11 +34,11 @@ function test_database_comments()
     get_database_comment_info
 
     echo change a comment
-    $CLICKHOUSE_CLIENT -mq "ALTER DATABASE ${databasename} MODIFY COMMENT 'new comment on a table';"
+    $CLICKHOUSE_CLIENT -mq "ALTER DATABASE ${databasename} MODIFY COMMENT 'new comment on database';"
     get_database_comment_info
 
     echo add a comment back
-    $CLICKHOUSE_CLIENT -mq "ALTER DATABASE ${databasename} MODIFY COMMENT 'another comment on a table';"
+    $CLICKHOUSE_CLIENT -mq "ALTER DATABASE ${databasename} MODIFY COMMENT 'another comment on database';"
     get_database_comment_info
 
     echo detach database

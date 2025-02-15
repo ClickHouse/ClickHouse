@@ -6,9 +6,11 @@
 
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -44,6 +46,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
@@ -395,6 +398,15 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
+void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
+{
+    if (!command.comment)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not get database comment from query");
+
+    String old_database_comment = getDatabaseComment();
+    setDatabaseComment(command.comment.value());
+    DatabaseCatalog::instance().updateDatabaseComment(getDatabaseName(), old_database_comment);
+}
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
 {
