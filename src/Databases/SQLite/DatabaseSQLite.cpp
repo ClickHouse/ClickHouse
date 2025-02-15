@@ -2,12 +2,14 @@
 
 #if USE_SQLITE
 
+#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
@@ -28,6 +30,7 @@ namespace ErrorCodes
     extern const int SQLITE_ENGINE_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 DatabaseSQLite::DatabaseSQLite(
@@ -178,6 +181,15 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
     return create_query;
 }
 
+void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command)
+{
+    if (!command.comment)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not get database comment from query");
+
+    String old_database_comment = getDatabaseComment();
+    setDatabaseComment(command.comment.value());
+    DatabaseCatalog::instance().updateDatabaseComment(getDatabaseName(), old_database_comment);
+}
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {

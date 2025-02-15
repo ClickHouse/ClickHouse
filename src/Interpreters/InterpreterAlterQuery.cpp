@@ -288,7 +288,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
                     database->applySettingsChanges(command.settings_changes, getContext());
                     break;
                 case AlterCommand::MODIFY_DATABASE_COMMENT:
-                    database->alterDatabaseComment(command, getContext());
+                    database->alterDatabaseComment(command);
                     break;
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
