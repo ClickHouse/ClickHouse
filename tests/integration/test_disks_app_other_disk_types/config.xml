@@ -23,9 +23,4 @@
             </plain_rewritable>
         </policies>
     </storage_configuration>
-
-    <zookeeper>
-        <availability_zone_autodetect>true</availability_zone_autodetect>
-        <prefer_local_availability_zone>1</prefer_local_availability_zone>
-    </zookeeper>
 </clickhouse>
