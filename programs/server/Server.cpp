@@ -1325,13 +1325,11 @@ try
     {
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        fs::create_directories(dictionaries_lib_path);
     }
 
     {
         std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
-        fs::create_directories(user_scripts_path);
     }
 
     /// top_level_domains_lists

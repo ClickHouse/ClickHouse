@@ -50,15 +50,13 @@ def ch_cluster():
     try:
         cluster.start()
         instance.query("CREATE DATABASE test")
-        container_lib_path = (
-            "/etc/clickhouse-server/config.d/dictionarites_lib/dict_lib.cpp"
-        )
+        container_lib_path = "/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.cpp"
 
         instance.copy_file_to_container(
             os.path.join(
                 os.path.dirname(os.path.realpath(__file__)), "configs/dict_lib.cpp"
             ),
-            "/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.cpp",
+            container_lib_path,
         )
 
         instance.query("SYSTEM RELOAD CONFIG")
@@ -279,7 +277,7 @@ def test_recover_after_bridge_crash(ch_cluster):
     instance.query("DROP DICTIONARY lib_dict_c")
 
 
-def test_server_restart_bridge_might_be_stil_alive(ch_cluster):
+def test_server_restart_bridge_might_be_still_alive(ch_cluster):
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
@@ -321,7 +319,7 @@ def test_path_validation(ch_cluster):
         FILE_SIZE 16777216
         READ_BUFFER_SIZE 1048576
         MAX_STORED_KEYS 1048576))
-        LIFETIME(2) ;
+        LIFETIME(2);
     """
     )
 
@@ -339,7 +337,7 @@ def test_path_validation(ch_cluster):
         FILE_SIZE 16777216
         READ_BUFFER_SIZE 1048576
         MAX_STORED_KEYS 1048576))
-        LIFETIME(2) ;
+        LIFETIME(2);
     """
     )
     result = instance.query_and_get_error(
@@ -349,6 +347,41 @@ def test_path_validation(ch_cluster):
         "DB::Exception: File path /etc/clickhouse-server/config.d/dictionaries_lib/../../../../dict_lib_copy.so is not inside /etc/clickhouse-server/config.d/dictionaries_lib"
         in result
     )
+
+
+def test_ssrf(ch_cluster):
+    if instance.is_built_with_sanitizer():
+        pytest.skip("Sanitizer cannot work with third-party shared libraries")
+
+    # Create and query a dictionary, so the bridge will start up:
+
+    instance.query("DROP DICTIONARY IF EXISTS lib_dict_c")
+    instance.query(
+        """
+        CREATE DICTIONARY lib_dict_c (key UInt64, value1 UInt64, value2 UInt64, value3 UInt64)
+        PRIMARY KEY key SOURCE(library(PATH '/etc/clickhouse-server/config.d/dictionaries_lib/dict_lib.so'))
+        LAYOUT(CACHE(
+        SIZE_IN_CELLS 10000000
+        BLOCK_SIZE 4096
+        FILE_SIZE 16777216
+        READ_BUFFER_SIZE 1048576
+        MAX_STORED_KEYS 1048576))
+        LIFETIME(2);
+    """
+    )
+
+    result = instance.query("""select dictGet(lib_dict_c, 'value1', toUInt64(1));""")
+    assert result.strip() == "101"
+
+    # Now do a server-side request forgery with the 'url' table function.
+    # We should not get any information about files on the filesystem.
+
+    result = instance.query_and_get_error("""
+        INSERT INTO FUNCTION url('http://127.0.0.1:9012/catboost_request?version=1&method=catboost_GetTreeCount', TabSeparatedRaw, 'column1 String')
+        VALUES ('library_path=%2Fvar%2Flib%2Fclickhouse%2Fuser_files%2Fmod_catboost.so&model_path=%2Fvar%2Flib%2Fclickhouse%2Fuser_files%2Fmod_catboost.so')
+    """
+    )
+    assert ("is not inside any of the allowed prefixes" in result)
 
 
 if __name__ == "__main__":
