@@ -410,7 +410,8 @@ void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
             { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
             { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
 
-        std::unordered_map<String, ISystemLog *> logs_map {
+        std::unordered_map<String, ISystemLog *> logs_map
+        {
             LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
         };
         #undef GET_MAP_VALUES
