@@ -447,22 +447,6 @@ ARTIFACTS = [
         ]
     ),
     *Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/clickhouse-odbc-bridge",
-    ).parametrize(
-        names=[
-            ArtifactNames.CH_ODBC_B_AMD_DEBUG,
-            ArtifactNames.CH_ODBC_B_AMD_ASAN,
-            ArtifactNames.CH_ODBC_B_AMD_TSAN,
-            ArtifactNames.CH_ODBC_B_AMD_MSAN,
-            ArtifactNames.CH_ODBC_B_AMD_UBSAN,
-            ArtifactNames.CH_ODBC_B_AMD_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_ASAN,
-        ]
-    ),
-    *Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/*.deb",

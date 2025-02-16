@@ -19,19 +19,6 @@ include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 # If you do not know what modes you need, turn then all.
 option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
-# https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
-# TODO Also needs NANODBC.
-if (ENABLE_ODBC AND NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" ${ENABLE_CLICKHOUSE_ALL})
-else ()
-    option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" OFF)
-endif ()
-
-if (NOT USE_MUSL)
-    option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to external dynamically loaded libraries" ${ENABLE_CLICKHOUSE_ALL})
-endif ()
-
 # https://presentations.clickhouse.com/matemarketing_2020/
 option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
 
@@ -57,18 +44,6 @@ else()
     message(STATUS "Self-extracting executable: OFF")
 endif()
 
-if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-    message(STATUS "ODBC bridge mode: ON")
-else()
-    message(STATUS "ODBC bridge mode: OFF")
-endif()
-
-if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
-    message(STATUS "Library bridge mode: ON")
-else()
-    message(STATUS "Library bridge mode: OFF")
-endif()
-
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     message(STATUS "ClickHouse keeper-converter mode: ON")
 else()
@@ -86,8 +61,6 @@ if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
 else()
     message(STATUS "ClickHouse keeper-client mode: OFF")
 endif()
-
-configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
 
 macro(clickhouse_target_link_split_lib target name)
     target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
@@ -151,14 +124,6 @@ endif()
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
 endif()
-
-if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-    add_subdirectory (odbc-bridge)
-endif ()
-
-if (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE)
-    add_subdirectory (library-bridge)
-endif ()
 
 if (ENABLE_CLICKHOUSE_SELF_EXTRACTING AND NOT ENABLE_DUMMY_LAUNCHERS)
     add_subdirectory (self-extracting)
