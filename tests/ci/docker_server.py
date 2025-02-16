@@ -13,7 +13,7 @@ from typing import Dict, List
 
 from build_check import get_release_or_pr
 from build_download_helper import read_build_urls
-from ci_utils import Utils
+from ci_utils import normalize_string
 from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
@@ -289,7 +289,7 @@ def build_and_push_image(
         )
         cmd = " ".join(cmd_args)
         logging.info("Building image %s:%s for arch %s: %s", image.repo, tag, arch, cmd)
-        log_file = temp_path / Utils.normalize_string(f"{image.repo}:{tag}-{arch}.log")
+        log_file = temp_path / normalize_string(f"{image.repo}:{tag}-{arch}.log")
         if retry_popen(cmd, log_file) != 0:
             result.append(
                 TestResult(
@@ -369,7 +369,7 @@ def test_docker_library(test_results: TestResults) -> None:
             cmd = f"{run_sh} {image}"
             tag = image.rsplit(":", 1)[-1]
             log_file = (
-                temp_path / f"docker-library-test-{Utils.normalize_string(image)}.log"
+                temp_path / f"docker-library-test-{normalize_string(image)}.log"
             )
             with TeePopen(cmd, log_file) as process:
                 retcode = process.wait()
