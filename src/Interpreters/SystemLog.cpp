@@ -1,7 +1,6 @@
 #include <Interpreters/SystemLog.h>
 
 #include <base/scope_guard.h>
-#include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -26,7 +25,6 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
@@ -38,6 +36,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -54,11 +53,6 @@
 
 namespace DB
 {
-
-namespace ServerSetting
-{
-    extern const ServerSettingsBool prepare_system_log_tables_on_startup;
-}
 
 namespace ErrorCodes
 {
@@ -87,8 +81,7 @@ namespace
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method clone is not supported");
         }
 
-    protected:
-        void formatImpl(WriteBuffer &, const FormatSettings &, FormatState &, FormatStateStacked) const override
+        void formatImpl(const FormatSettings &, FormatState &, FormatStateStacked) const override
         {
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method formatImpl is not supported");
         }
@@ -236,9 +229,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     auto & storage_with_comment = storage_ast->as<StorageWithComment &>();
 
     /// Add comment to AST. So it will be saved when the table will be renamed.
-    const char * comment_addendum = "\n\nIt is safe to truncate or drop this table at any time.";
     if (!storage_with_comment.comment || storage_with_comment.comment->as<ASTLiteral &>().value.safeGet<String>().empty())
-        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment + comment_addendum));
+        log_settings.engine += fmt::format(" COMMENT {} ", quoteString(comment));
 
     log_settings.queue_settings.flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds",
                                                                                TSystemLog::getDefaultFlushIntervalMilliseconds());
@@ -268,9 +260,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     log_settings.queue_settings.notify_flush_on_crash = config.getBool(config_prefix + ".flush_on_crash",
                                                                        TSystemLog::shouldNotifyFlushOnCrash());
-
-    if constexpr (std::is_same_v<TSystemLog, TraceLog>)
-        log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", false);
 
     log_settings.queue_settings.turn_off_logger = TSystemLog::shouldTurnOffLogger();
 
@@ -303,7 +292,10 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 #undef CREATE_PUBLIC_MEMBERS
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
+    if (session_log)
+        global_context->addWarningMessage("Table system.session_log is enabled. It's unreliable and may contain garbage. Do not use it for any kind of security monitoring.");
+
+    bool should_prepare = global_context->getServerSettings().prepare_system_log_tables_on_startup;
     try
     {
         for (auto & log : getAllLogs())
@@ -324,14 +316,14 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect("MetricLog", collect_interval_milliseconds);
+        metric_log->startCollect(collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect("ErrorLog", collect_interval_milliseconds);
+        error_log->startCollect(collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -410,11 +402,30 @@ SystemLog<LogElement>::SystemLog(
 template <typename LogElement>
 void SystemLog<LogElement>::shutdown()
 {
-    Base::stopFlushThread();
+    stopFlushThread();
 
     auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     if (table)
         table->flushAndShutdown();
+}
+
+template <typename LogElement>
+void SystemLog<LogElement>::stopFlushThread()
+{
+    {
+        std::lock_guard lock(thread_mutex);
+
+        if (!saving_thread || !saving_thread->joinable())
+            return;
+
+        if (is_shutdown)
+            return;
+
+        is_shutdown = true;
+        queue->shutdown();
+    }
+
+    saving_thread->join();
 }
 
 

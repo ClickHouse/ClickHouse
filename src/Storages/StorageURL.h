@@ -220,7 +220,6 @@ private:
     String name;
     ColumnsDescription columns_description;
     NamesAndTypesList requested_columns;
-    bool need_headers_virtual_column;
     NamesAndTypesList requested_virtual_columns;
     Block block_for_format;
     std::shared_ptr<IteratorWrapper> uri_iterator;
@@ -233,9 +232,6 @@ private:
     size_t total_rows_in_file = 0;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    Map http_response_headers;
-    bool http_response_headers_initialized = false;
 
     std::unique_ptr<ReadBuffer> read_buf;
     std::shared_ptr<IInputFormat> input_format;

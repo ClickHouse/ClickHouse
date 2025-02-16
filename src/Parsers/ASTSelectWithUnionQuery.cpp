@@ -27,7 +27,7 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
 }
 
 
-void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
@@ -35,21 +35,21 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
     {
         if (mode == SelectUnionMode::UNION_DEFAULT)
             return "UNION";
-        if (mode == SelectUnionMode::UNION_ALL)
+        else if (mode == SelectUnionMode::UNION_ALL)
             return "UNION ALL";
-        if (mode == SelectUnionMode::UNION_DISTINCT)
+        else if (mode == SelectUnionMode::UNION_DISTINCT)
             return "UNION DISTINCT";
-        if (mode == SelectUnionMode::EXCEPT_DEFAULT)
+        else if (mode == SelectUnionMode::EXCEPT_DEFAULT)
             return "EXCEPT";
-        if (mode == SelectUnionMode::EXCEPT_ALL)
+        else if (mode == SelectUnionMode::EXCEPT_ALL)
             return "EXCEPT ALL";
-        if (mode == SelectUnionMode::EXCEPT_DISTINCT)
+        else if (mode == SelectUnionMode::EXCEPT_DISTINCT)
             return "EXCEPT DISTINCT";
-        if (mode == SelectUnionMode::INTERSECT_DEFAULT)
+        else if (mode == SelectUnionMode::INTERSECT_DEFAULT)
             return "INTERSECT";
-        if (mode == SelectUnionMode::INTERSECT_ALL)
+        else if (mode == SelectUnionMode::INTERSECT_ALL)
             return "INTERSECT ALL";
-        if (mode == SelectUnionMode::INTERSECT_DISTINCT)
+        else if (mode == SelectUnionMode::INTERSECT_DISTINCT)
             return "INTERSECT DISTINCT";
         return "";
     };
@@ -57,24 +57,24 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
                           << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
 
-        if (auto * /*node*/ _ = (*it)->as<ASTSelectWithUnionQuery>())
+        if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
             if (it != list_of_selects->children.begin())
-                ostr << settings.nl_or_ws;
+                settings.ostr << settings.nl_or_ws;
 
-            ostr << indent_str;
+            settings.ostr << indent_str;
             auto sub_query = std::make_shared<ASTSubquery>(*it);
-            sub_query->format(ostr, settings, state, frame);
+            sub_query->formatImpl(settings, state, frame);
         }
         else
         {
             if (it != list_of_selects->children.begin())
-                ostr << settings.nl_or_ws;
-            (*it)->format(ostr, settings, state, frame);
+                settings.ostr << settings.nl_or_ws;
+            (*it)->formatImpl(settings, state, frame);
         }
     }
 }

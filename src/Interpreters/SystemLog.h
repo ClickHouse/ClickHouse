@@ -5,6 +5,7 @@
 #include <Parsers/IAST.h>
 
 #include <boost/noncopyable.hpp>
+#include <vector>
 
 #define LIST_OF_ALL_SYSTEM_LOGS(M) \
     M(QueryLog,              query_log,            "Contains information about executed queries, for example, start time, duration of processing, error messages.") \
@@ -29,7 +30,6 @@
     M(AsynchronousInsertLog, asynchronous_insert_log, "Contains a history for all asynchronous inserts executed on current server.") \
     M(BackupLog,             backup_log,           "Contains logging entries with the information about BACKUP and RESTORE operations.") \
     M(BlobStorageLog,        blob_storage_log,     "Contains logging entries with information about various blob storage operations such as uploads and deletes.") \
-    M(QueryMetricLog,        query_metric_log,     "Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.") \
 
 
 namespace DB
@@ -68,6 +68,7 @@ LIST_OF_ALL_SYSTEM_LOGS(FORWARD_DECLARATION)
 #undef FORWARD_DECLARATION
 /// NOLINTEND(bugprone-macro-parentheses)
 
+
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 class SystemLogs
@@ -97,11 +98,10 @@ struct SystemLogSettings
     SystemLogQueueSettings queue_settings;
 
     String engine;
-    bool symbolize_traces = false;
 };
 
 template <typename LogElement>
-class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, public WithContext
+class SystemLog : public SystemLogBase<LogElement>, private boost::noncopyable, WithContext
 {
 public:
     using Self = SystemLog;
@@ -125,6 +125,8 @@ public:
 
     void shutdown() override;
 
+    void stopFlushThread() override;
+
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
@@ -134,6 +136,9 @@ public:
 protected:
     LoggerPtr log;
 
+    using ISystemLog::is_shutdown;
+    using ISystemLog::saving_thread;
+    using ISystemLog::thread_mutex;
     using Base::queue;
 
     StoragePtr getStorage() const;

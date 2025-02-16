@@ -1,17 +1,14 @@
 import glob
 import os.path
+import pytest
 import random
 import re
 import sys
 import uuid
 from collections import namedtuple
-from typing import Dict
-
-import pytest
-
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, TSV
+
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -51,7 +48,7 @@ def cleanup_after_test():
         instance.query("DROP DATABASE IF EXISTS test")
         instance.query("DROP DATABASE IF EXISTS test2")
         instance.query("DROP DATABASE IF EXISTS test3")
-        instance.query("DROP USER IF EXISTS u1, u2")
+        instance.query("DROP USER IF EXISTS u1")
         instance.query("DROP ROLE IF EXISTS r1, r2")
         instance.query("DROP SETTINGS PROFILE IF EXISTS prof1")
         instance.query("DROP ROW POLICY IF EXISTS rowpol1 ON test.table")
@@ -95,27 +92,6 @@ def has_mutation_in_backup(mutation_id, backup_name, database, table):
             f"data/{database}/{table}/mutations/{mutation_id}.txt",
         )
     )
-
-
-def get_events_for_query(query_id: str) -> Dict[str, int]:
-    events = TSV(
-        instance.query(
-            f"""
-            SYSTEM FLUSH LOGS;
-
-            WITH arrayJoin(ProfileEvents) as pe
-            SELECT pe.1, pe.2
-            FROM system.query_log
-            WHERE query_id = '{query_id}'
-            """
-        )
-    )
-    result = {
-        event: int(value)
-        for event, value in [line.split("\t") for line in events.lines]
-    }
-    result["query_id"] = query_id
-    return result
 
 
 BackupInfo = namedtuple(
@@ -345,10 +321,8 @@ def test_increment_backup_without_changes():
 
     # restore the second backup
     # we expect to see all files in the meta info of the restore and a sum of uncompressed and compressed sizes
-    restore_query_id = uuid.uuid4().hex
     id_restore = instance.query(
-        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}",
-        query_id=restore_query_id,
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
     ).split("\t")[0]
 
     assert instance.query("SELECT count(), sum(x) FROM test.table2") == TSV(
@@ -356,7 +330,6 @@ def test_increment_backup_without_changes():
     )
 
     restore_info = get_backup_info_from_system_backups(by_id=id_restore)
-    restore_events = get_events_for_query(restore_query_id)
 
     assert restore_info.status == "RESTORED"
     assert restore_info.error == ""
@@ -365,24 +338,11 @@ def test_increment_backup_without_changes():
     assert restore_info.num_entries == backup2_info.num_entries
     assert restore_info.uncompressed_size == backup2_info.uncompressed_size
     assert restore_info.compressed_size == backup2_info.compressed_size
-    assert (
-        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
-        == backup2_info.num_files
-    )
-    assert (
-        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
-        == backup2_info.total_size
-    )
+    assert restore_info.files_read == backup2_info.num_files
+    assert restore_info.bytes_read == backup2_info.total_size
 
 
 def test_incremental_backup_overflow():
-    if (
-        instance.is_built_with_thread_sanitizer()
-        or instance.is_built_with_memory_sanitizer()
-        or instance.is_built_with_address_sanitizer()
-    ):
-        pytest.skip("The test is slow in builds with sanitizer")
-
     backup_name = new_backup_name()
     incremental_backup_name = new_backup_name()
 
@@ -1252,14 +1212,9 @@ def test_system_users_required_privileges():
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
 
-    expected_error = "necessary to have the grant ROLE ADMIN ON *.*"
-    assert expected_error in instance.query_and_get_error(
-        f"RESTORE ALL FROM {backup_name}", user="u2"
+    expected_error = (
+        "necessary to have the grant CREATE USER, CREATE ROLE, ROLE ADMIN ON *.*"
     )
-
-    instance.query("GRANT ROLE ADMIN ON *.* TO u2")
-
-    expected_error = "necessary to have the grant CREATE ROLE ON r1"
     assert expected_error in instance.query_and_get_error(
         f"RESTORE ALL FROM {backup_name}", user="u2"
     )
@@ -1274,10 +1229,7 @@ def test_system_users_required_privileges():
     instance.query("GRANT SELECT ON test.* TO u2 WITH GRANT OPTION")
     instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
 
-    assert (
-        instance.query("SHOW CREATE USER u1")
-        == "CREATE USER u1 IDENTIFIED WITH no_password DEFAULT ROLE r1\n"
-    )
+    assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 DEFAULT ROLE r1\n"
     assert instance.query("SHOW GRANTS FOR u1") == TSV(
         ["GRANT SELECT ON test.* TO u1", "GRANT r1 TO u1"]
     )
@@ -1539,7 +1491,6 @@ def test_backup_all(exclude_system_log_tables):
         # See the list of log tables in src/Interpreters/SystemLog.cpp
         log_tables = [
             "query_log",
-            "query_metric_log",
             "query_thread_log",
             "part_log",
             "trace_log",
@@ -1709,12 +1660,8 @@ def test_system_backups():
     instance.query("DROP TABLE test.table")
 
     # Restore
-    restore_query_id = uuid.uuid4().hex
-    id = instance.query(
-        f"RESTORE TABLE test.table FROM {backup_name}", query_id=restore_query_id
-    ).split("\t")[0]
+    id = instance.query(f"RESTORE TABLE test.table FROM {backup_name}").split("\t")[0]
     restore_info = get_backup_info_from_system_backups(by_id=id)
-    restore_events = get_events_for_query(restore_query_id)
 
     assert restore_info.name == escaped_backup_name
     assert restore_info.status == "RESTORED"
@@ -1724,14 +1671,8 @@ def test_system_backups():
     assert restore_info.num_entries == info.num_entries
     assert restore_info.uncompressed_size == info.uncompressed_size
     assert restore_info.compressed_size == info.compressed_size
-    assert (
-        restore_info.files_read + restore_events["RestorePartsSkippedFiles"]
-        == restore_info.num_files
-    )
-    assert (
-        restore_info.bytes_read + restore_events["RestorePartsSkippedBytes"]
-        == restore_info.total_size
-    )
+    assert restore_info.files_read == restore_info.num_files
+    assert restore_info.bytes_read == restore_info.total_size
 
     # Failed backup.
     backup_name = new_backup_name()
@@ -1923,32 +1864,6 @@ def test_tables_dependency():
         )
 
     drop()
-
-
-def test_required_privileges_with_partial_revokes():
-    backup_name = new_backup_name()
-    instance.query("CREATE USER u1")
-    instance.query("GRANT SELECT ON *.* TO u1")
-    instance.query("REVOKE SELECT ON system.zookeeper* FROM u1")
-    instance.query("REVOKE SELECT ON foo.* FROM u1")
-
-    instance.query(f"BACKUP TABLE system.users TO {backup_name}")
-    instance.query("DROP USER u1")
-
-    instance.query("CREATE USER u2")
-    instance.query("GRANT SELECT ON *.* TO u2 WITH GRANT OPTION")
-    instance.query("GRANT CREATE USER ON *.* TO u2")
-    instance.query("REVOKE SELECT ON system.zookeeper* FROM u2")
-    instance.query("REVOKE SELECT ON foo.* FROM u2")
-
-    instance.query(f"RESTORE ALL FROM {backup_name}", user="u2")
-    instance.query("DROP USER u1")
-
-    instance.query("REVOKE SELECT ON f* FROM u2")
-    # To restore the backup we should have the SELECT permission on any table except system.zookeeper* and foo.*, but now we don't have it on f*.
-    assert "Not enough privileges" in instance.query_and_get_error(
-        f"RESTORE ALL FROM {backup_name}", user="u2"
-    )
 
 
 # Test for the "clickhouse_backupview" utility.

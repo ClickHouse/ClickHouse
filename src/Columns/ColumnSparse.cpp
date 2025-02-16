@@ -94,11 +94,6 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
-{
-    return values->getValueNameAndType(getValueIndex(n));
-}
-
 bool ColumnSparse::getBool(size_t n) const
 {
     return values->getBool(getValueIndex(n));
@@ -311,28 +306,6 @@ void ColumnSparse::popBack(size_t n)
         values->popBack(removed_values);
 
     _size = new_size;
-}
-
-ColumnCheckpointPtr ColumnSparse::getCheckpoint() const
-{
-    return std::make_shared<ColumnCheckpointWithNested>(size(), values->getCheckpoint());
-}
-
-void ColumnSparse::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    values->updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
-void ColumnSparse::rollback(const ColumnCheckpoint & checkpoint)
-{
-    _size = checkpoint.size;
-
-    const auto & nested = *assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested;
-    chassert(nested.size > 0);
-
-    values->rollback(nested);
-    getOffsetsData().resize_assume_reserved(nested.size - 1);
 }
 
 ColumnPtr ColumnSparse::filter(const Filter & filt, ssize_t) const
@@ -779,10 +752,10 @@ UInt64 ColumnSparse::getNumberOfDefaultRows() const
     return _size - offsets->size();
 }
 
-ColumnPtr ColumnSparse::compress(bool force_compression) const
+ColumnPtr ColumnSparse::compress() const
 {
-    auto values_compressed = values->compress(force_compression);
-    auto offsets_compressed = offsets->compress(force_compression);
+    auto values_compressed = values->compress();
+    auto offsets_compressed = offsets->compress();
 
     size_t byte_size = values_compressed->byteSize() + offsets_compressed->byteSize();
 

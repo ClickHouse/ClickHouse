@@ -28,21 +28,16 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
 
+#include <Common/SipHash.h>
+#include <Common/randomSeed.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Common/SipHash.h>
-#include <Common/intExp10.h>
-#include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 preferred_block_size_bytes;
-}
 
 namespace ErrorCodes
 {
@@ -151,7 +146,6 @@ size_t estimateValueSize(
     }
 }
 
-}
 
 ColumnPtr fillColumnWithRandomData(
     const DataTypePtr type,
@@ -541,8 +535,6 @@ ColumnPtr fillColumnWithRandomData(
     }
 }
 
-namespace
-{
 
 class GenerateSource : public ISource
 {
@@ -696,7 +688,7 @@ Pipe StorageGenerateRandom::read(
     }
 
     /// Correction of block size for wide tables.
-    size_t preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes];
+    size_t preferred_block_size_bytes = context->getSettingsRef().preferred_block_size_bytes;
     if (preferred_block_size_bytes)
     {
         size_t estimated_row_size_bytes = estimateValueSize(std::make_shared<DataTypeTuple>(block_header.getDataTypes()), max_array_length, max_string_length);

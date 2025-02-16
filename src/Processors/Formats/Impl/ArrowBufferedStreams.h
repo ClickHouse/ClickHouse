@@ -1,8 +1,6 @@
 #pragma once
 #include "config.h"
 
-#include <Common/threadPoolCallbackRunner.h>
-
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <optional>
@@ -83,7 +81,7 @@ private:
 class RandomAccessFileFromRandomAccessReadBuffer : public arrow::io::RandomAccessFile
 {
 public:
-    explicit RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool = nullptr);
+    explicit RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_);
 
     // These are thread safe.
     arrow::Result<int64_t> GetSize() override;
@@ -102,13 +100,9 @@ public:
     bool closed() const override { return !is_open; }
 
 private:
-    void asyncThreadFunction(arrow::Future<std::shared_ptr<arrow::Buffer>> future, int64_t position, int64_t nbytes);
-
     SeekableReadBuffer & in;
     size_t file_size;
     bool is_open = true;
-    std::shared_ptr<ThreadPool> io_pool;
-    ThreadPoolCallbackRunnerUnsafe<void> async_runner;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromRandomAccessReadBuffer);
 };
@@ -163,8 +157,7 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(
     // read call will do a new HTTP request. Used in parquet pre-buffered reading mode, which makes
     // arrow do its own buffering and coalescing of reads.
     // (ReadBuffer is not a good abstraction in this case, but it works.)
-    bool avoid_buffering = false,
-    std::shared_ptr<ThreadPool> io_pool = nullptr);
+    bool avoid_buffering = false);
 
 // Reads the whole file into a memory buffer, owned by the returned RandomAccessFile.
 std::shared_ptr<arrow::io::RandomAccessFile> asArrowFileLoadIntoMemory(

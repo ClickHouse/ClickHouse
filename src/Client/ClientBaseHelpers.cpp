@@ -5,19 +5,12 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/UTF8Helpers.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 #include <iostream>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool implicit_select;
-}
 
 /// Should we celebrate a bit?
 bool isNewYearMode()
@@ -95,33 +88,14 @@ bool isChineseNewYearMode(const String & local_tz)
         /// Let's celebrate until Lantern Festival
         if (d <= days && d + 25 >= days)
             return true;
-        if (d > days)
+        else if (d > days)
             return false;
     }
     return false;
 }
 
-std::string getChineseZodiac()
-{
-    time_t current_time = time(nullptr);
-    int year = DateLUT::instance().toYear(current_time);
-
-    // Traditional Chinese Zodiac
-    static constexpr const char * zodiacs[12] = {
-        "鼠", "牛", "虎", "兔", "龙", "蛇",
-        "马", "羊", "猴", "鸡", "狗", "猪"
-    };
-
-    //2020 is Rat
-    int offset = (year - 2020) % 12;
-    if (offset < 0)
-        offset += 12;
-
-    return zodiacs[offset];
-}
-
 #if USE_REPLXX
-void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context)
+void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors)
 {
     using namespace replxx;
 
@@ -159,27 +133,15 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     /// We don't do highlighting for foreign dialects, such as PRQL and Kusto.
     /// Only normal ClickHouse SQL queries are highlighted.
 
-    ParserQuery parser(end, false, context.getSettingsRef()[Setting::implicit_select]);
+    /// Currently we highlight only the first query in the multi-query mode.
+
+    ParserQuery parser(end);
     ASTPtr ast;
     bool parse_res = false;
 
     try
     {
-        while (!token_iterator->isEnd())
-        {
-            parse_res = parser.parse(token_iterator, ast, expected);
-            if (!parse_res)
-                break;
-
-            if (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon)
-            {
-                parse_res = false;
-                break;
-            }
-
-            while (token_iterator->type == TokenType::Semicolon)
-                ++token_iterator;
-        }
+        parse_res = parser.parse(token_iterator, ast, expected);
     }
     catch (...)
     {
@@ -213,7 +175,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     /// Highlight the last error in red. If the parser failed or the lexer found an invalid token,
     /// or if it didn't parse all the data (except, the data for INSERT query, which is legitimately unparsed)
-    if ((!parse_res || last_token.isError())
+    if ((!parse_res || last_token.isError() || (!token_iterator->isEnd() && token_iterator->type != TokenType::Semicolon))
         && !(insert_data && expected.max_parsed_pos >= insert_data)
         && expected.max_parsed_pos >= prev)
     {

@@ -10,8 +10,8 @@ namespace DB
 
 
 /**
- *  Base cluster for Storages used in table functions like s3Cluster and hdfsCluster.
- *  Necessary for code simplification around parallel_distributed_insert_select.
+ *  Base cluster for Storages used in table functions like s3Cluster and hdfsCluster
+ *  Needed for code simplification around parallel_distributed_insert_select
  */
 class IStorageCluster : public IStorage
 {

@@ -11,10 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
-}
 
 namespace
 {
@@ -27,7 +23,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_arithmetic_operations_in_aggregate_functions])
+        if (!getSettings().optimize_arithmetic_operations_in_aggregate_functions)
             return;
 
         static const std::unordered_set<String> func_supported = {

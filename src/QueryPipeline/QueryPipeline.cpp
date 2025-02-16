@@ -33,10 +33,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool rows_before_aggregation;
-}
 
 namespace ErrorCodes
 {
@@ -551,7 +547,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     initRowsBeforeLimit(format.get());
     for (const auto & context : resources.interpreter_context)
     {
-        if (context->getSettingsRef()[Setting::rows_before_aggregation])
+        if (context->getSettingsRef().rows_before_aggregation)
         {
             initRowsBeforeAggregation(processors, format.get());
             break;
@@ -566,9 +562,12 @@ Block QueryPipeline::getHeader() const
 {
     if (input)
         return input->getHeader();
-    if (output)
+    else if (output)
         return output->getHeader();
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
+    else
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Header is available only for pushing or pulling QueryPipeline");
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
@@ -697,16 +696,6 @@ void QueryPipeline::reset()
     QueryPipeline to_remove = std::move(*this);
     *this = QueryPipeline();
 }
-
-void QueryPipeline::cancel() noexcept
-{
-    if (processors)
-    {
-        for (auto & processor : *processors)
-            processor->cancel();
-    }
-}
-
 
 static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
 {

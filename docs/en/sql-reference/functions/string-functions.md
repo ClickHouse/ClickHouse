@@ -180,7 +180,7 @@ left(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -227,7 +227,7 @@ leftUTF8(s, offset)
 **Parameters**
 
 - `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -344,7 +344,7 @@ right(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -391,7 +391,7 @@ rightUTF8(s, offset)
 **Parameters**
 
 - `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -720,7 +720,7 @@ Alias: `REPEAT`
 
 **Returned value**
 
-A string containing string `s` repeated `n` times. If `n` &lt;= 0, the function returns the empty string. [String](../data-types/string.md).
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -754,7 +754,7 @@ Alias: `SPACE`.
 
 **Returned value**
 
-The string containing string ` ` repeated `n` times. If `n` &lt;= 0, the function returns the empty string. [String](../data-types/string.md).
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -831,10 +831,6 @@ Result:
 │ 42144           │
 └─────────────────┘
 ```
-
-:::note `||` operator
-Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
-:::
 
 ## concatAssumeInjective
 
@@ -1100,7 +1096,7 @@ convertCharset(s, from, to)
 
 ## base58Encode
 
-Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
+Encodes a String using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -1114,7 +1110,7 @@ base58Encode(plaintext)
 
 **Returned value**
 
-- A string containing the encoded value of the argument. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
+- A string containing the encoded value of the argument. [String](../data-types/string.md).
 
 **Example**
 
@@ -1132,7 +1128,7 @@ Result:
 
 ## base58Decode
 
-Accepts a string and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
+Accepts a String and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
 
 **Syntax**
 
@@ -1142,7 +1138,7 @@ base58Decode(encoded)
 
 **Arguments**
 
-- `encoded` — [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, an exception is thrown.
+- `encoded` — [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, an exception is thrown.
 
 **Returned value**
 
@@ -1174,7 +1170,7 @@ tryBase58Decode(encoded)
 
 **Parameters**
 
-- `encoded`: [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md). If the string is not a valid Base58-encoded value, returns an empty string in case of error.
+- `encoded`: [String](../data-types/string.md) column or constant. If the string is not a valid Base58-encoded value, returns an empty string in case of error.
 
 **Returned value**
 

@@ -8,7 +8,7 @@
 
 #include <Core/Types.h>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 

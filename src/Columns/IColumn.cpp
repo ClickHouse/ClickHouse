@@ -1,25 +1,24 @@
 #include <Columns/IColumn.h>
 
+#include <Columns/IColumnDummy.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObject.h>
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/IColumnDummy.h>
-#include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
@@ -354,8 +353,10 @@ IColumnHelper<Derived, Parent>::serializeValueIntoArenaWithNull(size_t n, Arena 
         self.serializeValueIntoMemory(n, memory + 1);
         return {memory, sz};
     }
-
-    return self.serializeValueIntoArena(n, arena, begin);
+    else
+    {
+        return self.serializeValueIntoArena(n, arena, begin);
+    }
 }
 
 template <typename Derived, typename Parent>
@@ -444,7 +445,6 @@ template class IColumnHelper<ColumnVector<Int32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int128>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Int256>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnVector<BFloat16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float32>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<Float64>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;
@@ -477,16 +477,4 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
-
-void intrusive_ptr_add_ref(const IColumn * c)
-{
-    BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_add_ref(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
-}
-
-void intrusive_ptr_release(const IColumn * c)
-{
-    BOOST_ASSERT(c != nullptr);
-    boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
-}
 }

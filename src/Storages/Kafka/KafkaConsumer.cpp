@@ -285,8 +285,11 @@ void KafkaConsumer::commit()
                             "All commit attempts failed. Last block was already written to target table(s), "
                             "but was not committed to Kafka.");
         }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::KafkaCommits);
+        }
 
-        ProfileEvents::increment(ProfileEvents::KafkaCommits);
     }
     else
     {
@@ -417,7 +420,7 @@ ReadBufferPtr KafkaConsumer::consume()
         {
             return nullptr;
         }
-        if (stalled_status == REBALANCE_HAPPENED)
+        else if (stalled_status == REBALANCE_HAPPENED)
         {
             if (!new_messages.empty())
             {
@@ -440,29 +443,32 @@ ReadBufferPtr KafkaConsumer::consume()
                 {
                     continue;
                 }
-
-                LOG_WARNING(log, "Can't get assignment. Will keep trying.");
-                stalled_status = NO_ASSIGNMENT;
-                return nullptr;
+                else
+                {
+                    LOG_WARNING(log, "Can't get assignment. Will keep trying.");
+                    stalled_status = NO_ASSIGNMENT;
+                    return nullptr;
+                }
             }
-            if (assignment->empty())
+            else if (assignment->empty())
             {
                 LOG_TRACE(log, "Empty assignment.");
                 return nullptr;
             }
-
-            LOG_TRACE(log, "Stalled");
-            return nullptr;
+            else
+            {
+                LOG_TRACE(log, "Stalled");
+                return nullptr;
+            }
         }
-
-        messages = std::move(new_messages);
-        current = messages.begin();
-        LOG_TRACE(
-            log,
-            "Polled batch of {} messages. Offsets position: {}",
-            messages.size(),
-            consumer->get_offsets_position(consumer->get_assignment()));
-        break;
+        else
+        {
+            messages = std::move(new_messages);
+            current = messages.begin();
+            LOG_TRACE(log, "Polled batch of {} messages. Offsets position: {}",
+                messages.size(), consumer->get_offsets_position(consumer->get_assignment()));
+            break;
+        }
     }
 
     filterMessageErrors();
