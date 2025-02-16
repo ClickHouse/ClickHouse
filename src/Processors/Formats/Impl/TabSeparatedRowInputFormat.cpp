@@ -10,8 +10,6 @@
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
-#include <boost/range/adaptor/map.hpp>
-#include "Formats/FormatSettings.h"
 
 namespace DB
 {
@@ -30,8 +28,7 @@ static void checkForCarriageReturn(ReadBuffer & in)
         throw Exception(ErrorCodes::INCORRECT_DATA, "\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
-            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r"
-            "\nor else enable setting 'input_format_tsv_crlf_end_of_line'");
+            "\nBut if you really need carriage return at end of string value of last column, you need to escape it as \\r.");
 }
 
 TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
@@ -63,8 +60,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
         with_types_,
         format_settings_,
         std::make_unique<TabSeparatedFormatReader>(*in_, format_settings_, is_raw),
-        format_settings_.tsv.try_detect_header,
-        format_settings_.tsv.allow_variable_number_of_columns)
+        format_settings_.tsv.try_detect_header)
     , buf(std::move(in_))
 {
 }
@@ -96,12 +92,7 @@ void TabSeparatedFormatReader::skipRowEndDelimiter()
     if (buf->eof())
         return;
 
-    if (format_settings.tsv.crlf_end_of_line_input)
-    {
-        if (*buf->position() == '\r')
-            ++buf->position();
-    }
-    else if (unlikely(first_row))
+    if (unlikely(first_row))
     {
         checkForCarriageReturn(*buf);
         first_row = false;
@@ -114,15 +105,14 @@ template <bool read_string>
 String TabSeparatedFormatReader::readFieldIntoString()
 {
     String field;
-    bool support_crlf = format_settings.tsv.crlf_end_of_line_input;
     if (is_raw)
         readString(field, *buf);
     else
     {
         if constexpr (read_string)
-            support_crlf ? readEscapedStringCRLF(field, *buf) : readEscapedString(field, *buf);
+            readEscapedString(field, *buf);
         else
-            support_crlf ? readTSVFieldCRLF(field, *buf) : readTSVField(field, *buf);
+            readTSVField(field, *buf);
     }
     return field;
 }
@@ -133,7 +123,7 @@ void TabSeparatedFormatReader::skipField()
     if (is_raw)
         readStringInto(out, *buf);
     else
-        format_settings.tsv.crlf_end_of_line_input ? readEscapedStringInto<NullOutput,true>(out, *buf) : readEscapedStringInto<NullOutput,false>(out, *buf);
+        readEscapedStringInto(out, *buf);
 }
 
 void TabSeparatedFormatReader::skipHeaderRow()
@@ -165,7 +155,7 @@ bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & t
     const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
 {
     const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
-    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
+    const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n');
 
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
@@ -230,10 +220,7 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 
     try
     {
-        if (!format_settings.tsv.crlf_end_of_line_input)
-            assertChar('\n', *buf);
-        else
-            assertChar('\r', *buf);
+        assertChar('\n', *buf);
     }
     catch (const DB::Exception &)
     {
@@ -246,10 +233,7 @@ bool TabSeparatedFormatReader::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
         else if (*buf->position() == '\r')
         {
             out << "ERROR: Carriage return found where line feed is expected."
-                   " It's like your file has DOS/Windows style line separators. \n"
-                   "You must transform your file to Unix format. \n"
-                   "But if you really need carriage return at end of string value of last column, you need to escape it as \\r \n"
-                   "or else enable setting 'input_format_tsv_crlf_end_of_line'";
+                   " It's like your file has DOS/Windows style line separators, that is illegal in TabSeparated format.\n";
         }
         else
         {
@@ -278,8 +262,10 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
                 ++buf->position();
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
             }
-
-            --buf->position();
+            else
+            {
+                --buf->position();
+            }
         }
     }
 }
@@ -330,7 +316,7 @@ void TabSeparatedFormatReader::skipRow()
 
         if (istr.position() > istr.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        if (pos == istr.buffer().end())
+        else if (pos == istr.buffer().end())
             continue;
 
         if (!is_raw && *istr.position() == '\\')
@@ -348,7 +334,7 @@ void TabSeparatedFormatReader::skipRow()
                 ++istr.position();
             return;
         }
-        if (*istr.position() == '\r')
+        else if (*istr.position() == '\r')
         {
             ++istr.position();
             if (!istr.eof() && *istr.position() == '\n')
@@ -362,7 +348,7 @@ void TabSeparatedFormatReader::skipRow()
 
 bool TabSeparatedFormatReader::checkForEndOfRow()
 {
-    return buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r');
+    return buf->eof() || *buf->position() == '\n';
 }
 
 TabSeparatedSchemaReader::TabSeparatedSchemaReader(
@@ -416,8 +402,6 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
-        if (is_raw)
-            registerWithNamesAndTypes("Raw", register_func);
     }
 }
 
@@ -450,8 +434,6 @@ void registerTSVSchemaReader(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
-        if (is_raw)
-            registerWithNamesAndTypes("Raw", register_func);
     }
 }
 
@@ -473,7 +455,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
         if (pos > in.buffer().end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Position in buffer is out of bounds. There must be a bug.");
-        if (pos == in.buffer().end())
+        else if (pos == in.buffer().end())
             continue;
 
         if (!is_raw && *pos == '\\')
@@ -525,12 +507,8 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
-        if (is_raw)
-            registerWithNamesAndTypes("Raw", register_func);
         markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TSVRaw" : "TSV", factory);
         markFormatWithNamesAndTypesSupportsSamplingColumns(is_raw ? "TabSeparatedRaw" : "TabSeparated", factory);
-        if (is_raw)
-            markFormatWithNamesAndTypesSupportsSamplingColumns("Raw", factory);
     }
 
     // We can use the same segmentation engine for TSKV.

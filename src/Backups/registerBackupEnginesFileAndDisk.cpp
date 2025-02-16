@@ -171,15 +171,33 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
                 reader = std::make_shared<BackupReaderFile>(path, params.read_settings, params.write_settings);
             else
                 reader = std::make_shared<BackupReaderDisk>(disk, path, params.read_settings, params.write_settings);
-            return std::make_unique<BackupImpl>(params, archive_params, reader);
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                params.base_backup_info,
+                reader,
+                params.context,
+                params.use_same_s3_credentials_for_base_backup);
         }
-
-        std::shared_ptr<IBackupWriter> writer;
-        if (engine_name == "File")
-            writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
         else
-            writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
-        return std::make_unique<BackupImpl>(params, archive_params, writer);
+        {
+            std::shared_ptr<IBackupWriter> writer;
+            if (engine_name == "File")
+                writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
+            else
+                writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                params.base_backup_info,
+                writer,
+                params.context,
+                params.is_internal_backup,
+                params.backup_coordination,
+                params.backup_uuid,
+                params.deduplicate_files,
+                params.use_same_s3_credentials_for_base_backup);
+        }
     };
 
     factory.registerBackupEngine("File", creator_fn);

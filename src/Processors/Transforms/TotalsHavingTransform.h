@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/PODArray_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
 
@@ -9,11 +8,10 @@ namespace DB
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-using IColumnFilter = PaddedPODArray<UInt8>;
 
 class ActionsDAG;
 
-enum class TotalsMode : uint8_t;
+enum class TotalsMode;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.
@@ -52,7 +50,7 @@ protected:
     Chunk totals;
 
 private:
-    void addToTotals(const Chunk & chunk, const IColumnFilter * filter);
+    void addToTotals(const Chunk & chunk, const IColumn::Filter * filter);
     void prepareTotals();
 
     /// Params

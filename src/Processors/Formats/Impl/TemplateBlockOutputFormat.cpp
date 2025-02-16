@@ -1,10 +1,8 @@
 #include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
-#include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Port.h>
 
 
 namespace DB
@@ -44,11 +42,9 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
             case static_cast<size_t>(ResultsetPart::TimeElapsed):
             case static_cast<size_t>(ResultsetPart::RowsRead):
             case static_cast<size_t>(ResultsetPart::BytesRead):
-            case static_cast<size_t>(ResultsetPart::RowsBeforeAggregation):
                 if (format.escaping_rules[i] == EscapingRule::None)
-                    format.throwInvalidFormat(
-                        "Serialization type for output part rows, rows, time, "
-                        "rows_read or bytes_read is not specified", i);
+                    format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
+                                              "rows_read or bytes_read is not specified", i);
                 break;
             default:
                 format.throwInvalidFormat("Invalid output part", i);
@@ -76,25 +72,24 @@ TemplateBlockOutputFormat::ResultsetPart TemplateBlockOutputFormat::stringToResu
 {
     if (part == "data")
         return ResultsetPart::Data;
-    if (part == "totals")
+    else if (part == "totals")
         return ResultsetPart::Totals;
-    if (part == "min")
+    else if (part == "min")
         return ResultsetPart::ExtremesMin;
-    if (part == "max")
+    else if (part == "max")
         return ResultsetPart::ExtremesMax;
-    if (part == "rows")
+    else if (part == "rows")
         return ResultsetPart::Rows;
-    if (part == "rows_before_limit")
+    else if (part == "rows_before_limit")
         return ResultsetPart::RowsBeforeLimit;
-    if (part == "time")
+    else if (part == "time")
         return ResultsetPart::TimeElapsed;
-    if (part == "rows_read")
+    else if (part == "rows_read")
         return ResultsetPart::RowsRead;
-    if (part == "bytes_read")
+    else if (part == "bytes_read")
         return ResultsetPart::BytesRead;
-    if (part == "rows_before_aggregation")
-        return ResultsetPart::RowsBeforeAggregation;
-    throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
+    else
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unknown output part {}", part);
 }
 
 void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
@@ -177,11 +172,6 @@ void TemplateBlockOutputFormat::finalizeImpl()
                 break;
             case ResultsetPart::BytesRead:
                 writeValue<size_t, DataTypeUInt64>(statistics.progress.read_bytes.load(), format.escaping_rules[i]);
-                break;
-            case ResultsetPart::RowsBeforeAggregation:
-                if (!statistics.applied_aggregation)
-                    format.throwInvalidFormat("Cannot print rows_before_aggregation for this request", i);
-                writeValue<size_t, DataTypeUInt64>(statistics.rows_before_aggregation, format.escaping_rules[i]);
                 break;
             default:
                 break;

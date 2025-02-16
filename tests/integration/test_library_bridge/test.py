@@ -1,9 +1,8 @@
-import logging
 import os
 import os.path as p
-import time
-
 import pytest
+import time
+import logging
 
 from helpers.cluster import ClickHouseCluster, run_and_check
 
@@ -14,11 +13,6 @@ instance = cluster.add_instance(
     dictionaries=["configs/dictionaries/dict1.xml"],
     main_configs=["configs/config.d/config.xml"],
     stay_alive=True,
-    # WA for the problem with zombie processes inside the docker container.
-    # This is important here because we are checking that there are no zombie processes
-    # after craches inside the library bridge.
-    # https://forums.docker.com/t/what-the-latest-with-the-zombie-process-reaping-problem/50758/2
-    use_docker_init_flag=True,
 )
 
 
@@ -37,28 +31,6 @@ def create_dict_simple(ch_instance):
         LIFETIME(2) ;
     """
     )
-
-
-def check_no_zombie_processes(instance):
-    max_tries = 20
-
-    for _ in range(0, max_tries):
-        res = instance.exec_in_container(
-            [
-                "bash",
-                "-c",
-                'ps ax -ostat,command | awk \'{if (($1 == "Z" || $1 == "z") && match($2,".*clickhouse-libr.*")) {print} else {next}}\' | wc -l',
-            ],
-            user="root",
-        )
-        if res == "0\n":
-            return
-        time.sleep(1)
-
-    ps_res = instance.exec_in_container(
-        ["bash", "-c", "ps ax -ostat,pid,command | grep -e '[zZ]'"], user="root"
-    )
-    assert False, f"There are zoombie processes:  {ps_res}"
 
 
 @pytest.fixture(scope="module")
@@ -288,8 +260,6 @@ def test_recover_after_bridge_crash(ch_cluster):
     instance.exec_in_container(
         ["bash", "-c", "kill -9 `pidof clickhouse-library-bridge`"], user="root"
     )
-
-    check_no_zombie_processes(instance)
     instance.query("DROP DICTIONARY lib_dict_c")
 
 
@@ -314,8 +284,6 @@ def test_server_restart_bridge_might_be_still_alive(ch_cluster):
 
     result = instance.query("""select dictGet(lib_dict_c, 'value1', toUInt64(1));""")
     assert result.strip() == "101"
-
-    check_no_zombie_processes(instance)
 
     instance.query("DROP DICTIONARY lib_dict_c")
 

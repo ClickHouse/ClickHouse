@@ -23,15 +23,9 @@ namespace CurrentMetrics
     extern const Metric MergeTreeUnexpectedPartsLoaderThreads;
     extern const Metric MergeTreeUnexpectedPartsLoaderThreadsActive;
     extern const Metric MergeTreeUnexpectedPartsLoaderThreadsScheduled;
-    extern const Metric DatabaseCatalogThreads;
-    extern const Metric DatabaseCatalogThreadsActive;
-    extern const Metric DatabaseCatalogThreadsScheduled;
     extern const Metric DatabaseReplicatedCreateTablesThreads;
     extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
     extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
-    extern const Metric MergeTreeSubcolumnsReaderThreads;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
 }
 
 namespace DB
@@ -169,19 +163,6 @@ StaticThreadPool & getUnexpectedPartsLoadingThreadPool()
 StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool()
 {
     static StaticThreadPool instance("CreateTablesThreadPool", CurrentMetrics::DatabaseReplicatedCreateTablesThreads, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsActive, CurrentMetrics::DatabaseReplicatedCreateTablesThreadsScheduled);
-    return instance;
-}
-
-/// ThreadPool used for dropping tables.
-StaticThreadPool & getDatabaseCatalogDropTablesThreadPool()
-{
-    static StaticThreadPool instance("DropTablesThreadPool", CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
-    return instance;
-}
-
-StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool()
-{
-    static StaticThreadPool instance("MergeTreePrefixesDeserializationThreadPool", CurrentMetrics::MergeTreeSubcolumnsReaderThreads, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsActive, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsScheduled);
     return instance;
 }
 

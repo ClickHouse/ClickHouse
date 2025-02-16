@@ -1,11 +1,12 @@
-from multiprocessing.dummy import Pool
-from time import sleep
-
 import pytest
-
-from helpers import keeper_utils
 from helpers.cluster import ClickHouseCluster
-from helpers.retry_decorator import retry
+from time import sleep
+from retry import retry
+from multiprocessing.dummy import Pool
+import helpers.keeper_utils as keeper_utils
+from minio.deleteobjects import DeleteObject
+
+from kazoo.client import KazooClient
 
 # from kazoo.protocol.serialization import Connect, read_buffer, write_buffer
 
@@ -44,7 +45,11 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def destroy_zk_client(zk):
@@ -84,7 +89,6 @@ def delete_keeper_snapshots_logs(nodex):
 
 
 def test_s3_upload(started_cluster):
-
     node1_zk = get_fake_zk(node1.name)
 
     # we defined in configs snapshot_distance as 50
@@ -104,6 +108,7 @@ def test_s3_upload(started_cluster):
             cluster.minio_client.remove_object("snapshots", s.object_name)
 
     # Keeper sends snapshots asynchornously, hence we need to retry.
+    @retry(AssertionError, tries=10, delay=2)
     def _check_snapshots():
         assert set(get_saved_snapshots()) == set(
             [
@@ -114,7 +119,7 @@ def test_s3_upload(started_cluster):
             ]
         )
 
-    retry(AssertionError, retries=10, delay=2, jitter=0, backoff=1)(_check_snapshots)
+    _check_snapshots()
 
     destroy_zk_client(node1_zk)
     node1.stop_clickhouse(kill=True)
@@ -126,12 +131,9 @@ def test_s3_upload(started_cluster):
     for _ in range(200):
         node2_zk.create("/test", sequence=True)
 
+    @retry(AssertionError, tries=10, delay=2)
     def _check_snapshots_without_quorum():
         assert len(get_saved_snapshots()) > 4
-
-    retry(AssertionError, retries=10, delay=2, jitter=0, backoff=1)(
-        _check_snapshots_without_quorum
-    )
 
     _check_snapshots_without_quorum()
 

@@ -1,6 +1,4 @@
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Port.h>
 
 namespace DB
 {
@@ -23,11 +21,6 @@ IMergingTransformBase::IMergingTransformBase(
     , limit_hint(limit_hint_)
     , always_read_till_end(always_read_till_end_)
 {
-}
-
-OutputPort & IMergingTransformBase::getOutputPort()
-{
-    return outputs.front();
 }
 
 static InputPorts createPorts(const Blocks & blocks)
@@ -108,16 +101,11 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// setNotNeeded after reading first chunk, because in optimismtic case
         /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
         /// we won't have to read any chunks anymore;
-        /// If virtual row exists, let it pass through, so don't read more chunks.
-        auto chunk = input.pull(true);
-        bool virtual_row = isVirtualRow(chunk);
-        if (limit_hint == 0 && !virtual_row)
+        auto chunk = input.pull(limit_hint != 0);
+        if ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end)
             input.setNeeded();
 
-        if (!virtual_row && ((limit_hint && chunk.getNumRows() < limit_hint) || always_read_till_end))
-            input.setNeeded();
-
-        if (!virtual_row && !chunk.hasRows())
+        if (!chunk.hasRows())
         {
             if (!input.isFinished())
             {
@@ -169,7 +157,7 @@ IProcessor::Status IMergingTransformBase::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if ((state.output_chunk || !state.output_chunk.getChunkInfos().empty()) && !is_port_full)
+    if ((state.output_chunk || state.output_chunk.hasChunkInfo()) && !is_port_full)
         output.push(std::move(state.output_chunk));
 
     if (!is_initialized)

@@ -1,3 +1,10 @@
+import time
+import threading
+from os import path as p, unlink
+from tempfile import NamedTemporaryFile
+
+import helpers
+import pytest
 from helpers.cluster import ClickHouseCluster
 
 
@@ -9,9 +16,7 @@ def test_xml_full_conf():
 
     all_confd = [
         "configs/config.d/access_control.xml",
-        "configs/config.d/error_log.xml",
         "configs/config.d/keeper_port.xml",
-        "configs/config.d/latency_log.xml",
         "configs/config.d/logging_no_rotate.xml",
         "configs/config.d/log_to_console.xml",
         "configs/config.d/macros.xml",
@@ -20,7 +25,6 @@ def test_xml_full_conf():
         "configs/config.d/part_log.xml",
         "configs/config.d/path.xml",
         "configs/config.d/query_masking_rules.xml",
-        "configs/config.d/query_metric_log.xml",
         "configs/config.d/tcp_with_proxy.xml",
         "configs/config.d/text_log.xml",
         "configs/config.d/zookeeper.xml",

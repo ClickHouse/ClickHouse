@@ -18,13 +18,14 @@ namespace DB
 class ExternalDictionaryLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit ExternalDictionaryLibraryBridgeRequestHandler(ContextPtr context_, std::vector<std::string> libraries_paths_);
+    ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_, std::vector<std::string> libraries_paths_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
-    static constexpr auto FORMAT = "RowBinary";
+    static constexpr inline auto FORMAT = "RowBinary";
 
+    const size_t keep_alive_timeout;
     LoggerPtr log;
     std::vector<std::string> libraries_paths;
 };
@@ -34,11 +35,12 @@ private:
 class ExternalDictionaryLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit ExternalDictionaryLibraryBridgeExistsHandler(ContextPtr context_);
+    ExternalDictionaryLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
+    const size_t keep_alive_timeout;
     LoggerPtr log;
 };
 
@@ -62,11 +64,12 @@ private:
 class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit CatBoostLibraryBridgeRequestHandler(ContextPtr context_, std::vector<std::string> libraries_paths_);
+    CatBoostLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_, std::vector<std::string> libraries_paths_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
+    const size_t keep_alive_timeout;
     LoggerPtr log;
     std::vector<std::string> libraries_paths;
 };
@@ -76,11 +79,12 @@ private:
 class CatBoostLibraryBridgeExistsHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    explicit CatBoostLibraryBridgeExistsHandler(ContextPtr context_);
+    CatBoostLibraryBridgeExistsHandler(size_t keep_alive_timeout_, ContextPtr context_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
+    const size_t keep_alive_timeout;
     LoggerPtr log;
 };
 

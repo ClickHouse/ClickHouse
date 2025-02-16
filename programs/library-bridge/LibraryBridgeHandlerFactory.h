@@ -12,7 +12,8 @@ class LibraryBridgeHandlerFactory : public HTTPRequestHandlerFactory, WithContex
 {
 public:
     LibraryBridgeHandlerFactory(
-        std::string name_,
+        const std::string & name_,
+        size_t keep_alive_timeout_,
         ContextPtr context_,
         std::vector<std::string> libraries_paths_);
 
@@ -21,6 +22,7 @@ public:
 private:
     LoggerPtr log;
     const std::string name;
+    const size_t keep_alive_timeout;
     const std::vector<std::string> libraries_paths;
 };
 

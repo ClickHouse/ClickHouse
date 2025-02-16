@@ -2,11 +2,11 @@
 
 #include <Storages/IStorage.h>
 #include <Processors/Sources/ShellCommandSource.h>
+#include <Storages/ExecutableSettings.h>
 
 
 namespace DB
 {
-struct ExecutableSettings;
 
 /**
  * This class represents table engine for external executable files.
@@ -22,12 +22,15 @@ public:
         const ExecutableSettings & settings,
         const std::vector<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints,
-        const String & comment);
+        const ConstraintsDescription & constraints);
 
-    ~StorageExecutable() override;
-
-    String getName() const override;
+    String getName() const override
+    {
+        if (settings.is_executable_pool)
+            return "ExecutablePool";
+        else
+            return "Executable";
+    }
 
     void read(
         QueryPlan & query_plan,
@@ -40,7 +43,7 @@ public:
         size_t threads) override;
 
 private:
-    std::unique_ptr<ExecutableSettings> settings;
+    ExecutableSettings settings;
     std::vector<ASTPtr> input_queries;
     LoggerPtr log;
     std::unique_ptr<ShellCommandSourceCoordinator> coordinator;

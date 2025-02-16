@@ -1,13 +1,10 @@
 #include <Analyzer/Utils.h>
 
-#include <Core/Settings.h>
-
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,32 +15,22 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 
-#include <Storages/IStorage.h>
-
 #include <Interpreters/Context.h>
 
-#include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/Resolve/IdentifierResolveScope.h>
 
-#include <ranges>
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool extremes;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-}
 
 namespace ErrorCodes
 {
@@ -63,36 +50,6 @@ bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
 
         if (subtree_node == node)
             return true;
-
-        for (const auto & child : subtree_node->getChildren())
-        {
-            if (child)
-                nodes_to_process.push_back(child.get());
-        }
-    }
-
-    return false;
-}
-
-bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root)
-{
-    std::vector<const IQueryTreeNode *> nodes_to_process;
-    nodes_to_process.push_back(root);
-
-    while (!nodes_to_process.empty())
-    {
-        const auto * subtree_node = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        const auto * table_node = subtree_node->as<TableNode>();
-        const auto * table_function_node = subtree_node->as<TableFunctionNode>();
-
-        if (table_node || table_function_node)
-        {
-            const auto & table_storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-            if (table_storage->getStorageID() == storage->getStorageID())
-                return true;
-        }
 
         for (const auto & child : subtree_node->getChildren())
         {
@@ -158,19 +115,19 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 {
     if (function_name == "in")
         return "globalIn";
-    if (function_name == "notIn")
+    else if (function_name == "notIn")
         return "globalNotIn";
-    if (function_name == "nullIn")
+    else if (function_name == "nullIn")
         return "globalNullIn";
-    if (function_name == "notNullIn")
+    else if (function_name == "notNullIn")
         return "globalNotNullIn";
-    if (function_name == "inIgnoreSet")
+    else if (function_name == "inIgnoreSet")
         return "globalInIgnoreSet";
-    if (function_name == "notInIgnoreSet")
+    else if (function_name == "notInIgnoreSet")
         return "globalNotInIgnoreSet";
-    if (function_name == "nullInIgnoreSet")
+    else if (function_name == "nullInIgnoreSet")
         return "globalNullInIgnoreSet";
-    if (function_name == "notNullInIgnoreSet")
+    else if (function_name == "notNullInIgnoreSet")
         return "globalNotNullInIgnoreSet";
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid local IN function name {}", function_name);
@@ -195,28 +152,6 @@ void makeUniqueColumnNamesInBlock(Block & block)
     }
 }
 
-bool isExpressionNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::FUNCTION
-        || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
-}
-
-bool isFunctionExpressionNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::LAMBDA;
-}
-
-bool isSubqueryNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
-}
-
-bool isTableExpressionNodeType(QueryTreeNodeType node_type)
-{
-    return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
-        isSubqueryNodeType(node_type);
-}
-
 bool isQueryOrUnionNode(const IQueryTreeNode * node)
 {
     auto node_type = node->getNodeType();
@@ -228,62 +163,14 @@ bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
     return isQueryOrUnionNode(node.get());
 }
 
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
-{
-    /// The case of lambda argument. Example:
-    /// arrayMap(X -> X + Y, [0])
-    ///
-    /// X would have lambda as a source node
-    /// Y comes from outer scope and requires ordinary check.
-    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
-        return false;
-
-    while (scope_to_check != nullptr)
-    {
-        if (scope_to_check->registered_table_expression_nodes.contains(column_source))
-            return false;
-        if (isQueryOrUnionNode(scope_to_check->scope_node))
-            return true;
-        scope_to_check = scope_to_check->parent_scope;
-    }
-    return true;
-}
-
-DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
-{
-    auto node_type = query_tree_node->getNodeType();
-
-    switch (node_type)
-    {
-        case QueryTreeNodeType::CONSTANT:
-            [[fallthrough]];
-        case QueryTreeNodeType::COLUMN:
-        {
-            return query_tree_node->getResultType();
-        }
-        case QueryTreeNodeType::FUNCTION:
-        {
-            auto & function_node = query_tree_node->as<FunctionNode &>();
-            if (function_node.isResolved())
-                return function_node.getResultType();
-            break;
-        }
-        default:
-        {
-            break;
-        }
-    }
-
-    return nullptr;
-}
-
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
     const DataTypePtr & type,
     const ContextPtr & context,
     bool resolve)
 {
     std::string cast_type = type->getName();
-    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_value = std::make_shared<ConstantValue>(std::move(cast_type), std::make_shared<DataTypeString>());
+    auto cast_type_constant_node = std::make_shared<ConstantNode>(std::move(cast_type_constant_value));
 
     std::string cast_function_name = "_CAST";
     auto cast_function_node = std::make_shared<FunctionNode>(cast_function_name);
@@ -301,7 +188,7 @@ QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
 
 std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr & condition_node)
 {
-    const auto * constant_node = condition_node ? condition_node->as<ConstantNode>() : nullptr;
+    const auto * constant_node = condition_node->as<ConstantNode>();
     if (!constant_node)
         return {};
 
@@ -421,8 +308,6 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
         }
         case QueryTreeNodeType::ARRAY_JOIN:
             [[fallthrough]];
-        case QueryTreeNodeType::CROSS_JOIN:
-            [[fallthrough]];
         case QueryTreeNodeType::JOIN:
         {
             auto table_expression_tables_in_select_query_ast = table_expression->toAST(convert_to_ast_options);
@@ -481,13 +366,6 @@ QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree)
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 nodes_to_process.push_back(node_to_process->as<ArrayJoinNode>()->getTableExpression());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                     nodes_to_process.push_back(expr);
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -558,13 +436,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
                     result.push_back(std::move(node_to_process));
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & join_node = node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
-                    nodes_to_process.push_front(expr);
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
@@ -618,12 +489,6 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
                 nodes_to_process.push_front(array_join_node.getTableExpression());
                 break;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = node_to_process->as<CrossJoinNode &>();
-                nodes_to_process.push_front(cross_join_node.getTableExpressions().front());
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = node_to_process->as<JoinNode &>();
@@ -667,16 +532,6 @@ void buildTableExpressionsStackImpl(const QueryTreeNodePtr & join_tree_node, Que
         {
             auto & array_join_node = join_tree_node->as<ArrayJoinNode &>();
             buildTableExpressionsStackImpl(array_join_node.getTableExpression(), result);
-            result.push_back(join_tree_node);
-            break;
-        }
-        case QueryTreeNodeType::CROSS_JOIN:
-        {
-            auto & cross_join_node = join_tree_node->as<CrossJoinNode &>();
-
-            for (const auto & expr : cross_join_node.getTableExpressions())
-                buildTableExpressionsStackImpl(expr, result);
-
             result.push_back(join_tree_node);
             break;
         }
@@ -748,16 +603,16 @@ private:
     bool has_function = false;
 };
 
-inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_node, const String & function_name)
+inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode * function_node)
 {
     Array parameters;
-    for (const auto & param : function_node.getParameters())
+    for (const auto & param : function_node->getParameters())
     {
         auto * constant = param->as<ConstantNode>();
         parameters.push_back(constant->getValue());
     }
 
-    const auto & function_node_argument_nodes = function_node.getArguments().getNodes();
+    const auto & function_node_argument_nodes = function_node->getArguments().getNodes();
 
     DataTypes argument_types;
     argument_types.reserve(function_node_argument_nodes.size());
@@ -767,7 +622,7 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_nod
 
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
+    return AggregateFunctionFactory::instance().get(function_node->getFunctionName(), action, argument_types, parameters, properties);
 }
 
 }
@@ -848,11 +703,11 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context)
     {
         if (name == "nothing" || name == "nothingUInt64" || name == "nothingNull")
             return;
-        function_node->resolveAsAggregateFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+        function_node->resolveAsAggregateFunction(resolveAggregateFunction(function_node));
     }
     else if (function_node->isWindowFunction())
     {
-        function_node->resolveAsWindowFunction(resolveAggregateFunction(*function_node, function_node->getFunctionName()));
+        function_node->resolveAsWindowFunction(resolveAggregateFunction(function_node));
     }
 }
 
@@ -891,7 +746,8 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
 
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal = std::make_shared<ConstantValue>(result_type->getName(), std::make_shared<DataTypeString>());
+    auto enum_literal_node = std::make_shared<ConstantNode>(std::move(enum_literal));
 
     auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
     QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
@@ -902,18 +758,6 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
     function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
 
     return function_node;
-}
-
-void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)
-{
-    auto function = FunctionFactory::instance().get(function_name, context);
-    function_node.resolveAsFunction(function->build(function_node.getArgumentColumns()));
-}
-
-void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
-{
-    auto aggregate_function = resolveAggregateFunction(function_node, function_name);
-    function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
 /** Returns:
@@ -964,186 +808,26 @@ QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node)
     return source;
 }
 
-/** There are no limits on the maximum size of the result for the subquery.
-  * Since the result of the query is not the result of the entire query.
-  */
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context)
-{
-    /** The subquery in the IN / JOIN section does not have any restrictions on the maximum size of the result.
-      * Because the result of this query is not the result of the entire query.
-      * Constraints work instead
-      *  max_rows_in_set, max_bytes_in_set, set_overflow_mode,
-      *  max_rows_in_join, max_bytes_in_join, join_overflow_mode,
-      *  which are checked separately (in the Set, Join objects).
-      */
-    Settings subquery_settings = mutable_context->getSettingsCopy();
-    subquery_settings[Setting::max_result_rows] = 0;
-    subquery_settings[Setting::max_result_bytes] = 0;
-    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-    subquery_settings[Setting::extremes] = false;
-    mutable_context->setSettings(subquery_settings);
-}
-
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    ContextMutablePtr & context)
-{
-    auto projection_columns = columns;
-
-    QueryTreeNodes subquery_projection_nodes;
-    subquery_projection_nodes.reserve(projection_columns.size());
-
-    for (const auto & column : projection_columns)
-        subquery_projection_nodes.push_back(std::make_shared<ColumnNode>(column, table_expression));
-
-    if (subquery_projection_nodes.empty())
-    {
-        auto constant_data_type = std::make_shared<DataTypeUInt64>();
-        subquery_projection_nodes.push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-        projection_columns.push_back({"1", std::move(constant_data_type)});
-    }
-
-    updateContextForSubqueryExecution(context);
-
-    auto query_node = std::make_shared<QueryNode>(std::move(context));
-
-    query_node->getProjection().getNodes() = std::move(subquery_projection_nodes);
-    query_node->resolveProjectionColumns(projection_columns);
-    query_node->getJoinTree() = table_expression;
-
-    return query_node;
-}
-
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    ContextMutablePtr & context)
-{
-    auto result = buildQueryToReadColumnsFromTableExpression(columns, table_expression, context);
-    result->as<QueryNode &>().setIsSubquery(true);
-    return result;
-}
-
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto context_copy = Context::createCopy(context);
-    return buildQueryToReadColumnsFromTableExpression(columns, table_expression, context_copy);
-}
-
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto context_copy = Context::createCopy(context);
-    return buildSubqueryToReadColumnsFromTableExpression(columns, table_expression, context_copy);
-}
-
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context)
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context)
 {
     const auto & storage_snapshot = table_node->as<TableNode>()->getStorageSnapshot();
-    auto columns_to_select_list = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
-    NamesAndTypes columns_to_select(columns_to_select_list.begin(), columns_to_select_list.end());
-    return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
-}
-
-bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)
-{
-    QueryTreeNodes stack = { node };
-    while (!stack.empty())
+    auto columns_to_select = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
+    size_t columns_to_select_size = columns_to_select.size();
+    auto column_nodes_to_select = std::make_shared<ListNode>();
+    column_nodes_to_select->getNodes().reserve(columns_to_select_size);
+    NamesAndTypes projection_columns;
+    projection_columns.reserve(columns_to_select_size);
+    for (auto & column : columns_to_select)
     {
-        auto current = stack.back();
-        stack.pop_back();
-
-        switch (current->getNodeType())
-        {
-            case QueryTreeNodeType::CONSTANT:
-                break;
-            case QueryTreeNodeType::COLUMN:
-            {
-                auto * column_node = current->as<ColumnNode>();
-                auto source = column_node->getColumnSourceOrNull();
-                if (source && table_expression && !source->isEqual(*table_expression))
-                    return true;
-                break;
-            }
-            default:
-            {
-                for (const auto & child : current->getChildren())
-                {
-                    if (child)
-                        stack.push_back(child);
-                }
-            }
-        }
+        column_nodes_to_select->getNodes().emplace_back(std::make_shared<ColumnNode>(column, table_node));
+        projection_columns.emplace_back(column.name, column.type);
     }
-    return false;
-}
-
-void removeExpressionsThatDoNotDependOnTableIdentifiers(
-    QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto * function = expression->as<FunctionNode>();
-    if (!function)
-        return;
-
-    if (function->getFunctionName() != "and")
-    {
-        if (hasUnknownColumn(expression, table_expression))
-            expression = nullptr;
-        return;
-    }
-
-    QueryTreeNodesDeque conjunctions;
-    QueryTreeNodesDeque processing{ expression };
-
-    while (!processing.empty())
-    {
-        auto node = std::move(processing.front());
-        processing.pop_front();
-
-        if (auto * function_node = node->as<FunctionNode>())
-        {
-            if (function_node->getFunctionName() == "and")
-                std::ranges::copy(
-                    function_node->getArguments(),
-                    std::back_inserter(processing)
-                );
-            else
-                conjunctions.push_back(node);
-        }
-        else
-        {
-            conjunctions.push_back(node);
-        }
-    }
-
-    std::swap(processing, conjunctions);
-
-    for (const auto & node : processing)
-    {
-        if (!hasUnknownColumn(node, table_expression))
-            conjunctions.push_back(node);
-    }
-
-    if (conjunctions.empty())
-    {
-        expression = {};
-        return;
-    }
-    if (conjunctions.size() == 1)
-    {
-        expression = conjunctions[0];
-        return;
-    }
-
-    function->getArguments().getNodes().clear();
-    std::ranges::move(conjunctions, std::back_inserter(function->getArguments().getNodes()));
-
-    const auto function_impl = FunctionFactory::instance().get("and", context);
-    function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
+    auto subquery_for_table = std::make_shared<QueryNode>(Context::createCopy(context));
+    subquery_for_table->setIsSubquery(true);
+    subquery_for_table->getProjectionNode() = std::move(column_nodes_to_select);
+    subquery_for_table->getJoinTree() = std::move(table_node);
+    subquery_for_table->resolveProjectionColumns(std::move(projection_columns));
+    return subquery_for_table;
 }
 
 }

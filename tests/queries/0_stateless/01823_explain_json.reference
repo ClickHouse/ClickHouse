@@ -2,25 +2,20 @@
   {
     "Plan": {
       "Node Type": "Union",
-      "Node Id": "Union_10",
       "Plans": [
         {
           "Node Type": "Expression",
-          "Node Id": "Expression_13",
           "Plans": [
             {
-              "Node Type": "ReadFromStorage",
-              "Node Id": "ReadFromStorage_0"
+              "Node Type": "ReadFromStorage"
             }
           ]
         },
         {
           "Node Type": "Expression",
-          "Node Id": "Expression_16",
           "Plans": [
             {
-              "Node Type": "ReadFromStorage",
-              "Node Id": "ReadFromStorage_4"
+              "Node Type": "ReadFromStorage"
             }
           ]
         }
@@ -40,7 +35,6 @@
         }
 --------
           "Node Type": "Aggregating",
-          "Node Id": "Aggregating_3",
           "Header": [
             {
               "Name": "__table1.number",
@@ -79,16 +73,13 @@
           ],
 --------
           "Node Type": "ArrayJoin",
-          "Node Id": "ArrayJoin_4",
           "Left": false,
-          "Columns": ["__array_join_exp_1", "__array_join_exp_2"],
+          "Columns": ["__table1.x", "__table1.y"],
 --------
           "Node Type": "Distinct",
-          "Node Id": "Distinct_4",
           "Columns": ["intDiv(__table1.number, 2_UInt8)", "intDiv(__table1.number, 3_UInt8)"],
 --
               "Node Type": "Distinct",
-              "Node Id": "Distinct_3",
               "Columns": ["intDiv(__table1.number, 2_UInt8)", "intDiv(__table1.number, 3_UInt8)"],
 --------
               "Sort Description": [

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <atomic>
+#include <variant>
 #include <Core/Block.h>
 #include <boost/geometry.hpp>
+#include <boost/geometry/geometries/multi_polygon.hpp>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -32,7 +34,7 @@ public:
      *      - A point is represented by its coordinates stored in an according structure (see below).
      *  A simple polygon is represented by an one-dimensional array of points, stored in the according structure.
      */
-    enum class InputType : uint8_t
+    enum class InputType
     {
         MultiPolygon,
         SimplePolygon
@@ -40,7 +42,7 @@ public:
     /** Controls the different types allowed for providing the coordinates of points.
       * Right now a point can be represented by either an array or a tuple of two Float64 values.
       */
-    enum class PointType : uint8_t
+    enum class PointType
     {
         Array,
         Tuple,

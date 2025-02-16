@@ -22,7 +22,7 @@ namespace DB
   */
 
 /// Specifies how many connections to return from ConnectionPoolWithFailover::getMany() method.
-enum class PoolMode : uint8_t
+enum class PoolMode
 {
     /// Return exactly one connection.
     GET_ONE = 0,
@@ -103,11 +103,6 @@ public:
     void updateSharedError(std::vector<ShuffledPool> & shuffled_pools)
     {
         Base::updateSharedErrorCounts(shuffled_pools);
-    }
-
-    void incrementErrorCount(ConnectionPoolPtr pool)
-    {
-        Base::incrementErrorCount(pool);
     }
 
     size_t getPoolSize() const { return Base::getPoolSize(); }

@@ -9,7 +9,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
-#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -31,12 +30,12 @@ struct MutationCommand
         UPDATE,
         MATERIALIZE_INDEX,
         MATERIALIZE_PROJECTION,
-        MATERIALIZE_STATISTICS,
+        MATERIALIZE_STATISTIC,
         READ_COLUMN, /// Read column and apply conversions (MODIFY COLUMN alter query).
         DROP_COLUMN,
         DROP_INDEX,
         DROP_PROJECTION,
-        DROP_STATISTICS,
+        DROP_STATISTIC,
         MATERIALIZE_TTL,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
@@ -52,11 +51,10 @@ struct MutationCommand
     /// Columns with corresponding actions
     std::unordered_map<String, ASTPtr> column_to_update_expression = {};
 
-    /// For MATERIALIZE INDEX and PROJECTION and STATISTICS
+    /// For MATERIALIZE INDEX and PROJECTION and STATISTIC
     String index_name = {};
     String projection_name = {};
-    std::vector<String> statistics_columns = {};
-    std::vector<String> statistics_types = {};
+    std::vector<String> statistic_columns = {};
 
     /// For MATERIALIZE INDEX, UPDATE and DELETE.
     ASTPtr partition = {};
@@ -93,18 +91,8 @@ public:
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
-    NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
-
-/// A pair of Actions DAG that is required to execute one step
-/// of mutation and the name of filter column if it's a filtering step.
-struct MutationActions
-{
-    ActionsDAG dag;
-    String filter_column_name;
-    bool project_input;
-};
 
 }

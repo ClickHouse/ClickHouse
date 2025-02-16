@@ -20,7 +20,7 @@ public:
     }
 
     String getName() const override { return "RemoteSink"; }
-    void consume (Chunk & chunk) override { write(RemoteInserter::getHeader().cloneWithColumns(chunk.getColumns())); }
+    void consume (Chunk chunk) override { write(RemoteInserter::getHeader().cloneWithColumns(chunk.detachColumns())); }
     void onFinish() override { RemoteInserter::onFinish(); }
 };
 

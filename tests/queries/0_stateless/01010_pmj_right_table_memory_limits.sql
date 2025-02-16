@@ -1,7 +1,5 @@
 -- Tags: no-parallel, no-fasttest, no-random-settings
 
-SET max_bytes_in_join = 0;
-SET max_rows_in_join = 0;
 SET max_memory_usage = 32000000;
 SET join_on_disk_max_files_to_merge = 4;
 
@@ -13,7 +11,7 @@ ANY LEFT JOIN (
     SELECT number * 2 AS n, number AS j
     FROM numbers(1000000)
 ) js2
-USING n; -- { serverError MEMORY_LIMIT_EXCEEDED }
+USING n; -- { serverError 241 }
 
 SET join_algorithm = 'partial_merge';
 SET default_max_bytes_in_join = 0;
@@ -26,7 +24,7 @@ ANY LEFT JOIN (
     SELECT number * 2 AS n, number AS j
     FROM numbers(1000000)
 ) js2
-USING n; -- { serverError PARAMETER_OUT_OF_BOUND }
+USING n; -- { serverError 12 }
 
 SELECT n, j FROM
 (
@@ -37,7 +35,7 @@ ANY LEFT JOIN (
     FROM numbers(1000000)
 ) js2
 USING n
-SETTINGS max_bytes_in_join = 30000000; -- { serverError MEMORY_LIMIT_EXCEEDED }
+SETTINGS max_bytes_in_join = 30000000; -- { serverError 241 }
 
 SELECT n, j FROM
 (

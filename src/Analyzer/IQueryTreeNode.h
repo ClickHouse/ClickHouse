@@ -3,13 +3,14 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <deque>
 
 #include <Common/TypePromotion.h>
 
 #include <DataTypes/IDataType.h>
 
 #include <Parsers/IAST_fwd.h>
+
+#include <Analyzer/Identifier.h>
 
 class SipHash;
 
@@ -24,7 +25,7 @@ namespace ErrorCodes
 class WriteBuffer;
 
 /// Query tree node type
-enum class QueryTreeNodeType : uint8_t
+enum class QueryTreeNodeType
 {
     IDENTIFIER,
     MATCHER,
@@ -41,7 +42,6 @@ enum class QueryTreeNodeType : uint8_t
     TABLE_FUNCTION,
     QUERY,
     ARRAY_JOIN,
-    CROSS_JOIN,
     JOIN,
     UNION
 };
@@ -49,7 +49,7 @@ enum class QueryTreeNodeType : uint8_t
 /// Convert query tree node type to string
 const char * toString(QueryTreeNodeType type);
 
-/** Query tree is a semantic representation of query.
+/** Query tree is semantical representation of query.
   * Query tree node represent node in query tree.
   * IQueryTreeNode is base class for all query tree nodes.
   *
@@ -63,7 +63,6 @@ const char * toString(QueryTreeNodeType type);
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
-using QueryTreeNodesDeque = std::deque<QueryTreeNodePtr>;
 using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
 using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 

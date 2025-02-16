@@ -14,7 +14,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int TYPE_MISMATCH;
 }
@@ -41,7 +41,7 @@ public:
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
         DataTypes accumulator_and_array_types(arguments.size() - 1);
         accumulator_and_array_types[0] = arguments.back();
@@ -64,7 +64,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() < 3)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires as arguments a lambda function, at least one array and an accumulator", getName());
 
         const auto * lambda_function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
         if (!lambda_function_type)
@@ -87,9 +87,7 @@ public:
         if (!lambda_function_with_type_and_name.column)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 
-        auto lambda_function_materialized = lambda_function_with_type_and_name.column->convertToFullColumnIfConst();
-
-        const auto * lambda_function = typeid_cast<const ColumnFunction *>(lambda_function_materialized.get());
+        const auto * lambda_function = typeid_cast<const ColumnFunction *>(lambda_function_with_type_and_name.column.get());
         if (!lambda_function)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function", getName());
 
@@ -172,7 +170,8 @@ public:
         {
             selector[i] = cur_element_in_cur_array;
             ++cur_element_in_cur_array;
-            max_array_size = std::max(cur_element_in_cur_array, max_array_size);
+            if (cur_element_in_cur_array > max_array_size)
+                max_array_size = cur_element_in_cur_array;
             while (first_row_with_non_empty_array < num_rows && cur_element_in_cur_array >= offsets[first_row_with_non_empty_array] - offsets[first_row_with_non_empty_array - 1])
             {
                 ++first_row_with_non_empty_array;
@@ -292,6 +291,6 @@ REGISTER_FUNCTION(ArrayFold)
     factory.registerFunction<FunctionArrayFold>(FunctionDocumentation{.description=R"(
         Function arrayFold(acc,a1,...,aN->expr, arr1, ..., arrN, acc_initial) applies a lambda function to each element
         in each (equally-sized) array and collects the result in an accumulator.
-        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .category{"Array"}});
+        )", .examples{{"sum", "SELECT arrayFold(acc,x->acc+x, [1,2,3,4], toInt64(1));", "11"}}, .categories{"Array"}});
 }
 }

@@ -1,12 +1,13 @@
 #pragma once
 
+#include <type_traits>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 
 #include <Common/Exception.h>
@@ -16,7 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -205,47 +206,49 @@ public:
 
             return Impl::getReturnType(nested_type, nested_type);
         }
+        else
+        {
+            if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
 
-        if (arguments.size() > 2 + num_fixed_params && Impl::needOneArray())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs one argument with data", getName());
+            const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
-        const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
+            if (!data_type_function)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} must be a function. Actual {}",
+                    getName(),
+                    arguments[0].type->getName());
 
-        if (!data_type_function)
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "First argument for function {} must be a function. Actual {}",
-                getName(),
-                arguments[0].type->getName());
+            if constexpr (num_fixed_params)
+                Impl::checkArguments(getName(), arguments.data() + 1);
 
-        if constexpr (num_fixed_params)
-            Impl::checkArguments(getName(), arguments.data() + 1);
+            /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
-        /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
+            DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
 
-        DataTypePtr return_type = removeLowCardinality(data_type_function->getReturnType());
+            /// Special cases when we need boolean lambda result:
+            ///  - lambda may return Nullable(UInt8) column, in this case after lambda execution we will
+            ///    replace all NULLs with 0 and return nested UInt8 column.
+            ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
+            ///    for these types. In this case we will just create UInt8 const column full of 0.
+            if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
+                    getName(),
+                    return_type->getName());
 
-        /// Special cases when we need boolean lambda result:
-        ///  - lambda may return Nullable(UInt8) column, in this case after lambda execution we will
-        ///    replace all NULLs with 0 and return nested UInt8 column.
-        ///  - lambda may return Nothing or Nullable(Nothing) because of default implementation of functions
-        ///    for these types. In this case we will just create UInt8 const column full of 0.
-        if (Impl::needBoolean() && !isUInt8(removeNullable(return_type)) && !isNothing(removeNullable(return_type)))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Expression for function {} must return UInt8 or Nullable(UInt8), found {}",
-                getName(),
-                return_type->getName());
+            if (arguments.size() < 2 + num_fixed_params)
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
 
-        if (arguments.size() < 2 + num_fixed_params)
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect number of arguments: {}", arguments.size());
+            const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
+            if (!first_array_type)
+                throw DB::Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
 
-        const auto * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1 + num_fixed_params].type.get());
-        if (!first_array_type)
-            throw DB::Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}", arguments[1 + num_fixed_params].type->getName());
-
-        return Impl::getReturnType(return_type, first_array_type->getNestedType());
+            return Impl::getReturnType(return_type, first_array_type->getNestedType());
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
@@ -281,9 +284,7 @@ public:
             if (!column_with_type_and_name.column)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
-            auto column_function_materialized = column_with_type_and_name.column->convertToFullColumnIfConst();
-
-            const auto * column_function = typeid_cast<const ColumnFunction *>(column_function_materialized.get());
+            const auto * column_function = typeid_cast<const ColumnFunction *>(column_with_type_and_name.column.get());
             if (!column_function)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a function.", getName());
 
@@ -316,7 +317,7 @@ public:
                             ErrorCodes::ILLEGAL_COLUMN, "Expected Array column, found {}", column_array_ptr->getName());
 
                     column_array_ptr = recursiveRemoveLowCardinality(column_const_array->convertToFullColumn());
-                    column_array = &checkAndGetColumn<ColumnArray>(*column_array_ptr);
+                    column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
                 }
 
                 if (!array_type)

@@ -1,6 +1,5 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/CommonParsers.h>
@@ -8,7 +7,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserWatchQuery.h>
-#include <Parsers/ParserWithElement.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
@@ -38,10 +36,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_format(Keyword::FORMAT);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_select(Keyword::SELECT);
+    ParserKeyword s_watch(Keyword::WATCH);
     ParserKeyword s_partition_by(Keyword::PARTITION_BY);
     ParserKeyword s_with(Keyword::WITH);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
+    ParserToken s_semicolon(TokenType::Semicolon);
     ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
@@ -56,23 +56,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr columns;
     ASTPtr format;
     ASTPtr select;
+    ASTPtr watch;
     ASTPtr table_function;
     ASTPtr settings_ast;
     ASTPtr partition_by_expr;
     ASTPtr compression;
-    ASTPtr with_expression_list;
 
     /// Insertion data
     const char * data = nullptr;
-
-    if (s_with.ignore(pos, expected))
-    {
-        if (!ParserList(std::make_unique<ParserWithElement>(), std::make_unique<ParserToken>(TokenType::Comma))
-            .parse(pos, with_expression_list, expected))
-            return false;
-        if (with_expression_list->children.empty())
-            return false;
-    }
 
     /// Check for key words `INSERT INTO`. If it isn't found, the query can't be parsed as insert query.
     if (!s_insert_into.ignore(pos, expected))
@@ -119,9 +110,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!columns_p.parse(pos, columns, expected))
             return false;
 
-        /// Optional trailing comma
-        ParserToken(TokenType::Comma).ignore(pos);
-
         if (!s_rparen.ignore(pos, expected))
             return false;
     }
@@ -155,15 +143,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String format_str;
     Pos before_values = pos;
 
-    /// VALUES or FORMAT or SELECT or WITH.
+    /// VALUES or FORMAT or SELECT or WITH or WATCH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data,
         /// and if values followed by semicolon, the data should be null.
-        if (pos->type != TokenType::Semicolon)
+        if (!s_semicolon.checkWithoutMoving(pos, expected))
             data = pos->begin;
-
         format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))
@@ -174,7 +161,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected))
+    else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
         /// If SELECT is defined, return to position before select and parse
         /// rest of query as SELECT query.
@@ -182,24 +169,19 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
 
-        if (with_expression_list && select)
-        {
-            const auto & children = select->as<ASTSelectWithUnionQuery>()->list_of_selects->children;
-            for (const auto & child : children)
-            {
-                if (child->as<ASTSelectQuery>()->getExpression(ASTSelectQuery::Expression::WITH, false))
-                    throw Exception(ErrorCodes::SYNTAX_ERROR,
-                        "Only one WITH should be presented, either before INSERT or SELECT.");
-                child->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WITH,
-                    std::move(with_expression_list));
-            }
-        }
-
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
+    }
+    else if (!infile && s_watch.ignore(pos, expected))
+    {
+        /// If WATCH is defined, return to position before WATCH and parse
+        /// rest of query as WATCH query.
+        pos = before_values;
+        ParserWatchQuery watch_p;
+        watch_p.parse(pos, watch, expected);
     }
     else if (!infile)
     {
@@ -304,6 +286,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->columns = columns;
     query->format = std::move(format_str);
     query->select = select;
+    query->watch = watch;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
     query->end = end;
@@ -312,6 +295,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+    if (watch)
+        query->children.push_back(watch);
     if (settings_ast)
         query->children.push_back(settings_ast);
 

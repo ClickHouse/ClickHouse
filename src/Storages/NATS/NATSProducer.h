@@ -1,7 +1,10 @@
 #pragma once
 
 #include <atomic>
-
+#include <list>
+#include <mutex>
+#include <Columns/IColumn.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/IMessageProducer.h>
@@ -20,7 +23,6 @@ public:
         LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
-    void cancel() noexcept override;
 
 private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }

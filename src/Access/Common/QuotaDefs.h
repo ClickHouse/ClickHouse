@@ -9,7 +9,7 @@ namespace DB
 using QuotaValue = UInt64;
 
 /// Kinds of resource what we wish to quota.
-enum class QuotaType : uint8_t
+enum class QuotaType
 {
     QUERIES,                                /// Number of queries.
     QUERY_SELECTS,                          /// Number of select queries.
@@ -45,7 +45,7 @@ struct QuotaTypeInfo
 
 /// Key to share quota consumption.
 /// Users with the same key share the same amount of resource.
-enum class QuotaKeyType : uint8_t
+enum class QuotaKeyType
 {
     NONE,       /// All users share the same quota.
     USER_NAME,  /// Connections with the same user name share the same quota.

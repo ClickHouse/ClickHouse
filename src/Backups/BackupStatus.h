@@ -1,12 +1,12 @@
 #pragma once
 
 #include <base/types.h>
-#include <vector>
+
 
 namespace DB
 {
 
-enum class BackupStatus : uint8_t
+enum class BackupStatus
 {
     /// Statuses of making backups
     CREATING_BACKUP,

@@ -2,7 +2,6 @@
 
 #include <Common/Throttler_fwd.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <IO/DistributedCacheSettings.h>
 
 namespace DB
 {
@@ -14,7 +13,8 @@ struct WriteSettings
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
 
-    IOSchedulingSettings io_scheduling;
+    // Resource to be used during reading
+    ResourceLink resource_link;
 
     /// Filesystem cache settings
     bool enable_filesystem_cache_on_write_operations = false;
@@ -23,18 +23,11 @@ struct WriteSettings
     size_t filesystem_cache_reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     bool s3_allow_parallel_part_upload = true;
-    bool azure_allow_parallel_part_upload = true;
 
-    bool use_adaptive_write_buffer = false;
-    size_t adaptive_write_buffer_initial_size = 16 * 1024;
-
-    bool write_through_distributed_cache = false;
-    DistributedCacheSettings distributed_cache_settings;
+    /// Monitoring
+    bool for_object_storage = false; // to choose which profile events should be incremented
 
     bool operator==(const WriteSettings & other) const = default;
 };
 
-WriteSettings getWriteSettings();
-
-WriteSettings getWriteSettingsForMetadata();
 }
