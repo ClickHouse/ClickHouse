@@ -23,7 +23,7 @@ The specification of the interface is described in [clickhouse_grpc.proto](https
 
 ## gRPC Configuration {#grpc-interface-configuration}
 
-To use the gRPC interface set `grpc_port` in the main [server configuration](../operations/configuration-files.md). Other configuration options see in the following example:
+To use the gRPC interface set `grpc_port` in the main [server configuration](../operations/settings/configuration-files.md). Other configuration options see in the following example:
 
 ```xml
 <grpc_port>9100</grpc_port>
