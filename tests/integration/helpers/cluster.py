@@ -2142,7 +2142,7 @@ class ClickHouseCluster:
                 [
                     "bash",
                     "-c",
-                    "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
+                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(dest_path, encodedStr, dest_path),
                 ],
             )
 
