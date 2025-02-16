@@ -166,8 +166,7 @@ public:
         const AccessFlags & min_flags_with_children,
         const AccessFlags & max_flags_with_children,
         const size_t level,
-        bool grant_option,
-        bool leaf_or_wildcard)>;
+        bool grant_option)>;
     void modifyFlags(const ModifyFlagsFunction & function);
 
     friend bool operator ==(const AccessRights & left, const AccessRights & right);

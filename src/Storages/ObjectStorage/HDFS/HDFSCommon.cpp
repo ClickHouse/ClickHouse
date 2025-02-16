@@ -99,7 +99,7 @@ void HDFSBuilderWrapper::loadFromConfig(
 }
 
 #if USE_KRB5
-void HDFSBuilderWrapper::runKinit() const
+void HDFSBuilderWrapper::runKinit()
 {
     if (!need_kinit)
     {

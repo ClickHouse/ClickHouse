@@ -10,7 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -125,8 +124,6 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
-
-using String = std::string;
 
 namespace
 {
@@ -388,7 +385,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
     bool can_be_directory = true;
 
-    if (path.contains(PartitionedSink::PARTITION_ID_WILDCARD))
+    if (path.find(PartitionedSink::PARTITION_ID_WILDCARD) != std::string::npos)
     {
         paths.push_back(path);
     }
@@ -1979,7 +1976,7 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         flags |= O_TRUNC;
 
-    bool has_wildcards = path_for_partitioned_write.contains(PartitionedSink::PARTITION_ID_WILDCARD);
+    bool has_wildcards = path_for_partitioned_write.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
@@ -2035,10 +2032,10 @@ SinkToStoragePtr StorageFile::write(
             else
                 throw Exception(
                     ErrorCodes::CANNOT_APPEND_TO_FILE,
-                    "File {} already exists and data cannot be appended to this file as the {} format doesn't support appends."
-                    " You can configure ClickHouse to create a new file "
-                    "on each insert by enabling the setting `engine_file_allow_create_multiple_files`",
-                    path, format_name);
+                    "Cannot append data in format {} to file, because this format doesn't support appends."
+                    " You can allow to create a new file "
+                    "on each insert by enabling setting engine_file_allow_create_multiple_files",
+                    format_name);
         }
     }
 
@@ -2128,7 +2125,6 @@ void registerStorageFile(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::FILE,
-        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(

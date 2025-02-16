@@ -155,23 +155,11 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 
-        if (read_task_info.alter_conversions->hasMutations())
-        {
-            auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-                .withExtendedObjects()
-                .withVirtuals()
-                .withSubcolumns();
-
-            auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            read_task_info.mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
-        }
-
         read_task_info.task_columns = getReadTaskColumns(
             part_info,
             storage_snapshot,
             column_names,
             prewhere_info,
-            read_task_info.mutation_steps,
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/true);
@@ -195,8 +183,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 Names(all_column_names.begin(), all_column_names.end()),
                 sample_block);
         }
-
-        read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)

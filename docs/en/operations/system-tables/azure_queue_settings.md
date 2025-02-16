@@ -16,5 +16,5 @@ Columns:
 - `description` ([String](../../sql-reference/data-types/string.md)) — Setting description.
 - `alterable` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the setting can be changes via `ALTER TABLE ... MODIFY SETTING`.
     - `0` — Current user can alter the setting.
-    - `1` — Current user can't alter the setting.
+    - `1` — Current user can’t alter the setting.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Setting type (implementation specific string value).

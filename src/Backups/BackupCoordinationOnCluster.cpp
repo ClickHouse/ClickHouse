@@ -102,7 +102,7 @@ namespace
     {
         BackupFileInfos file_infos;
 
-        static String serialize(const BackupFileInfos & file_infos_, bool is_lightweight_snapshot)
+        static String serialize(const BackupFileInfos & file_infos_)
         {
             WriteBufferFromOwnString out;
             writeBinary(file_infos_.size(), out);
@@ -115,17 +115,13 @@ namespace
                 writeBinary(info.base_checksum, out);
                 writeBinary(info.encrypted_by_disk, out);
                 writeBinary(info.reference_target, out);
-                if (is_lightweight_snapshot)
-                {
-                    writeBinary(info.object_key, out);
-                }
                 /// We don't store `info.data_file_name` and `info.data_file_index` because they're determined automalically
                 /// after reading file infos for all the hosts (see the class BackupCoordinationFileInfos).
             }
             return out.str();
         }
 
-        static FileInfos deserialize(const String & str, bool is_lightweight_snapshot)
+        static FileInfos deserialize(const String & str)
         {
             ReadBufferFromString in{str};
             FileInfos res;
@@ -142,10 +138,6 @@ namespace
                 readBinary(info.base_checksum, in);
                 readBinary(info.encrypted_by_disk, in);
                 readBinary(info.reference_target, in);
-                if (is_lightweight_snapshot)
-                {
-                    readBinary(info.object_key, in);
-                }
             }
             return res;
         }
@@ -172,7 +164,6 @@ size_t BackupCoordinationOnCluster::findCurrentHostIndex(const String & current_
 BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     const UUID & backup_uuid_,
     bool is_plain_backup_,
-    bool is_lightweight_snapshot_,
     const String & root_zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     const BackupKeeperSettings & keeper_settings_,
@@ -191,8 +182,6 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , current_host(current_host_)
     , current_host_index(findCurrentHostIndex(current_host, all_hosts))
     , plain_backup(is_plain_backup_)
-    , lightweight_snapshot(is_lightweight_snapshot_)
-    , process_list_element(process_list_element_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
@@ -284,8 +273,7 @@ ZooKeeperRetriesInfo BackupCoordinationOnCluster::getOnClusterInitializationKeep
 {
     return ZooKeeperRetriesInfo{keeper_settings.max_retries_while_initializing,
                                 static_cast<UInt64>(keeper_settings.retry_initial_backoff_ms.count()),
-                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count()),
-                                process_list_element};
+                                static_cast<UInt64>(keeper_settings.retry_max_backoff_ms.count())};
 }
 
 void BackupCoordinationOnCluster::serializeToMultipleZooKeeperNodes(const String & path, const String & value, const String & logging_name)
@@ -759,7 +747,7 @@ void BackupCoordinationOnCluster::addFileInfos(BackupFileInfos && file_infos_)
     }
 
     /// Serialize `file_infos_` and write it to ZooKeeper's nodes.
-    String file_infos_str = FileInfos::serialize(file_infos_, lightweight_snapshot);
+    String file_infos_str = FileInfos::serialize(file_infos_);
     serializeToMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + current_host, file_infos_str, "addFileInfos");
 }
 
@@ -798,7 +786,7 @@ void BackupCoordinationOnCluster::prepareFileInfos() const
     for (const String & host : hosts_with_file_infos)
     {
         String file_infos_str = deserializeFromMultipleZooKeeperNodes(zookeeper_path + "/file_infos/" + host, "prepareFileInfos");
-        auto deserialized_file_infos = FileInfos::deserialize(file_infos_str, lightweight_snapshot).file_infos;
+        auto deserialized_file_infos = FileInfos::deserialize(file_infos_str).file_infos;
         file_infos->addFileInfos(std::move(deserialized_file_infos), host);
     }
 }

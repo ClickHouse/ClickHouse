@@ -53,7 +53,7 @@ String Macros::expand(const String & s,
     /// Do not allow recursion if we expand only special macros, because it will be infinite recursion
     assert(info.level == 0 || !info.expand_special_macros_only);
 
-    if (!s.contains('{'))
+    if (s.find('{') == String::npos)
         return s;
 
     if (info.level && s.size() > 65536)

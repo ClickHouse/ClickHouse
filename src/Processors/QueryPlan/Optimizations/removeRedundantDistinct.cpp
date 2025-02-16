@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -306,7 +307,7 @@ namespace
 /// DISTINCT is redundant if DISTINCT on the same columns was executed before
 /// Trivial example: SELECT DISTINCT * FROM (SELECT DISTINCT * FROM numbers(3))
 ///
-size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & /*settings*/)
+size_t tryRemoveRedundantDistinct(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/)
 {
     bool applied = false;
     for (auto & node : parent_node->children)

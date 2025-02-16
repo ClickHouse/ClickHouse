@@ -2,7 +2,6 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
@@ -12,7 +11,7 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include "Coordination/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>

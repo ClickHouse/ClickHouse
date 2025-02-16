@@ -24,7 +24,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -33,6 +32,7 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
+#include <deque>
 
 
 namespace DB
@@ -141,7 +141,7 @@ public:
             String path = block.getByPosition(2).column->getDataAt(i).toString();
 
             /// We don't expect a "name" contains a path.
-            if (name.contains('/'))
+            if (name.find('/') != std::string::npos)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `name` should not contain '/'");
             }
@@ -518,8 +518,7 @@ Chunk SystemZooKeeperSource::generate()
     ZooKeeperRetriesInfo retries_seetings(
         settings[Setting::insert_keeper_max_retries],
         settings[Setting::insert_keeper_retry_initial_backoff_ms],
-        settings[Setting::insert_keeper_retry_max_backoff_ms],
-        query_status);
+        settings[Setting::insert_keeper_retry_max_backoff_ms]);
 
     /// Handles reconnects when needed
     auto get_zookeeper = [&] ()
@@ -587,7 +586,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetChildrenResponse list_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { list_responses = get_zookeeper()->tryGetChildren(paths_to_list); });
 
         struct GetTask
@@ -633,7 +632,7 @@ Chunk SystemZooKeeperSource::generate()
         }
 
         zkutil::ZooKeeper::MultiTryGetResponse get_responses;
-        ZooKeeperRetriesControl("", nullptr, retries_seetings).retryLoop(
+        ZooKeeperRetriesControl("", nullptr, retries_seetings, query_status).retryLoop(
             [&]() { get_responses = get_zookeeper()->tryGet(paths_to_get); });
 
         /// Add children count to query total rows. We can not get total rows in advance,

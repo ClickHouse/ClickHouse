@@ -1,17 +1,17 @@
 #include "OwnSplitChannel.h"
 #include "OwnFormattingChannel.h"
 
-#include <Columns/IColumn.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/TextLog.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/TextLog.h>
 
-#include <Poco/Message.h>
 
 namespace DB
 {

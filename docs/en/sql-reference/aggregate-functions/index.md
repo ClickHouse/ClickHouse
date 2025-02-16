@@ -34,7 +34,7 @@ Consider this table:
 └───┴──────┘
 ```
 
-Let's say you need to total the values in the `y` column:
+Let’s say you need to total the values in the `y` column:
 
 ``` sql
 SELECT sum(y) FROM t_null_big

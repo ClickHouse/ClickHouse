@@ -63,7 +63,6 @@ const char * auto_config_build[]
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
     "USE_QATLIB", "@USE_QATLIB@",
-    "CLICKHOUSE_CLOUD", "@CLICKHOUSE_CLOUD@",
     "GIT_HASH", "@GIT_HASH@",
     "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(@GIT_BRANCH@)IRjaNsZIL9Yh7FQ4",
     "GIT_DATE", "@GIT_DATE@",

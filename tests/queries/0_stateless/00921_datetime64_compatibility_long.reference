@@ -361,7 +361,7 @@ SELECT formatDateTime(N, \'%C %d %D %e %F %H %I %j %m %i %p %R %S %T %u %V %w %y
 SELECT N -  N
 "Int32",0
 "Int32",0
-"Decimal(18, 3)",0
+Code: 43
 ------------------------------------------
 SELECT N +  N
 Code: 43
@@ -401,12 +401,12 @@ SELECT N >= N
 SELECT N - DT
 Code: 43
 "Int32",0
-"Decimal(18, 3)",0.234
+Code: 43
 ------------------------------------------
 SELECT DT - N
 Code: 43
 "Int32",0
-"Decimal(18, 3)",-0.234
+Code: 43
 ------------------------------------------
 SELECT N - D
 "Int32",0
@@ -420,13 +420,13 @@ Code: 43
 ------------------------------------------
 SELECT N - DT64
 Code: 43
-"Decimal(18, 3)",-0.234
-"Decimal(18, 3)",0
+Code: 43
+Code: 43
 ------------------------------------------
 SELECT DT64 - N
 Code: 43
-"Decimal(18, 3)",0.234
-"Decimal(18, 3)",0
+Code: 43
+Code: 43
 ------------------------------------------
 SELECT N != DT
 "UInt8",1

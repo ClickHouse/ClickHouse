@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -52,8 +53,6 @@ struct MergeTreeReaderSettings
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
-    bool use_deserialization_prefixes_cache = false;
-    bool use_prefixes_deserialization_thread_pool = false;
 };
 
 struct MergeTreeWriterSettings
@@ -67,7 +66,6 @@ struct MergeTreeWriterSettings
         bool can_use_adaptive_granularity_,
         bool rewrite_primary_key_,
         bool save_marks_in_cache_,
-        bool save_primary_index_in_memory_,
         bool blocks_are_granules_size_);
 
     size_t min_compress_block_size;
@@ -83,7 +81,6 @@ struct MergeTreeWriterSettings
     bool can_use_adaptive_granularity;
     bool rewrite_primary_key;
     bool save_marks_in_cache;
-    bool save_primary_index_in_memory;
     bool blocks_are_granules_size;
     WriteSettings query_write_settings;
 
