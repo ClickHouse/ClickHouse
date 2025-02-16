@@ -81,7 +81,7 @@ pyparsing==3.1.0
 pyspark==3.3.2
 pyspnego==0.10.2
 pytest-order==1.0.0
-pytest-random==0.2
+pytest-random-order==1.1.1
 pytest-repeat==0.9.3
 pytest-reportlog==0.4.0
 pytest-timeout==2.3.1
