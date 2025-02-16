@@ -1,9 +1,10 @@
 ---
+description: "System table containing information about pending asynchronous inserts in queue."
 slug: /en/operations/system-tables/asynchronous_inserts
+title: "asynchronous_inserts"
+keywords: ["system table", "asynchronous_inserts"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# asynchronous_inserts
 
 <SystemTableCloud/>
 
