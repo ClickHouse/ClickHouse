@@ -4,6 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
@@ -18,7 +19,6 @@
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
-#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
@@ -26,10 +26,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
@@ -75,18 +72,15 @@
 
 #include <IO/CompressionMethod.h>
 
-#include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
-#include <base/EnumReflection.h>
-#include <base/demangle.h>
+#include <Poco/Net/SocketAddress.h>
 
-#include <chrono>
 #include <memory>
 #include <random>
+
 
 namespace ProfileEvents
 {
@@ -233,7 +227,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
         LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
-            client_info.current_address.toString(),
+            client_info.current_address->toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
@@ -291,7 +285,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
-                        context->getClientInfo().current_address.toString(),
+                        context->getClientInfo().current_address->toString(),
                         comment,
                         line_info,
                         toOneLineQuery(elem.query));
@@ -299,7 +293,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
         message.text = fmt::format(
             "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
-            context->getClientInfo().current_address.toString(),
+            context->getClientInfo().current_address->toString(),
             comment,
             line_info,
             toOneLineQuery(elem.query),
@@ -404,6 +398,7 @@ QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
     const std::unique_ptr<IInterpreter> & interpreter,
@@ -426,7 +421,7 @@ QueryLogElement logQueryStart(
     elem.query = query_for_logging;
     if (settings[Setting::log_formatted_queries])
         elem.formatted_query = queryToString(query_ast);
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
@@ -545,7 +540,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
+    QueryCacheUsage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -607,8 +602,6 @@ void logQueryFinish(
         }
 
         logProcessorProfile(context, query_pipeline.getProcessors());
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -680,7 +673,7 @@ void logQueryException(
     }
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
-    elem.query_cache_usage = QueryCache::Usage::None;
+    elem.query_cache_usage = QueryCacheUsage::None;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         setExceptionStackTrace(elem);
@@ -712,6 +705,7 @@ void logQueryException(
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
@@ -739,7 +733,7 @@ void logExceptionBeforeStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalized_query_hash;
 
     // Log query_kind if ast is valid
     if (ast)
@@ -935,6 +929,7 @@ static BlockIO executeQueryImpl(
 
     String query;
     String query_for_logging;
+    UInt64 normalized_query_hash;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
@@ -1071,6 +1066,8 @@ static BlockIO executeQueryImpl(
         {
             query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
         }
+
+        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
     }
     catch (...)
     {
@@ -1082,7 +1079,10 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
-            logExceptionBeforeStart(query_for_logging, context, out_ast, query_span, start_watch.elapsedMilliseconds());
+        {
+            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
+        }
         throw;
     }
 
@@ -1179,7 +1179,7 @@ static BlockIO executeQueryImpl(
         if (!internal && !out_ast->as<ASTShowProcesslistQuery>())
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, out_ast.get(), context, start_watch.getStart());
+            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart());
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
@@ -1321,7 +1321,7 @@ static BlockIO executeQueryImpl(
         const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
-        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
+        QueryCacheUsage query_cache_usage = QueryCacheUsage::None;
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
         /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
@@ -1356,13 +1356,13 @@ static BlockIO executeQueryImpl(
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
                     QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryCache::Reader reader = query_cache->createReader(key);
+                    QueryCacheReader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        query_cache_usage = QueryCache::Usage::Read;
+                        query_cache_usage = QueryCacheUsage::Read;
                         return true;
                     }
                 }
@@ -1443,6 +1443,7 @@ static BlockIO executeQueryImpl(
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
                 {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                    create_interpreter->setInternal(internal);
                 }
 
                 {
@@ -1499,7 +1500,7 @@ static BlockIO executeQueryImpl(
                             }
                             else
                             {
-                                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
                                                  key,
                                                  std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                                  settings[Setting::query_cache_squash_partial_results],
@@ -1507,7 +1508,7 @@ static BlockIO executeQueryImpl(
                                                  settings[Setting::query_cache_max_size_in_bytes],
                                                  settings[Setting::query_cache_max_entries]));
                                 res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                                query_cache_usage = QueryCache::Usage::Write;
+                                query_cache_usage = QueryCacheUsage::Write;
                             }
                         }
                     }
@@ -1548,6 +1549,7 @@ static BlockIO executeQueryImpl(
                 query_start_time,
                 context,
                 query_for_logging,
+                normalized_query_hash,
                 out_ast,
                 pipeline,
                 interpreter,
@@ -1566,7 +1568,7 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCache::Usage::Write)
+                if (query_cache_usage == QueryCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
@@ -1604,7 +1606,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
 
         if (!internal)
-            logExceptionBeforeStart(query_for_logging, context, out_ast, query_span, start_watch.elapsedMilliseconds());
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
 
         throw;
     }

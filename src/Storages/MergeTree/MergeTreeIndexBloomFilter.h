@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/HashTable/HashSet.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -8,6 +8,9 @@
 
 namespace DB
 {
+
+class Set;
+using ConstSetPtr = std::shared_ptr<const Set>;
 
 namespace ErrorCodes
 {
