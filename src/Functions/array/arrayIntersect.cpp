@@ -47,6 +47,11 @@ struct ArrayModeUnion
     static constexpr auto name = "arrayUnion";
 };
 
+struct ArrayModeSymmetricDifference
+{
+    static constexpr auto name = "arraySymmetricDifference";
+};
+
 template <typename Mode>
 class FunctionArrayIntersect : public IFunction
 {
@@ -577,8 +582,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         map.clear();
 
         bool all_has_nullable = all_nullable;
-        bool has_a_null = false;
         bool current_has_nullable = false;
+        size_t null_amount = 0;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
@@ -628,8 +633,9 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             }
             if (!current_has_nullable)
                 all_has_nullable = false;
-            else
-                has_a_null = true;
+            else 
+                null_amount++;
+
         }
 
         // We have NULL in output only once if it should be there
@@ -647,7 +653,26 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
                 }
             }
-            if (has_a_null && !null_added)
+            if (null_amount > 0 && !null_added)
+            {
+                ++result_offset;
+                result_data.insertDefault();
+                null_map.push_back(1);
+                null_added = true;
+            }
+        }
+        else if constexpr (std::is_same_v<Mode, ArrayModeSymmetricDifference>)
+        {
+            use_null_map = has_nullable;
+            for (auto & p : map)
+            {
+                typename Map::LookupResult pair = map.find(p.getKey());
+                if (pair && pair->getMapped() > 0 &&  pair->getMapped() < args)
+                {
+                    insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
+                }
+            }
+            if (null_amount > 0 && null_amount < args && !null_added)
             {
                 ++result_offset;
                 result_data.insertDefault();
@@ -745,11 +770,12 @@ void FunctionArrayIntersect<Mode>::insertElement(typename Map::LookupResult & pa
 
 using ArrayIntersect = FunctionArrayIntersect<ArrayModeIntersect>;
 using ArrayUnion = FunctionArrayIntersect<ArrayModeUnion>;
-
+using ArraySymmetricDifference = FunctionArrayIntersect<ArrayModeSymmetricDifference>;
 REGISTER_FUNCTION(ArrayIntersect)
 {
     factory.registerFunction<ArrayIntersect>();
     factory.registerFunction<ArrayUnion>();
+    factory.registerFunction<ArraySymmetricDifference>();
 }
 
 }
