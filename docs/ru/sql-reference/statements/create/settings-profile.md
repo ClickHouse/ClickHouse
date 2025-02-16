@@ -11,11 +11,9 @@ sidebar_label: "Профиль настроек"
 Синтаксис:
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] 
-    [ON CLUSTER cluster_name]
-    [IN access_storage_type]
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [ON CLUSTER cluster_name1]
+        [, name2 [ON CLUSTER cluster_name2] ...]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
-    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
 ```
 
 Секция `ON CLUSTER` позволяет создавать профили на кластере, см. [Распределенные DDL запросы](../../../sql-reference/distributed-ddl.md).

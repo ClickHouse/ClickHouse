@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stddef.h>
-#include <cstdint>
 
 
 namespace DB
@@ -45,7 +44,6 @@ namespace DB
     M(Arrow)                  /** ->. Should be distinguished from minus operator. */ \
     M(QuestionMark) \
     M(Colon) \
-    M(Caret) \
     M(DoubleColon) \
     M(Equals) \
     M(NotEquals) \
@@ -77,7 +75,7 @@ namespace DB
     M(ErrorMaxQuerySizeExceeded) \
 
 
-enum class TokenType : uint8_t
+enum class TokenType
 {
 #define M(TOKEN) TOKEN,
 APPLY_FOR_TOKENS(M)

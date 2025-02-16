@@ -1,20 +1,22 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <map>
-#include <mutex>
-#include <vector>
-#include <base/scope_guard.h>
-#include <boost/noncopyable.hpp>
 #include <Poco/Notification.h>
 #include <Poco/NotificationQueue.h>
 #include <Poco/Timestamp.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool_fwd.h>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+#include <map>
+#include <functional>
+#include <boost/noncopyable.hpp>
 #include <Common/ZooKeeper/Types.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadPool_fwd.h>
+#include <base/scope_guard.h>
+
 
 namespace DB
 {
@@ -152,5 +154,31 @@ private:
 };
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
+
+
+class BackgroundSchedulePoolTaskHolder
+{
+public:
+    BackgroundSchedulePoolTaskHolder() = default;
+    explicit BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskInfoPtr & task_info_) : task_info(task_info_) {}
+    BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskHolder & other) = delete;
+    BackgroundSchedulePoolTaskHolder(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
+    BackgroundSchedulePoolTaskHolder & operator=(const BackgroundSchedulePoolTaskHolder & other) noexcept = delete;
+    BackgroundSchedulePoolTaskHolder & operator=(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
+
+    ~BackgroundSchedulePoolTaskHolder()
+    {
+        if (task_info)
+            task_info->deactivate();
+    }
+
+    explicit operator bool() const { return task_info != nullptr; }
+
+    BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
+    const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }
+
+private:
+    BackgroundSchedulePoolTaskInfoPtr task_info;
+};
 
 }

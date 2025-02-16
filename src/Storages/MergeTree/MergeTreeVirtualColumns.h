@@ -21,13 +21,6 @@ struct BlockNumberColumn
     static const ASTPtr codec;
 };
 
-struct BlockOffsetColumn
-{
-    static const String name;
-    static const DataTypePtr type;
-    static const ASTPtr codec;
-};
-
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part);
 
 }

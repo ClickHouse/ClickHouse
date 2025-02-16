@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SharedMutex.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
@@ -111,7 +111,6 @@ public:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        const String & comment,
         LoadingStrictnessLevel mode);
 
     String getName() const override { return "WindowView"; }
@@ -167,7 +166,7 @@ public:
 
     BlockIO populate();
 
-    static void writeIntoWindowView(StorageWindowView & window_view, Block && block, Chunk::ChunkInfoCollection && chunk_infos, ContextPtr context);
+    static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
 
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
@@ -241,8 +240,8 @@ private:
 
     ASTPtr inner_table_engine;
 
-    BackgroundSchedulePoolTaskHolder clean_cache_task;
-    BackgroundSchedulePoolTaskHolder fire_task;
+    BackgroundSchedulePool::TaskHolder clean_cache_task;
+    BackgroundSchedulePool::TaskHolder fire_task;
 
     String window_view_timezone;
     String function_now_timezone;
@@ -272,9 +271,5 @@ private:
     StoragePtr getSourceTable() const;
     StoragePtr getInnerTable() const;
     StoragePtr getTargetTable() const;
-
-    bool disabled_due_to_analyzer = false;
-
-    void throwIfWindowViewIsDisabled(ContextPtr local_context = nullptr) const;
 };
 }

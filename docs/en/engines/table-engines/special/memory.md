@@ -20,7 +20,7 @@ Maximal productivity (over 10 GB/sec) is reached on simple queries, because ther
 When restarting a server, data disappears from the table and the table becomes empty.
 Normally, using this table engine is not justified. However, it can be used for tests, and for tasks where maximum speed is required on a relatively small number of rows (up to approximately 100,000,000).
 
-The Memory engine is used by the system for temporary tables with external query data (see the section "External data for processing a query"), and for implementing `GLOBAL IN` (see the section "IN operators").
+The Memory engine is used by the system for temporary tables with external query data (see the section “External data for processing a query”), and for implementing `GLOBAL IN` (see the section “IN operators”).
 
 Upper and lower bounds can be specified to limit Memory engine table size, effectively allowing it to act as a circular buffer (see [Engine Parameters](#engine-parameters)).
 
@@ -36,8 +36,6 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
   - Requires `max_rows_to_keep`
 - `max_rows_to_keep` — Maximum rows to keep within memory table where oldest rows are deleted on each insertion (i.e circular buffer). Max rows can exceed the stated limit if the oldest batch of rows to remove falls under the `min_rows_to_keep` limit when adding a large block.
   - Default value: `0`
-- `compress` - Whether to compress data in memory.
-  - Default value: `false`
 
 ## Usage {#usage}
 
@@ -45,11 +43,6 @@ Upper and lower bounds can be specified to limit Memory engine table size, effec
 **Initialize settings**
 ``` sql
 CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
-```
-
-**Modify settings**
-```sql
-ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
 ```
 
 **Note:** Both `bytes` and `rows` capping parameters can be set at the same time, however, the lower bounds of `max` and `min` will be adhered to.
@@ -104,4 +97,3 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' and data
 │       65536 │      10000 │
 └─────────────┴────────────┘
 ```
-

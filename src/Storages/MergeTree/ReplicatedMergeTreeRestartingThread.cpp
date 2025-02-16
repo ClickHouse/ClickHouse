@@ -1,14 +1,12 @@
-#include <atomic>
 #include <IO/Operators.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Interpreters/Context.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/randomSeed.h>
 #include <Core/ServerUUID.h>
 #include <boost/algorithm/string/replace.hpp>
 
@@ -22,16 +20,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsSeconds zookeeper_session_expiration_check_period;
-}
-
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
+    extern const int REPLICA_STATUS_CHANGED;
     extern const int LOGICAL_ERROR;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace FailPoints
@@ -52,23 +45,9 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     , active_node_identifier(generateActiveNodeIdentifier())
 {
     const auto storage_settings = storage.getSettings();
-    check_period_ms = (*storage_settings)[MergeTreeSetting::zookeeper_session_expiration_check_period].totalSeconds() * 1000;
+    check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
     task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
-}
-
-void ReplicatedMergeTreeRestartingThread::start(bool schedule)
-{
-    LOG_TRACE(log, "Starting the restating thread, schedule: {}", schedule);
-    if (schedule)
-        task->activateAndSchedule();
-    else
-        task->activate();
-}
-
-void ReplicatedMergeTreeRestartingThread::wakeup()
-{
-    task->schedule();
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -218,10 +197,26 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         else
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "It seems you have upgraded from a version earlier than 20.4 straight to one later than 24.10. "
-                "ClickHouse does not support upgrades that span more than a year. "
-                "Please update gradually (through intermediate versions).");
+            /// Table was created before 20.4 and was never altered,
+            /// let's initialize replica metadata version from global metadata version.
+
+            const String & zookeeper_path = storage.zookeeper_path, & replica_path = storage.replica_path;
+
+            Coordination::Stat table_metadata_version_stat;
+            zookeeper->get(zookeeper_path + "/metadata", &table_metadata_version_stat);
+
+            Coordination::Requests ops;
+            ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/metadata", table_metadata_version_stat.version));
+            ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(table_metadata_version_stat.version), zkutil::CreateMode::Persistent));
+
+            Coordination::Responses res;
+            auto code = zookeeper->tryMulti(ops, res);
+
+            if (code == Coordination::Error::ZBADVERSION)
+                throw Exception(ErrorCodes::REPLICA_STATUS_CHANGED, "Failed to initialize metadata_version "
+                                                                    "because table was concurrently altered, will retry");
+
+            zkutil::KeeperMultiException::check(code, ops, res);
         }
 
         storage.queue.removeCurrentPartsFromMutations();
@@ -380,7 +375,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown(bool part_of_full_shut
 void ReplicatedMergeTreeRestartingThread::shutdown(bool part_of_full_shutdown)
 {
     /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-    need_stop = part_of_full_shutdown;
+    need_stop = true;
     task->deactivate();
 
     /// Explicitly set the event, because the restarting thread will not set it again
@@ -397,13 +392,6 @@ void ReplicatedMergeTreeRestartingThread::setReadonly(bool on_shutdown)
 {
     bool old_val = false;
     bool became_readonly = storage.is_readonly.compare_exchange_strong(old_val, true);
-
-    if (became_readonly)
-    {
-        const UInt32 now = static_cast<UInt32>(
-            std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()));
-        storage.readonly_start_time.store(now, std::memory_order_relaxed);
-    }
 
     /// Do not increment the metric if replica became readonly due to shutdown.
     if (became_readonly && on_shutdown)
@@ -437,8 +425,6 @@ void ReplicatedMergeTreeRestartingThread::setNotReadonly()
         CurrentMetrics::sub(CurrentMetrics::ReadonlyReplica);
         chassert(CurrentMetrics::get(CurrentMetrics::ReadonlyReplica) >= 0);
     }
-
-    storage.readonly_start_time.store(0, std::memory_order_relaxed);
 }
 
 

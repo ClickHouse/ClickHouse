@@ -12,9 +12,9 @@
 
 #include <Core/Field.h>
 #include <Core/Block.h>
-#include <Common/CacheBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Storages/Hive/HiveSettings.h>
+#include <Storages/HDFS/ReadBufferFromHDFS.h>
 
 namespace orc
 {
@@ -24,8 +24,6 @@ class ColumnStatistics;
 
 namespace DB
 {
-struct HiveSettings;
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -37,7 +35,7 @@ public:
     using MinMaxIndex = IMergeTreeDataPart::MinMaxIndex;
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
 
-    enum class FileFormat : uint8_t
+    enum class FileFormat
     {
         RC_FILE,
         TEXT,
@@ -67,8 +65,8 @@ public:
         {ORC_INPUT_FORMAT, FileFormat::ORC},
     };
 
-    static bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
-    static FileFormat toFileFormat(const String & format_class)
+    static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.contains(format_class); }
+    static inline FileFormat toFileFormat(const String & format_class)
     {
         if (isFormatClass(format_class))
         {

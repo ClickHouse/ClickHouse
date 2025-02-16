@@ -50,13 +50,15 @@ std::optional<size_t> SingleValueDataBase::getSmallestIndex(const IColumn & colu
                 index = i;
         return {index};
     }
-
-    constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Ascending;
-    constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
-    IColumn::Permutation permutation;
-    constexpr UInt64 limit = 1;
-    column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
-    return {permutation[0]};
+    else
+    {
+        constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Ascending;
+        constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
+        IColumn::Permutation permutation;
+        constexpr UInt64 limit = 1;
+        column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
+        return {permutation[0]};
+    }
 }
 
 std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & column, size_t row_begin, size_t row_end) const
@@ -75,13 +77,15 @@ std::optional<size_t> SingleValueDataBase::getGreatestIndex(const IColumn & colu
                 index = i;
         return {index};
     }
-
-    constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Descending;
-    constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
-    IColumn::Permutation permutation;
-    constexpr UInt64 limit = 1;
-    column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
-    return {permutation[0]};
+    else
+    {
+        constexpr IColumn::PermutationSortDirection direction = IColumn::PermutationSortDirection::Descending;
+        constexpr IColumn::PermutationSortStability stability = IColumn::PermutationSortStability::Unstable;
+        IColumn::Permutation permutation;
+        constexpr UInt64 limit = 1;
+        column.getPermutation(direction, stability, limit, nan_null_direction_hint, permutation);
+        return {permutation[0]};
+    }
 }
 
 std::optional<size_t> SingleValueDataBase::getSmallestIndexNotNullIf(
@@ -159,7 +163,7 @@ void SingleValueDataBase::setGreatestNotNullIf(
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &) const
+void SingleValueDataFixed<T>::insertResultInto(IColumn & to) const
 {
     /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
     chassert(has() || value == T{});
@@ -191,7 +195,7 @@ bool SingleValueDataFixed<T>::isEqualTo(const IColumn & column, size_t index) co
 template <typename T>
 bool SingleValueDataFixed<T>::isEqualTo(const SingleValueDataFixed<T> & to) const
 {
-    return has() && to.has() && to.value == value;
+    return has() && to.value == value;
 }
 
 template <typename T>
@@ -243,7 +247,8 @@ bool SingleValueDataFixed<T>::setIfSmaller(const SingleValueDataFixed<T> & to, A
         set(to, arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 template <typename T>
@@ -254,7 +259,8 @@ bool SingleValueDataFixed<T>::setIfGreater(const SingleValueDataFixed<T> & to, A
         set(to, arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 template <typename T>
@@ -265,7 +271,8 @@ bool SingleValueDataFixed<T>::setIfSmaller(const IColumn & column, size_t row_nu
         set(column, row_num, arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 template <typename T>
@@ -276,7 +283,8 @@ bool SingleValueDataFixed<T>::setIfGreater(const IColumn & column, size_t row_nu
         set(column, row_num, arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 template <typename T>
@@ -536,7 +544,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             }
             return opt;
         }
-        if (!null_map)
+        else if (!null_map)
         {
             opt = findExtremeMaxIf(vec.getData().data(), if_map, row_begin, row_end);
             if (!opt.has_value())
@@ -548,17 +556,18 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             }
             return opt;
         }
-
-        auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-        opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
-        if (!opt.has_value())
-            return std::nullopt;
-        for (size_t i = row_begin; i < row_end; i++)
+        else
         {
-            if (final_flags[i] && vec[i] == *opt)
-                return {i};
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMaxIf(vec.getData().data(), final_flags.get(), row_begin, row_end);
+            if (!opt.has_value())
+                return std::nullopt;
+            for (size_t i = row_begin; i < row_end; i++)
+            {
+                if (final_flags[i] && vec[i] == *opt)
+                    return {i};
+            }
         }
-
         UNREACHABLE();
     }
     else
@@ -869,9 +878,9 @@ bool SingleValueDataNumeric<T>::has() const
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr & type) const
+void SingleValueDataNumeric<T>::insertResultInto(IColumn & to) const
 {
-    return memory.get().insertResultInto(to, type);
+    return memory.get().insertResultInto(to);
 }
 
 template <typename T>
@@ -895,7 +904,6 @@ bool SingleValueDataNumeric<T>::isEqualTo(const DB::IColumn & column, size_t ind
 template <typename T>
 bool SingleValueDataNumeric<T>::isEqualTo(const DB::SingleValueDataBase & to) const
 {
-    /// to.has() is checked in memory.get().isEqualTo
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().isEqualTo(other.memory.get());
 }
@@ -909,7 +917,6 @@ void SingleValueDataNumeric<T>::set(const DB::IColumn & column, size_t row_num, 
 template <typename T>
 void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Arena * arena)
 {
-    /// to.has() is checked in memory.get().set
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().set(other.memory.get(), arena);
 }
@@ -917,7 +924,6 @@ void SingleValueDataNumeric<T>::set(const DB::SingleValueDataBase & to, DB::Aren
 template <typename T>
 bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to, DB::Arena * arena)
 {
-    /// to.has() is checked in memory.get().setIfSmaller
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().setIfSmaller(other.memory.get(), arena);
 }
@@ -925,7 +931,6 @@ bool SingleValueDataNumeric<T>::setIfSmaller(const DB::SingleValueDataBase & to,
 template <typename T>
 bool SingleValueDataNumeric<T>::setIfGreater(const DB::SingleValueDataBase & to, DB::Arena * arena)
 {
-    /// to.has() is checked in memory.get().setIfGreater
     auto const & other = assert_cast<const Self &>(to);
     return memory.get().setIfGreater(other.memory.get(), arena);
 }
@@ -1102,7 +1107,7 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
     }
 }
 
-void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
+void SingleValueDataString::insertResultInto(DB::IColumn & to) const
 {
     if (has())
         StringValueCompatibility::insertDataWithTerminatingZero(assert_cast<ColumnString &>(to), getData(), size);
@@ -1186,7 +1191,7 @@ bool SingleValueDataString::isEqualTo(const DB::IColumn & column, size_t row_num
 bool SingleValueDataString::isEqualTo(const SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.has() && to.getStringRef() == getStringRef();
+    return has() && to.getStringRef() == getStringRef();
 }
 
 void SingleValueDataString::set(const IColumn & column, size_t row_num, Arena * arena)
@@ -1209,7 +1214,8 @@ bool SingleValueDataString::setIfSmaller(const IColumn & column, size_t row_num,
         set(column, row_num, arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Arena * arena)
@@ -1220,7 +1226,8 @@ bool SingleValueDataString::setIfSmaller(const SingleValueDataBase & other, Aren
         changeImpl(to.getStringRef(), arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 
@@ -1232,7 +1239,8 @@ bool SingleValueDataString::setIfGreater(const IColumn & column, size_t row_num,
         set(column, row_num, arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Arena * arena)
@@ -1243,15 +1251,16 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
         changeImpl(to.getStringRef(), arena);
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
+void SingleValueDataGeneric::insertResultInto(IColumn & to) const
 {
     if (has())
         to.insert(value);
     else
-        type->insertDefaultInto(to);
+        to.insertDefault();
 }
 
 void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
@@ -1282,7 +1291,7 @@ bool SingleValueDataGeneric::isEqualTo(const IColumn & column, size_t row_num) c
 bool SingleValueDataGeneric::isEqualTo(const DB::SingleValueDataBase & other) const
 {
     auto const & to = assert_cast<const Self &>(other);
-    return has() && to.has() && to.value == value;
+    return has() && to.value == value;
 }
 
 void SingleValueDataGeneric::set(const IColumn & column, size_t row_num, Arena *)
@@ -1304,15 +1313,18 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
-
-    Field new_value;
-    column.get(row_num, new_value);
-    if (new_value < value)
+    else
     {
-        value = new_value;
-        return true;
+        Field new_value;
+        column.get(row_num, new_value);
+        if (new_value < value)
+        {
+            value = new_value;
+            return true;
+        }
+        else
+            return false;
     }
-    return false;
 }
 
 bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Arena *)
@@ -1323,7 +1335,8 @@ bool SingleValueDataGeneric::setIfSmaller(const SingleValueDataBase & other, Are
         value = to.value;
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num, Arena * arena)
@@ -1333,15 +1346,18 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
         set(column, row_num, arena);
         return true;
     }
-
-    Field new_value;
-    column.get(row_num, new_value);
-    if (new_value > value)
+    else
     {
-        value = new_value;
-        return true;
+        Field new_value;
+        column.get(row_num, new_value);
+        if (new_value > value)
+        {
+            value = new_value;
+            return true;
+        }
+        else
+            return false;
     }
-    return false;
 }
 
 bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Arena *)
@@ -1352,7 +1368,8 @@ bool SingleValueDataGeneric::setIfGreater(const SingleValueDataBase & other, Are
         value = to.value;
         return true;
     }
-    return false;
+    else
+        return false;
 }
 
 void generateSingleValueFromTypeIndex(TypeIndex idx, SingleValueDataBaseMemoryBlock & data)

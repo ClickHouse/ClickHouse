@@ -4,15 +4,13 @@
 #include <Storages/DataDestinationType.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Storages/TTLMode.h>
 
 
 namespace DB
 {
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Assignment expression in TTL with GROUP BY
 struct TTLAggregateDescription

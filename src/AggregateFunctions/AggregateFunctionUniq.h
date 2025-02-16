@@ -14,6 +14,9 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Interpreters/AggregationCommon.h>
+
+#include <Common/CombinedCardinalityEstimator.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HyperLogLogWithSmallSetOptimization.h>
@@ -254,7 +257,7 @@ template <typename T> struct AggregateFunctionUniqTraits
 {
     static UInt64 hash(T x)
     {
-        if constexpr (is_floating_point<T>)
+        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
         {
             return bit_cast<UInt64>(x);
         }
@@ -454,11 +457,9 @@ public:
         detail::Adder<T, Data>::add(this->data(place), columns, num_args, row_begin, row_end, flags, null_map);
     }
 
-    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed; }
+    bool isParallelizeMergePrepareNeeded() const override { return is_parallelize_merge_prepare_needed;}
 
-    constexpr static bool parallelizeMergeWithKey() { return true; }
-
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool) const override
     {
         if constexpr (is_parallelize_merge_prepare_needed)
         {
@@ -468,7 +469,7 @@ public:
             for (size_t i = 0; i < data_vec.size(); ++i)
                 data_vec[i] = &this->data(places[i]).set;
 
-            DataSet::parallelizeMergePrepare(data_vec, thread_pool, is_cancelled);
+            DataSet::parallelizeMergePrepare(data_vec, thread_pool);
         }
         else
         {
@@ -484,10 +485,10 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
-            this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
         else
             this->data(place).set.merge(this->data(rhs).set);
     }
@@ -578,10 +579,10 @@ public:
     bool isAbleToParallelizeMerge() const override { return is_able_to_parallelize_merge; }
     bool canOptimizeEqualKeysRanges() const override { return !is_able_to_parallelize_merge; }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena *) const override
     {
         if constexpr (is_able_to_parallelize_merge)
-            this->data(place).set.merge(this->data(rhs).set, &thread_pool, &is_cancelled);
+            this->data(place).set.merge(this->data(rhs).set, &thread_pool);
         else
             this->data(place).set.merge(this->data(rhs).set);
     }

@@ -1,6 +1,5 @@
 #include <IO/SeekableReadBuffer.h>
 
-#include <istream>
 
 namespace DB
 {
@@ -52,19 +51,6 @@ namespace
             return in.getPosition();
         }
     };
-}
-
-
-std::optional<off_t> SeekableReadBuffer::tryGetPosition()
-{
-    try
-    {
-        return getPosition();
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
 }
 
 

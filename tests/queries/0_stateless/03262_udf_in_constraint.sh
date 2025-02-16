@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT -nm -q "
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_function AS (x) -> x > 5;
   CREATE TABLE t0 (c0 Int, CONSTRAINT c1 CHECK ${CLICKHOUSE_DATABASE}_function(c0)) ENGINE = MergeTree() ORDER BY tuple();
   SHOW CREATE TABLE t0;

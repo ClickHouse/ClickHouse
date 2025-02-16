@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/PipeFDs.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <atomic>
 #include <memory>
@@ -90,7 +89,7 @@ public:
 private:
     FileLogDirectoryWatcher & owner;
 
-    using TaskThread = BackgroundSchedulePoolTaskHolder;
+    using TaskThread = BackgroundSchedulePool::TaskHolder;
     TaskThread watch_task;
 
     std::atomic<bool> stopped{false};

@@ -6,4 +6,3 @@ self-hosted-runner:
     - fuzzer-unit-tester
     - style-checker
     - style-checker-aarch64
-    - release-maker

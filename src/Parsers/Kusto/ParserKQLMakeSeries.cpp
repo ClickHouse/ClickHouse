@@ -155,10 +155,8 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     const uint64_t era_diff
         = 62135596800; // this magic number is the differicen is second form 0001-01-01 (Azure start time ) and 1970-01-01 (CH start time)
 
-    String start_str;
-    String end_str;
-    String sub_query;
-    String main_query;
+    String start_str, end_str;
+    String sub_query, main_query;
 
     auto & aggregation_columns = kql_make_series.aggregation_columns;
     auto & from_to_step = kql_make_series.from_to_step;
@@ -175,7 +173,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
 
     auto date_type_cast = [&](String & src)
     {
-        Tokens tokens(src.data(), src.data() + src.size(), 0, true);
+        Tokens tokens(src.c_str(), src.c_str() + src.size());
         IParser::Pos pos(tokens, max_depth, max_backtracks);
         String res;
         while (isValidKQLPos(pos))
@@ -193,9 +191,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     start_str = date_type_cast(start_str);
     end_str = date_type_cast(end_str);
 
-    String bin_str;
-    String start;
-    String end;
+    String bin_str, start, end;
 
     uint64_t diff = 0;
     String axis_column_format;
@@ -204,7 +200,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     auto get_group_expression_alias = [&]
     {
         std::vector<String> group_expression_tokens;
-        Tokens tokens(group_expression.data(), group_expression.data() + group_expression.size(), 0, true);
+        Tokens tokens(group_expression.c_str(), group_expression.c_str() + group_expression.size());
         IParser::Pos pos(tokens, max_depth, max_backtracks);
         while (isValidKQLPos(pos))
         {
@@ -254,8 +250,7 @@ bool ParserKQLMakeSeries ::makeSeries(KQLMakeSeries & kql_make_series, ASTPtr & 
     if (!end_str.empty())
         end = std::format("toUInt64({})", end_str);
 
-    String range;
-    String condition;
+    String range, condition;
 
     if (!start_str.empty() && !end_str.empty())
     {
@@ -418,7 +413,7 @@ bool ParserKQLMakeSeries ::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     makeSeries(kql_make_series, node, pos.max_depth, pos.max_backtracks);
 
-    Tokens token_main_query(kql_make_series.main_query.data(), kql_make_series.main_query.data() + kql_make_series.main_query.size(), 0, true);
+    Tokens token_main_query(kql_make_series.main_query.c_str(), kql_make_series.main_query.c_str() + kql_make_series.main_query.size());
     IParser::Pos pos_main_query(token_main_query, pos.max_depth, pos.max_backtracks);
 
     if (!ParserNotEmptyExpressionList(true).parse(pos_main_query, select_expression_list, expected))

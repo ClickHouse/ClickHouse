@@ -1,22 +1,12 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
 {
 
 class Context;
-
-namespace detail
-{
-
-ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context);
-ColumnPtr
-getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, bool is_detached);
-
-}
 
 
 /** Implements the system table `tables`, which allows you to get information about all tables.

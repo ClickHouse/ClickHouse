@@ -7,7 +7,7 @@ title: "Functions for Working with Geographical Coordinates"
 
 ## greatCircleDistance
 
-Calculates the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+Calculates the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
@@ -24,7 +24,7 @@ Positive values correspond to North latitude and East longitude, and negative va
 
 **Returned value**
 
-The distance between two points on the Earth's surface, in meters.
+The distance between two points on the Earth’s surface, in meters.
 
 Generates an exception when the input parameter values fall outside of the range.
 
@@ -62,7 +62,7 @@ Positive values correspond to North latitude and East longitude, and negative va
 
 **Returned value**
 
-The distance between two points on the Earth's surface, in meters.
+The distance between two points on the Earth’s surface, in meters.
 
 Generates an exception when the input parameter values fall outside of the range.
 
@@ -80,7 +80,7 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 
 ## greatCircleAngle
 
-Calculates the central angle between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+Calculates the central angle between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
 greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
@@ -152,8 +152,8 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Input values**
 
-- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data-types/tuple.md) — A tuple of two numbers.
-- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data-types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
+- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../../sql-reference/data-types/tuple.md) — A tuple of two numbers.
+- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../../sql-reference/data-types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
 - The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
 
 **Returned values**

@@ -4,9 +4,9 @@
 #include <memory>
 #include <sys/types.h>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/QueryLogElementType.h>
+#include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Core/NamesAndTypes.h>

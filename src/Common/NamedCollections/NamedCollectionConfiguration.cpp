@@ -1,9 +1,9 @@
-#include <base/EnumReflection.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -182,9 +182,7 @@ void listKeys(
     if (enumerate_paths.empty())
         enumerate_paths.push("");
 
-    const bool do_finish = depth == 0;
-    if (depth >= 0)
-        --depth;
+    const bool do_finish = depth >= 0 && --depth < 0;
 
     auto initial_paths = std::move(enumerate_paths);
     enumerate_paths = {};

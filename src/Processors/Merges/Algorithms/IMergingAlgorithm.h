@@ -1,13 +1,10 @@
 #pragma once
 
 #include <Processors/Chunk.h>
-#include <Common/PODArray_fwd.h>
-#include <Common/ProfileEvents.h>
+#include <variant>
 
 namespace DB
 {
-
-using IColumnPermutation = PaddedPODArray<size_t>;
 
 class IMergingAlgorithm
 {
@@ -32,7 +29,7 @@ public:
         /// between different algorithm objects in parallel FINAL.
         bool skip_last_row = false;
 
-        IColumnPermutation * permutation = nullptr;
+        IColumn::Permutation * permutation = nullptr;
 
         void swap(Input & other) noexcept
         {
@@ -42,24 +39,13 @@ public:
 
         void set(Chunk chunk_)
         {
+            convertToFullIfSparse(chunk_);
             chunk = std::move(chunk_);
             skip_last_row = false;
         }
     };
 
     using Inputs = std::vector<Input>;
-
-    static void removeConstAndSparse(Input & input)
-    {
-        convertToFullIfConst(input.chunk);
-        convertToFullIfSparse(input.chunk);
-    }
-
-    static void removeConstAndSparse(Inputs & inputs)
-    {
-        for (auto & input : inputs)
-            removeConstAndSparse(input);
-    }
 
     virtual const char * getName() const = 0;
     virtual void initialize(Inputs inputs) = 0;
@@ -68,15 +54,6 @@ public:
 
     IMergingAlgorithm() = default;
     virtual ~IMergingAlgorithm() = default;
-
-    struct MergedStats
-    {
-        UInt64 bytes = 0;
-        UInt64 rows = 0;
-        UInt64 blocks = 0;
-    };
-
-    virtual MergedStats getMergedStats() const = 0;
 };
 
 // TODO: use when compile with clang which could support it

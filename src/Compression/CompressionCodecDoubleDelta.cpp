@@ -1,11 +1,9 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
-#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
-
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -14,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <cstring>
+#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <limits>
@@ -21,11 +20,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 /** NOTE DoubleDelta is surprisingly bad name. The only excuse is that it comes from an academic paper.
   * Most people will think that "double delta" is just applying delta transform twice.
@@ -148,9 +142,9 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
     extern const int ILLEGAL_CODEC_PARAMETER;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -169,8 +163,9 @@ inline Int64 getMaxValueForByteSize(Int8 byte_size)
         case sizeof(UInt64):
             return std::numeric_limits<Int64>::max();
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "only 1, 2, 4 and 8 data sizes are supported");
+            assert(false && "only 1, 2, 4 and 8 data sizes are supported");
     }
+    UNREACHABLE();
 }
 
 struct WriteSpec
@@ -234,20 +229,22 @@ WriteSpec getDeltaWriteSpec(const T & value)
     {
         return WriteSpec{2, 0b10, 7};
     }
-    if (value > -255 && value < 256)
+    else if (value > -255 && value < 256)
     {
         return WriteSpec{3, 0b110, 9};
     }
-    if (value > -2047 && value < 2048)
+    else if (value > -2047 && value < 2048)
     {
         return WriteSpec{4, 0b1110, 12};
     }
-    if (value > std::numeric_limits<Int32>::min() && value < std::numeric_limits<Int32>::max())
+    else if (value > std::numeric_limits<Int32>::min() && value < std::numeric_limits<Int32>::max())
     {
         return WriteSpec{5, 0b11110, 32};
     }
-
-    return WriteSpec{5, 0b11111, 64};
+    else
+    {
+        return WriteSpec{5, 0b11111, 64};
+    }
 }
 
 WriteSpec getDeltaMaxWriteSpecByteSize(UInt8 data_bytes_size)
@@ -346,10 +343,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
             const auto sign = signed_dd < 0;
 
             // -1 shrinks dd down to fit into number of bits, and there can't be 0, so it is OK.
-            const auto abs_value =
-                signed_dd == std::numeric_limits<SignedDeltaType>::min()
-                    ? (static_cast<UnsignedDeltaType>(-1) >> 1)
-                    : static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
+            const auto abs_value = static_cast<UnsignedDeltaType>(std::abs(signed_dd) - 1);
             const auto write_spec = getDeltaWriteSpec(signed_dd);
 
             writer.writeBits(write_spec.prefix_bits, write_spec.prefix);
@@ -451,10 +445,9 @@ UInt8 getDataBytesSize(const IDataType * column_type)
     size_t max_size = column_type->getSizeOfValueInMemory();
     if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
         return static_cast<UInt8>(max_size);
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec DoubleDelta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
 }
@@ -512,7 +505,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
         break;
     }
 
-    return 1 + 1 + compressed_size + UInt32(bytes_to_skip);
+    return 1 + 1 + compressed_size;
 }
 
 void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const

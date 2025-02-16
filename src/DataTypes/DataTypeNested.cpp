@@ -61,7 +61,7 @@ static std::pair<DataTypePtr, DataTypeCustomDescPtr> create(const ASTPtr & argum
 
 void registerDataTypeNested(DataTypeFactory & factory)
 {
-    factory.registerDataTypeCustom("Nested", create);
+    return factory.registerDataTypeCustom("Nested", create);
 }
 
 DataTypePtr createNested(const DataTypes & types, const Names & names)

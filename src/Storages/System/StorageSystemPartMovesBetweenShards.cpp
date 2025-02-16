@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -43,14 +42,6 @@ ColumnsDescription StorageSystemPartMovesBetweenShards::getColumnsDescription()
     };
 }
 
-
-Block StorageSystemPartMovesBetweenShards::getFilterSampleBlock() const
-{
-    return {
-        { {}, std::make_shared<DataTypeString>(), "database" },
-        { {}, std::make_shared<DataTypeString>(), "table" },
-    };
-}
 
 void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {

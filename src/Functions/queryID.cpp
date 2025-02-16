@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -20,16 +19,16 @@ public:
 
     explicit FunctionQueryID(const String & query_id_) : query_id(query_id_) {}
 
-    String getName() const override { return name; }
+    inline String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 0; }
+    inline size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() const override { return false; }
+    inline bool isDeterministic() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -42,6 +41,6 @@ public:
 REGISTER_FUNCTION(QueryID)
 {
     factory.registerFunction<FunctionQueryID>();
-    factory.registerAlias("query_id", FunctionQueryID::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("query_id", FunctionQueryID::name, FunctionFactory::CaseInsensitive);
 }
 }

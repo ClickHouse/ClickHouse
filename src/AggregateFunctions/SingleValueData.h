@@ -5,7 +5,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <base/AlignedUnion.h>
 #include <base/StringRef.h>
 
 namespace DB
@@ -26,7 +25,7 @@ struct SingleValueDataBase
 
     virtual ~SingleValueDataBase() = default;
     virtual bool has() const = 0;
-    virtual void insertResultInto(IColumn &, const DataTypePtr & type) const = 0;
+    virtual void insertResultInto(IColumn &) const = 0;
     virtual void write(WriteBuffer &, const ISerialization &) const = 0;
     virtual void read(ReadBuffer &, const ISerialization &, Arena *) = 0;
 
@@ -93,7 +92,7 @@ struct SingleValueDataFixed
     bool has_value = false;
 
     bool has() const { return has_value; }
-    void insertResultInto(IColumn & to, const DataTypePtr & type) const;
+    void insertResultInto(IColumn & to) const;
     void write(WriteBuffer & buf, const ISerialization &) const;
     void read(ReadBuffer & buf, const ISerialization &, Arena *);
     bool isEqualTo(const IColumn & column, size_t index) const;
@@ -206,7 +205,7 @@ public:
     ~SingleValueDataNumeric() override;
 
     bool has() const override;
-    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
+    void insertResultInto(IColumn & to) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena * arena) override;
     bool isEqualTo(const IColumn & column, size_t index) const override;
@@ -292,7 +291,7 @@ private:
 
 public:
     bool has() const override { return size != 0; }
-    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
+    void insertResultInto(IColumn & to) const override;
     void write(WriteBuffer & buf, const ISerialization & /*serialization*/) const override;
     void read(ReadBuffer & buf, const ISerialization & /*serialization*/, Arena * arena) override;
 
@@ -324,7 +323,7 @@ private:
 
 public:
     bool has() const override { return !value.isNull(); }
-    void insertResultInto(IColumn & to, const DataTypePtr & type) const override;
+    void insertResultInto(IColumn & to) const override;
     void write(WriteBuffer & buf, const ISerialization & serialization) const override;
     void read(ReadBuffer & buf, const ISerialization & serialization, Arena *) override;
 
@@ -375,7 +374,7 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
 /// Helper to allocate enough memory to store any derived class
 struct SingleValueDataBaseMemoryBlock
 {
-    AlignedUnionT<
+    std::aligned_union_t<
         SingleValueDataBase::MAX_STORAGE_SIZE,
         SingleValueDataNumeric<Decimal256>, /// We check all types in generateSingleValueFromTypeIndex
         SingleValueDataString,

@@ -3,7 +3,7 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <boost/lexical_cast.hpp>
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 #include <pcg_random.hpp>
 #include <Poco/String.h>
 #include <format>
@@ -24,9 +24,9 @@ constexpr DB::TokenType determineClosingPair(const DB::TokenType token_type)
 {
     if (token_type == DB::TokenType::OpeningCurlyBrace)
         return DB::TokenType::ClosingCurlyBrace;
-    if (token_type == DB::TokenType::OpeningRoundBracket)
+    else if (token_type == DB::TokenType::OpeningRoundBracket)
         return DB::TokenType::ClosingRoundBracket;
-    if (token_type == DB::TokenType::OpeningSquareBracket)
+    else if (token_type == DB::TokenType::OpeningSquareBracket)
         return DB::TokenType::ClosingSquareBracket;
 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unhandled token: {}", magic_enum::enum_name(token_type));
@@ -144,8 +144,7 @@ std::vector<std::string> IParserKQLFunction::getArguments(
 
 String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
-    int32_t round_bracket_count = 0;
-    int32_t square_bracket_count = 0;
+    int32_t round_bracket_count = 0, square_bracket_count = 0;
     if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
         return {};
 
@@ -302,8 +301,8 @@ String IParserKQLFunction::kqlCallToExpression(
         });
 
     const auto kql_call = std::format("{}({})", function_name, params_str);
-    Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
-    IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
+    DB::Tokens call_tokens(kql_call.c_str(), kql_call.c_str() + kql_call.length());
+    DB::IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
 }
 

@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -6,7 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -19,7 +19,6 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <Common/Exception.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
@@ -148,7 +147,7 @@ class RedisSink : public SinkToStorage
 public:
     RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadata_snapshot_);
 
-    void consume(Chunk & chunk) override;
+    void consume(Chunk chunk) override;
     String getName() const override { return "RedisSink"; }
 
 private:
@@ -170,10 +169,10 @@ RedisSink::RedisSink(StorageRedis & storage_, const StorageMetadataPtr & metadat
     }
 }
 
-void RedisSink::consume(Chunk & chunk)
+void RedisSink::consume(Chunk chunk)
 {
     auto rows = chunk.getNumRows();
-    auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     WriteBufferFromOwnString wb_key;
     WriteBufferFromOwnString wb_value;
@@ -237,30 +236,32 @@ Pipe StorageRedis::read(
     {
         return Pipe(std::make_shared<RedisDataSource>(*this, header, max_block_size));
     }
-
-    if (keys->empty())
-        return {};
-
-    Pipes pipes;
-
-    ::sort(keys->begin(), keys->end());
-    keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
-
-    size_t num_keys = keys->size();
-    size_t num_threads = std::min<size_t>(num_streams, keys->size());
-
-    num_threads = std::min<size_t>(num_threads, configuration.pool_size);
-    assert(num_keys <= std::numeric_limits<uint32_t>::max());
-
-    for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+    else
     {
-        size_t begin = num_keys * thread_idx / num_threads;
-        size_t end = num_keys * (thread_idx + 1) / num_threads;
+        if (keys->empty())
+            return {};
 
-        pipes.emplace_back(
-            std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+        Pipes pipes;
+
+        ::sort(keys->begin(), keys->end());
+        keys->erase(std::unique(keys->begin(), keys->end()), keys->end());
+
+        size_t num_keys = keys->size();
+        size_t num_threads = std::min<size_t>(num_streams, keys->size());
+
+        num_threads = std::min<size_t>(num_threads, configuration.pool_size);
+        assert(num_keys <= std::numeric_limits<uint32_t>::max());
+
+        for (size_t thread_idx = 0; thread_idx < num_threads; ++thread_idx)
+        {
+            size_t begin = num_keys * thread_idx / num_threads;
+            size_t end = num_keys * (thread_idx + 1) / num_threads;
+
+            pipes.emplace_back(
+                std::make_shared<RedisDataSource>(*this, header, keys, keys->begin() + begin, keys->begin() + end, max_block_size));
+        }
+        return Pipe::unitePipes(std::move(pipes));
     }
-    return Pipe::unitePipes(std::move(pipes));
 }
 
 namespace
@@ -566,8 +567,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
     Block block;
     while (executor.pull(block))
     {
-        Chunk chunk(block.getColumns(), block.rows());
-        sink->consume(chunk);
+        sink->consume(Chunk{block.getColumns(), block.rows()});
     }
 }
 

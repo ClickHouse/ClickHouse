@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_CI_MIN_TESTED_VERSION
 
 uuids = []
 
@@ -11,13 +11,13 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
             use_old_analyzer=True,
         )
         cluster.add_instance(
             "node2",
-            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             stay_alive=True,
             with_zookeeper=True,
@@ -25,7 +25,7 @@ def cluster():
         )
         cluster.add_instance(
             "node3",
-            main_configs=["configs/storage_conf_web.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf_web.xml"],
             with_nginx=True,
             with_zookeeper=True,
             use_old_analyzer=True,
@@ -33,18 +33,12 @@ def cluster():
 
         cluster.add_instance(
             "node4",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
+            main_configs=["configs/storage_conf.xml"],
             with_nginx=True,
             stay_alive=True,
             with_installed_binary=True,
             image="clickhouse/clickhouse-server",
             tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
-        )
-        cluster.add_instance(
-            "node5",
-            main_configs=["configs/storage_conf.xml", "configs/no_async_load.xml"],
-            with_nginx=True,
-            use_old_analyzer=True,
         )
 
         cluster.start()
@@ -112,12 +106,11 @@ def test_usage(cluster, node_name):
     for i in range(3):
         node2.query(
             """
-            DROP TABLE IF EXISTS test{};
             CREATE TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(
-                i, i, uuids[i]
+                i, uuids[i], i, i
             )
         )
 
@@ -302,6 +295,7 @@ def test_replicated_database(cluster):
     node1 = cluster.instances["node3"]
     node1.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r1')",
+        settings={"allow_experimental_database_replicated": 1},
     )
 
     global uuids
@@ -312,13 +306,13 @@ def test_replicated_database(cluster):
         SETTINGS storage_policy = 'web';
     """.format(
             uuids[0]
-        ),
-        settings={"database_replicated_allow_explicit_uuid": 3},
+        )
     )
 
     node2 = cluster.instances["node2"]
     node2.query(
         "CREATE DATABASE rdb ENGINE=Replicated('/test/rdb', 's1', 'r2')",
+        settings={"allow_experimental_database_replicated": 1},
     )
     node2.query("SYSTEM SYNC DATABASE REPLICA rdb")
 
@@ -327,21 +321,3 @@ def test_replicated_database(cluster):
 
     node1.query("DROP DATABASE rdb SYNC")
     node2.query("DROP DATABASE rdb SYNC")
-
-
-def test_config_reload(cluster):
-    node1 = cluster.instances["node5"]
-    table_name = "config_reload"
-
-    global uuids
-    node1.query(
-        f"""
-        DROP TABLE IF EXISTS {table_name};
-        CREATE TABLE {table_name} UUID '{uuids[0]}'
-        (id Int32) ENGINE = MergeTree() ORDER BY id
-        SETTINGS disk = disk(type=web, endpoint='http://nginx:80/test1/');
-    """
-    )
-
-    node1.query("SYSTEM RELOAD CONFIG")
-    node1.query(f"DROP TABLE {table_name} SYNC")

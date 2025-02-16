@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
 #include <Disks/ObjectStorages/Web/WebObjectStorage.h>
+#include <Disks/IDisk.h>
 
 
 namespace DB
@@ -28,19 +28,19 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::StaticWeb; }
 
-    bool existsFile(const std::string & path) const override;
-    bool existsDirectory(const std::string & path) const override;
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool exists(const std::string & path) const override;
+
+    bool isFile(const std::string & path) const override;
+
+    bool isDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
-    std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
     DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     StoredObjects getStorageObjects(const std::string & path) const override;
-    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
 
     struct stat stat(const String & /* path */) const override { return {}; }
 

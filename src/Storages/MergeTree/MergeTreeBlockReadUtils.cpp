@@ -11,7 +11,6 @@
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 
 #include <unordered_set>
 
@@ -72,7 +71,8 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->metadata->getColumns().getDefault(column_name);
+    auto metadata_snapshot = storage_snapshot->getMetadataForQuery();
+    const auto column_default = metadata_snapshot->getColumns().getDefault(column_name);
     if (!column_default)
         return false;
 
@@ -127,8 +127,7 @@ NameSet injectRequiredColumns(
         */
     if (!have_at_least_one_physical_column)
     {
-        auto available_columns = storage_snapshot->metadata->getColumns().get(options);
-        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(available_columns);
+        const auto minimum_size_column_name = data_part_info_for_reader.getColumnNameWithMinimumCompressedSize(with_subcolumns);
         columns.push_back(minimum_size_column_name);
         /// correctly report added column
         injected_columns.insert(columns.back());
@@ -173,7 +172,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
         {
             size_t size_of_value = column_data->sizeOfValueIfFixed();
             fixed_columns_bytes_per_row += column_data->sizeOfValueIfFixed();
-            max_size_per_row_fixed = std::max<double>(max_size_per_row_fixed, size_of_value);
+            max_size_per_row_fixed = std::max<size_t>(max_size_per_row_fixed, size_of_value);
         }
         else
         {
@@ -263,7 +262,6 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const Names & required_columns,
     const PrewhereInfoPtr & prewhere_info,
-    const PrewhereExprSteps & mutation_steps,
     const ExpressionActionsSettings & actions_settings,
     const MergeTreeReaderSettings & reader_settings,
     bool with_subcolumns)
@@ -280,17 +278,17 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals()
         .withSubcolumns(with_subcolumns);
 
+    static const NameSet columns_to_read_at_first_step = {"_part_offset"};
+
     NameSet columns_from_previous_steps;
     auto add_step = [&](const PrewhereExprStep & step)
     {
         Names step_column_names;
 
-        /// Virtual columns that are filled by RangeReader
-        /// must be read in the first step before any filtering.
         if (columns_from_previous_steps.empty())
         {
             for (const auto & required_column : required_columns)
-                if (MergeTreeRangeReader::virtuals_to_fill.contains(required_column))
+                if (columns_to_read_at_first_step.contains(required_column))
                     step_column_names.push_back(required_column);
         }
 
@@ -304,11 +302,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
 
-        const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
-
-        /// If part has non-adaptive granularity we always have to read at least one column
-        /// because we cannot determine the correct size of the last granule without reading data.
-        if (!step_column_names.empty() || !has_adaptive_granularity)
+        if (!step_column_names.empty())
             injectRequiredColumns(
                 data_part_info_for_reader, storage_snapshot,
                 with_subcolumns, step_column_names);
@@ -331,15 +325,12 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         result.pre_columns.push_back(storage_snapshot->getColumnsByNames(options, columns_to_read_in_step));
     };
 
-    for (const auto & step : mutation_steps)
-        add_step(*step);
-
     if (prewhere_info)
     {
         auto prewhere_actions = MergeTreeSelectProcessor::getPrewhereActions(
             prewhere_info,
             actions_settings,
-            reader_settings.enable_multiple_prewhere_read_steps, reader_settings.force_short_circuit_execution);
+            reader_settings.enable_multiple_prewhere_read_steps);
 
         for (const auto & step : prewhere_actions.steps)
             add_step(*step);
@@ -348,10 +339,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     /// Remove columns read in prewehere from the list of columns to read
     Names post_column_names;
     for (const auto & name : column_to_read_after_prewhere)
-    {
         if (!columns_from_previous_steps.contains(name))
             post_column_names.push_back(name);
-    }
 
     column_to_read_after_prewhere = std::move(post_column_names);
 

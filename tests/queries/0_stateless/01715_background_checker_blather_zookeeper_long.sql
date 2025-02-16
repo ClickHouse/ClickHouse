@@ -1,5 +1,4 @@
--- Tags: long, zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: no replication queue
+-- Tags: long, zookeeper
 
 DROP TABLE IF EXISTS i20203_1 SYNC;
 DROP TABLE IF EXISTS i20203_2 SYNC;

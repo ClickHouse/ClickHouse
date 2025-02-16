@@ -115,7 +115,5 @@ int main(int, char **)
         ++token;
     }*/
 
-    out.finalize();
-
     return 0;
 }

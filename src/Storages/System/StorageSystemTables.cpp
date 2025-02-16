@@ -1,145 +1,34 @@
-#include <Storages/System/StorageSystemTables.h>
-
-#include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Disks/IStoragePolicy.h>
+#include <Storages/System/StorageSystemTables.h>
+#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Disks/IStoragePolicy.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/System/getQueriedColumnsMaskAndHeader.h>
-#include <Storages/VirtualColumnUtils.h>
-#include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
-
-#include <boost/range/adaptor/map.hpp>
+#include <DataTypes/DataTypeUUID.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
-}
 
-namespace
-{
-
-/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
-/// Otherwise it will require table initialization for Lazy database.
-bool needTable(const DatabasePtr & database, const Block & header)
-{
-    if (database->getEngineName() != "Lazy")
-        return true;
-
-    static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
-    for (const auto & column : header.getColumnsWithTypeAndName())
-    {
-        if (columns_without_table.find(column.name) == columns_without_table.end())
-            return true;
-    }
-    return false;
-}
-
-}
-
-
-namespace detail
-{
-ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
-{
-    MutableColumnPtr column = ColumnString::create();
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
-    for (const auto & database_name : databases | boost::adaptors::map_keys)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue; /// We don't want to show the internal database for temporary tables in system.tables
-
-        column->insert(database_name);
-    }
-
-    Block block{ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database")};
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
-    return block.getByPosition(0).column;
-}
-
-ColumnPtr getFilteredTables(
-    const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context, const bool is_detached)
-{
-    Block sample{
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
-
-    MutableColumnPtr database_column = ColumnString::create();
-    MutableColumnPtr engine_column;
-
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
-    if (dag)
-    {
-        bool filter_by_engine = false;
-        for (const auto * input : dag->getInputs())
-            if (input->result_name == "engine")
-                filter_by_engine = true;
-
-        if (filter_by_engine)
-            engine_column = ColumnString::create();
-    }
-
-    for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
-    {
-        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        if (!database)
-            continue;
-
-        if (is_detached)
-        {
-            auto table_it = database->getDetachedTablesIterator(context, {}, false);
-            for (; table_it->isValid(); table_it->next())
-            {
-                database_column->insert(table_it->table());
-            }
-        }
-        else
-        {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
-            {
-                database_column->insert(table_it->name());
-                if (engine_column)
-                    engine_column->insert(table_it->table()->getName());
-            }
-        }
-    }
-
-    Block block{ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
-    if (engine_column)
-        block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
-
-    if (dag)
-        VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
-
-    return block.getByPosition(0).column;
-}
-
-}
 
 StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -182,8 +71,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of parts in this table."},
         {"active_parts", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The number of active parts in this table."},
         {"total_marks", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "The total number of marks in all parts in this table."},
-        {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
-        {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -215,6 +102,92 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
     storage_metadata.setColumns(std::move(description));
     setInMemoryMetadata(storage_metadata);
 }
+
+
+namespace
+{
+
+ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr context)
+{
+    MutableColumnPtr column = ColumnString::create();
+
+    const auto databases = DatabaseCatalog::instance().getDatabases();
+    for (const auto & database_name : databases | boost::adaptors::map_keys)
+    {
+        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+            continue; /// We don't want to show the internal database for temporary tables in system.tables
+
+        column->insert(database_name);
+    }
+
+    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+    return block.getByPosition(0).column;
+}
+
+ColumnPtr getFilteredTables(const ActionsDAG::Node * predicate, const ColumnPtr & filtered_databases_column, ContextPtr context)
+{
+    Block sample {
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")
+    };
+
+    MutableColumnPtr database_column = ColumnString::create();
+    MutableColumnPtr engine_column;
+
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    if (dag)
+    {
+        bool filter_by_engine = false;
+        for (const auto * input : dag->getInputs())
+            if (input->result_name == "engine")
+                filter_by_engine = true;
+
+        if (filter_by_engine)
+            engine_column= ColumnString::create();
+    }
+
+    for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
+    {
+        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (!database)
+            continue;
+
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+        {
+            database_column->insert(table_it->name());
+            if (engine_column)
+                engine_column->insert(table_it->table()->getName());
+        }
+    }
+
+    Block block {ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
+    if (engine_column)
+        block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
+
+    if (dag)
+        VirtualColumnUtils::filterBlockWithDAG(dag, block, context);
+
+    return block.getByPosition(0).column;
+}
+
+/// Avoid heavy operation on tables if we only queried columns that we can get without table object.
+/// Otherwise it will require table initialization for Lazy database.
+bool needTable(const DatabasePtr & database, const Block & header)
+{
+    if (database->getEngineName() != "Lazy")
+        return true;
+
+    static const std::set<std::string> columns_without_table = { "database", "name", "uuid", "metadata_modification_time" };
+    for (const auto & column : header.getColumnsWithTypeAndName())
+    {
+        if (columns_without_table.find(column.name) == columns_without_table.end())
+            return true;
+    }
+    return false;
+}
+
 
 class TablesBlockSource : public ISource
 {
@@ -249,7 +222,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access = context->getAccess();
-        const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
+        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -347,36 +320,18 @@ protected:
                             // total_rows
                             if (src_index == 19 && columns_mask[src_index])
                             {
-                                try
-                                {
-                                    if (auto total_rows = table.second->totalRows(settings))
-                                        res_columns[res_index++]->insert(*total_rows);
-                                    else
-                                        res_columns[res_index++]->insertDefault();
-                                }
-                                catch (const Exception &)
-                                {
-                                    /// Even if the method throws, it should not prevent querying system.tables.
-                                    tryLogCurrentException("StorageSystemTables");
+                                if (auto total_rows = table.second->totalRows(settings))
+                                    res_columns[res_index++]->insert(*total_rows);
+                                else
                                     res_columns[res_index++]->insertDefault();
-                                }
                             }
                             // total_bytes
                             else if (src_index == 20 && columns_mask[src_index])
                             {
-                                try
-                                {
-                                    if (auto total_bytes = table.second->totalBytes(settings))
-                                        res_columns[res_index++]->insert(*total_bytes);
-                                    else
-                                        res_columns[res_index++]->insertDefault();
-                                }
-                                catch (const Exception &)
-                                {
-                                    /// Even if the method throws, it should not prevent querying system.tables.
-                                    tryLogCurrentException("StorageSystemTables");
+                                if (auto total_bytes = table.second->totalBytes(settings))
+                                    res_columns[res_index++]->insert(*total_bytes);
+                                else
                                     res_columns[res_index++]->insertDefault();
-                                }
                             }
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
@@ -391,7 +346,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
+            const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesIterator(context);
@@ -404,7 +359,7 @@ protected:
                 if (!tables.contains(table_name))
                     continue;
 
-                if (need_to_check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
                 StoragePtr table = nullptr;
@@ -421,7 +376,8 @@ protected:
                     static const size_t DATA_PATHS_INDEX = 5;
                     if (columns_mask[DATA_PATHS_INDEX])
                     {
-                        lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                        lock = table->tryLockForShare(context->getCurrentQueryId(),
+                                                      context->getSettingsRef().lock_acquire_timeout);
                         if (!lock)
                             // Table was dropped while acquiring the lock, skipping table
                             continue;
@@ -509,11 +465,10 @@ protected:
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
-                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
+                    if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
                         ast_create->uuid = UUIDHelpers::Nil;
-                        if (ast_create->targets)
-                            ast_create->targets->resetInnerUUIDs();
+                        ast_create->to_inner_uuid = UUIDHelpers::Nil;
                     }
 
                     if (columns_mask[src_index++])
@@ -589,59 +544,32 @@ protected:
                 }
 
                 auto settings = context->getSettingsRef();
-                settings[Setting::select_sequential_consistency] = 0;
+                settings.select_sequential_consistency = 0;
                 if (columns_mask[src_index++])
                 {
-                    try
-                    {
-                        auto total_rows = table ? table->totalRows(settings) : std::nullopt;
-                        if (total_rows)
-                            res_columns[res_index++]->insert(*total_rows);
-                        else
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    catch (const Exception &)
-                    {
-                        /// Even if the method throws, it should not prevent querying system.tables.
-                        tryLogCurrentException("StorageSystemTables");
+                    auto total_rows = table ? table->totalRows(settings) : std::nullopt;
+                    if (total_rows)
+                        res_columns[res_index++]->insert(*total_rows);
+                    else
                         res_columns[res_index++]->insertDefault();
-                    }
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    try
-                    {
-                        auto total_bytes = table->totalBytes(settings);
-                        if (total_bytes)
-                            res_columns[res_index++]->insert(*total_bytes);
-                        else
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    catch (const Exception &)
-                    {
-                        /// Even if the method throws, it should not prevent querying system.tables.
-                        tryLogCurrentException("StorageSystemTables");
+                    auto total_bytes = table->totalBytes(settings);
+                    if (total_bytes)
+                        res_columns[res_index++]->insert(*total_bytes);
+                    else
                         res_columns[res_index++]->insertDefault();
-                    }
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    try
-                    {
-                        auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
-                        if (total_bytes_uncompressed)
-                            res_columns[res_index++]->insert(*total_bytes_uncompressed);
-                        else
-                            res_columns[res_index++]->insertDefault();
-                    }
-                    catch (const Exception &)
-                    {
-                        /// Even if the method throws, it should not prevent querying system.tables.
-                        tryLogCurrentException("StorageSystemTables");
+                    auto total_bytes_uncompressed = table->totalBytesUncompressed(settings);
+                    if (total_bytes_uncompressed)
+                        res_columns[res_index++]->insert(*total_bytes_uncompressed);
+                    else
                         res_columns[res_index++]->insertDefault();
-                    }
                 }
 
                 auto table_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
@@ -664,23 +592,9 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (table_merge_tree)
+                    {
                         res_columns[res_index++]->insert(table_merge_tree->getTotalMarksCount());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyDataMutations());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getNumberOnFlyMetadataMutations());
+                    }
                     else
                         res_columns[res_index++]->insertDefault();
                 }
@@ -774,6 +688,8 @@ private:
     std::string database_name;
 };
 
+}
+
 class ReadFromSystemTables : public SourceStepWithFilter
 {
 public:
@@ -789,7 +705,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -832,20 +748,19 @@ void StorageSystemTables::read(
 
 void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     const ActionsDAG::Node * predicate = nullptr;
     if (filter_actions_dag)
         predicate = filter_actions_dag->getOutputs().at(0);
 
-    filtered_databases_column = detail::getFilteredDatabases(predicate, context);
-    filtered_tables_column = detail::getFilteredTables(predicate, filtered_databases_column, context, false);
+    filtered_databases_column = getFilteredDatabases(predicate, context);
+    filtered_tables_column = getFilteredTables(predicate, filtered_databases_column, context);
 }
 
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipe pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
+        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
     pipeline.init(std::move(pipe));
 }
 
