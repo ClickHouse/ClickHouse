@@ -1,4 +1,5 @@
 import pytest
+import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -64,7 +65,8 @@ def test_backup_log():
     instance.query("SYSTEM FLUSH LOGS")
     instance.query("DROP TABLE IF EXISTS system.backup_log SYNC")
 
-    backup_name = "File('/backups/test_backup/')"
+    backup_id = uuid.uuid4().hex
+    backup_name = f"File('/backups/test_backup_{backup_id}/')"
     assert instance.query("SELECT * FROM system.tables WHERE name = 'backup_log'") == ""
 
     backup_id = backup_table(backup_name)
