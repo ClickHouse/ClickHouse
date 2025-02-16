@@ -14,10 +14,6 @@ Usage scenarios:
 - Convert data from one format to another.
 - Updating data in ClickHouse via editing a file on a disk.
 
-:::note
-This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/docs/en/sql-reference/table-functions/s3.md).
-:::
-
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
 ``` sql
@@ -99,10 +95,9 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
-- `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
 ## Settings {#settings}
 

@@ -3,17 +3,14 @@
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Columns/ColumnConst.h>
 
-#include <Analyzer/Utils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ConstantValue.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/JoinNode.h>
+
 
 #include <DataTypes/DataTypesNumber.h>
 
@@ -23,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -51,7 +47,7 @@ public:
 
                 WriteBufferFromOwnString out;
                 result_type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
-                node = std::make_shared<ConstantNode>(out.str(), std::move(result_type));
+                node = std::make_shared<ConstantNode>(std::make_shared<ConstantValue>(out.str(), result_type));
             }
         }
     }
@@ -59,35 +55,13 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(const QueryTreeNodePtr & query_tree)
 {
     auto new_tree = query_tree->clone();
 
     PrepareForExternalDatabaseVisitor visitor;
     visitor.visit(new_tree);
-    auto * query_node = new_tree->as<QueryNode>();
-
-    const auto & join_tree = query_node->getJoinTree();
-    bool allow_where = true;
-    if (const auto * join_node = join_tree->as<JoinNode>())
-    {
-        if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpression()->isEqual(*table_expression);
-        else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpression()->isEqual(*table_expression);
-        else
-            allow_where = (join_node->getKind() == JoinKind::Inner);
-    }
-
-    /// Remove all sub-expressions (operands of AND) that depend on columns from other tables.
-    /// This is needed for a correct push-down of these filters to an external storage.
-    if (allow_where)
-    {
-        if (query_node->hasPrewhere())
-            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getPrewhere(), table_expression, context);
-        if (query_node->hasWhere())
-            removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), table_expression, context);
-    }
+    const auto * query_node = new_tree->as<QueryNode>();
 
     auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
     const IAST * ast = query_node_ast.get();
@@ -102,13 +76,7 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
     if (union_ast->list_of_selects->children.size() != 1)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "QueryNode AST is not a single ASTSelectQuery, got {}", union_ast->list_of_selects->children.size());
 
-    ASTPtr select_query = union_ast->list_of_selects->children.at(0);
-    auto * select_query_typed = select_query->as<ASTSelectQuery>();
-    if (!select_query_typed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ASTSelectQuery, got {}", select_query ? select_query->formatForErrorMessage() : "nullptr");
-    if (!allow_where)
-        select_query_typed->setExpression(ASTSelectQuery::Expression::WHERE, nullptr);
-    return select_query;
+    return union_ast->list_of_selects->children.at(0);
 }
 
 }

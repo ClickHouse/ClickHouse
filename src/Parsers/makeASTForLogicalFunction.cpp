@@ -12,7 +12,7 @@ namespace DB
 ASTPtr makeASTForLogicalAnd(ASTs && arguments)
 {
     bool partial_result = true;
-    std::erase_if(arguments, [&](const ASTPtr & argument)
+    boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
     {
         bool b;
         if (!tryGetLiteralBool(argument.get(), b))
@@ -41,7 +41,7 @@ ASTPtr makeASTForLogicalAnd(ASTs && arguments)
 ASTPtr makeASTForLogicalOr(ASTs && arguments)
 {
     bool partial_result = false;
-    std::erase_if(arguments, [&](const ASTPtr & argument)
+    boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
     {
         bool b;
         if (!tryGetLiteralBool(argument.get(), b))

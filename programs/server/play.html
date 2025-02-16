@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <title>ClickHouse Query</title>
 
     <!-- Code Style:
@@ -14,7 +14,7 @@
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
-    There should not be any animations except the progress bar.
+    There should not be any animations.
     No unexpected changes in positions of elements while the page is loading.
     Navigation by keyboard should work.
     64-bit numbers must display correctly.
@@ -26,75 +26,50 @@
     1. Support readonly servers.
     Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
-    Also, it can provide visual indication that credentials are correct.
-
-    Nice to have:
-    - resizable columns
-    - display totals
-    - display types in the header
-    - show/hide the editor
-    - check for readonly
-    - query caching
-    - downloads in any format
-    - database navigation
-    - history navigation
-    - short links by saving in a special table
-    - sharing by creating a short-living user
-    - notebook mode
+    Also it can provide visual indication that credentials are correct.
 
     -->
 
     <style>
         :root {
-            --background-color-rotate: 215;
-            --background-color: oklch(96% 0.0296 var(--background-color-rotate));
+            --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
             --element-background-color: #FFF;
-            --element-color-ok: #080;
-            --element-background-color-fail: #FEE;
-            --bar-color: #FF8; /* Light bar in background of table cells. */
-            --border-color: #CCC;
+            --bar-color: #F8F4F0; /* Light bar in background of table cells. */
+            --border-color: #EEE;
             --shadow-color: rgba(0, 0, 0, 0.1);
-            --button-color: #FF0;
+            --button-color: #FFAA00; /* Orange on light-cyan is especially good. */
             --text-color: #000;
-            --text-color-active: #000;
-            --button-active-color: #FE0;
-            --button-active-text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
             --misc-text-color: #888;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
-            --table-header-color: #EEE;
-            --table-hover-filter: brightness(0.9);
+            --table-header-color: #F8F8F8;
+            --table-hover-color: #FFF8EF;
+            --null-color: #A88;
             --link-color: #06D;
-            --logo-color: #FFF;
-            --border-color-selected: #F80;
-
-            --progress-color: #0C4;
-            --progress: 0%;
+            --logo-color: #CEE;
+            --logo-color-active: #BDD;
         }
 
         [data-theme="dark"] {
-            --background-color-rotate: 250;
-            --background-color: oklch(15% 0.0296 var(--background-color-rotate));
-            --element-background-color: #000;
-            --element-color-ok: #8F8;
-            --element-background-color-fail: #300;
-            --bar-color: #320;
-            --border-color: #444;
-            --shadow-color: rgba(0, 0, 0, 0.1);
+            --background-color: #000;
+            --element-background-color: #102030;
+            --bar-color: #182838;
+            --border-color: #111;
+            --shadow-color: rgba(255, 255, 255, 0.1);
             --text-color: #CCC;
-            --text-color-active: #FFF;
-            --button-color: rgb(250 255 105);
+            --button-color: #FFAA00;
             --button-text-color: #000;
-            --button-active-color: #FE0;
-            --button-active-text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
             --misc-text-color: #888;
             --error-color: #400;
             --table-header-color: #102020;
-            --table-hover-filter: contrast(0.9) brightness(2);
+            --table-hover-color: #003333;
+            --null-color: #A88;
             --link-color: #4BDAF7;
-            --logo-color: #444;
-            --border-color-selected: #FF0;
-
-            --progress-color: #FF0;
+            --logo-color: #222;
+            --logo-color-active: #333;
         }
 
         *
@@ -117,7 +92,7 @@
         html
         {
             /* The fonts that have full support for hinting. */
-            font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
         }
@@ -147,6 +122,12 @@
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
                Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
+            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
+        }
+
+        .monospace-table
+        {
+            /* Liberation is worse than DejaVu for block drawing characters. */
             font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
         }
 
@@ -164,22 +145,12 @@
             background-color: var(--element-background-color);
         }
 
-        input:focus, textarea:focus
-        {
-            color: var(--text-color-active);
-        }
-
         #query
         {
-            display: block;
             /* Make enough space for even big queries. */
             height: 20vh;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
-            width: 100%;
             min-width: 100%;
-            max-width: 100%;
-            margin-top: -1px; /* To compensate the border. */
-            contain: strict; /* Less input lag even if the table is large. */
         }
 
         #inputs
@@ -192,42 +163,29 @@
             width: 70%;
         }
 
-        #user, #password
+        #user
         {
-            width: calc(15% + 1px);
-            margin-left: -1px;
+            width: 15%;
         }
 
-        input.ok
+        #password
         {
-            color: var(--element-color-ok);
-        }
-
-        input.fail
-        {
-            background-color: var(--element-background-color-fail);
+            width: 15%;
         }
 
         #run_div
         {
             margin-top: 1rem;
-            display: grid;
-            place-items: center;
-            gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto;
-            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
         }
 
         #run
         {
-            grid-area: run;
-            user-select: none;
             color: var(--button-text-color);
             background-color: var(--button-color);
             padding: 0.25rem 1rem;
             cursor: pointer;
             font-weight: bold;
-            font-size: 100%; /* Otherwise button element will have a lower font size. */
+            font-size: 100%; /* Otherwise button element will have lower font size. */
         }
 
         #run:hover, #run:focus
@@ -236,80 +194,39 @@
             background-color: var(--button-active-color);
         }
 
-        #hint
-        {
-            grid-area: hint;
-            color: var(--misc-text-color);
-        }
-
-        #hourglass
-        {
-            grid-area: hourglass;
-            display: none;
-            font-size: 110%;
-            color: #888;
-            animation: hourglass-animation 2s linear infinite;
-        }
-
-        #check-mark
-        {
-            grid-area: hourglass;
-            display: none;
-            font-size: 110%;
-            color: #080;
-        }
-
         #stats
         {
-            grid-area: progress-text;
+            float: right;
             color: var(--misc-text-color);
-        }
-
-        #stats b
-        {
-            color: var(--progress-color);
-        }
-
-        #progress
-        {
-            display: none;
-            width: 100%;
-            color: var(--misc-text-color);
-
-            grid-area: progress-bar;
-            background: linear-gradient(to right,
-                transparent 0%,
-                var(--progress-color) var(--progress),
-                transparent var(--progress));
-        }
-
-        #theme
-        {
-            grid-area: theme;
         }
 
         #toggle-light, #toggle-dark
         {
+            float: right;
+            padding-right: 0.5rem;
             cursor: pointer;
+        }
+
+        .hint
+        {
+            color: var(--misc-text-color);
         }
 
         #data_div
         {
             margin-top: 1rem;
-            background-color: var(--element-background-color);
         }
 
         #data-table
         {
             width: 100%;
+            border-collapse: collapse;
             border-spacing: 0;
-            background-color: var(--element-background-color);
         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
         {
-            width: fit-content;
             background-color: var(--element-background-color);
             margin-top: 0rem;
             padding: 0.25rem 0.5rem;
@@ -330,11 +247,6 @@
             vertical-align: top;
         }
 
-        td u
-        {
-            text-decoration-color: var(--misc-text-color);
-        }
-
         .right
         {
             text-align: right;
@@ -342,39 +254,21 @@
 
         th
         {
-            position: sticky;
-            top: -0.5rem;
             padding: 0.25rem 0.5rem;
             text-align: center;
             background-color: var(--table-header-color);
             border: 1px solid var(--border-color);
         }
 
-        .type-hint
-        {
-            display: none;
-            position: absolute;
-            right: 0;
-            top: -1.25em;
-            font-size: 75%;
-            font-weight: normal;
-            color: var(--misc-text-color);
-        }
-
-        th:hover .type-hint
-        {
-            display: inline-block;
-        }
-
         /* The row under mouse pointer is highlight for better legibility. */
+        tr:hover, tr:hover td
+        {
+            background-color: var(--table-hover-color);
+        }
+
         tr:hover
         {
-            filter: var(--table-hover-filter);
-        }
-
-        .tr-selected
-        {
-            filter: var(--table-hover-filter);
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
         }
 
         #error
@@ -385,11 +279,21 @@
             display: none;
         }
 
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+         * We also keep it for some time on mouseout for "hysteresis" effect.
+         */
+        td.left:hover, .td-hover-hysteresis
+        {
+            white-space: pre-wrap;
+            max-width: none;
+        }
+
         .td-selected
         {
             white-space: pre-wrap;
             max-width: none;
-            outline: 2px solid var(--border-color-selected);
+            background-color: var(--table-hover-color);
+            border: 2px solid var(--border-color);
         }
 
         td.transposed
@@ -420,12 +324,39 @@
             font-family: Liberation Sans, DejaVu Sans, sans-serif;
         }
 
+        /* The style for SQL NULL */
+        .null
+        {
+            color: var(--null-color);
+        }
+
         @keyframes hourglass-animation {
-            0% { transform: none; }
-            25% { transform: rotate(180deg); }
-            50% { transform: rotate(180deg); }
-            75% { transform: rotate(360deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(-180deg);
+            }
+            50% {
+                transform: rotate(-180deg);
+            }
+            100% {
+                transform: none;
+            }
+        }
+
+        #hourglass
+        {
+            display: none;
+            margin-left: 1rem;
+            font-size: 110%;
+            color: #888;
+            animation: hourglass-animation 1s linear infinite;
+        }
+
+        #check-mark
+        {
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #080;
         }
 
         a, a:visited
@@ -437,7 +368,6 @@
         #graph
         {
             display: none;
-            margin: auto;
         }
 
         /* This is for graph in svg */
@@ -451,7 +381,6 @@
         {
             fill: var(--element-background-color);
             filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-            stroke: var(--border-color);
         }
 
         .edgePath path
@@ -471,10 +400,21 @@
 
         #cloud-logo
         {
-            color: transparent;
-            text-shadow: 0 0 0 var(--logo-color);
+            color: var(--background-color);
+            text-shadow: 0rem 0rem 2rem var(--logo-color);
             font-size: 10vw;
             display: block;
+        }
+
+        #logo:hover
+        {
+            fill: var(--logo-color-active);
+            color: var(--logo-color-active);
+        }
+
+        #cloud-logo:hover
+        {
+            filter: brightness(150%);
         }
 
         #logo-container
@@ -486,37 +426,10 @@
 
         #chart
         {
-            border: 1px solid var(--border-color);
             background-color: var(--element-background-color);
             filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
             display: none;
             height: 70vh;
-        }
-
-        #url_status
-        {
-            position: absolute;
-            display: inline-block;
-            font-size: 11pt;
-            padding: 0.25rem;
-            transform: translateX(-100%);
-            color: transparent;
-            user-select: none;
-        }
-
-        #url_status.ok
-        {
-            color: #0F0;
-        }
-
-        #url_status.fail
-        {
-            color: #F00;
-        }
-
-        #server_info
-        {
-            color: var(--misc-text-color);
         }
 
         /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
@@ -549,22 +462,23 @@
 <body>
     <div id="controls">
         <div id="inputs">
-            <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
+            <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
         </div>
-        <div id="query_div"><textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
+        <div id="query_div">
+            <textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea>
+        </div>
         <div id="run_div">
             <button class="shadow" id="run">Run</button>
-            <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
-            <div id="hourglass">⧗</div>
-            <div id="check-mark">✔</div>
-            <div id="progress"></div>
-            <div id="stats"></div>
-            <div id="theme"><span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span></div>
+            <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
+            <span id="hourglass">⧗</span>
+            <span id="check-mark">✔</span>
+            <span id="stats"></span>
+            <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
         </div>
     </div>
     <div id="data_div">
-        <table class="monospace shadow" id="data-table"></table>
-        <pre class="monospace shadow" id="data-unparsed"></pre>
+        <table class="monospace-table shadow" id="data-table"></table>
+        <pre class="monospace-table shadow" id="data-unparsed"></pre>
     </div>
     <div id="chart"></div>
     <svg id="graph" fill="none"></svg>
@@ -594,1041 +508,656 @@
 
 <script type="text/javascript">
 
-/// Incremental request number. When response is received,
-/// if its request number does not equal to the current request number, response will be ignored.
-/// This is to avoid race conditions.
-let request_num = 0;
+    /// Incremental request number. When response is received,
+    /// if its request number does not equal to the current request number, response will be ignored.
+    /// This is to avoid race conditions.
+    let request_num = 0;
 
-/// Save query in history only if it is different.
-let previous_query = '';
+    /// Save query in history only if it is different.
+    let previous_query = '';
 
-/// Start of the last query
-let last_query_start = 0;
+    const current_url = new URL(window.location);
+    const opened_locally = location.protocol == 'file:';
 
-const current_url = new URL(window.location);
-const opened_locally = location.protocol == 'file:';
-
-/// Run query instantly after page is loaded if the run parameter is present.
-const run_immediately = current_url.searchParams.has("run");
-
-let url_elem = document.getElementById('url');
-let user_elem = document.getElementById('user');
-let password_elem = document.getElementById('password');
-
-const server_address = current_url.searchParams.get('url');
-if (server_address) {
-    url_elem.value = server_address;
-} else if (!opened_locally) {
-    /// Substitute the address of the server where the page is served.
-    url_elem.value = location.origin;
-}
-
-/// Substitute username if it's specified in the query string
-const user_from_url = current_url.searchParams.get('user');
-if (user_from_url) {
-    user_elem.value = user_from_url;
-}
-
-const pass_from_url = current_url.searchParams.get('password');
-if (pass_from_url) {
-    password_elem.value = pass_from_url;
-    /// Browsers don't allow manipulating history for the 'file:' protocol.
-    if (!opened_locally) {
-        let replaced_pass = current_url.searchParams;
-        replaced_pass.delete('password');
-        window.history.replaceState(null, '',
-            window.location.origin + window.location.pathname + '?'
-            + replaced_pass.toString() + window.location.hash);
+    const server_address = current_url.searchParams.get('url');
+    if (server_address) {
+        document.getElementById('url').value = server_address;
+    } else if (!opened_locally) {
+        /// Substitute the address of the server where the page is served.
+        document.getElementById('url').value = location.origin;
     }
-}
 
-async function ping(url) {
-    try {
-        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
-        return response.ok;
-    } catch (e) {
-        return false;
+    /// Substitute user name if it's specified in the query string
+    const user_from_url = current_url.searchParams.get('user');
+    if (user_from_url) {
+        document.getElementById('user').value = user_from_url;
     }
-}
 
-let ping_request_num = 0;
-function checkURL() {
-    ++ping_request_num;
-    const current_ping_request_num = ping_request_num;
-    let elem = document.getElementById('url_status');
-    elem.className = '';
-    document.getElementById('server_info').innerText = '';
-    ping(url_elem.value).then(status => {
-        if (current_ping_request_num == ping_request_num) {
-            elem.className = status ? 'ok' : 'fail';
-            if (status) {
-                checkCredentials();
-            }
+    const pass_from_url = current_url.searchParams.get('password');
+    if (pass_from_url) {
+        document.getElementById('password').value = pass_from_url;
+	/// Browsers don't allow manipulating history for the 'file:' protocol.
+        if (!opened_locally) {
+            let replaced_pass = current_url.searchParams;
+            replaced_pass.delete('password');
+            window.history.replaceState(null, '',
+                window.location.origin + window.location.pathname + '?'
+                + replaced_pass.toString() + window.location.hash);
         }
-    });
-};
-
-url_elem.addEventListener('input', checkURL);
-checkURL();
-
-async function getServerStatus(server_address, user, password) {
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSONEachRow';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
-        if (!response.ok) return false;
-        json = await response.json();
-        return json;
-    } catch (e) {
-        return false;
     }
-}
 
-function formatUptime(t) {
-    if (t < 60) { return t + " sec" }
-    if (t < 3600) { return Number(t / 60).toFixed() + " min" }
-    if (t < 86400) { return Number(t / 3600).toFixed() + " hr" }
-    const days = Number(t / 86400).toFixed();
-    return days + " day" + (days > 1 ? 's' : '');
-}
+    function postImpl(posted_request_num, query)
+    {
+        const user = document.getElementById('user').value;
+        const password = document.getElementById('password').value;
 
-let check_credentials_request_num = 0;
-function checkCredentials() {
-    ++check_credentials_request_num;
-    const current_check_credentials_request_num = check_credentials_request_num;
-    getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
-        if (current_check_credentials_request_num == check_credentials_request_num) {
-            if (json) {
-                [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
-                document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
+        const server_address = document.getElementById('url').value;
+
+        var url = server_address +
+            (server_address.indexOf('?') >= 0 ? '&' : '?') +
+            /// Ask server to allow cross-domain requests.
+            'add_http_cors_header=1' +
+            '&default_format=JSONCompact' +
+            /// Safety settings to prevent results that browser cannot display.
+            '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
+
+        // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
+        if (opened_locally) {
+            url += '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password)
+        }
+
+        const xhr = new XMLHttpRequest;
+
+        xhr.open('POST', url, true);
+        // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
+        if (!opened_locally) {
+            xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
+        }
+        xhr.onreadystatechange = function()
+        {
+            if (posted_request_num != request_num) {
+                return;
+            } else if (this.readyState === XMLHttpRequest.DONE) {
+                renderResponse(this.status, this.response);
+
+                /// The query is saved in browser history (in state JSON object)
+                /// as well as in URL fragment identifier.
+                if (query != previous_query) {
+                    const state = {
+                        query: query,
+                        status: this.status,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                    };
+                    const title = "ClickHouse Query: " + query;
+
+                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+                    if (server_address != location.origin) {
+                        /// Save server's address in URL if it's not identical to the address of the play UI.
+                        history_url += '&url=' + encodeURIComponent(server_address);
+                    }
+                    history_url += '#' + window.btoa(query);
+
+                    if (previous_query == '') {
+                        history.replaceState(state, title, history_url);
+                    } else {
+                        history.pushState(state, title, history_url);
+                    }
+                    document.title = title;
+                    previous_query = query;
+                }
             } else {
-                [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
+                //console.log(this);
             }
         }
-    });
-}
 
-user_elem.addEventListener('input', checkCredentials);
-password_elem.addEventListener('input', checkCredentials);
+        document.getElementById('check-mark').style.display = 'none';
+        document.getElementById('hourglass').style.display = 'inline-block';
 
-
-function queryToColor(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash = hash & hash;
+        xhr.send(query);
     }
 
-    /// Limited range to avoid violet colors.
-    return 50 + Math.abs(hash % 200);
-}
-
-
-let row_idx = 0;
-let elapsed_ns = 0;
-let incomplete_result = false;
-let is_explain_graph = false;
-let explain_graph = '';
-let column_is_number = {};
-let extremes = {};
-let header = {};
-
-const default_format = 'JSONStringsEachRowWithProgress';
-
-let controller = null;
-async function postImpl(posted_request_num, query)
-{
-    const user = user_elem.value;
-    const password = password_elem.value;
-    const server_address = url_elem.value;
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        /// Ask server to allow cross-domain requests.
-        'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    url += '&default_format=' + default_format + '&enable_http_compression=1';
-
-    /// Extremes only if the format is likely to be unchanged. This is imprecise.
-    if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
-
-    last_query_start = performance.now();
-
-    document.getElementById('check-mark').style.display = 'none';
-    document.getElementById('hourglass').style.display = 'inline-block';
-
-    clear();
-
-    let is_table = false;
-    let is_raw = false;
-    let is_chart = false;
-    let is_error = false;
-
-    let response, reply, format;
-    reply = '';
-    try {
-        controller = new AbortController();
-        response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
-            headers: { 'Authorization': 'never' } });
-
-        format = response.headers.get('X-ClickHouse-Format') ?? default_format;
-
-        if (!response.ok) {
-            is_error = true;
-            reply = await response.text();
-            if (posted_request_num != request_num) { return; }
-
-            let has_exception = false;
-            for (line of reply.split('\n')) {
-                if (line.startsWith(`{"exception":`)) {
-                    update(JSON.parse(line));
-                    has_exception = true;
-                    break;
-                }
-            }
-            if (!has_exception) {
-                renderError(reply);
-            }
-
-            document.getElementById('hourglass').style.display = 'none';
-            document.documentElement.style.setProperty('--progress', '0');
-            return;
-        } else if (format == default_format) {
-            is_table = true;
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (posted_request_num != request_num) { return; }
-                if (done) break;
-
-                let new_content = decoder.decode(value, { stream: true });
-                buffer += new_content;
-                reply += new_content;
-
-                let lines = buffer.split('\n');
-                let fragment = document.createDocumentFragment();
-
-                let cont = true;
-                for (line of lines.slice(0, -1)) {
-                    const data = JSON.parse(line);
-                    cont = update(data, fragment);
-                    if (!cont) { break; }
-                }
-
-                if (fragment.hasChildNodes()) {
-                    document.getElementById('tbody').appendChild(fragment);
-                }
-
-                if (!cont)
-                {
-                    controller.abort();
-                    break;
-                }
-                buffer = lines[lines.length - 1];
-            }
-        } else if (format == 'JSONCompactColumns') {
-            is_chart = true;
-            reply = await response.text();
-            if (posted_request_num != request_num) { return; }
-            renderChart(JSON.parse(reply));
-        } else {
-            is_raw = true;
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                let new_content = decoder.decode(value, { stream: true });
-                reply += new_content;
-
-                if (posted_request_num != request_num) { return; }
-                updateRaw(new_content);
-            }
-        }
-    } catch (e) {
-        if (posted_request_num != request_num) { return; }
-
-        console.log(e);
-        if (e instanceof TypeError) {
-            reply = "Network error";
-        } else if (e.name === 'AbortError') {
-            reply = "Query was cancelled";
-        } else {
-            reply = e.toString();
-        }
-        renderError(reply);
+    function renderResponse(status, response) {
         document.getElementById('hourglass').style.display = 'none';
-        document.documentElement.style.setProperty('--progress', '0');
-        return;
-    }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
+        if (status === 200) {
+            let json;
+            try { json = JSON.parse(response); } catch (e) {}
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) {
-        elapsed_ns = 1e6 * (performance.now() - last_query_start);
-    }
-
-    updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
-
-    if (posted_request_num != request_num) { return; }
-
-    /// The query is saved in browser history (in a state JSON object)
-    /// as well as in URL fragment identifier.
-    if (query != previous_query) {
-        const state = {
-            query: query,
-            format: format,
-            ok: response.ok,
-            data: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
-            elapsed_ns: elapsed_ns,
-        };
-        const title = "ClickHouse Query: " + query;
-
-        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-        if (run_immediately) {
-            history_url += "&run=1";
-        }
-        if (server_address != location.origin) {
-            /// Save server's address in URL if it's not identical to the address of the play UI.
-            history_url += '&url=' + encodeURIComponent(server_address);
-        }
-        history_url += '#' + window.btoa(query);
-
-        if (previous_query == '') {
-            history.replaceState(state, title, history_url);
+            if (json !== undefined && json.statistics !== undefined) {
+                renderResult(json);
+            } else if (Array.isArray(json) && json.length == 2 &&
+                Array.isArray(json[0]) && Array.isArray(json[1]) && json[0].length > 1 && json[0].length == json[1].length) {
+                /// If user requested FORMAT JSONCompactColumns, we will render it as a chart.
+                renderChart(json);
+            } else {
+                renderUnparsedResult(response);
+            }
+            document.getElementById('check-mark').style.display = 'inline';
         } else {
-            history.pushState(state, title, history_url);
+            /// TODO: Proper rendering of network errors.
+            renderError(response);
         }
-        document.title = title;
-        previous_query = query;
     }
-}
 
-async function restoreFromHistory(state) {
-    clear();
-    query_area.value = state.query;
+    let query_area = document.getElementById('query');
 
-    if (!state.data) return;
+    window.onpopstate = function(event) {
+        if (!event.state) {
+            return;
+        }
+        query_area.value = event.state.query;
+        if (!event.state.response) {
+            clear();
+            return;
+        }
+        renderResponse(event.state.status, event.state.response);
+    };
 
-    let is_table = false;
-    let is_raw = false;
-    let is_chart = false;
-    let is_error = false;
+    if (window.location.hash) {
+        query_area.value = window.atob(window.location.hash.substr(1));
+    }
 
-    let format = state.format;
+    function post()
+    {
+        ++request_num;
+        let query = query_area.value;
+        postImpl(request_num, query);
+    }
 
-    if (!state.ok) {
-        is_error = true;
+    document.getElementById('run').onclick = function()
+    {
+        post();
+    }
 
-        let has_exception = false;
-        for (line of state.data.split('\n')) {
-            if (line.startsWith(`{"exception":`)) {
-                update(JSON.parse(line));
-                has_exception = true;
+    document.onkeydown = function(event)
+    {
+        /// Firefox has code 13 for Enter and Chromium has code 10.
+        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+            post();
+        }
+    }
+
+    /// Pressing Tab in textarea will increase indentation.
+    /// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
+
+    let user_prefers_tab_navigation = false;
+
+    [...document.querySelectorAll('input')].map(elem => {
+        elem.onkeydown = (e) => {
+            if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
+        };
+    });
+
+    query_area.onkeydown = (e) => {
+        if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
+            let elem = e.target;
+            let selection_start = elem.selectionStart;
+            let selection_end = elem.selectionEnd;
+
+            elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+            elem.selectionStart = selection_start + 4;
+            elem.selectionEnd = selection_start + 4;
+
+            e.preventDefault();
+            return false;
+        } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
+            // If the user presses Enter, and the previous line starts with spaces,
+            // then we will insert the same number of spaces.
+            const elem = e.target;
+            if (elem.selectionStart !== elem.selectionEnd) {
+                // If there is a selection, then we will not insert spaces.
+                return;
+            }
+            const cursor_pos = elem.selectionStart;
+
+            const elem_value = elem.value;
+            const text_before_cursor = elem_value.substring(0, cursor_pos);
+            const text_after_cursor = elem_value.substring(cursor_pos);
+            const prev_lines = text_before_cursor.split('\n');
+            const prev_line = prev_lines.pop();
+            const lead_spaces = prev_line.match(/^\s*/)[0];
+            if (!lead_spaces) {
+                return;
+            }
+
+            // Add leading spaces to the current line.
+            elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
+            elem.selectionStart = cursor_pos + lead_spaces.length + 1;
+            elem.selectionEnd = elem.selectionStart;
+
+            e.preventDefault();
+            return false;
+        }
+    };
+
+    function clearElement(id)
+    {
+        let elem = document.getElementById(id);
+        while (elem.firstChild) {
+            elem.removeChild(elem.lastChild);
+        }
+        elem.style.display = 'none';
+    }
+
+    function clear()
+    {
+        clearElement('data-table');
+        clearElement('graph');
+        clearElement('chart');
+        clearElement('data-unparsed');
+        clearElement('error');
+
+        document.getElementById('check-mark').display = 'none';
+        document.getElementById('hourglass').display = 'none';
+        document.getElementById('stats').innerText = '';
+        document.getElementById('logo-container').style.display = 'block';
+    }
+
+    function formatReadable(number = 0, decimals = 2, units = []) {
+        const k = 1000;
+        const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
+        const unit = units[i];
+        const dm = unit ? decimals : 0;
+        return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
+    }
+
+    function formatReadableBytes(bytes) {
+        const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
+
+        return formatReadable(bytes, 2, units);
+    }
+
+    function formatReadableRows(rows) {
+        const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
+
+        return formatReadable(rows, 2, units);
+    }
+
+    function renderResult(response)
+    {
+        clear();
+
+        let stats = document.getElementById('stats');
+        const seconds = response.statistics.elapsed.toFixed(3);
+        const rows = response.statistics.rows_read;
+        const bytes = response.statistics.bytes_read;
+        const formatted_bytes = formatReadableBytes(bytes);
+        const formatted_rows = formatReadableRows(rows);
+        stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+
+        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
+        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+            renderGraph(response);
+        } else {
+            renderTable(response);
+        }
+    }
+
+    function renderCell(cell, col_idx, settings)
+    {
+        let td = document.createElement('td');
+
+        let is_null = (cell === null);
+        let is_link = false;
+
+        /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+        let text;
+        if (is_null) {
+            text = 'ᴺᵁᴸᴸ';
+        } else if (typeof(cell) === 'object') {
+            text = JSON.stringify(cell);
+        } else {
+            text = cell;
+
+            /// If it looks like URL, create a link. This is for convenience.
+            if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                is_link = true;
+            }
+        }
+
+        let node = document.createTextNode(text);
+        if (is_link) {
+            let link = document.createElement('a');
+            link.appendChild(node);
+            link.href = text;
+            link.setAttribute('target', '_blank');
+            node = link;
+        }
+
+        if (settings.is_transposed) {
+            td.className = 'left transposed';
+        } else {
+            td.className = settings.column_is_number[col_idx] ? 'right' : 'left';
+        }
+        if (is_null) {
+            td.className += ' null';
+        }
+
+        /// If it's a number, render bar in background.
+        if (!settings.is_transposed && settings.column_need_render_bars[col_idx] && text > 0) {
+            const ratio = 100 * text / settings.column_maximums[col_idx];
+
+            let div = document.createElement('div');
+
+            div.style.width = '100%';
+            div.style.background = `linear-gradient(to right,
+                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                transparent ${ratio}%, transparent 100%)`;
+
+            div.appendChild(node);
+            node = div;
+        }
+
+        td.appendChild(node);
+        return td;
+    }
+
+    function renderTableTransposed(response)
+    {
+        let tbody = document.createElement('tbody');
+        for (let col_idx in response.meta) {
+            let tr = document.createElement('tr');
+            {
+                let th = document.createElement('th');
+                th.className = 'right';
+                th.style.width = '0';
+                th.appendChild(document.createTextNode(response.meta[col_idx].name));
+                tr.appendChild(th);
+            }
+            for (let row_idx in response.data)
+            {
+                let cell = response.data[row_idx][col_idx];
+                const td = renderCell(cell, col_idx, {is_transposed: true});
+                tr.appendChild(td);
+            }
+            if (response.data.length == 0 && col_idx == 0)
+            {
+                /// If result is empty, show this fact with a style.
+                let td = document.createElement('td');
+                td.rowSpan = response.meta.length;
+                td.className = 'empty-result';
+                let div = document.createElement('div');
+                div.appendChild(document.createTextNode("empty result"));
+                div.className = 'empty-result';
+                td.appendChild(div);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        let table = document.getElementById('data-table');
+        table.appendChild(tbody);
+        table.style.display = 'table';
+    }
+
+    function renderTable(response)
+    {
+        if (response.data.length <= 1 && response.meta.length >= 5) {
+            renderTableTransposed(response)
+            return;
+        }
+
+        const should_display_row_numbers = response.data.length > 3;
+
+        let thead = document.createElement('thead');
+
+        if (should_display_row_numbers) {
+            let th = document.createElement('th');
+            th.className = 'row-number';
+            th.appendChild(document.createTextNode('№'));
+            thead.appendChild(th);
+        }
+
+        for (let idx in response.meta) {
+            let th = document.createElement('th');
+            const name = document.createTextNode(response.meta[idx].name);
+            th.appendChild(name);
+            thead.appendChild(th);
+        }
+
+        /// To prevent hanging the browser, limit the number of cells in a table.
+        /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
+        /// Also we permit rendering of more records but only if elapsed time is not large.
+        const max_rows = 10000 / response.meta.length;
+        const max_render_ms = 200;
+        let row_num = 0;
+
+        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
+        const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
+        const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
+        const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
+
+        const settings = {
+            is_transposed: false,
+            column_is_number: column_is_number,
+            column_maximums: column_maximums,
+            column_minimums: column_minimums,
+            column_need_render_bars: column_need_render_bars,
+        };
+
+        const start_time = performance.now();
+
+        let tbody = document.createElement('tbody');
+        for (let row_idx in response.data) {
+            let tr = document.createElement('tr');
+            if (should_display_row_numbers) {
+                let td = document.createElement('td');
+                td.className = 'row-number';
+                td.appendChild(document.createTextNode(1 + +row_idx));
+                tr.appendChild(td);
+            }
+            for (let col_idx in response.data[row_idx]) {
+                let cell = response.data[row_idx][col_idx];
+                const td = renderCell(cell, col_idx, settings);
+
+                td.onclick = () => { td.classList.add('td-selected') };
+                td.onmouseenter = () => {
+                    td.classList.add('td-hover-hysteresis');
+                    td.onmouseleave = () => {
+                        setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
+                    };
+                };
+
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+
+            ++row_num;
+            if (row_num >= max_rows && performance.now() - start_time >= max_render_ms) {
                 break;
             }
         }
-        if (!has_exception) {
-            renderError(state.data);
+
+        let table = document.getElementById('data-table');
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        table.style.display = 'table';
+    }
+
+    /// A function to render raw data when non-default format is specified.
+    function renderUnparsedResult(response)
+    {
+        clear();
+        let data = document.getElementById('data-unparsed')
+
+        if (response === '') {
+            /// TODO: Fade or remove previous result when new request will be performed.
+            response = 'Ok.';
         }
 
-        document.getElementById('hourglass').style.display = 'none';
-        document.documentElement.style.setProperty('--progress', '0');
-        return;
-    } else if (format == default_format) {
-        is_table = true;
-        let lines = state.data.split('\n');
-        let fragment = document.createDocumentFragment();
-
-        for (line of lines) {
-            if (line.length == 0) continue;
-            if (!update(JSON.parse(line), fragment)) { break; }
-        }
-
-        if (fragment.hasChildNodes()) {
-            document.getElementById('tbody').appendChild(fragment);
-        }
-    } else if (format == 'JSONCompactColumns') {
-        is_chart = true;
-        if (posted_request_num != request_num) { return; }
-        renderChart(JSON.parse(state.data));
-    } else {
-        is_raw = true;
-        updateRaw(state.data);
+        data.innerText = response;
+        /// inline-block make width adjust to the size of content.
+        data.style.display = 'inline-block';
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
+    function renderError(response)
+    {
+        clear();
+
+        let message = response;
+        try {
+            let json = JSON.parse(response);
+            if (json.exception) {
+                message = json.exception;
+            }
+        } catch (e) {}
+
+        document.getElementById('error').innerText = message ? message : "No response.";
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('logo-container').style.display = 'none';
     }
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) elapsed_ns = state.elapsed_ns;
-
-    updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
-}
-
-let query_area = document.getElementById('query');
-
-window.onpopstate = function(event) {
-    if (!event.state) return;
-    restoreFromHistory(event.state);
-};
-
-if (window.location.hash) {
-    query_area.value = window.atob(window.location.hash.substr(1));
-}
-
-let in_flight = false;
-async function post()
-{
-    ++request_num;
-    let query = query_area.value;
-    in_flight = true;
-    let run = document.getElementById('run');
-    run.innerText = 'Stop';
-    await postImpl(request_num, query);
-    run.blur();
-    run.innerText = 'Run';
-    in_flight = false;
-}
-
-async function cancel()
-{
-    controller.abort();
-    document.getElementById('run').innerText = 'Run';
-}
-
-document.getElementById('run').onclick = function(e)
-{
-    if (in_flight) {
-        cancel();
-    } else {
-        post();
-    }
-}
-
-document.addEventListener('keydown', event => {
-    /// Firefox has code 13 for Enter and Chromium has code 10.
-    if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        post();
-    }
-});
-
-/// Pressing Tab in textarea will increase indentation.
-/// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
-
-let user_prefers_tab_navigation = false;
-
-[...document.querySelectorAll('input')].map(elem => {
-    elem.onkeydown = (e) => {
-        if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
-    };
-});
-
-query_area.onkeydown = (e) => {
-    if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
-        let elem = e.target;
-        let selection_start = elem.selectionStart;
-        let selection_end = elem.selectionEnd;
-
-        elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
-        elem.selectionStart = selection_start + 4;
-        elem.selectionEnd = selection_start + 4;
-
-        e.preventDefault();
-        return false;
-    } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
-        // If the user presses Enter, and the previous line starts with spaces,
-        // then we will insert the same number of spaces.
-        const elem = e.target;
-        if (elem.selectionStart !== elem.selectionEnd) {
-            // If there is a selection, then we will not insert spaces.
-            return;
-        }
-        const cursor_pos = elem.selectionStart;
-
-        const elem_value = elem.value;
-        const text_before_cursor = elem_value.substring(0, cursor_pos);
-        const text_after_cursor = elem_value.substring(cursor_pos);
-        const prev_lines = text_before_cursor.split('\n');
-        const prev_line = prev_lines.pop();
-        const lead_spaces = prev_line.match(/^\s*/)[0];
-        if (!lead_spaces) {
-            return;
-        }
-
-        // Add leading spaces to the current line.
-        elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
-        elem.selectionStart = cursor_pos + lead_spaces.length + 1;
-        elem.selectionEnd = elem.selectionStart;
-
-        e.preventDefault();
-        return false;
-    }
-};
-
-function clearElement(id)
-{
-    let elem = document.getElementById(id);
-    while (elem.firstChild) {
-        elem.removeChild(elem.lastChild);
-    }
-    elem.style.display = 'none';
-}
-
-function clear()
-{
-    clearElement('data-table');
-    clearElement('graph');
-    clearElement('chart');
-    clearElement('data-unparsed');
-    clearElement('error');
-    clearElement('progress');
-
-    document.getElementById('check-mark').display = 'none';
-    document.getElementById('hourglass').display = 'none';
-    document.getElementById('stats').innerText = '';
-    document.getElementById('logo-container').style.display = 'block';
-
-    extremes = {};
-    header = {};
-    row_idx = 0;
-    elapsed_ns = 0;
-    incomplete_result = false;
-    is_explain_graph = false;
-    explain_graph = '';
-}
-
-function formatReadable(number = 0, decimals = 2, units = []) {
-    const k = 1000;
-    const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
-    const unit = units[i];
-    const dm = unit ? decimals : 0;
-    return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
-}
-
-function formatReadableBytes(bytes) {
-    const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
-
-    return formatReadable(bytes, 2, units);
-}
-
-function formatReadableRows(rows) {
-    const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
-
-    return formatReadable(rows, 2, units);
-}
-
-function renderCell(name, value)
-{
-    let td = document.createElement('td');
-
-    let is_null = (value === null);
-    let is_link = false;
-
-    /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-    let text;
-    if (is_null) {
-        text = 'ᴺᵁᴸᴸ';
-    } else if (typeof(value) === 'object') {
-        text = JSON.stringify(value);
-    } else {
-        text = value;
-
-        /// If it looks like URL, create a link. This is for convenience.
-        if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/)) {
-            is_link = true;
-        }
+    /// Huge JS libraries should be loaded only if needed.
+    function loadJS(src, integrity) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            if (integrity) {
+                script.crossOrigin = 'anonymous';
+                script.integrity = integrity;
+            } else {
+                console.warn('no integrity for', src)
+            }
+            script.addEventListener('load', function() { resolve(true); });
+            document.head.appendChild(script);
+        });
     }
 
-    let node = document.createTextNode(text);
-    if (is_link) {
-        let link = document.createElement('a');
-        link.appendChild(node);
-        link.href = text;
-        link.setAttribute('target', '_blank');
-        node = link;
+    let load_dagre_promise;
+    function loadDagre() {
+        if (load_dagre_promise) { return load_dagre_promise; }
+
+        load_dagre_promise = Promise.all([
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
+                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
+                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
+                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
+                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
+        ]);
+
+        return load_dagre_promise;
     }
 
-    td.className = column_is_number[name] ? 'right' : 'left';
+    async function renderGraph(response)
+    {
+        await loadDagre();
 
-    if (column_is_number[name]) {
-        if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
-            let i = 0;
-            td.innerHTML = text.split('').reverse().map(c => {
-                if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
-            }).reverse().join('');
-            return td;
-        }
+        /// https://github.com/dagrejs/dagre-d3/issues/131
+        const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
+
+        let graph = graphlibDot.read(dot);
+        graph.graph().rankdir = 'TB';
+
+        let render = new dagreD3.render();
+
+        let svg = document.getElementById('graph');
+        svg.style.display = 'block';
+
+        render(d3.select("#graph"), graph);
+
+        svg.style.width = graph.graph().width;
+        svg.style.height = graph.graph().height;
     }
 
-    td.appendChild(node);
-    return td;
-}
-
-document.getElementById('query').addEventListener('focus', e => {
-    current_selected_cell?.classList.remove('td-selected');
-    current_selected_cell?.parentElement.classList.remove('tr-selected');
-    current_selected_cell = null;
-});
-
-document.addEventListener('keydown', e => {
-    let cell = current_selected_cell;
-    if (!cell) { return; }
-
-    const row = cell.parentElement;
-    const table = row.parentElement;
-    let cell_index = cell.cellIndex;
-    let row_index = row.rowIndex;
-
-    switch(e.key) {
-        case 'ArrowUp': --row_index; break;
-        case 'ArrowDown': ++row_index; break;
-        case 'ArrowLeft': --cell_index; break;
-        case 'ArrowRight': ++cell_index; break;
-        default:
-            return;
+    let load_uplot_promise;
+    function loadUplot() {
+        if (load_uplot_promise) { return load_uplot_promise; }
+        load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+        return load_uplot_promise;
     }
 
-    /// The first cell in each row is the row number.
-    if (row_index < 0 || cell_index <= 0) { return; }
+    let uplot;
+    async function renderChart(json)
+    {
+        await loadUplot();
+        clear();
 
-    let new_cell = table.rows[row_index]?.cells[cell_index];
-    if (!new_cell) { return; }
+        let chart = document.getElementById('chart');
+        chart.style.display = 'block';
 
-    e.preventDefault();
+        let paths = uPlot.paths.stepped({align:  1});
 
-    cell.classList.remove('td-selected');
-    cell.parentElement.classList.remove('tr-selected');
-    new_cell.classList.add('td-selected');
-    new_cell.parentElement.classList.add('tr-selected');
-    new_cell.scrollIntoView({ block: 'nearest' });
-    current_selected_cell = new_cell;
-});
+        const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
+            ? ["#F80", "#FED", "#c7d0d9", "#2c3235"]
+            : ["#888", "#045", "#2c3235", "#c7d0d9"];
 
-function transposeTableIfNeeded()
-{
-    let table = document.getElementById('data-table');
-    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
-
-    let heads = table.tHead.childNodes;
-    let values = table.rows[0]?.cells;
-    let num_cols = heads.length - 1;
-
-    let new_tbody = document.createElement('tbody');
-    for (let i = 0; i < num_cols; ++i) {
-        let tr = document.createElement('tr');
-        let th = heads[1];
-        th.className = 'right';
-        th.style.width = '0';
-        tr.appendChild(th);
-        if (values) {
-            let td = values[1];
-            td.classList.remove('right');
-            tr.appendChild(td);
-        } else if (i == 0) {
-            /// If the result is empty, show this fact with a style.
-            let td = document.createElement('td');
-            td.rowSpan = num_cols;
-            td.className = 'empty-result';
-            let div = document.createElement('div');
-            div.appendChild(document.createTextNode("empty result"));
-            div.className = 'empty-result';
-            td.appendChild(div);
-            tr.appendChild(td);
-        }
-        new_tbody.appendChild(tr);
-    }
-
-    table.removeChild(table.tHead);
-    table.removeChild(table.tBodies[0]);
-    table.appendChild(new_tbody);
-}
-
-function update(json, fragment) {
-    if (json.progress) {
-        updateProgress(json.progress);
-        return true;
-    } else if (json.meta) {
-        appendHeader(json.meta);
-        return true;
-    } else if (json.row) {
-        if (is_explain_graph
-            || (row_idx == 0 && Object.keys(json.row).length == 1 && json.row.explain == 'digraph'
-                && query_area.value.match(/^\s*EXPLAIN/i))) {
-            is_explain_graph = true;
-            explain_graph += json.row.explain + '\n';
-            return true;
-        } else {
-            return appendRow(json.row, fragment);
-        }
-    } else if (json.min) {
-        extremes['min'] = json.min;
-        return true;
-    } else if (json.max) {
-        extremes['max'] = json.max;
-        return true;
-    } else if (json.exception) {
-        renderError(json.exception);
-        return true;
-    }
-}
-
-function updateRaw(data) {
-    const fragment = document.createTextNode(data);
-    let container = document.getElementById('data-unparsed');
-    container.appendChild(fragment);
-    container.style.display = 'block';
-}
-
-function updateProgressText() {
-    let progress_elem = document.getElementById('progress');
-    let progress_text = '';
-    if (row_idx) {
-        progress_text += `${row_idx}${incomplete_result ? '+' : ''} rows in result`;
-        if (elapsed_ns) progress_text += ', ';
-    }
-    if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
-    progress_elem.innerText = progress_text;
-    progress_elem.style.display = 'block';
-}
-
-function updateProgress(progress) {
-    let stats = document.getElementById('stats');
-    let progress_elem = document.getElementById('progress');
-
-    const rows = progress.read_rows;
-    const bytes = progress.read_bytes;
-    const total_rows = progress.total_rows_to_read;
-    elapsed_ns = progress.elapsed_ns;
-
-    let formatted_rows = formatReadableRows(rows);
-    let formatted_bytes = formatReadableBytes(bytes);
-
-    const rps = rows * 1e9 / elapsed_ns;
-    const bps = bytes * 1e9 / elapsed_ns;
-
-    let formatted_rps = formatReadableRows(rps) + '/sec';
-    let formatted_bps = formatReadableBytes(bps) + '/sec';
-
-    if (rows >= 1e11) { formatted_rows = `<b>${formatted_rows}<\/b>`; }
-    if (bytes >= 1e12) { formatted_bytes = `<b>${formatted_bytes}<\/b>`; }
-    if (rps >= 1e10) { formatted_rps = `<b>${formatted_rps}<\/b>`; }
-    if (bps >= 1e10) { formatted_bps = `<b>${formatted_bps}<\/b>`; }
-
-    let text = '';
-
-    if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
-
-    text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
-
-    if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
-
-    stats.innerHTML = text;
-
-    updateProgressText();
-
-    document.documentElement.style.setProperty('--progress',
-        rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
-}
-
-function appendHeader(meta) {
-    if (meta.length == 0) { return; }
-    header = meta;
-
-    let thead = document.createElement('thead');
-
-    let th = document.createElement('th');
-    th.className = 'row-number';
-    th.appendChild(document.createTextNode('№'));
-    thead.appendChild(th);
-
-    meta.forEach(elem => {
-        let th = document.createElement('th');
-        const name = document.createTextNode(elem.name);
-        th.appendChild(name);
-        let type_hint = document.createElement('span');
-        type_hint.className = 'type-hint';
-        type_hint.appendChild(document.createTextNode(elem.type));
-        th.appendChild(type_hint);
-        thead.appendChild(th);
-
-        column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
-    });
-
-    let table = document.getElementById('data-table');
-    while (table.firstChild) {
-        table.removeChild(table.lastChild);
-    }
-    let tbody = document.createElement('tbody');
-    tbody.id = 'tbody';
-    table.appendChild(thead);
-    table.appendChild(tbody);
-    table.style.display = 'table';
-
-    row_idx = 0;
-}
-
-const max_rows = 10_000;
-const max_cells = 100_000;
-
-let current_selected_cell = null;
-function appendRow(row, fragment) {
-    if (row_idx >= max_rows || (1 + row_idx) * Object.keys(header).length > max_cells) {
-        incomplete_result = true;
-        return false;
-    }
-
-    ++row_idx;
-    let tr = document.createElement('tr');
-
-    let td = document.createElement('td');
-    td.className = 'row-number';
-    td.appendChild(document.createTextNode(row_idx));
-    tr.appendChild(td);
-
-    let col_idx = 0;
-    for (const column of header) {
-        const td = renderCell(column.name, row[column.name]);
-        ++col_idx;
-
-        td.onclick = () => {
-            current_selected_cell?.classList.remove('td-selected');
-            current_selected_cell?.parentElement.classList.remove('tr-selected');
-            current_selected_cell = td;
-            current_selected_cell.classList.add('td-selected')
-            current_selected_cell.parentElement.classList.add('tr-selected')
-            current_selected_cell.scrollIntoView({ block: 'nearest' });
+        const opts = {
+            width: chart.clientWidth,
+            height: chart.clientHeight,
+            scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
+            axes: [ { stroke: axes_color,
+                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+					{ stroke: axes_color,
+					  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+            series: [ { label: "x" },
+                      { label: "y", stroke: line_color, fill: fill_color,
+                        drawStyle: 0, lineInterpolation: 1, paths } ],
+            padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
         };
 
-        tr.appendChild(td);
+        uplot = new uPlot(opts, json, chart);
     }
 
-    fragment.appendChild(tr);
-    incomplete_result = false;
-    return true;
-}
-
-function renderExtremes() {
-    let col_idx = 0;
-    for (const column of header) {
-        const name = column.name;
-        ++col_idx;
-        if (column_is_number[name]
-            && extremes.min[name] !== undefined && extremes.max[name] !== undefined
-            && Number(extremes.max[name]) > Number(extremes.min[name])) {
-            let table = document.getElementById('data-table');
-            for (let row of table.rows) {
-                let cell = row.cells[col_idx];
-                let value = +cell.innerText;
-                if (value > 0) {
-                    const ratio = 100 * value / extremes.max[name];
-
-                    cell.style.cssText = `
-                        background-size: 100% 50%;
-                        background-position: center;
-                        background-repeat: no-repeat;
-                        background: linear-gradient(to right,
-                            var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                            var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
-                }
-            }
+    function resizeChart() {
+        if (uplot) {
+            let chart = document.getElementById('chart');
+            uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
         }
     }
-}
 
-function renderError(message)
-{
-    document.getElementById('error').innerText = message ? message : "No response.";
-    document.getElementById('error').style.display = 'block';
-    document.getElementById('logo-container').style.display = 'none';
-}
-
-/// Huge JS libraries should be loaded only if needed.
-function loadJS(src, integrity) {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        if (integrity) {
-            script.crossOrigin = 'anonymous';
-            script.integrity = integrity;
-        } else {
-            console.warn('no integrity for', src)
+    function redrawChart() {
+        if (uplot && document.getElementById('chart').style.display == 'block') {
+            renderChart(uplot.data);
         }
-        script.addEventListener('load', function() { resolve(true); });
-        document.head.appendChild(script);
-    });
-}
-
-let load_dagre_promise;
-function loadDagre() {
-    if (load_dagre_promise) { return load_dagre_promise; }
-
-    load_dagre_promise = Promise.all([
-        loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-        loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-        loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-        loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-    ]);
-
-    return load_dagre_promise;
-}
-
-async function renderGraph()
-{
-    clearElement('data-table');
-    await loadDagre();
-
-    /// https://github.com/dagrejs/dagre-d3/issues/131
-    const dot = explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
-
-    let graph = graphlibDot.read(dot);
-    let render = new dagreD3.render();
-
-    graph.setGraph({
-        nodesep: 20,
-        rankdir: 'LR',
-    });
-
-    let svg = document.getElementById('graph');
-    svg.style.display = 'block';
-
-    render(d3.select("#graph"), graph);
-
-    svg.style.width = graph.graph().width;
-    svg.style.height = graph.graph().height;
-}
-
-let load_uplot_promise;
-function loadUplot() {
-    if (load_uplot_promise) { return load_uplot_promise; }
-    load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-        'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
-    return load_uplot_promise;
-}
-
-let uplot;
-async function renderChart(json)
-{
-    await loadUplot();
-    clear();
-
-    let chart = document.getElementById('chart');
-    chart.style.display = 'block';
-
-    let paths = uPlot.paths.stepped({align:  1});
-
-    const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["#F8C", "#F8C", "#CCC", "#444"]
-        : ["#FF6", "#FF6", "#444", "#CCC"];
-
-    const opts = {
-        width: chart.clientWidth,
-        height: chart.clientHeight,
-        scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
-        axes: [ { stroke: axes_color,
-                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                { stroke: axes_color,
-                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-        series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color,
-                    drawStyle: 0, lineInterpolation: 1, paths } ],
-        padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
-    };
-
-    uplot = new uPlot(opts, json, chart);
-}
-
-function resizeChart() {
-    if (uplot) {
-        let chart = document.getElementById('chart');
-        uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
-    }
-}
-
-function redrawChart() {
-    if (uplot && document.getElementById('chart').style.display == 'block') {
-        renderChart(uplot.data);
-    }
-}
-
-new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
-
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
-}
-if (!theme) {
-    theme = 'light';
-}
-
-function setColorTheme(new_theme, update_preference) {
-    theme = new_theme;
-    if (update_preference) {
-        window.localStorage.setItem('theme', theme);
-    }
-    document.documentElement.setAttribute('data-theme', theme);
-    redrawChart();
-}
-
-if (theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-} else {
-    /// Obtain system-level user preference
-    const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
-    if (media_query_list.matches) {
-        setColorTheme('dark');
     }
 
-    /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-    media_query_list.addEventListener('change', function(e) {
-        setColorTheme(e.matches ? 'dark' : 'light');
-    });
-}
+    new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
 
-if (run_immediately) {
-    post();
-}
+    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+    let theme = current_url.searchParams.get('theme');
+    if (['dark', 'light'].indexOf(theme) === -1) {
+        theme = window.localStorage.getItem('theme');
+    }
+    if (!theme) {
+        theme = 'light';
+    }
 
-document.getElementById('toggle-light').onclick = function() {
-    setColorTheme('light', true);
-}
+    function setColorTheme(new_theme, update_preference) {
+        theme = new_theme;
+        if (update_preference) {
+            window.localStorage.setItem('theme', theme);
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        redrawChart();
+    }
 
-document.getElementById('toggle-dark').onclick = function() {
-    setColorTheme('dark', true);
-}
+    if (theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+    } else {
+        /// Obtain system-level user preference
+        const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+        if (media_query_list.matches) {
+            setColorTheme('dark');
+        }
+
+        /// There is a rumor that on some computers, the theme is changing automatically on day/night.
+        media_query_list.addEventListener('change', function(e) {
+            setColorTheme(e.matches ? 'dark' : 'light');
+        });
+    }
+
+    document.getElementById('toggle-light').onclick = function() {
+        setColorTheme('light', true);
+    }
+
+    document.getElementById('toggle-dark').onclick = function() {
+        setColorTheme('dark', true);
+    }
 </script>
 </html>

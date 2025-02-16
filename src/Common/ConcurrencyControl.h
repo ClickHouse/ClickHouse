@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -8,7 +7,6 @@
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 
-#include <Common/CurrentMetrics.h>
 #include <Common/ISlotControl.h>
 
 namespace DB
@@ -54,7 +52,6 @@ public:
         explicit Slot(SlotAllocationPtr && allocation_);
 
         SlotAllocationPtr allocation;
-        CurrentMetrics::Increment acquired_slot_increment;
     };
 
     // Manages group of slots for a single query, see ConcurrencyControl::allocate(min, max)
@@ -133,7 +130,6 @@ private:
     Waiters::iterator cur_waiter; // round-robin pointer
     SlotCount max_concurrency = UnlimitedSlots;
     SlotCount cur_concurrency = 0;
-    CurrentMetrics::Increment max_concurrency_metric;
 };
 
 }

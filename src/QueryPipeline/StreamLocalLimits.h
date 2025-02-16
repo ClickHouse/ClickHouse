@@ -13,7 +13,7 @@ namespace DB
   *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
   *  Currently this check is performed only in leaf streams.
   */
-enum class LimitsMode : uint8_t
+enum class LimitsMode
 {
     LIMITS_CURRENT,
     LIMITS_TOTAL,

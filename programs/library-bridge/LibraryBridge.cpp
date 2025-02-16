@@ -1,7 +1,5 @@
 #include "LibraryBridge.h"
 
-#include <iostream>
-
 int mainEntryClickHouseLibraryBridge(int argc, char ** argv)
 {
     DB::LibraryBridge app;
@@ -13,7 +11,7 @@ int mainEntryClickHouseLibraryBridge(int argc, char ** argv)
     {
         std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
         auto code = DB::getCurrentExceptionCode();
-        return static_cast<UInt8>(code) ? code : 1;
+        return code ? code : 1;
     }
 }
 
@@ -27,7 +25,7 @@ std::string LibraryBridge::bridgeName() const
 
 LibraryBridge::HandlerFactoryPtr LibraryBridge::getHandlerFactoryPtr(ContextPtr context) const
 {
-    return std::make_shared<LibraryBridgeHandlerFactory>("LibraryRequestHandlerFactory", context);
+    return std::make_shared<LibraryBridgeHandlerFactory>("LibraryRequestHandlerFactory", keep_alive_timeout, context);
 }
 
 }

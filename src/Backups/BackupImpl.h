@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Backups/BackupFactory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
@@ -16,6 +15,8 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -33,17 +34,25 @@ public:
         size_t max_volume_size = 0;
     };
 
-    /// RESTORE
     BackupImpl(
-        BackupFactory::CreateParams params_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_);
+        const std::optional<BackupInfo> & base_backup_info_,
+        std::shared_ptr<IBackupReader> reader_,
+        const ContextPtr & context_,
+        bool use_same_s3_credentials_for_base_backup_);
 
-    /// BACKUP
     BackupImpl(
-        BackupFactory::CreateParams params_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupWriter> writer_);
+        const std::optional<BackupInfo> & base_backup_info_,
+        std::shared_ptr<IBackupWriter> writer_,
+        const ContextPtr & context_,
+        bool is_internal_backup_,
+        const std::shared_ptr<IBackupCoordination> & coordination_,
+        const std::optional<UUID> & backup_uuid_,
+        bool deduplicate_files_,
+        bool use_same_s3_credentials_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -74,8 +83,7 @@ public:
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
-    bool setIsCorrupted() noexcept override;
-    bool tryRemoveAllFiles() noexcept override;
+    void tryRemoveAllFiles() override;
 
 private:
     void open();
@@ -105,7 +113,6 @@ private:
 
     std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
-    const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
     const bool use_archive;
@@ -113,6 +120,8 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
+    const ContextPtr context;
+    const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -134,14 +143,15 @@ private:
     int version;
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
-    mutable std::optional<UUID> base_backup_uuid;
+    std::optional<UUID> base_backup_uuid;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
-    bool corrupted = false;
+    bool deduplicate_files = true;
+    bool use_same_s3_credentials_for_base_backup = false;
     const LoggerPtr log;
 };
 

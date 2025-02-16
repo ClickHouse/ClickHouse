@@ -13,7 +13,7 @@ class ASTRolesOrUsersSet;
 class ASTSetRoleQuery : public IAST
 {
 public:
-    enum class Kind : uint8_t
+    enum class Kind
     {
         SET_ROLE,
         SET_ROLE_DEFAULT,
@@ -26,11 +26,8 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
-
 }

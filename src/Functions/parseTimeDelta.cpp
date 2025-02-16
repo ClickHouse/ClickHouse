@@ -11,8 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
@@ -61,8 +60,7 @@ namespace
         {"microseconds", 1e-6},
         {"microsecond", 1e-6},
         {"microsec", 1e-6},
-        {"μs", 1e-6}, // U+03BC = Greek letter mu
-        {"µs", 1e-6}, // U+00B5 = micro symbol
+        {"μs", 1e-6},
         {"us", 1e-6},
 
         {"nanoseconds", 1e-9},
@@ -119,14 +117,14 @@ namespace
         {
             if (arguments.empty())
                 throw Exception(
-                    ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
                     arguments.size());
 
             if (arguments.size() > 1)
                 throw Exception(
-                    ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION,
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Number of arguments for function {} doesn't match: passed {}, should be 1.",
                     getName(),
                     arguments.size());
@@ -136,11 +134,6 @@ namespace
             if (!isString(type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
 
-            return std::make_shared<DataTypeFloat64>();
-        }
-
-        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-        {
             return std::make_shared<DataTypeFloat64>();
         }
 

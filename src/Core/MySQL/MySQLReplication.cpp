@@ -9,7 +9,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
-#include <Core/UUID.h>
 
 
 namespace DB
@@ -514,49 +513,49 @@ namespace MySQLReplication
                     {
                         UInt8 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt8{val}});
                         break;
                     }
                     case MYSQL_TYPE_SHORT:
                     {
                         UInt16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt16{val}});
                         break;
                     }
                     case MYSQL_TYPE_INT24:
                     {
                         Int32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 3);
-                        row.push_back(Field{val});
+                        row.push_back(Field{Int32{val}});
                         break;
                     }
                     case MYSQL_TYPE_LONG:
                     {
                         UInt32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt32{val}});
                         break;
                     }
                     case MYSQL_TYPE_LONGLONG:
                     {
                         UInt64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                        row.push_back(Field{val});
+                        row.push_back(Field{UInt64{val}});
                         break;
                     }
                     case MYSQL_TYPE_FLOAT:
                     {
                         Float32 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 4);
-                        row.push_back(Field{val});
+                        row.push_back(Field{Float32{val}});
                         break;
                     }
                     case MYSQL_TYPE_DOUBLE:
                     {
                         Float64 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 8);
-                        row.push_back(Field{val});
+                        row.push_back(Field{Float64{val}});
                         break;
                     }
                     case MYSQL_TYPE_TIMESTAMP:
@@ -581,7 +580,7 @@ namespace MySQLReplication
                     case MYSQL_TYPE_YEAR: {
                         Int16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                        row.push_back(Field{static_cast<UInt16>(val + 1900)});
+                        row.push_back(Field{UInt16{static_cast<UInt16>(val + 1900)}});
                         break;
                     }
                     case MYSQL_TYPE_TIME2:
@@ -646,9 +645,7 @@ namespace MySQLReplication
                                 break;
                             }
                         }
-                        Int64 hh;
-                        Int64 mm;
-                        Int64 ss;
+                        Int64 hh, mm, ss;
                         bool negative = false;
                         if (intpart == 0)
                         {
@@ -668,9 +665,8 @@ namespace MySQLReplication
 
                         Int64 time_micro = 0;
                         time_micro = (hh * 3600  + mm * 60 + ss) * 1000000 + std::abs(frac);
-                        if (negative)
-                            time_micro = - time_micro;
-                        row.push_back(Field{time_micro});
+                        if (negative) time_micro = - time_micro;
+                        row.push_back(Field{Int64{time_micro}});
                         break;
                     }
                     case MYSQL_TYPE_DATETIME2:
@@ -701,8 +697,7 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_TIMESTAMP2:
                     {
-                        UInt32 sec = 0;
-                        UInt32 fsp = 0;
+                        UInt32 sec = 0, fsp = 0;
                         readBigEndianStrict(payload, reinterpret_cast<char *>(&sec), 4);
                         readTimeFractionalPart(payload, fsp, meta);
 
@@ -725,9 +720,9 @@ namespace MySQLReplication
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            if (precision <= DecimalUtils::max_precision<Decimal64>)
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            if (precision <= DecimalUtils::max_precision<Decimal128>)
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
@@ -817,13 +812,13 @@ namespace MySQLReplication
                         {
                             UInt8 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                            row.push_back(Field{val});
+                            row.push_back(Field{UInt8{val}});
                         }
                         else
                         {
                             UInt16 val = 0;
                             payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                            row.push_back(Field{val});
+                            row.push_back(Field{UInt16{val}});
                         }
                         break;
                     }

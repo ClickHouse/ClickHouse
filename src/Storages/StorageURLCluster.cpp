@@ -2,9 +2,7 @@
 
 #include <Storages/StorageURLCluster.h>
 
-#include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -30,10 +28,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 glob_expansion_max_elements;
-}
 
 namespace ErrorCodes
 {
@@ -80,8 +74,8 @@ StorageURLCluster::StorageURLCluster(
     }
 
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context)));
     setInMemoryMetadata(storage_metadata);
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.getColumns()));
 }
 
 void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
@@ -96,8 +90,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const
 {
-    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
+    auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(uri, context->getSettingsRef().glob_expansion_max_elements, predicate, getVirtualsList(), context);
     auto callback = std::make_shared<TaskIterator>([iter = std::move(iterator)]() mutable -> String { return iter->next(); });
     return RemoteQueryExecutor::Extension{.task_iterator = std::move(callback)};
 }

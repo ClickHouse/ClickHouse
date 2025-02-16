@@ -9,6 +9,7 @@ generate_series
 input
 jdbc
 merge
+mongodb
 null
 numbers
 numbers_mt

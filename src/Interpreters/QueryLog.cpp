@@ -5,7 +5,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
@@ -109,8 +108,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_major", std::make_shared<DataTypeUInt32>(), "Major version of the clickhouse-client or another TCP client."},
         {"client_version_minor", std::make_shared<DataTypeUInt32>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
-        {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
-        {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
         {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
@@ -138,9 +135,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_table_functions", array_low_cardinality_string, "Canonical names of table functions, which were used during query execution."},
 
         {"used_row_policies", array_low_cardinality_string, "The list of row policies names that were used during query execution."},
-
-        {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
-        {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
@@ -273,8 +267,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         auto & column_storage_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_table_function_factory_objects = typeid_cast<ColumnArray &>(*columns[i++]);
         auto & column_row_policies_names = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_used_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
-        auto & column_missing_privileges = typeid_cast<ColumnArray &>(*columns[i++]);
 
         auto fill_column = [](const auto & data, ColumnArray & column)
         {
@@ -298,8 +290,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_storages, column_storage_factory_objects);
         fill_column(used_table_functions, column_table_function_factory_objects);
         fill_column(used_row_policies, column_row_policies_names);
-        fill_column(used_privileges, column_used_privileges);
-        fill_column(missing_privileges, column_missing_privileges);
     }
 
     columns[i++]->insert(Tuple{tid.start_csn, tid.local_tid, tid.host_id});
@@ -338,9 +328,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.client_version_major);
     columns[i++]->insert(client_info.client_version_minor);
     columns[i++]->insert(client_info.client_version_patch);
-
-    columns[i++]->insert(client_info.script_query_number);
-    columns[i++]->insert(client_info.script_line_number);
 
     columns[i++]->insert(static_cast<UInt64>(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);

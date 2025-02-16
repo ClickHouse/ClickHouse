@@ -30,6 +30,9 @@ struct StorageSnapshot
     using DataPtr = std::unique_ptr<Data>;
     DataPtr data;
 
+    /// Projection that is used in query.
+    mutable const ProjectionDescription * projection = nullptr;
+
     StorageSnapshot(
         const IStorage & storage_,
         StorageMetadataPtr metadata_);
@@ -79,6 +82,11 @@ struct StorageSnapshot
     void check(const Names & column_names) const;
 
     DataTypePtr getConcreteType(const String & column_name) const;
+
+    void addProjection(const ProjectionDescription * projection_) const { projection = projection_; }
+
+    /// If we have a projection then we should use its metadata.
+    StorageMetadataPtr getMetadataForQuery() const { return projection ? projection->metadata : metadata; }
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

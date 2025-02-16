@@ -85,7 +85,7 @@ public:
 
     /** Total compiled code size for module that are currently valid.
       */
-    size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
+    inline size_t getCompiledCodeSize() const { return compiled_code_size.load(std::memory_order_relaxed); }
 
 private:
 

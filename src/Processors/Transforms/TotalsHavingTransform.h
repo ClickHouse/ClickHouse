@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
 
@@ -12,7 +11,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 
-enum class TotalsMode : uint8_t;
+enum class TotalsMode;
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
   * Calculates total values according to totals_mode.

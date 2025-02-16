@@ -1,23 +1,27 @@
 ---
 slug: /en/development/style
 sidebar_position: 70
-sidebar_label: C++ Style Guide
+sidebar_label: C++ Guide
+description: A list of recommendations regarding coding style, naming convention, formatting and more
 ---
 
-# C++ Style Guide
+# How to Write C++ Code
 
 ## General Recommendations {#general-recommendations}
 
-The following are recommendations, not requirements.
-If you are editing code, it makes sense to follow the formatting of the existing code.
-Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
-Many of the rules do not have logical reasons; they are dictated by established practices.
+**1.** The following are recommendations, not requirements.
+
+**2.** If you are editing code, it makes sense to follow the formatting of the existing code.
+
+**3.** Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
+
+**4.** Many of the rules do not have logical reasons; they are dictated by established practices.
 
 ## Formatting {#formatting}
 
-**1.** Most of the formatting is done automatically by `clang-format`.
+**1.** Most of the formatting will be done automatically by `clang-format`.
 
-**2.** Indents is 4 spaces. Configure your development environment so that a tab adds four spaces.
+**2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
 
 **3.** Opening and closing curly brackets must be on a separate line.
 
@@ -53,7 +57,7 @@ memcpy(&buf[place_value], &x, sizeof(x));
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, ...) and the ternary operator `?:`.
+**7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, …) and the ternary operator `?:`.
 
 ``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -82,7 +86,7 @@ dst.ClickGoodEvent     = click.GoodEvent;
 
 If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
 
-**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, ...) from the argument.
+**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, …) from the argument.
 
 **12.** Put a space after a comma, but not before it. The same rule goes for a semicolon inside a `for` expression.
 
@@ -111,7 +115,7 @@ public:
 
 **16.** If the same `namespace` is used for the entire file, and there isn’t anything else significant, an offset is not necessary inside `namespace`.
 
-**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, ...
+**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, …
 
 But if the inner `statement` contains curly brackets or `else`, the external block should be written in curly brackets.
 

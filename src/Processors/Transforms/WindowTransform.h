@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/WindowDescription.h>
-#include <AggregateFunctions/WindowFunction.h>
 
 #include <Processors/IProcessor.h>
 
@@ -22,16 +21,46 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
+// Runtime data for computing one window function.
+struct WindowFunctionWorkspace
+{
+    AggregateFunctionPtr aggregate_function;
+
+    // Cached value of aggregate function isState virtual method
+    bool is_aggregate_function_state = false;
+
+    // This field is set for pure window functions. When set, we ignore the
+    // window_function.aggregate_function, and work through this interface
+    // instead.
+    IWindowFunction * window_function_impl = nullptr;
+
+    std::vector<size_t> argument_column_indices;
+
+    // Will not be initialized for a pure window function.
+    mutable AlignedBuffer aggregate_function_state;
+
+    // Argument columns. Be careful, this is a per-block cache.
+    std::vector<const IColumn *> argument_columns;
+    UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
+};
 
 struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
-    Columns cast_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;
 };
+
+struct RowNumber
+{
+    UInt64 block = 0;
+    UInt64 row = 0;
+
+    auto operator <=>(const RowNumber &) const = default;
+};
+
 
 /* Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
@@ -94,7 +123,6 @@ public:
 
     void updateAggregationState();
     void writeOutCurrentRow();
-    void updateFirstRequiredRow();
 
     Columns & inputAt(const RowNumber & x)
     {
@@ -305,9 +333,6 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
-
-    /// Rows before this can be dropped safely.
-    RowNumber first_required_row;
 
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for

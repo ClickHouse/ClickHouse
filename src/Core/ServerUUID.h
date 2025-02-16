@@ -15,15 +15,10 @@ class ServerUUID
 
 public:
     /// Returns persistent UUID of current clickhouse-server or clickhouse-keeper instance.
-    static UUID get();
+    static UUID get() { return server_uuid; }
 
     /// Loads server UUID from file or creates new one. Should be called on daemon startup.
     static void load(const fs::path & server_uuid_file, Poco::Logger * log);
-
-    /// Sets specific server UUID.
-    static void set(UUID & uuid);
-
-    static void setRandomForUnitTests();
 };
 
 UUID loadServerUUID(const fs::path & server_uuid_file, Poco::Logger * log);

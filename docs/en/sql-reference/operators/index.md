@@ -2,7 +2,6 @@
 slug: /en/sql-reference/operators/
 sidebar_position: 38
 sidebar_label: Operators
-displayed_sidebar: sqlreference
 ---
 
 # Operators
@@ -265,6 +264,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 │ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
+
+You can work with dates without using `INTERVAL`, just by adding or subtracting seconds, minutes, and hours. For example, an interval of one day can be set by adding `60*60*24`.
 
 :::note    
 The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.

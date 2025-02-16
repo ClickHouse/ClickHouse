@@ -4,11 +4,7 @@ sidebar_position: 175
 sidebar_label: Redis
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Redis
-
-<CloudNotSupportedBadge/>
 
 This engine allows integrating ClickHouse with [Redis](https://redis.io/). For Redis takes kv model, we strongly recommend you only query it in a point way, such as `where k=xx` or `where k in (xx, xx)`.
 

@@ -1,33 +1,37 @@
 #!/usr/bin/env python3
 
 import argparse
-import logging
-import subprocess
-import sys
-import time
 from pathlib import Path
 from typing import Tuple
+import subprocess
+import logging
+import sys
+import time
 
-import docker_images_helper
-from ci_config import CI
-from ci_utils import Shell
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET
+from ci_config import CI_CONFIG, BuildConfig
+
+from env_helper import (
+    REPO_COPY,
+    S3_BUILDS_BUCKET,
+    TEMP_PATH,
+)
 from git_helper import Git
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport, StatusType
-from stopwatch import Stopwatch
+from report import FAILURE, JobReport, StatusType, SUCCESS
 from tee_popen import TeePopen
+import docker_images_helper
 from version_helper import (
     ClickHouseVersion,
     get_version_from_repo,
     update_version_local,
 )
+from stopwatch import Stopwatch
 
 IMAGE_NAME = "clickhouse/binary-builder"
 BUILD_LOG_NAME = "build_log.log"
 
 
-def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
+def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config.package_type != "deb":
         return False
     if build_config.sanitizer != "":
@@ -38,7 +42,7 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
 
 
 def get_packager_cmd(
-    build_config: CI.BuildConfig,
+    build_config: BuildConfig,
     packager_path: Path,
     output_path: Path,
     build_version: str,
@@ -71,7 +75,6 @@ def get_packager_cmd(
 
     cmd += f" --docker-image-version={image_version}"
     cmd += " --with-profiler"
-    cmd += " --with-buzzhouse"
     cmd += f" --version={build_version}"
 
     if _can_export_binaries(build_config):
@@ -108,12 +111,6 @@ def build_clickhouse(
     return build_log_path, SUCCESS if success else FAILURE
 
 
-def is_release_pr(pr_info: PRInfo) -> bool:
-    return (
-        CI.Labels.RELEASE in pr_info.labels or CI.Labels.RELEASE_LTS in pr_info.labels
-    )
-
-
 def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str, str]:
     "Return prefixes for S3 artifacts paths"
     # FIXME performance
@@ -122,7 +119,7 @@ def get_release_or_pr(pr_info: PRInfo, version: ClickHouseVersion) -> Tuple[str,
     # It should be fixed in performance-comparison image eventually
     # For performance tests we always set PRs prefix
     performance_pr = "PRs/0"
-    if is_release_pr(pr_info):
+    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         return pr_info.head_ref, performance_pr
     if pr_info.number == 0:
@@ -150,28 +147,13 @@ def main():
     stopwatch = Stopwatch()
     build_name = args.build_name
 
-    build_config = CI.JOB_CONFIGS[build_name].build_config
-    assert build_config
+    build_config = CI_CONFIG.build_config[build_name]
 
-    repo_path = Path(REPO_COPY)
-    temp_path = repo_path / "ci" / "tmp"
+    temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo()
-
-    if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
-        print("Unshallow repo")
-        Shell.check(
-            f"git fetch --prune --no-recurse-submodules --depth 10000 --filter=tree:0 origin {pr_info.head_ref} master +refs/tags/*:refs/tags/*",
-            verbose=True,
-        )
-
-    print("Fetch submodules")
-    # TODO: test sparse checkout: update-submodules.sh?
-    Shell.check(
-        "git submodule init && git submodule update --depth 1 --recursive --jobs 20",
-        verbose=True,
-    )
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -181,7 +163,7 @@ def main():
     official_flag = pr_info.number == 0
 
     version_type = "testing"
-    if is_release_pr(pr_info):
+    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
         official_flag = True
 
@@ -191,7 +173,7 @@ def main():
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = temp_path / "build"
+    build_output_path = temp_path / build_name
     build_output_path.mkdir(parents=True, exist_ok=True)
 
     docker_image = docker_images_helper.pull_image(
@@ -225,9 +207,6 @@ def main():
         # We check if docker works, because if it's down, it's infrastructure
         try:
             subprocess.check_call("docker info", shell=True)
-            logging.warning("Collecting 'dmesg -T' content")
-            with TeePopen("sudo dmesg -T", build_output_path / "dmesg.log") as process:
-                process.wait()
         except subprocess.CalledProcessError:
             logging.error(
                 "The dockerd looks down, won't upload anything and generate report"

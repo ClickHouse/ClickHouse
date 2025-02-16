@@ -1,16 +1,11 @@
 #!/usr/bin/env python
 import argparse
-import atexit
 import logging
-import os
 import os.path as p
 import re
 import subprocess
 import tempfile
-from contextlib import contextmanager
 from typing import Any, List, Literal, Optional
-
-import __main__
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +22,12 @@ SHA_REGEXP = re.compile(r"\A([0-9]|[a-f]){40}\Z")
 CWD = p.dirname(p.realpath(__file__))
 TWEAK = 1
 
-with tempfile.NamedTemporaryFile("w", delete=False) as f:
-    GIT_KNOWN_HOSTS_FILE = f.name
-    GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
-        "git -c user.email=robot-clickhouse@users.noreply.github.com "
-        "-c user.name=robot-clickhouse -c commit.gpgsign=false "
-        "-c core.sshCommand="
-        f"'ssh -o UserKnownHostsFile={GIT_KNOWN_HOSTS_FILE} "
-        "-o StrictHostKeyChecking=accept-new'"
-    )
-    atexit.register(os.remove, f.name)
+GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
+    "git -c user.email=robot-clickhouse@users.noreply.github.com "
+    "-c user.name=robot-clickhouse -c commit.gpgsign=false "
+    "-c core.sshCommand="
+    "'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'"
+)
 
 
 # Py 3.8 removeprefix and removesuffix
@@ -113,39 +104,6 @@ git_runner = Runner(set_cwd_to_git_root=True)
 
 def is_shallow() -> bool:
     return git_runner.run("git rev-parse --is-shallow-repository") == "true"
-
-
-@contextmanager
-def clear_repo():
-    def ref():
-        return git_runner("git branch --show-current") or git_runner(
-            "git rev-parse HEAD"
-        )
-
-    orig_ref = ref()
-    try:
-        yield
-    finally:
-        current_ref = ref()
-        if orig_ref != current_ref:
-            git_runner(f"git checkout -f {orig_ref}")
-
-
-@contextmanager
-def stash():
-    # diff.ignoreSubmodules=all don't show changed submodules
-    need_stash = bool(git_runner("git -c diff.ignoreSubmodules=all diff HEAD"))
-    if need_stash:
-        script = (
-            __main__.__file__ if hasattr(__main__, "__file__") else "unknown script"
-        )
-        git_runner(f"git stash push --no-keep-index -m 'running {script}'")
-    try:
-        with clear_repo():
-            yield
-    finally:
-        if need_stash:
-            git_runner("git stash pop")
 
 
 def get_tags() -> List[str]:

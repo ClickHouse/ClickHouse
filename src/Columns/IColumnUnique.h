@@ -73,7 +73,7 @@ public:
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
 
-    const char * getFamilyName() const override { return "Unique"; }
+    const char * getFamilyName() const override { return "ColumnUnique"; }
     TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
     void insert(const Field &) override
@@ -86,11 +86,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method tryInsert is not supported for ColumnUnique.");
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn &, size_t, size_t) override
-#else
-    void doInsertRangeFrom(const IColumn &, size_t, size_t) override
-#endif
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertRangeFrom is not supported for ColumnUnique.");
     }
@@ -159,7 +155,7 @@ public:
     void updatePermutation(PermutationSortDirection, PermutationSortStability,
                     size_t, int, Permutation &, EqualRanges &) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePermutation is not supported for ColumnUnique.");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getPermutation is not supported for ColumnUnique.");
     }
 
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override

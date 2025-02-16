@@ -1,18 +1,15 @@
 ---
 slug: /en/development/architecture
 sidebar_label: Architecture Overview
-sidebar_position: 50
+sidebar_position: 62
 ---
 
-# Architecture Overview
+# Overview of ClickHouse Architecture
 
 ClickHouse is a true column-oriented DBMS. Data is stored by columns, and during the execution of arrays (vectors or chunks of columns).
-Whenever possible, operations are dispatched on arrays, rather than on individual values.
-It is called “vectorized query execution” and it helps lower the cost of actual data processing.
+Whenever possible, operations are dispatched on arrays, rather than on individual values. It is called “vectorized query execution” and it helps lower the cost of actual data processing.
 
-This idea is not new.
-It dates back to the `APL` (A programming language, 1957) and its descendants: `A +` (APL dialect), `J` (1990), `K` (1993), and `Q` (programming language from Kx Systems, 2003).
-Array programming is used in scientific data processing. Neither is this idea something new in relational databases. For example, it is used in the `VectorWise` system (also known as Actian Vector Analytic Database by Actian Corporation).
+> This idea is nothing new. It dates back to the `APL` (A programming language, 1957) and its descendants: `A +` (APL dialect), `J` (1990), `K` (1993), and `Q` (programming language from Kx Systems, 2003). Array programming is used in scientific data processing. Neither is this idea something new in relational databases: for example, it is used in the `VectorWise` system (also known as Actian Vector Analytic Database by Actian Corporation).
 
 There are two different approaches for speeding up query processing: vectorized query execution and runtime code generation. The latter removes all indirection and dynamic dispatch. Neither of these approaches is strictly better than the other. Runtime code generation can be better when it fuses many operations, thus fully utilizing CPU execution units and the pipeline. Vectorized query execution can be less practical because it involves temporary vectors that must be written to the cache and read back. If the temporary data does not fit in the L2 cache, this becomes an issue. But vectorized query execution more easily utilizes the SIMD capabilities of the CPU. A [research paper](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) written by our friends shows that it is better to combine both approaches. ClickHouse uses vectorized query execution and has limited initial support for runtime code generation.
 
@@ -121,7 +118,7 @@ And the result of interpreting the `INSERT SELECT` query is a "completed" `Query
 
 `InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are performed. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted into separate classes to allow for modular transformations of the query.
 
-To address problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` has been developed. This is a new version of the `InterpreterSelectQuery`, which does not use the `ExpressionAnalyzer` and introduces an additional layer of abstraction between `AST` and `QueryPipeline`, called `QueryTree'. It is fully ready for use in production, but just in case it can be turned off by setting the value of the `enable_analyzer` setting to `false`.
+To address current problems that exist in interpreters, a new `InterpreterSelectQueryAnalyzer` is being developed. It is a new version of `InterpreterSelectQuery` that does not use `ExpressionAnalyzer` and introduces an additional abstraction level between `AST` and `QueryPipeline` called `QueryTree`. It is not production-ready yet, but it can be tested with the `allow_experimental_analyzer` flag.
 
 ## Functions {#functions}
 

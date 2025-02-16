@@ -47,12 +47,6 @@ void SerializationInfo::Data::add(const Data & other)
     num_defaults += other.num_defaults;
 }
 
-void SerializationInfo::Data::remove(const Data & other)
-{
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
-}
-
 void SerializationInfo::Data::addDefaults(size_t length)
 {
     num_rows += length;
@@ -85,14 +79,6 @@ void SerializationInfo::add(const SerializationInfo & other)
     if (settings.choose_kind)
         kind = chooseKind(data, settings);
 }
-
-void SerializationInfo::remove(const SerializationInfo & other)
-{
-    data.remove(other.data);
-    if (settings.choose_kind)
-        kind = chooseKind(data, settings);
-}
-
 
 void SerializationInfo::addDefaults(size_t length)
 {
@@ -162,11 +148,13 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     kind = *maybe_kind;
 }
 
-void SerializationInfo::toJSON(Poco::JSON::Object & object) const
+Poco::JSON::Object SerializationInfo::toJSON() const
 {
+    Poco::JSON::Object object;
     object.set(KEY_KIND, ISerialization::kindToString(kind));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
+    return object;
 }
 
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
@@ -214,37 +202,13 @@ void SerializationInfoByName::add(const Block & block)
 void SerializationInfoByName::add(const SerializationInfoByName & other)
 {
     for (const auto & [name, info] : other)
-        add(name, *info);
-}
+    {
+        auto it = find(name);
+        if (it == end())
+            continue;
 
-void SerializationInfoByName::add(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->add(info);
-}
-
-void SerializationInfoByName::remove(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        remove(name, *info);
-}
-
-void SerializationInfoByName::remove(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->remove(info);
-}
-
-SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const
-{
-    auto it = find(name);
-    return it == end() ? nullptr : it->second;
-}
-
-MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
-{
-    auto it = find(name);
-    return it == end() ? nullptr : it->second;
+        it->second->add(*info);
+    }
 }
 
 void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
@@ -260,12 +224,6 @@ void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
     }
 }
 
-ISerialization::Kind SerializationInfoByName::getKind(const String & column_name) const
-{
-    auto it = find(column_name);
-    return it != end() ? it->second->getKind() : ISerialization::Kind::DEFAULT;
-}
-
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
     Poco::JSON::Object object;
@@ -274,8 +232,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     Poco::JSON::Array column_infos;
     for (const auto & [name, info] : *this)
     {
-        Poco::JSON::Object info_json;
-        info->toJSON(info_json);
+        auto info_json = info->toJSON();
         info_json.set(KEY_NAME, name);
         column_infos.add(std::move(info_json)); /// NOLINT
     }
@@ -286,7 +243,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(object, oss);
 
-    writeString(oss.str(), out);
+    return writeString(oss.str(), out);
 }
 
 SerializationInfoByName SerializationInfoByName::readJSON(
@@ -316,7 +273,7 @@ SerializationInfoByName SerializationInfoByName::readJSON(
         auto array = object->getArray(KEY_COLUMNS);
         for (const auto & elem : *array)
         {
-            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+            auto elem_object = elem.extract<Poco::JSON::Object::Ptr>();
 
             if (!elem_object->has(KEY_NAME))
                 throw Exception(ErrorCodes::CORRUPTED_DATA,

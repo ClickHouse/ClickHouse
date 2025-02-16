@@ -1,14 +1,14 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
-CREATE TABLE t1 (a Int32) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t2 (a UInt32, key UInt32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t1 (a Int32) ENGINE = TinyLog;
+CREATE TABLE t2 (a UInt32, key UInt32) ENGINE = TinyLog;
 
 INSERT INTO t1 VALUES (1);
 INSERT INTO t2 VALUES (2, 2);
 
 SET join_use_nulls = 1;
-SET enable_analyzer = 1;
+SET allow_experimental_analyzer = 1;
 
 -- { echoOn }
 
