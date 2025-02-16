@@ -25,6 +25,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <array>
 
@@ -318,13 +319,13 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     columns[i++]->insert(client_info.current_user);
     columns[i++]->insert(client_info.current_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    columns[i++]->insert(client_info.current_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    columns[i++]->insert(client_info.current_address->port());
 
     columns[i++]->insert(client_info.initial_user);
     columns[i++]->insert(client_info.initial_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
-    columns[i++]->insert(client_info.initial_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
+    columns[i++]->insert(client_info.initial_address->port());
     columns[i++]->insert(client_info.initial_query_start_time);
     columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 
