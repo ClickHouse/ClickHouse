@@ -278,6 +278,9 @@ class ClickhouseIntegrationTestsRunner:
             self.run_by_hash_total = 0
             self.run_by_hash_num = 0
 
+        self._all_tests = []  # type: List[str]
+        self._tests_by_hash = []  # type: List[str]
+
     def path(self):
         return self.result_path
 
@@ -418,7 +421,10 @@ class ClickhouseIntegrationTestsRunner:
 
         return " ".join(result)
 
-    def _get_all_tests(self) -> List[str]:
+    @property
+    def all_tests(self) -> List[str]:
+        if self._all_tests:
+            return self._all_tests
         image_cmd = self._get_runner_image_cmd()
         runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
@@ -453,7 +459,8 @@ class ClickhouseIntegrationTestsRunner:
 
         assert all_tests
 
-        return list(sorted(all_tests))
+        self._all_tests = list(sorted(all_tests))
+        return self._all_tests
 
     @staticmethod
     def _get_parallel_tests_skip_list(repo_path):
@@ -892,12 +899,15 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    def _get_tests_by_hash(self) -> List[str]:
+    @property
+    def tests_by_hash(self) -> List[str]:
         "Tries it's best to group the tests equally between groups"
-        all_tests = self._get_all_tests()
+        if self._tests_by_hash:
+            return self._tests_by_hash
         if self.run_by_hash_total == 0:
-            return all_tests
-        grouped_tests = self.group_test_by_file(all_tests)
+            self._tests_by_hash = self.all_tests
+            return self._tests_by_hash
+        grouped_tests = self.group_test_by_file(self.all_tests)
         groups_by_hash = {
             g: [] for g in range(self.run_by_hash_total)
         }  # type: Dict[int, List[str]]
@@ -909,7 +919,8 @@ class ClickhouseIntegrationTestsRunner:
                 g for g, t in groups_by_hash.items() if len(t) == min_group
             )
             groups_by_hash[group_to_increase].extend(tests_in_group)
-        return groups_by_hash[self.run_by_hash_num]
+        self._tests_by_hash = groups_by_hash[self.run_by_hash_num]
+        return self._tests_by_hash
 
     def run_normal_check(self, build_path):
         self._install_clickhouse(build_path)
@@ -919,38 +930,39 @@ class ClickhouseIntegrationTestsRunner:
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
         )
-        all_tests = self._get_tests_by_hash()
         parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
-            "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
+            "Found %s tests first 3 %s",
+            len(self.tests_by_hash),
+            " ".join(self.tests_by_hash[:3]),
         )
         # For backward compatibility, use file names in filtered_sequential_tests
         filtered_sequential_tests = list(
             set(
                 test_name.split("::", maxsplit=1)[0]
                 for test_name in filter(
-                    lambda test: has_test(parallel_skip_tests, test), all_tests
+                    lambda test: has_test(parallel_skip_tests, test), self.tests_by_hash
                 )
             )
         )
         filtered_parallel_tests = list(
             filter(
                 lambda test: not has_test(parallel_skip_tests, test),
-                all_tests,
+                self.tests_by_hash,
             )
         )
         not_found_tests = list(
             filter(
-                lambda test: not has_test(all_tests, test),
+                lambda test: not has_test(self.all_tests, test),
                 parallel_skip_tests,
             )
         )
         logging.info(
             "Found %s tests first 3 %s, parallel %s, other %s",
-            len(all_tests),
-            " ".join(all_tests[:3]),
+            len(self.tests_by_hash),
+            " ".join(self.tests_by_hash[:3]),
             len(filtered_parallel_tests),
-            len(filtered_sequential_tests),
+            len(self.tests_by_hash) - len(filtered_parallel_tests),
         )
         logging.info(
             "Not found %s tests first 3 %s",
@@ -998,7 +1010,9 @@ class ClickhouseIntegrationTestsRunner:
                 total_tests += len(counters[counter])
                 for test_name in value:
                     tests_log_paths[test_name] = log_paths
-            logging.info("Totally finished tests %s/%s", total_tests, len(all_tests))
+            logging.info(
+                "Totally finished tests %s/%s", total_tests, len(self.tests_by_hash)
+            )
 
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
