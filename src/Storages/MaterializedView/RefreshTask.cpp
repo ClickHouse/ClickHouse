@@ -131,7 +131,9 @@ void RefreshTask::startup()
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
-    refresh_task->schedule();
+
+    std::lock_guard guard(mutex);
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::shutdown()
@@ -217,7 +219,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         /// Update dependency graph.
         set_handle.changeDependencies(deps);
 
-        refresh_task->schedule();
+        scheduleRefresh(guard);
         scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
 
         refresh_settings = {};
@@ -239,7 +241,7 @@ void RefreshTask::start()
     std::lock_guard guard(mutex);
     if (!std::exchange(scheduling.stop_requested, false))
         return;
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::stop()
@@ -256,7 +258,7 @@ void RefreshTask::run()
     std::lock_guard guard(mutex);
     if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
         return;
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::cancel()
@@ -746,6 +748,12 @@ RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
     znode.last_attempt_succeeded = false;
 
     return {when, timeslot, znode};
+}
+
+void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
+{
+    state = RefreshState::Scheduling;
+    refresh_task->schedule();
 }
 
 void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)
