@@ -1,11 +1,12 @@
 ---
+description: "Overview of what system tables are and why they are useful."
 slug: /en/operations/system-tables/
 sidebar_position: 52
 sidebar_label: Overview
 pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
+title: "System Tables"
+keywords: ["system tables", "overview"]
 ---
-
-# System Tables
 
 ## Introduction {#system-tables-introduction}
 
@@ -21,7 +22,7 @@ System tables:
 - Available only for reading data.
 - Can't be dropped or altered, but can be detached.
 
-Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
+Most of the system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
 Unlike other system tables, the system log tables [metric_log](../../operations/system-tables/metric_log.md), [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md), [trace_log](../../operations/system-tables/trace_log.md), [part_log](../../operations/system-tables/part_log.md), [crash_log](../../operations/system-tables/crash-log.md), [text_log](../../operations/system-tables/text_log.md) and [backup_log](../../operations/system-tables/backup_log.md) are served by [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table engine and store their data in a filesystem by default. If you remove a table from a filesystem, the ClickHouse server creates the empty one again at the time of the next data writing. If system table schema changed in a new release, then ClickHouse renames the current table and creates a new one.
 
