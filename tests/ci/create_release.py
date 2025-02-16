@@ -639,7 +639,6 @@ class PackageDownloader:
 
     def __init__(self, release, commit_sha, version):
         assert version.startswith(release), "Invalid release branch or version"
-        major, minor = map(int, release.split("."))
         self.package_names = list(self.PACKAGES)
         self.release = release
         self.commit_sha = commit_sha
