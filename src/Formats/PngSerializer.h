@@ -9,9 +9,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int TOO_MANY_ROWS;
+extern const int INCORRECT_NUMBER_OF_COLUMNS;
+extern const int CANNOT_CONVERT_TYPE;
+extern const int TOO_MANY_ROWS;
 }
 
 using PngPixelFormat = FormatSettings::PngPixelFormat;
@@ -40,8 +40,7 @@ public:
         size_t width,
         size_t height,
         PngPixelFormat pixel_format,
-        PngWriter & writer
-    );
+        PngWriter & writer);
 
 protected:
     class SerializerImpl;

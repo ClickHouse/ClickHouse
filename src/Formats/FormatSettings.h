@@ -465,6 +465,7 @@ struct FormatSettings
     {
         UInt64 max_height;
         UInt64 max_width;
+        Int32 bit_depth;
         String pixel_output_format = "RGBA";
         /// String image_name = "placeholder";
     } png_image{};

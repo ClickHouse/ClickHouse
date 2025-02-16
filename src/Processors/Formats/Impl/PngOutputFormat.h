@@ -1,13 +1,13 @@
 #pragma once
 
-#include <Processors/Formats/IRowOutputFormat.h>
-#include <Formats/FormatSettings.h>
-#include <Formats/PngWriter.h>
-#include <Formats/PngSerializer.h>
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/PngSerializer.h>
+#include <Formats/PngWriter.h>
+#include <Processors/Formats/IRowOutputFormat.h>
 #include "base/types.h"
 
-namespace DB 
+namespace DB
 {
 
 /** A stream for outputting data in PNG format.
@@ -20,7 +20,6 @@ public:
     String getName() const override { return "PngOutputFormat"; }
 
 private:
-
     void writePrefix() override;
     void writeSuffix() override;
     void consume(Chunk) override;
@@ -29,11 +28,11 @@ private:
 
     size_t max_width;
     size_t max_height;
-    
+
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
-    std::unique_ptr<PngSerializer> png_serializer;    
+    std::unique_ptr<PngSerializer> png_serializer;
     PngPixelFormat output_format;
 };
 

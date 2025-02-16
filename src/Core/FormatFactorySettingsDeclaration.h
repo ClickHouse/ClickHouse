@@ -263,6 +263,7 @@
     M(String, output_png_image_pixel_format, "RGB", "Set pixel format for output png image", 0) \
     M(UInt64, output_png_image_max_height, 800, "Set png image max height", 0) \
     M(UInt64, output_png_image_max_width, 600, "Set png image max width", 0) \
+    M(Int32, output_png_image_bit_depth, 8, "Set png image color depth", 0) \
     \
 // End of FORMAT_FACTORY_SETTINGS
 

@@ -316,6 +316,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.png_image.pixel_output_format = settings[Setting::output_png_image_pixel_format];
     format_settings.png_image.max_height = settings[Setting::output_png_image_max_height];
     format_settings.png_image.max_width = settings[Setting::output_png_image_max_width];
+    format_settings.png_image.bit_depth = settings[Setting::output_png_image_bit_depth];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
