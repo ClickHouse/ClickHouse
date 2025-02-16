@@ -4190,7 +4190,7 @@ Result:
 
 ## displayName
 
-Returns the value of `display_name` from [config](../../operations/configuration-files.md/#configuration-files) or server Fully Qualified Domain Name (FQDN) if not set.
+Returns the value of `display_name` from [config](../../operations/settings/configuration-files.md/#configuration-files) or server Fully Qualified Domain Name (FQDN) if not set.
 
 **Syntax**
 

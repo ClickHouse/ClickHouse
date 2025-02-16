@@ -1,8 +1,10 @@
 ---
+description: "Named collections provide a way to store collections of key-value pairs, which are used to configure integrations with external sources"
 slug: /en/operations/named-collections
 sidebar_position: 69
 sidebar_label: "Named collections"
 title: "Named collections"
+keywords: ["named collections"]
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -159,7 +161,7 @@ DROP NAMED COLLECTION collection2
 
 ## Named collections for accessing S3
 
-The description of parameters see [s3 Table Function](../sql-reference/table-functions/s3.md).
+The description of parameters see [s3 Table Function](../../sql-reference/table-functions/s3.md).
 
 ### DDL example
 
@@ -219,7 +221,7 @@ SELECT * FROM s3_engine_table LIMIT 3;
 
 ## Named collections for accessing MySQL database
 
-The description of parameters see [mysql](../sql-reference/table-functions/mysql.md).
+The description of parameters see [mysql](../../sql-reference/table-functions/mysql.md).
 
 ### DDL example
 
@@ -315,7 +317,7 @@ SELECT dictGet('dict', 'B', 2);
 
 ## Named collections for accessing PostgreSQL database
 
-The description of parameters see [postgresql](../sql-reference/table-functions/postgresql.md). Additionally, there are aliases:
+The description of parameters see [postgresql](../../sql-reference/table-functions/postgresql.md). Additionally, there are aliases:
 
 - `username` for `user`
 - `db` for `database`.
@@ -493,7 +495,7 @@ SELECT dictGet('dict', 'b', 1);
 
 ## Named collections for accessing Kafka
 
-The description of parameters see [Kafka](../engines/table-engines/integrations/kafka.md).
+The description of parameters see [Kafka](../../engines/table-engines/integrations/kafka.md).
 
 ### DDL example
 
@@ -549,7 +551,7 @@ SETTINGS kafka_num_consumers = 4,
 
 ## Named collections for backups
 
-For the description of parameters see [Backup and Restore](./backup.md).
+For the description of parameters see [Backup and Restore](../backup.md).
 
 ### DDL example
 

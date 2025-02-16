@@ -1,7 +1,10 @@
 ---
+description: "A settings profile is a collection of settings grouped under the same name"
 slug: /en/operations/settings/settings-profiles
 sidebar_position: 61
 sidebar_label: Settings Profiles
+title: "Settings Profiles"
+keywords: ["settings profiles"]
 ---
 
 # Settings Profiles

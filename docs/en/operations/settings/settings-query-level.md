@@ -1,7 +1,9 @@
 ---
+description: "Apply settings on the query-level"
 sidebar_label: Query-level Settings
-title: Query-level Settings
 slug: /en/operations/settings/query-level
+title: "Query-level Settings"
+keywords: ["query level settings"]
 ---
 
 There are multiple ways to set ClickHouse query-level settings. Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.

@@ -15,7 +15,7 @@ import SystemLogParameters from '@site/docs/en/operations/server-configuration-p
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/en/operations/configuration-files).
 
 Other settings are described in the "[Settings](../../operations/settings/index.md#session-settings-intro)" section.
-Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
+Before studying the settings, we recommend to read the [Configuration files](../../operations/settings/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory
 
@@ -1751,7 +1751,7 @@ Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
-For more information, see the section "[Configuration files](../../operations/configuration-files.md#configuration_files)".
+For more information, see the section "[Configuration files](../../operations/settings/configuration-files.md/#configuration_files)".
 
 **Example**
 
@@ -3149,7 +3149,7 @@ Configuration of clusters used by the [Distributed](../../engines/table-engines/
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
-For the value of the `incl` attribute, see the section "[Configuration files](../../operations/configuration-files.md#configuration_files)".
+For the value of the `incl` attribute, see the section "[Configuration files](../../operations/settings/configuration-files.md/#configuration_files)".
 
 **See Also**
 

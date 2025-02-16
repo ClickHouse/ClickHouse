@@ -66,5 +66,5 @@ SELECT * FROM system.server_settings WHERE changed AND name='max_thread_pool_siz
 **See also**
 
 - [Settings](../../operations/system-tables/settings.md)
-- [Configuration Files](../../operations/configuration-files.md)
+- [Configuration Files](../../operations/settings/configuration-files.md)
 - [Server Settings](../../operations/server-configuration-parameters/settings.md)

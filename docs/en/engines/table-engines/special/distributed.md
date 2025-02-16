@@ -140,7 +140,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
+Clusters are configured in the [server configuration file](../../../operations/settings/configuration-files.md):
 
 ``` xml
 <remote_servers>
