@@ -15,6 +15,7 @@ LibraryBridgeHandlerFactory::LibraryBridgeHandlerFactory(
     , log(getLogger(name_))
     , name(name_)
     , keep_alive_timeout(keep_alive_timeout_)
+    , libraries_paths(std::move(libraries_paths_))
 {
 }
 
@@ -34,9 +35,9 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
         if (uri.getPath() == "/extdict_request")
-            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(getContext(), libraries_paths);
         else if (uri.getPath() == "/catboost_request")
-            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(getContext(), libraries_paths);
     }
 
     return nullptr;
