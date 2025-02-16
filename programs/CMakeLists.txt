@@ -62,6 +62,8 @@ else()
     message(STATUS "ClickHouse keeper-client mode: OFF")
 endif()
 
+configure_file (config_tools.h.in ${CONFIG_INCLUDE_PATH}/config_tools.h)
+
 macro(clickhouse_target_link_split_lib target name)
     target_link_libraries(${target} PRIVATE clickhouse-${name}-lib)
 endmacro()
