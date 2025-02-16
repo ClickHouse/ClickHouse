@@ -48,7 +48,7 @@ When inserting new data to a table, this data is stored as a separate part (chun
 A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn't make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 :::
 
-Use the [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
+Use the [system.parts](../../../operations/system-tables/parts.md) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
 ``` sql
 SELECT

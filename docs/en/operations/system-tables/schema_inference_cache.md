@@ -1,9 +1,10 @@
 ---
+description: "System table containing information about all cached file schemas."
 slug: /en/operations/system-tables/schema_inference_cache
+title: "schema_inference_cache"
+keywords: ["system table", "schema_inference_cache"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# schema_inference_cache
 
 <SystemTableCloud/>
 

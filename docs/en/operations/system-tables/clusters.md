@@ -1,7 +1,9 @@
 ---
+description: "System table containing information about clusters available in the config file and the servers defined in them."
 slug: /en/operations/system-tables/clusters
+title: "clusters"
+keywords: ["system table", "clusters"]
 ---
-# clusters
 
 Contains information about clusters available in the config file and the servers in them.
 
