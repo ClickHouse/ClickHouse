@@ -253,6 +253,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
@@ -264,6 +266,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
@@ -300,6 +303,9 @@ namespace ServerSetting
     extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
+    extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
 }
 
 }
@@ -1103,7 +1109,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms]);
+    MemoryWorker memory_worker(
+        server_settings[ServerSetting::memory_worker_period_ms], server_settings[ServerSetting::memory_worker_correct_memory_tracker]);
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1251,6 +1258,11 @@ try
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
+
+    getMergeTreePrefixesDeserializationThreadPool().initialize(
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+        server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1542,13 +1554,11 @@ try
     {
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        fs::create_directories(dictionaries_lib_path);
     }
 
     {
         std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
-        fs::create_directories(user_scripts_path);
     }
 
     /// top_level_domains_lists
@@ -1848,6 +1858,14 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+
+            size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
+            size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
+
+            global_context->reloadRemoteThrottlerConfig(read_bandwidth,write_bandwidth);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", read_bandwidth);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", write_bandwidth);
+
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
@@ -1934,6 +1952,10 @@ try
                 0, // We don't need any threads one all the parts will be deleted
                 new_server_settings[ServerSetting::max_parts_cleaning_thread_pool_size]);
 
+            getMergeTreePrefixesDeserializationThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+                new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
