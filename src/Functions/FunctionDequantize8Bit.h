@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bit>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,12 +24,39 @@ extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+static constexpr float f32FromSfP8(uint32_t sfp)
+{
+    const uint32_t masked_sfp = sfp & 0x7F;
+    if (masked_sfp == 0)
+    {
+        return 0.0f;
+    }
+    const uint32_t sign32 = (sfp & 0x80) << 24;
+    const uint32_t large_e = masked_sfp >> 6;
+    const uint32_t m_bits = 2 + large_e;
+    const uint32_t m = masked_sfp & ((1u << m_bits) - 1u);
+    const uint32_t e = masked_sfp >> m_bits;
+    const uint32_t exp32 = (104 + e + 8 * large_e) << 23;
+    const uint32_t m_shift = 21 - large_e;
+    const uint32_t mnt32 = m << m_shift;
+    const uint32_t binary32 = sign32 | exp32 | mnt32;
+    return std::bit_cast<float>(binary32);
+}
+
+struct Lookup8Bit
+{
+    static constexpr std::array<float, 256> dequantize_lookup alignas(64) = []() constexpr
+    {
+        std::array<float, 256> table{};
+        for (size_t i = 0; i < 256; ++i)
+            table[i] = f32FromSfP8(static_cast<uint32_t>(i));
+        return table;
+    }();
+};
+
 DECLARE_MULTITARGET_CODE(
 
-    struct Dequantize8BitImpl {
-        static void execute(const UInt8 * input, float * output, size_t size);
-        static float dequantize(UInt8 x);
-    };
+    struct Dequantize8BitImpl { static void execute(const UInt8 * input, float * output, size_t size); };
 
 )
 

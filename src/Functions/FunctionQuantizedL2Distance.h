@@ -1,223 +1,189 @@
 #pragma once
 
-#include <vector>
 #include <Columns/ColumnConst.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include "Common/TargetSpecific.h"
-#include "FunctionDequantize16Bit.h"
-#ifdef ENABLE_MULTITARGET_CODE
-#    include <immintrin.h>
-#    include <x86intrin.h>
-#endif
-#include <Common/CPUID.h>
+#include "Columns/ColumnFixedString.h"
+#include "DataTypes/DataTypeFixedString.h"
+#include "Functions/FunctionDequantize8Bit.h"
+#include "base/types.h"
 
 namespace DB
 {
-
-DECLARE_MULTITARGET_CODE(
-
-    struct Quantized8BitL2DistanceImpl {
-        template <typename Dequantizer>
-        static void execute(const UInt8 * data_a, const UInt8 * data_b, size_t length, float & result);
-    };
-
-)
-
-DECLARE_DEFAULT_CODE(
-
-    template <typename Dequantizer>
-    void Quantized8BitL2DistanceImpl::execute(const UInt8 * data_a, const UInt8 * data_b, size_t length, float & result) {
-        float sum = 0.0f;
-        for (size_t i = 0; i < length; ++i)
-        {
-            float a_val = Dequantizer::dequantize(data_a[i]);
-            float b_val = Dequantizer::dequantize(data_b[i]);
-            float diff = a_val - b_val;
-            sum += diff * diff;
-        }
-        result = std::sqrt(sum);
-    }
-
-)
-
-DECLARE_AVX2_SPECIFIC_CODE(
-
-    template <typename Dequantizer>
-    void Quantized8BitL2DistanceImpl::execute(const UInt8 * data_a, const UInt8 * data_b, size_t length, float & result) {
-        size_t i = 0;
-        __m256 sum_vec = _mm256_setzero_ps();
-        for (; i + 8 <= length; i += 8)
-        {
-            __m128i quant_a = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(data_a + i)); 
-            __m128i quant_b = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(data_b + i));
-
-            __m256i qa = _mm256_cvtepu8_epi32(quant_a);
-            __m256i qb = _mm256_cvtepu8_epi32(quant_b);
-
-            const __m256i mask7F = _mm256_set1_epi32(0x7F);
-            __m256i masked_a = _mm256_and_si256(qa, mask7F);
-            __m256i masked_b = _mm256_and_si256(qb, mask7F);
-
-            __m256i zero_mask_a = _mm256_cmpeq_epi32(masked_a, _mm256_setzero_si256());
-            __m256i zero_mask_b = _mm256_cmpeq_epi32(masked_b, _mm256_setzero_si256());
-
-            __m256i sign32_a = _mm256_slli_epi32(_mm256_and_si256(qa, _mm256_set1_epi32(0x80)), 24);
-            __m256i sign32_b = _mm256_slli_epi32(_mm256_and_si256(qb, _mm256_set1_epi32(0x80)), 24);
-
-            __m256i large_e_a = _mm256_srli_epi32(masked_a, 6);
-            __m256i large_e_b = _mm256_srli_epi32(masked_b, 6);
-
-            __m256i m_mask_a = _mm256_or_si256(_mm256_set1_epi32(3), _mm256_slli_epi32(large_e_a, 2));
-            __m256i m_mask_b = _mm256_or_si256(_mm256_set1_epi32(3), _mm256_slli_epi32(large_e_b, 2));
-
-            __m256i m_a = _mm256_and_si256(masked_a, m_mask_a);
-            __m256i m_b = _mm256_and_si256(masked_b, m_mask_b);
-
-            __m256i m_bits_a = _mm256_add_epi32(_mm256_set1_epi32(2), large_e_a);
-            __m256i m_bits_b = _mm256_add_epi32(_mm256_set1_epi32(2), large_e_b);
-
-            __m256i e_a = _mm256_srlv_epi32(masked_a, m_bits_a);
-            __m256i e_b = _mm256_srlv_epi32(masked_b, m_bits_b);
-
-            __m256i exp_term_a = _mm256_add_epi32(_mm256_set1_epi32(104), e_a);
-            exp_term_a = _mm256_add_epi32(exp_term_a, _mm256_slli_epi32(large_e_a, 3));
-            __m256i exp_a = _mm256_slli_epi32(exp_term_a, 23);
-
-            __m256i exp_term_b = _mm256_add_epi32(_mm256_set1_epi32(104), e_b);
-            exp_term_b = _mm256_add_epi32(exp_term_b, _mm256_slli_epi32(large_e_b, 3));
-            __m256i exp_b = _mm256_slli_epi32(exp_term_b, 23);
-
-            __m256i m_shift_a = _mm256_sub_epi32(_mm256_set1_epi32(21), large_e_a);
-            __m256i m_shift_b = _mm256_sub_epi32(_mm256_set1_epi32(21), large_e_b);
-
-            __m256i mnt_a = _mm256_sllv_epi32(m_a, m_shift_a);
-            __m256i mnt_b = _mm256_sllv_epi32(m_b, m_shift_b);
-
-            __m256i bin_a = _mm256_or_si256(sign32_a, exp_a);
-            bin_a = _mm256_or_si256(bin_a, mnt_a);
-            bin_a = _mm256_blendv_epi8(bin_a, _mm256_setzero_si256(), zero_mask_a);
-
-            __m256i bin_b = _mm256_or_si256(sign32_b, exp_b);
-            bin_b = _mm256_or_si256(bin_b, mnt_b);
-            bin_b = _mm256_blendv_epi8(bin_b, _mm256_setzero_si256(), zero_mask_b);
-
-            __m256 fa = _mm256_castsi256_ps(bin_a);
-            __m256 fb = _mm256_castsi256_ps(bin_b);
-
-            __m256 diff = _mm256_sub_ps(fa, fb);
-            __m256 sq = _mm256_mul_ps(diff, diff);
-            sum_vec = _mm256_add_ps(sum_vec, sq);
-        }
-
-        __m128 low = _mm256_castps256_ps128(sum_vec);
-        __m128 high = _mm256_extractf128_ps(sum_vec, 1);
-        __m128 sum128 = _mm_add_ps(low, high);
-        sum128 = _mm_hadd_ps(sum128, sum128);
-        sum128 = _mm_hadd_ps(sum128, sum128);
-        float sum = _mm_cvtss_f32(sum128);
-
-        for (; i < length; ++i)
-        {
-            float a_val = Dequantizer::dequantize(data_a[i]);
-            float b_val = Dequantizer::dequantize(data_b[i]);
-            float diff = a_val - b_val;
-            sum += diff * diff;
-        }
-        result = std::sqrt(sum);
-    }
-
-)
 
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
+struct L2Distance
+{
+    static constexpr std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
+    {
+        std::array<float, 256 * 256> table{};
+        for (int i = 0; i < 256; ++i)
+        {
+            for (int j = 0; j < 256; ++j)
+            {
+                float diff = Lookup8Bit::dequantize_lookup[i] - Lookup8Bit::dequantize_lookup[j];
+                table[i * 256 + j] = diff * diff;
+            }
+        }
+        return table;
+    }();
 
-template <typename QuantizedL2DistanceImpl, typename Dequantizer, const char * function_name>
-class FunctionQuantizedL2DistanceImpl : public IFunction
+    template <typename FloatType>
+    struct State
+    {
+        FloatType sum{};
+    };
+
+    template <typename ResultType>
+    static void accumulate(State<ResultType> & state, UInt8 x, UInt8 y)
+    {
+        auto diff = x - y;
+        state.sum += diff * diff; // distance_lookup[static_cast<int>(x) * 256 + y];
+    }
+
+    template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state)
+    {
+        state.sum += other_state.sum;
+    }
+
+    template <typename ResultType>
+    static ResultType finalize(const State<ResultType> & state)
+    {
+        return sqrt(state.sum);
+    }
+};
+
+template <typename Kernel, const char * function_name>
+class FunctionQuantizedL2Distance : public IFunction
 {
 public:
     static constexpr auto name = function_name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedL2Distance<Kernel, function_name>>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override { return std::make_shared<DataTypeFloat32>(); }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeFloat32>(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnFixedString * col_a = nullptr;
-        const ColumnFixedString * col_b = nullptr;
-
-        if (const auto * col_const = checkAndGetColumnConst<ColumnFixedString>(arguments[0].column.get()))
-            col_a = checkAndGetColumn<ColumnFixedString>(col_const->getDataColumnPtr().get());
-        else
-            col_a = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get());
-
-        if (const auto * col_const = checkAndGetColumnConst<ColumnFixedString>(arguments[1].column.get()))
-            col_b = checkAndGetColumn<ColumnFixedString>(col_const->getDataColumnPtr().get());
-        else
-            col_b = checkAndGetColumn<ColumnFixedString>(arguments[1].column.get());
-
-        if (!col_a || !col_b)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Both arguments for function {} must be FixedString", getName());
-
-        size_t fixed_string_length = col_a->getN();
-        if (fixed_string_length != col_b->getN())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "FixedStrings for function {} must have the same size", getName());
-
-        const auto & data_a = col_a->getChars();
-        const auto & data_b = col_b->getChars();
-
-        auto result_column = ColumnVector<Float32>::create(input_rows_count);
-        auto & result_data = result_column->getData();
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            const UInt8 * ptr_a = reinterpret_cast<const UInt8 *>(data_a.data() + row * fixed_string_length);
-            const UInt8 * ptr_b = reinterpret_cast<const UInt8 *>(data_b.data() + row * fixed_string_length);
-            float dist = 0.0f;
-            QuantizedL2DistanceImpl::template execute<Dequantizer>(ptr_a, ptr_b, fixed_string_length, dist);
-            result_data[row] = dist;
-        }
-        return result_column;
-    }
-};
-
-template <typename Dequantizer, const char * function_name>
-class FunctionQuantizedL2Distance
-    : public FunctionQuantizedL2DistanceImpl<TargetSpecific::Default::Quantized8BitL2DistanceImpl, Dequantizer, function_name>
-{
-public:
-    explicit FunctionQuantizedL2Distance(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<
-            TargetArch::Default,
-            FunctionQuantizedL2DistanceImpl<TargetSpecific::Default::Quantized8BitL2DistanceImpl, Dequantizer, function_name>>();
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<
-            TargetArch::AVX2,
-            FunctionQuantizedL2DistanceImpl<TargetSpecific::AVX2::Quantized8BitL2DistanceImpl, Dequantizer, function_name>>();
-#endif
+        return executeWithResultTypeAndLeftTypeAndRightType(arguments[0].column, arguments[1].column, input_rows_count, arguments);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionQuantizedL2Distance>(context); }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(
+        ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
+    {
+        using ResultType = Float32;
+
+        if (col_x->isConst())
+            return executeWithLeftArgConst(col_x, col_y, input_rows_count, arguments);
+        if (col_y->isConst())
+            return executeWithLeftArgConst(col_y, col_x, input_rows_count, arguments);
+
+        const auto & array_x = *assert_cast<const ColumnFixedString *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnFixedString *>(col_y.get());
+
+        const UInt8 * data_x = reinterpret_cast<const UInt8 *>(array_x.getChars().data());
+        const UInt8 * data_y = reinterpret_cast<const UInt8 *>(array_y.getChars().data());
+
+        size_t fixed_size = array_x.getN();
+
+        auto col_res = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = col_res->getData();
+
+        ColumnArray::Offset prev = 0;
+        size_t row = 0;
+
+        for (size_t off = fixed_size; off <= fixed_size * input_rows_count; off += fixed_size)
+        {
+            /// Process chunks in vectorized manner
+            static constexpr size_t VEC_SIZE = 4;
+            typename Kernel::template State<ResultType> states[VEC_SIZE];
+            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
+            {
+                for (size_t s = 0; s < VEC_SIZE; ++s)
+                    Kernel::template accumulate<ResultType>(states[s], data_x[prev + s], data_y[prev + s]);
+            }
+
+            typename Kernel::template State<ResultType> state;
+            for (const auto & other_state : states)
+                Kernel::template combine<ResultType>(state, other_state);
+
+            /// Process the tail
+            for (; prev < off; ++prev)
+            {
+                Kernel::template accumulate<ResultType>(state, data_x[prev], data_y[prev]);
+            }
+            result_data[row] = Kernel::finalize(state);
+            ++row;
+        }
+
+        return col_res;
+    }
+
+    ColumnPtr executeWithLeftArgConst(ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName &) const
+    {
+        using ResultType = Float32;
+
+        col_x = assert_cast<const ColumnConst *>(col_x.get())->getDataColumnPtr();
+        col_y = col_y->convertToFullColumnIfConst();
+
+        const auto & array_x = *assert_cast<const ColumnFixedString *>(col_x.get());
+        const auto & array_y = *assert_cast<const ColumnFixedString *>(col_y.get());
+
+        const UInt8 * data_x = reinterpret_cast<const UInt8 *>(array_x.getChars().data());
+        const UInt8 * data_y = reinterpret_cast<const UInt8 *>(array_y.getChars().data());
+
+        size_t fixed_size = array_x.getN();
+
+        auto result = ColumnVector<ResultType>::create(input_rows_count);
+        auto & result_data = result->getData();
+
+        size_t prev = 0;
+        size_t row = 0;
+
+        for (size_t off = fixed_size; off <= fixed_size * input_rows_count; off += fixed_size)
+        {
+            size_t i = 0;
+            typename Kernel::template State<ResultType> state;
+
+            /// Process chunks in a vectorized manner.
+            static constexpr size_t VEC_SIZE = 32;
+            typename Kernel::template State<ResultType> states[VEC_SIZE];
+            for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
+            {
+                for (size_t s = 0; s < VEC_SIZE; ++s)
+                    Kernel::template accumulate<ResultType>(states[s], data_x[i + s], data_y[prev + s]);
+            }
+
+            for (const auto & other_state : states)
+                Kernel::template combine<ResultType>(state, other_state);
+
+
+            /// Process the tail.
+            for (; prev < off; ++i, ++prev)
+            {
+                Kernel::template accumulate<ResultType>(state, data_x[i], data_y[prev]);
+            }
+            result_data[row] = Kernel::finalize(state);
+            row++;
+        }
+
+        return result;
+    }
 };
-
-
 }

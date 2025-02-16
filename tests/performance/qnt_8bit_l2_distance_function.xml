@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <allow_suspicious_fixed_string_types>1</allow_suspicious_fixed_string_types>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>x</name>
+            <values>
+                <value>1</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>y</name>
+            <values>
+                <value>1000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE DATABASE IF NOT EXISTS test
+    </create_query>
+
+    <create_query>
+        DROP TABLE IF EXISTS test.vectors
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test.vectors
+        (
+            id UInt64,
+            vector Array(Float32),
+            vector_quantized FixedString(1024)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <!-- Generate random vectors and their quantized versions -->
+    <fill_query>
+        WITH (
+            SELECT arrayMap(x -> toFloat32(randNormal(0, 1)), range(1024))
+            FROM system.numbers LIMIT 1
+        ) AS vec
+        INSERT INTO test.vectors
+        SELECT
+            number AS id,
+            arrayMap(x -> toFloat32(randNormal(0, 1)), range(1024)) AS vector,
+            quantize8Bit(vector) AS vector_quantized
+        FROM system.numbers
+        LIMIT 100000
+    </fill_query>
+
+    <!-- Create a second table with target vectors for distance computation -->
+    <create_query>
+        DROP TABLE IF EXISTS test.target_vectors
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test.target_vectors
+        (
+            id UInt64,
+            vector Array(Float32),
+            vector_quantized FixedString(1024)
+        )
+        ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test.target_vectors
+        SELECT
+            number AS id,
+            arrayMap(x -> toFloat32(randNormal(0, 1)), range(1024)) AS vector,
+            quantize8Bit(vector) AS vector_quantized
+        FROM system.numbers
+        LIMIT 100000
+    </fill_query>
+
+    <!-- Benchmark Query 1: L2Distance -->
+    <query>
+        SELECT
+            L2Distance(
+                (SELECT vector FROM test.vectors LIMIT 1 OFFSET 0),
+                vector
+            ) as distance
+        FROM test.vectors
+        ORDER BY distance ASC
+        LIMIT 10
+    </query>
+
+    <!-- Benchmark Query 2: quantized8BitL2Distance -->
+    <query>
+        SELECT
+            quantized8BitL2Distance(
+                (SELECT vector_quantized FROM test.vectors LIMIT 1 OFFSET 0),
+                vector_quantized
+            ) as distance
+        FROM test.vectors
+        ORDER BY distance ASC
+        LIMIT 10
+    </query>
+
+    <drop_query>
+        DROP TABLE test.vectors
+    </drop_query>
+    
+    <drop_query>
+        DROP TABLE test.target_vectors
+    </drop_query>
+</test>

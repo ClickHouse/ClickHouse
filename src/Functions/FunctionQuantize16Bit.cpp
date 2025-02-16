@@ -73,9 +73,10 @@ DECLARE_DEFAULT_CODE(
 
 
     void Quantize16BitImpl::execute(const Float32 * input, UInt8 * output, size_t size) {
+        auto out = reinterpret_cast<uint16_t *>(output);
         for (size_t i = 0; i < size; ++i)
         {
-            output[i] = static_cast<uint8_t>(Float32ToFloat16(input[i]));
+            out[i] = Float32ToFloat16(input[i]);
         }
     }
 
