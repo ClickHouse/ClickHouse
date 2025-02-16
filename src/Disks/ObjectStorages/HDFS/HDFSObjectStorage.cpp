@@ -32,8 +32,7 @@ void HDFSObjectStorage::initializeHDFSFS() const
     if (initialized)
         return;
 
-    hdfs_builder = createHDFSBuilder(url, config);
-    hdfs_fs = createHDFSFS(hdfs_builder.get());
+    hdfs_fs = createHDFSFS(builder.get());
     initialized = true;
 }
 
@@ -70,7 +69,7 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
     if (path.starts_with(url_without_path))
         path = path.substr(url_without_path.size());
 
-    return (0 == hdfsExists(hdfs_fs.get(), path.c_str()));
+    return (0 == wrapErr<int>(hdfsExists, hdfs_fs.get(), path.c_str()));
 }
 
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
@@ -125,7 +124,7 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
         path = path.substr(url_without_path.size());
 
     /// Add path from root to file name
-    int res = hdfsDelete(hdfs_fs.get(), path.c_str(), 0);
+    int res = wrapErr<int>(hdfsDelete, hdfs_fs.get(), path.c_str(), 0);
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
 
@@ -155,7 +154,7 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
 {
     initializeHDFSFS();
-    auto * file_info = hdfsGetPathInfo(hdfs_fs.get(), path.data());
+    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
     if (!file_info)
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
@@ -168,41 +167,24 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) co
     return metadata;
 }
 
-HDFSFileInfo HDFSObjectStorage::hdfsListDirectoryWrapper(const std::string & path) const
-{
-    HDFSFileInfo ls;
-
-    ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
-    #if USE_KRB5
-    if (ls.file_info == nullptr && errno == EACCES) // NOLINT
-    {
-        // libhdfs3 wraps GSASL_GSSAPI_INIT_SEC_CONTEXT_ERROR into AccessControlException (EACCES),
-        // which means than sasl context is not active by the reason that krb5 ticket is expired.
-        // runKinit will handle KRB5KRB_AP_ERR_TKT_EXPIRED error and reinitialize ticket again
-        // TODO: it would be good to extract exact gsasl error code from libhdfs3,
-        // but it needs libhdfs3 exceptions refactoring
-        hdfs_builder.runKinit(); // krb5 keytab reinitialization
-        ls.file_info = hdfsListDirectory(hdfs_fs.get(), path.data(), &ls.length);
-    }
-    #endif // USE_KRB5
-
-    if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
-    {
-        // ignore file not found exception, keep throw other exception,
-        // libhdfs3 doesn't have function to get exception type, so use errno.
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
-                    path, String(hdfsGetLastError()));
-    }
-
-    return ls;
-}
-
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
     initializeHDFSFS();
     LOG_TEST(log, "Trying to list files for {}", path);
 
-    HDFSFileInfo ls = hdfsListDirectoryWrapper(path);
+    HDFSFileInfo ls;
+    ls.file_info = wrapErr<hdfsFileInfo *>(hdfsListDirectory, hdfs_fs.get(), path.data(), &ls.length);
+
+    if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+    {
+        // ignore file not found exception, keep throw other exception,
+        // libhdfs3 doesn't have function to get exception type, so use errno.
+        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        {
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}",
+                        path, String(hdfsGetLastError()));
+        }
+    }
 
     if (!ls.file_info && ls.length > 0)
     {
