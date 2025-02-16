@@ -369,9 +369,8 @@ enum class AccessType : uint8_t
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
-    M(SOURCE_READ, "READ", SOURCE, SOURCES) \
-    M(SOURCE_WRITE, "WRITE", SOURCE, SOURCES) \
-    M(SOURCES, "", GROUP, ALL) \
+    M(READ, "SOURCE READ", SOURCE, ALL) \
+    M(WRITE, "SOURCE WRITE", SOURCE, ALL) \
     \
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
     \
@@ -393,6 +392,9 @@ enum class AccessType : uint8_t
     M(KAFKA, "", GLOBAL, ALL) \
     M(NATS, "", GLOBAL, ALL) \
     M(RABBITMQ, "", GLOBAL, ALL) \
+    M(SOURCES, "", GLOBAL, ALL) \
+    \
+    /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
@@ -402,26 +404,6 @@ enum class AccessType : uint8_t
     APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST)
 #undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
-
-/// This macro allows to override deprecated global access types with parameterized ones.
-#define ADD_OVERRIDE_FOR_DEPRECATED_ACCESS_TYPES(R) \
-    R(FILE, SOURCES, "FILE") \
-    R(URL, SOURCES, "URL") \
-    R(REMOTE, SOURCES, "REMOTE") \
-    R(MONGO, SOURCES, "MONGO") \
-    R(REDIS, SOURCES, "REDIS") \
-    R(MYSQL, SOURCES, "MYSQL") \
-    R(POSTGRES, SOURCES, "POSTGRES") \
-    R(SQLITE, SOURCES, "SQLITE") \
-    R(ODBC, SOURCES, "ODBC") \
-    R(JDBC, SOURCES, "JDBC") \
-    R(HDFS, SOURCES, "HDFS") \
-    R(S3, SOURCES, "S3") \
-    R(HIVE, SOURCES, "HIVE") \
-    R(AZURE, SOURCES, "AZURE") \
-    R(KAFKA, SOURCES, "KAFKA") \
-    R(NATS, SOURCES, "NATS") \
-    R(RABBITMQ, SOURCES, "RABBITMQ")
 
 
 std::string_view toString(AccessType type);

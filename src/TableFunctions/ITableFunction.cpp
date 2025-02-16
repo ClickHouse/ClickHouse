@@ -24,13 +24,12 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 {
     ProfileEvents::increment(ProfileEvents::TableFunctionExecute);
 
-    if (auto access_object = getSourceAccessObject())
+    if (const auto access_object = getSourceAccessObject())
     {
-        auto to_check = AccessTypeObjects::toStringSource(*access_object);
         if (is_insert_query)
-            context->checkAccess(AccessType::SOURCE_WRITE, to_check);
+            context->checkAccess(AccessType::WRITE, toStringSource(*access_object));
         else
-            context->checkAccess(AccessType::SOURCE_READ, to_check);
+            context->checkAccess(AccessType::READ, toStringSource(*access_object));
     }
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());

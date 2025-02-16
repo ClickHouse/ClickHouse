@@ -256,7 +256,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
     {
         for (const auto & table_engine : source_table_engines)
         {
-            if (res.isGranted(AccessType::SOURCES, AccessTypeObjects::unifySource(table_engine)))
+            if (res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
                 res.grant(AccessType::TABLE_ENGINE, table_engine);
         }
     }
@@ -266,7 +266,7 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         res.grant(AccessType::TABLE_ENGINE);
         for (const auto & table_engine : source_table_engines)
         {
-            if (!res.isGranted(AccessType::SOURCES, AccessTypeObjects::unifySource(table_engine)))
+            if (!res.isGranted(AccessType::READ | AccessType::WRITE, AccessTypeObjects::unifySource(table_engine)))
                 res.revoke(AccessType::TABLE_ENGINE, table_engine);
         }
     }
@@ -678,7 +678,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
         /// since SOURCES is not granted actually. In order to solve this, turn the prompt logic back to Sources.
         if (flags & AccessType::TABLE_ENGINE && !access_control->doesTableEnginesRequireGrant())
         {
-            AccessFlags new_flags = AccessType::SOURCES;
+            AccessFlags new_flags = AccessType::READ | AccessType::WRITE;
             String table_engine_name{getTableEngine(args...)};
             /// Might happen in the case of grant Table Engine on A (but not source), then revoke A.
             if (new_flags.isEmpty())

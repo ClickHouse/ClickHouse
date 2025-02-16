@@ -279,20 +279,31 @@ void AccessRightsElement::replaceDeprecated()
     if (access_flags.toAccessTypes().size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "replaceDeprecated() was called on an access element with multiple access flags: {}", access_flags.toString());
 
-    auto current_access_type = access_flags.toAccessTypes()[0];
-
-    switch (current_access_type)
+    switch (const auto current_access_type = access_flags.toAccessTypes()[0])
     {
-#define OVERRIDE_DEPRECATED(name, override_access_type, override_parameter) \
-        case(AccessType::name): \
-        { \
-            access_flags = AccessFlags{AccessType::override_access_type}; \
-            parameter = override_parameter; \
-            break; \
-        }
-
-    ADD_OVERRIDE_FOR_DEPRECATED_ACCESS_TYPES(OVERRIDE_DEPRECATED)
-#undef OVERRIDE_DEPRECATED
+        case AccessType::FILE:
+        case AccessType::URL:
+        case AccessType::REMOTE:
+        case AccessType::MONGO:
+        case AccessType::REDIS:
+        case AccessType::MYSQL:
+        case AccessType::POSTGRES:
+        case AccessType::SQLITE:
+        case AccessType::ODBC:
+        case AccessType::JDBC:
+        case AccessType::HDFS:
+        case AccessType::S3:
+        case AccessType::HIVE:
+        case AccessType::AZURE:
+        case AccessType::KAFKA:
+        case AccessType::NATS:
+        case AccessType::RABBITMQ:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            parameter = DB::toString(current_access_type);
+            break;
+        case AccessType::SOURCES:
+            access_flags = AccessType::READ | AccessType::WRITE;
+            break;
         default:
             break;
     }
