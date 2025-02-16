@@ -4,7 +4,6 @@ slug: /en/operations/system-tables/dropped_tables
 title: "dropped_tables"
 keywords: ["system table", "dropped_tables"]
 ---
-# dropped_tables
 
 Contains information about tables that drop table has been executed on but for which data cleanup has not yet been performed.
 
