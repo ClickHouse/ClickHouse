@@ -77,14 +77,14 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
-    extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
-    extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
-    extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
+    extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
@@ -1072,6 +1072,26 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             merge_predicate,
             MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
             /*partitions_hint=*/std::nullopt);
+
+        if (!select_result.has_value())
+        {
+            /// If configured, try merging a single partition into one part
+            auto final_partition = merger_mutator.getBestPartitionToOptimizeEntire(
+                parts_collector,
+                merge_predicate,
+                MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive}
+            );
+            if (!final_partition.empty())
+            {
+                select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    metadata_snapshot,
+                    parts_collector,
+                    merge_predicate,
+                    /*partition_id=*/final_partition,
+                    /*final=*/true,
+                    /*optimize_skip_merged_partitions=*/true);
+            }
+        }
 
         return select_result.and_then(construct_future_part);
     };
