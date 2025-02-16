@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <Core/Block.h>
+
 #include <Processors/ISource.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
