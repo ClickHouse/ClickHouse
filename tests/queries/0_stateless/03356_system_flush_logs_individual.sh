@@ -23,3 +23,5 @@ OUTPUT=$(${CLICKHOUSE_CLIENT_WITH_LOGS} --query "SYSTEM FLUSH LOGS system.query_
 echo "$OUTPUT" | grep -c "Requested flush"
 echo "$OUTPUT" | grep -c "SystemLogQueue (system.query_views_log)"
 echo "$OUTPUT" | grep -c "SystemLogQueue (system.part_log)"
+
+${CLICKHOUSE_CLIENT} -nm --query "SYSTEM FLUSH LOGS no_such_log_and_never_will_be -- { serverError BAD_ARGUMENTS }"
