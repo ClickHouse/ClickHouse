@@ -187,12 +187,12 @@ private:
         if (use_32bit)
         {
             col_ptr_left = castColumn(col_left, std::make_shared<DataTypeFloat32>());
-            col_ptr_right = castColumn(col_left, std::make_shared<DataTypeFloat32>());
+            col_ptr_right = castColumn(col_right, std::make_shared<DataTypeFloat32>());
         }
         else
         {
             col_ptr_left = castColumn(col_left, std::make_shared<DataTypeFloat64>());
-            col_ptr_right = castColumn(col_left, std::make_shared<DataTypeFloat64>());
+            col_ptr_right = castColumn(col_right, std::make_shared<DataTypeFloat64>());
         }
 
         ColumnPtr res;
