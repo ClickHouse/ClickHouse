@@ -26,10 +26,14 @@ class Digest:
         hash_string = hash_obj.hexdigest()
         return hash_string
 
+    @classmethod
+    def get_null_digest(cls):
+        return "f" * Settings.CACHE_DIGEST_LEN
+
     def calc_job_digest(self, job_config: Job.Config, docker_digests):
         config = job_config.digest_config
         if not config:
-            return "f" * Settings.CACHE_DIGEST_LEN
+            return self.get_null_digest()
 
         cache_key = self._hash_digest_config(config)
 
