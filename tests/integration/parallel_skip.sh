@@ -32,7 +32,6 @@ NON_PARALLEL_TESTS=(
   test_profile_max_sessions_for_user/
   test_quorum_inserts_parallel/
   test_random_inserts/
-  test_redirect_url_storage/
   test_replace_partition/
   test_replicated_database/
   test_replicated_fetches_timeouts/
@@ -44,7 +43,6 @@ NON_PARALLEL_TESTS=(
   test_system_flush_logs/
   test_system_logs/
   test_system_metrics/
-  test_system_replicated_fetches/
   test_ttl_move/
   test_user_ip_restrictions/
   test_zookeeper_config_load_balancing/
