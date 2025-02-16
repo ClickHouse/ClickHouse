@@ -1,10 +1,10 @@
-#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
+#include <base/defines.h>
 #include <Poco/Environment.h>
 #include <Poco/Platform.h>
 #include <Common/VersionNumber.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 
 
@@ -48,35 +48,26 @@ bool queryProfilerWorks() { return false; }
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsBool async_query_sending_for_remote;
-    extern const SettingsBool async_socket_for_remote;
-    extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
-    extern const SettingsUInt64 query_profiler_real_time_period_ns;
-    extern const SettingsBool use_hedged_requests;
-}
-
 /// Update some settings defaults to avoid some known issues.
 void applySettingsQuirks(Settings & settings, LoggerPtr log)
 {
     if (!nestedEpollWorks(log))
     {
-        if (!settings[Setting::async_socket_for_remote].changed && settings[Setting::async_socket_for_remote])
+        if (!settings.async_socket_for_remote.changed && settings.async_socket_for_remote)
         {
-            settings[Setting::async_socket_for_remote] = false;
+            settings.async_socket_for_remote = false;
             if (log)
                 LOG_WARNING(log, "async_socket_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings[Setting::async_query_sending_for_remote].changed && settings[Setting::async_query_sending_for_remote])
+        if (!settings.async_query_sending_for_remote.changed && settings.async_query_sending_for_remote)
         {
-            settings[Setting::async_query_sending_for_remote] = false;
+            settings.async_query_sending_for_remote = false;
             if (log)
                 LOG_WARNING(log, "async_query_sending_for_remote has been disabled (you can explicitly enable it still)");
         }
-        if (!settings[Setting::use_hedged_requests].changed && settings[Setting::use_hedged_requests])
+        if (!settings.use_hedged_requests.changed && settings.use_hedged_requests)
         {
-            settings[Setting::use_hedged_requests] = false;
+            settings.use_hedged_requests = false;
             if (log)
                 LOG_WARNING(log, "use_hedged_requests has been disabled (you can explicitly enable it still)");
         }
@@ -84,15 +75,15 @@ void applySettingsQuirks(Settings & settings, LoggerPtr log)
 
     if (!queryProfilerWorks())
     {
-        if (settings[Setting::query_profiler_real_time_period_ns])
+        if (settings.query_profiler_real_time_period_ns)
         {
-            settings[Setting::query_profiler_real_time_period_ns] = 0;
+            settings.query_profiler_real_time_period_ns = 0;
             if (log)
                 LOG_WARNING(log, "query_profiler_real_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
-        if (settings[Setting::query_profiler_cpu_time_period_ns])
+        if (settings.query_profiler_cpu_time_period_ns)
         {
-            settings[Setting::query_profiler_cpu_time_period_ns] = 0;
+            settings.query_profiler_cpu_time_period_ns = 0;
             if (log)
                 LOG_WARNING(log, "query_profiler_cpu_time_period_ns has been disabled (due to server had been compiled with sanitizers)");
         }
@@ -110,7 +101,7 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     };
 
     UInt64 max_threads = get_current_value("max_threads").safeGet<UInt64>();
-    UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse();
+    UInt64 max_threads_max_value = 256 * getNumberOfPhysicalCPUCores();
     if (max_threads > max_threads_max_value)
     {
         if (log)
@@ -119,18 +110,15 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     }
 
     static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
-
-    using namespace std::literals;
-    static constexpr std::array block_rows_settings{
-        "max_block_size"sv,
-        "max_insert_block_size"sv,
-        "min_insert_block_size_rows"sv,
-        "min_insert_block_size_bytes_for_materialized_views"sv,
-        "min_external_table_block_size_rows"sv,
-        "max_joined_block_size_rows"sv,
-        "input_format_parquet_max_block_size"sv};
-
-    for (auto const setting : block_rows_settings)
+    std::unordered_set<String> block_rows_settings{
+        "max_block_size",
+        "max_insert_block_size",
+        "min_insert_block_size_rows",
+        "min_insert_block_size_bytes_for_materialized_views",
+        "min_external_table_block_size_rows",
+        "max_joined_block_size_rows",
+        "input_format_parquet_max_block_size"};
+    for (auto const & setting : block_rows_settings)
     {
         if (auto block_size = get_current_value(setting).safeGet<UInt64>();
             block_size > max_sane_block_rows_size)

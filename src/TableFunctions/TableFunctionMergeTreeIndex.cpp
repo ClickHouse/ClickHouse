@@ -197,7 +197,7 @@ void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
             .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true)", ""}},
-            .category = {""},
+            .categories = {"Other"},
         },
         .allow_readonly = true,
     });

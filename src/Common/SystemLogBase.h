@@ -14,6 +14,7 @@
 #define SYSTEM_LOG_ELEMENTS(M) \
     M(AsynchronousMetricLogElement) \
     M(CrashLogElement) \
+    M(MetricLogElement) \
     M(OpenTelemetrySpanLogElement) \
     M(PartLogElement) \
     M(QueryLogElement) \
@@ -31,7 +32,7 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement)
+    M(ErrorLogElement)
 
 namespace Poco
 {
@@ -207,7 +208,6 @@ public:
 
     String getName() const override { return LogElement::name(); }
 
-    static const char * getDefaultPartitionBy() { return "toYYYYMM(event_date)"; }
     static const char * getDefaultOrderBy() { return "event_date, event_time"; }
     static consteval size_t getDefaultMaxSize() { return 1048576; }
     static consteval size_t getDefaultReservedSize() { return 8192; }
@@ -216,8 +216,6 @@ public:
     static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:
-    void stopFlushThread() final;
-
     std::shared_ptr<SystemLogQueue<LogElement>> queue;
 };
 }

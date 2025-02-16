@@ -4,16 +4,16 @@ import random
 import string
 
 import pytest
-from azure.storage.blob import BlobServiceClient
 
 from helpers.cluster import ClickHouseCluster
+from azure.storage.blob import BlobServiceClient
 from test_storage_azure_blob_storage.test import azure_query
 
 NODE_NAME = "node"
 OTHER_NODE = "other_node"
 
 
-def generate_cluster_def(port, node_name):
+def generate_cluster_def(port):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "./_gen/disk_storage_conf.xml",
@@ -28,8 +28,8 @@ def generate_cluster_def(port, node_name):
                 <type>object_storage</type>
                 <object_storage_type>azure_blob_storage</object_storage_type>
                 <metadata_type>plain_rewritable</metadata_type>
-                <endpoint>http://azurite1:{port}/devstoreaccount1/cont</endpoint>
-                <endpoint_subpath>{node_name}</endpoint_subpath>
+                <storage_account_url>http://azurite1:{port}/devstoreaccount1</storage_account_url>
+                <container_name>cont</container_name>
                 <skip_access_check>true</skip_access_check>
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
@@ -59,7 +59,7 @@ insert_values = [
     "(0,'data'),(1,'data')",
     ",".join(
         f"({i},'{''.join(random.choices(string.ascii_lowercase, k=5))}')"
-        for i in range(3000)
+        for i in range(10)
     ),
 ]
 
@@ -69,7 +69,7 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         port = cluster.azurite_port
-        path = generate_cluster_def(port, NODE_NAME)
+        path = generate_cluster_def(port)
         cluster.add_instance(
             NODE_NAME,
             main_configs=[
@@ -92,10 +92,7 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize(
-    "min_bytes_for_wide_part", [pytest.param(0), pytest.param(1 << 20)]
-)
-def test_insert_select(cluster, min_bytes_for_wide_part):
+def test_insert_select(cluster):
     node = cluster.instances[NODE_NAME]
 
     for index, value in enumerate(insert_values):
@@ -104,35 +101,31 @@ def test_insert_select(cluster, min_bytes_for_wide_part):
             """
             CREATE TABLE test_{} (
                 id Int64,
-                data String,
-                empty String
+                data String
             ) ENGINE=MergeTree()
             ORDER BY id
-            SETTINGS storage_policy='blob_storage_policy',
-            min_bytes_for_wide_part = {}
+            SETTINGS storage_policy='blob_storage_policy'
             """.format(
-                index, min_bytes_for_wide_part
+                index
             ),
         )
 
-        azure_query(
-            node, "INSERT INTO test_{} (id, data) VALUES {}".format(index, value)
-        )
+        azure_query(node, "INSERT INTO test_{} VALUES {}".format(index, value))
         assert (
             azure_query(
-                node,
-                "SELECT id, data FROM test_{} ORDER BY id FORMAT Values".format(index),
+                node, "SELECT * FROM test_{} ORDER BY id FORMAT Values".format(index)
             )
             == value
         )
 
-        azure_query(node, "OPTIMIZE TABLE test_{} FINAL".format(index))
+
+def test_restart_server(cluster):
+    node = cluster.instances[NODE_NAME]
 
     for index, value in enumerate(insert_values):
         assert (
             azure_query(
-                node,
-                "SELECT id, data FROM test_{} ORDER BY id FORMAT Values".format(index),
+                node, "SELECT * FROM test_{} ORDER BY id FORMAT Values".format(index)
             )
             == value
         )
@@ -141,14 +134,13 @@ def test_insert_select(cluster, min_bytes_for_wide_part):
     for index, value in enumerate(insert_values):
         assert (
             azure_query(
-                node,
-                "SELECT id, data FROM test_{} ORDER BY id FORMAT Values".format(index),
+                node, "SELECT * FROM test_{} ORDER BY id FORMAT Values".format(index)
             )
             == value
         )
 
-        azure_query(node, "OPTIMIZE TABLE test_{} FINAL".format(index))
 
+def test_failpoint_on_disk_init(cluster):
     other_node = cluster.instances[OTHER_NODE]
     port = cluster.env_variables["AZURITE_PORT"]
 
@@ -162,13 +154,12 @@ def test_insert_select(cluster, min_bytes_for_wide_part):
         type = object_storage,
         metadata_type = plain_rewritable,
         object_storage_type = azure_blob_storage,
+        container_name = 'cont',
         endpoint = 'http://azurite1:{port}/devstoreaccount1/cont',
-        endpoint_subpath = '{node}',
         account_name = 'devstoreaccount1',
         account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')
         """.format(
-            port=port,
-            node=NODE_NAME,
+            port=port
         ),
     )
     azure_query(other_node, "DROP TABLE table SYNC")
@@ -176,6 +167,10 @@ def test_insert_select(cluster, min_bytes_for_wide_part):
         other_node,
         "SYSTEM DISABLE FAILPOINT plain_rewritable_object_storage_azure_not_found_on_init",
     )
+
+
+def test_drop_table(cluster):
+    node = cluster.instances[NODE_NAME]
 
     for index, value in enumerate(insert_values):
         node.query("DROP TABLE IF EXISTS test_{} SYNC".format(index))

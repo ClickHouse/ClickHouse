@@ -5,6 +5,7 @@
 #if USE_GWP_ASAN
 
 #include <gwp_asan/guarded_pool_allocator.h>
+#include <Common/thread_local_rng.h>
 
 #include <atomic>
 
@@ -20,10 +21,6 @@ void printReport(uintptr_t fault_address);
 extern std::atomic<bool> init_finished;
 
 void initFinished();
-
-extern std::atomic<double> force_sample_probability;
-
-void setForceSampleProbability(double value);
 
 /**
  * We'd like to postpone sampling allocations under the startup is finished. There are mainly

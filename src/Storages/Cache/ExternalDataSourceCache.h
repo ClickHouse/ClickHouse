@@ -6,14 +6,15 @@
 #include <memory>
 #include <mutex>
 #include <set>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/Cache/IRemoteFileMetadata.h>
 #include <Storages/Cache/RemoteCacheController.h>
@@ -94,7 +95,7 @@ private:
 
     String calculateLocalPath(IRemoteFileMetadataPtr meta) const;
 
-    BackgroundSchedulePoolTaskHolder recover_task_holder;
+    BackgroundSchedulePool::TaskHolder recover_task_holder;
     void recoverTask();
 };
 }

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <config.h>
-
 #include <optional>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
@@ -37,15 +35,15 @@ namespace ErrorCodes
 class ICommand
 {
 public:
-    explicit ICommand(String logger_name) : log(getLogger(logger_name)) { }
+    explicit ICommand() = default;
 
     virtual ~ICommand() = default;
 
-    void execute(const Strings & arguments, DisksClient & client);
+    void execute(const Strings & commands, DisksClient & client);
 
     virtual void executeImpl(const CommandLineOptions & options, DisksClient & client) = 0;
 
-    CommandLineOptions processCommandLineArguments(const Strings & arguments);
+    CommandLineOptions processCommandLineArguments(const Strings & commands);
 
 protected:
     template <typename T>
@@ -65,34 +63,46 @@ protected:
     static T getValueFromCommandLineOptionsThrow(const CommandLineOptions & options, const String & name)
     {
         if (options.count(name))
+        {
             return getValueFromCommandLineOptions<T>(options, name);
-
-        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
+        }
+        else
+        {
+            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
+        }
     }
 
     template <typename T>
     static T getValueFromCommandLineOptionsWithDefault(const CommandLineOptions & options, const String & name, const T & default_value)
     {
         if (options.count(name))
+        {
             return getValueFromCommandLineOptions<T>(options, name);
-
-        return default_value;
+        }
+        else
+        {
+            return default_value;
+        }
     }
 
     template <typename T>
     static std::optional<T> getValueFromCommandLineOptionsWithOptional(const CommandLineOptions & options, const String & name)
     {
         if (options.count(name))
+        {
             return std::optional{getValueFromCommandLineOptions<T>(options, name)};
-
-        return std::nullopt;
+        }
+        else
+        {
+            return std::nullopt;
+        }
     }
 
     DiskWithPath & getDiskWithPath(DisksClient & client, const CommandLineOptions & options, const String & name);
 
     String getTargetLocation(const String & path_from, DiskWithPath & disk_to, const String & path_to)
     {
-        if (!disk_to.getDisk()->existsDirectory(path_to))
+        if (!disk_to.getDisk()->isDirectory(path_to))
         {
             return path_to;
         }
@@ -114,7 +124,6 @@ public:
 
 protected:
     PositionalProgramOptionsDescription positional_options_description;
-    LoggerPtr log;
 };
 
 DB::CommandPtr makeCommandCopy();
@@ -131,7 +140,7 @@ DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
 DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 DB::CommandPtr makeCommandTouch();
-#if CLICKHOUSE_CLOUD
+#ifdef CLICKHOUSE_CLOUD
 DB::CommandPtr makeCommandPackedIO();
 #endif
 }

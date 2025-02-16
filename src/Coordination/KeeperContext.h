@@ -1,11 +1,6 @@
 #pragma once
-#include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Common/ZooKeeper/ZooKeeperConstants.h>
-#include <IO/WriteBufferFromString.h>
-#include <base/defines.h>
-
+#include <Coordination/KeeperFeatureFlags.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -28,6 +23,8 @@ class DiskSelector;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 
+class WriteBufferFromOwnString;
+
 class KeeperContext
 {
 public:
@@ -49,7 +46,6 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
-    bool digestEnabledOnCommit() const;
 
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
@@ -96,20 +92,8 @@ public:
     /// returns true if the log is committed, false if timeout happened
     bool waitCommittedUpto(uint64_t log_idx, uint64_t wait_timeout_ms);
 
-    const CoordinationSettings & getCoordinationSettings() const;
+    const CoordinationSettingsPtr & getCoordinationSettings() const;
 
-    int64_t getPrecommitSleepMillisecondsForTesting() const
-    {
-        return precommit_sleep_ms_for_testing;
-    }
-
-    double getPrecommitSleepProbabilityForTesting() const
-    {
-        chassert(precommit_sleep_probability_for_testing >= 0 && precommit_sleep_probability_for_testing <= 1);
-        return precommit_sleep_probability_for_testing;
-    }
-
-    bool isOperationSupported(Coordination::OpNum operation) const;
 private:
     /// local disk defined using path or disk name
     using Storage = std::variant<DiskPtr, std::string>;
@@ -136,7 +120,6 @@ private:
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
-    bool digest_enabled_on_commit{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
@@ -167,9 +150,6 @@ private:
     std::optional<UInt64> wait_commit_upto_idx = 0;
     std::mutex last_committed_log_idx_cv_mutex;
     std::condition_variable last_committed_log_idx_cv;
-
-    int64_t precommit_sleep_ms_for_testing = 0;
-    double precommit_sleep_probability_for_testing = 0.0;
 
     CoordinationSettingsPtr coordination_settings;
 };

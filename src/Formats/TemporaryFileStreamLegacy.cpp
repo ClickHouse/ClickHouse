@@ -4,7 +4,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/ProtocolDefines.h>
 
@@ -40,7 +39,6 @@ TemporaryFileStreamLegacy::Stat TemporaryFileStreamLegacy::write(const std::stri
         output.write(block);
 
     compressed_buf.finalize();
-    file_buf.finalize();
     return Stat{compressed_buf.getCompressedBytes(), compressed_buf.getUncompressedBytes()};
 }
 

@@ -2,7 +2,6 @@
 slug: /en/sql-reference/operators/
 sidebar_position: 38
 sidebar_label: Operators
-displayed_sidebar: sqlreference
 ---
 
 # Operators
@@ -231,7 +230,7 @@ Types of intervals:
 You can also use a string literal when setting the `INTERVAL` value. For example, `INTERVAL 1 HOUR` is identical to the `INTERVAL '1 hour'` or `INTERVAL '1' hour`.
 
 :::tip    
-Intervals with different types can't be combined. You can't use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
+Intervals with different types can’t be combined. You can’t use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
 :::
 
 Examples:
@@ -265,6 +264,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERV
 │ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
 └─────────────────────┴────────────────────────────────────────────────────────────┘
 ```
+
+You can work with dates without using `INTERVAL`, just by adding or subtracting seconds, minutes, and hours. For example, an interval of one day can be set by adding `60*60*24`.
 
 :::note    
 The `INTERVAL` syntax or `addDays` function are always preferred. Simple addition or subtraction (syntax like `now() + ...`) doesn't consider time settings. For example, daylight saving time.
@@ -305,7 +306,7 @@ Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [
 
 Note:
 
-The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
+The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) function, each row will be replicated regardless of the “a” condition.
 
 ## Conditional Expression
 

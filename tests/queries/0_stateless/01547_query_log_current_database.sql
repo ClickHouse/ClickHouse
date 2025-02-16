@@ -1,5 +1,5 @@
 --
--- This is a cleaner approach for writing a test that relies on system.query_log/query_thread_log.
+-- This is more cleaner approach for writing a test that relies on system.query_log/query_thread_log.
 --
 -- It uses current database, and since clickhouse-test will generate random for
 -- each run you can run the test multiple times without worrying about
@@ -30,6 +30,6 @@ where
 select count() == 2
 from system.query_thread_log
 where
-    query like 'select \'01547\_query\_log\_current\_database%'
+    query like 'select \'01547_query_log_current_database%'
     and current_database = currentDatabase()
     and event_date >= yesterday()

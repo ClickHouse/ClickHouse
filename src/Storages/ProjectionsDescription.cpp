@@ -1,7 +1,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -14,7 +13,6 @@
 
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -296,22 +294,8 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
 
-    ASTPtr query_ast_copy = nullptr;
-    /// Respect the _row_exists column.
-    if (block.findByName("_row_exists"))
-    {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
-
-        select_row_exists->setExpression(
-            ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>("_row_exists"), std::make_shared<ASTLiteral>(1)));
-    }
-
     auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
+                       query_ast,
                        mut_context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{

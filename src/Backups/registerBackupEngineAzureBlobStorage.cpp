@@ -44,7 +44,7 @@ namespace
 
 void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
 {
-    auto creator_fn = []([[maybe_unused]] BackupFactory::CreateParams params) -> std::unique_ptr<IBackup>
+    auto creator_fn = []([[maybe_unused]] const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
     {
 #if USE_AZURE_BLOB_STORAGE
         const String & id_arg = params.backup_info.id_arg;
@@ -124,8 +124,6 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
         }
 
 
-        params.use_same_s3_credentials_for_base_backup = false;
-
         if (params.open_mode == IBackup::OpenMode::READ)
         {
             auto reader = std::make_shared<BackupReaderAzureBlobStorage>(
@@ -136,20 +134,40 @@ void registerBackupEngineAzureBlobStorage(BackupFactory & factory)
                 params.write_settings,
                 params.context);
 
-            return std::make_unique<BackupImpl>(params, archive_params, reader);
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                params.base_backup_info,
+                reader,
+                params.context,
+                params.is_internal_backup,
+                /* use_same_s3_credentials_for_base_backup*/ false,
+                params.use_same_password_for_base_backup);
         }
+        else
+        {
+            auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
+                connection_params,
+                blob_path,
+                params.allow_azure_native_copy,
+                params.read_settings,
+                params.write_settings,
+                params.context,
+                params.azure_attempt_to_create_container);
 
-        auto writer = std::make_shared<BackupWriterAzureBlobStorage>(
-            connection_params,
-            blob_path,
-            params.allow_azure_native_copy,
-            params.read_settings,
-            params.write_settings,
-            params.context,
-            params.azure_attempt_to_create_container);
-
-        return std::make_unique<BackupImpl>(params, archive_params, writer);
-
+            return std::make_unique<BackupImpl>(
+                params.backup_info,
+                archive_params,
+                params.base_backup_info,
+                writer,
+                params.context,
+                params.is_internal_backup,
+                params.backup_coordination,
+                params.backup_uuid,
+                params.deduplicate_files,
+                /* use_same_s3_credentials_for_base_backup */ false,
+                params.use_same_password_for_base_backup);
+        }
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "AzureBlobStorage support is disabled");
 #endif

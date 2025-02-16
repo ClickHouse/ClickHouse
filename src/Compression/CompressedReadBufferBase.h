@@ -9,7 +9,6 @@
 namespace DB
 {
 
-class Exception;
 class ReadBuffer;
 
 /** Basic functionality for implementation of
@@ -65,8 +64,13 @@ protected:
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
-    /// Adds diagnostics to the error message.
-    void addDiagnostics(Exception & e) const;
+    /// Flush all asynchronous decompress request.
+    void flushAsynchronousDecompressRequests() const;
+
+    /// Set decompression mode: Synchronous/Asynchronous/SoftwareFallback.
+    /// The mode is "Synchronous" by default.
+    /// flushAsynchronousDecompressRequests must be called subsequently once set "Asynchronous" mode.
+    void setDecompressMode(ICompressionCodec::CodecMode mode) const;
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
