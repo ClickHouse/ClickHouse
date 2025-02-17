@@ -10,6 +10,16 @@ import pandas as pd
 DEFAULT_QUERY_TIMEOUT = 600
 
 
+def _check_decode(payload: bytes):
+    binary_len = len(payload)
+    decoded = payload.decode("utf-8", errors="replace")
+    if binary_len != len(decoded):
+        logging.debug(
+            f"Mismatch after decoding, binary:\n{payload}\ndecoded:\n{decoded}\n"
+        )
+    return decoded
+
+
 class Client:
     def __init__(
         self,
@@ -231,8 +241,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout = _check_decode(self.stdout_file.read())
+        stderr = _check_decode(self.stderr_file.read())
 
         if (
             self.timer is not None
@@ -269,8 +279,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout = _check_decode(self.stdout_file.read())
+        stderr = _check_decode(self.stderr_file.read())
 
         if (
             self.timer is not None
@@ -293,8 +303,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout = _check_decode(self.stdout_file.read())
+        stderr = _check_decode(self.stderr_file.read())
 
         if (
             self.timer is not None
