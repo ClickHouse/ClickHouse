@@ -100,7 +100,7 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
 
 enum class JoinAlgorithm : uint8_t
 {
-    DEFAULT = 0,
+    DEFAULT = 0, /// deprecated, equivalent to "direct,hash"
     AUTO,
     HASH,
     PARTIAL_MERGE,

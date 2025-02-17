@@ -8,6 +8,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/parseGlobs.h>
 #include <Core/Settings.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>

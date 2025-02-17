@@ -38,7 +38,7 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
     if (useRoaring())
         return rowid_bitmap.contains(row_id);
 
-    const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
+    const auto it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
     return it != rowid_lst.begin() + rowid_lst_length;
 }
 
