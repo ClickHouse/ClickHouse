@@ -2733,7 +2733,8 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         * static_cast<uint32_t>(collectionCount<SQLTable>(
                                     [](const SQLTable & t)
                                     {
-                                        /// I don't know what to do when the tables to exchange are on different clusters
+                                        /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged
+                                        /// are on same cluster
                                         return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
                                             && !t.hasDatabasePeer() && !t.getCluster();
                                     })

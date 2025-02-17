@@ -720,6 +720,18 @@ const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "
 void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     SettingValues * svs = nullptr;
+    const bool has_tables = collectionHas<SQLTable>(
+        [&](const SQLTable & t)
+        {
+            return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
+                && (t.is_deterministic || !b.is_deterministic);
+        });
+    const bool has_views = collectionHas<SQLView>(
+        [&](const SQLView & v)
+        {
+            return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED
+                && (v.is_deterministic || !b.is_deterministic);
+        });
 
     if (b.isMergeTreeFamily())
     {
@@ -800,19 +812,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isBufferEngine())
     {
-        const bool has_tables = collectionHas<SQLTable>(
-            [&](const SQLTable & t)
-            {
-                return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
-                    && (t.is_deterministic || !b.is_deterministic);
-            });
-        const bool has_views = collectionHas<SQLView>(
-            [&](const SQLView & v)
-            {
-                return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED
-                    && (v.is_deterministic || !b.is_deterministic);
-            });
-
         if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
@@ -917,18 +916,6 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     else if (te->has_engine() && b.isDistributedEngine())
     {
         bool has_sharding_key = false;
-        const bool has_tables = collectionHas<SQLTable>(
-            [&](const SQLTable & t)
-            {
-                return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
-                    && (t.is_deterministic || !b.is_deterministic);
-            });
-        const bool has_views = collectionHas<SQLView>(
-            [&](const SQLView & v)
-            {
-                return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED
-                    && (v.is_deterministic || !b.is_deterministic);
-            });
 
         te->add_params()->set_svalue(rg.pickRandomlyFromVector(fc.clusters));
         if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
