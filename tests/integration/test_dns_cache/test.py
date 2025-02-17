@@ -5,6 +5,54 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/listen_host.xml"],
+    with_zookeeper=True,
+    ipv6_address="2001:3984:3989::1:1111",
+)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
+    with_zookeeper=True,
+    ipv6_address="2001:3984:3989::1:1112",
+)
+node3 = cluster.add_instance(
+    "node3",
+    main_configs=["configs/listen_host.xml"],
+    with_zookeeper=True,
+    ipv6_address="2001:3984:3989::1:1113",
+)
+node4 = cluster.add_instance(
+    "node4",
+    main_configs=[
+        "configs/remote_servers.xml",
+        "configs/listen_host.xml",
+        "configs/dns_update_short.xml",
+    ],
+    with_zookeeper=True,
+    ipv6_address="2001:3984:3989::1:1114",
+)
+# Check SYSTEM DROP DNS CACHE on node5 and background cache update on node6
+node5 = cluster.add_instance(
+    "node5",
+    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
+    user_configs=["configs/users_with_hostname.xml"],
+    ipv6_address="2001:3984:3989::1:1115",
+)
+node6 = cluster.add_instance(
+    "node6",
+    main_configs=["configs/listen_host.xml", "configs/dns_update_short.xml"],
+    user_configs=["configs/users_with_hostname.xml"],
+    ipv6_address="2001:3984:3989::1:1116",
+)
+node7 = cluster.add_instance(
+    "node7",
+    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
+    with_zookeeper=True,
+    ipv6_address="2001:3984:3989::1:1117",
+    ipv4_address="10.5.95.17",
+)
 
 
 def _fill_nodes(nodes, table_name):
@@ -21,21 +69,7 @@ def _fill_nodes(nodes, table_name):
         )
 
 
-node1 = cluster.add_instance(
-    "node1",
-    main_configs=["configs/listen_host.xml"],
-    with_zookeeper=True,
-    ipv6_address="2001:3984:3989::1:1111",
-)
-node2 = cluster.add_instance(
-    "node2",
-    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
-    with_zookeeper=True,
-    ipv6_address="2001:3984:3989::1:1112",
-)
-
-
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def cluster_without_dns_cache_update():
     try:
         cluster.start()
@@ -50,7 +84,21 @@ def cluster_without_dns_cache_update():
 
     finally:
         cluster.shutdown()
-        pass
+
+
+@pytest.fixture(scope="module", autouse=True)
+def cluster_with_dns_cache_update(cluster_without_dns_cache_update):
+    try:
+        _fill_nodes([node3, node4], "test_table_update")
+
+        yield cluster
+
+    except Exception as ex:
+        print(ex)
+        raise
+
+    finally:
+        cluster.shutdown()
 
 
 # node1 is a source, node2 downloads data
@@ -96,42 +144,6 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
     node1.query("INSERT INTO test_table_drop VALUES ('2018-10-01', 8)")
     assert node1.query("SELECT count(*) from test_table_drop") == "7\n"
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "7")
-
-
-node3 = cluster.add_instance(
-    "node3",
-    main_configs=["configs/listen_host.xml"],
-    with_zookeeper=True,
-    ipv6_address="2001:3984:3989::1:1113",
-)
-node4 = cluster.add_instance(
-    "node4",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/listen_host.xml",
-        "configs/dns_update_short.xml",
-    ],
-    with_zookeeper=True,
-    ipv6_address="2001:3984:3989::1:1114",
-)
-
-
-@pytest.fixture(scope="module")
-def cluster_with_dns_cache_update():
-    try:
-        cluster.start()
-
-        _fill_nodes([node3, node4], "test_table_update")
-
-        yield cluster
-
-    except Exception as ex:
-        print(ex)
-        raise
-
-    finally:
-        cluster.shutdown()
-        pass
 
 
 # node3 is a source, node4 downloads data
@@ -201,21 +213,6 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
         )
     ) == TSV("lost_host\t127.0.0.1\n")
     assert TSV(node4.query("SELECT hostName()")) == TSV("node4")
-
-
-# Check SYSTEM DROP DNS CACHE on node5 and background cache update on node6
-node5 = cluster.add_instance(
-    "node5",
-    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
-    user_configs=["configs/users_with_hostname.xml"],
-    ipv6_address="2001:3984:3989::1:1115",
-)
-node6 = cluster.add_instance(
-    "node6",
-    main_configs=["configs/listen_host.xml", "configs/dns_update_short.xml"],
-    user_configs=["configs/users_with_hostname.xml"],
-    ipv6_address="2001:3984:3989::1:1116",
-)
 
 
 @pytest.mark.parametrize("node_name", ["node5", "node6"])
@@ -322,15 +319,6 @@ def test_host_is_drop_from_cache_after_consecutive_failures(
     assert node4.wait_for_log_line(
         "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*"
     )
-
-
-node7 = cluster.add_instance(
-    "node7",
-    main_configs=["configs/listen_host.xml", "configs/dns_update_long.xml"],
-    with_zookeeper=True,
-    ipv6_address="2001:3984:3989::1:1117",
-    ipv4_address="10.5.95.17",
-)
 
 
 def _render_filter_config(allow_ipv4, allow_ipv6):
