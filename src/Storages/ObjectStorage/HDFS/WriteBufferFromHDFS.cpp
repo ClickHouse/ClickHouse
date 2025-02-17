@@ -42,7 +42,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             int flags)
         : HDFSErrorWrapper(hdfs_uri_, config_)
         , hdfs_uri(hdfs_uri_)
-        , builder(createHDFSBuilder(hdfs_uri, config_))
         , fs(createHDFSFS(builder.get()))
         , write_settings(write_settings_)
     {

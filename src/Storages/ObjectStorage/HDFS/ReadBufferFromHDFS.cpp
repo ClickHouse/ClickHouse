@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_FILE_SIZE;
+    extern const int HDFS_ERROR;
 }
 
 
@@ -175,9 +176,9 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     size_t pread(char * buffer, size_t size, size_t offset)
     {
-        ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
+        ResourceGuard rlock(read_settings.resource_link, size);
         auto bytes_read = wrapErr<tSize>(hdfsPread, fs.get(), fin, buffer, safe_cast<int>(size), offset);
-        rlock.unlock(std::max(0, bytes_read));
+        rlock.unlock();
 
         if (bytes_read < 0)
         {
