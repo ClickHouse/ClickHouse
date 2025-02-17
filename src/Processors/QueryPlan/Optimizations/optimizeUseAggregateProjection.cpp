@@ -90,7 +90,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
             context,
             [&metadata_snapshot](const StorageID & table_id)
             {
-                auto block = metadata_snapshot->getSampleBlockWithSubcolumns();
+                auto block = metadata_snapshot->getSampleBlock();
                 return std::make_shared<StorageValues>(
                     table_id,
                     ColumnsDescription::fromNamesAndTypes(block.getNamesAndTypes()),
@@ -122,7 +122,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
         InterpreterSelectQuery interpreter(
             projection.query_ast,
             context,
-            Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlockWithSubcolumns())),
+            Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
             SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
         const auto & analysis_result = interpreter.getAnalysisResult();
