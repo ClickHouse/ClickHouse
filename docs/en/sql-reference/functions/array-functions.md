@@ -560,8 +560,8 @@ Result:
 ## array(x1, ...), operator \[x1, ...\]
 
 Creates an array from the function arguments.
-The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn’t clear which type of array to create. That is, you can’t use this function to create an empty array (to do that, use the 'emptyArray\*’ function described above).
-Returns an 'Array(T)’ type result, where 'T’ is the smallest common type out of the passed arguments.
+The arguments must be constants and have types that have the smallest common type. At least one argument must be passed, because otherwise it isn't clear which type of array to create. That is, you can't use this function to create an empty array (to do that, use the 'emptyArray\*' function described above).
+Returns an 'Array(T)' type result, where 'T' is the smallest common type out of the passed arguments.
 
 ## arrayWithConstant(length, elem)
 
@@ -602,7 +602,7 @@ If the index falls outside of the bounds of an array, it returns some default va
 
 ## has(arr, elem)
 
-Checks whether the 'arr’ array has the 'elem’ element.
+Checks whether the 'arr' array has the 'elem' element.
 Returns 0 if the element is not in the array, or 1 if it is.
 
 `NULL` is processed as a value.
@@ -770,7 +770,7 @@ i
 
 ## indexOf(arr, x)
 
-Returns the index of the first element with value 'x’ (starting from 1) if it is in the array.
+Returns the index of the first element with value 'x' (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
 
 Example:
@@ -789,7 +789,7 @@ Elements set to `NULL` are handled as normal values.
 
 ## indexOfAssumeSorted(arr, x)
 
-Returns the index of the first element with value 'x’ (starting from 1) if it is in the array.
+Returns the index of the first element with value 'x' (starting from 1) if it is in the array.
 If the array does not contain the searched-for value, the function returns 0.
 Assumes that the array is sorted in ascending order (i.e., the function uses binary search).
 If the array is not sorted, results are undefined.
@@ -1292,7 +1292,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 
 Note that `arraySort` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
 
-Let’s consider the following example:
+Let's consider the following example:
 
 ``` sql
 SELECT arraySort((x) -> -x, [1, 2, 3]) as res;
@@ -1318,7 +1318,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 └────────────────────┘
 ```
 
-Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\['hello’, 'world’\]), that is, \['hello’ –\> 2, 'world’ –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, 'hello’ will be the second element in the result, and 'world’ will be the first.
+Here, the elements that are passed in the second array (\[2, 1\]) define a sorting key for the corresponding element from the source array (\['hello', 'world'\]), that is, \['hello' –\> 2, 'world' –\> 1\]. Since the lambda function does not use `x`, actual values of the source array do not affect the order in the result. So, 'hello' will be the second element in the result, and 'world' will be the first.
 
 Other examples are shown below.
 
@@ -1431,8 +1431,8 @@ SELECT arrayReverseSort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
 
 In this example, the array is sorted in the following way:
 
-1. At first, the source array (\['hello’, 'world’\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \['world’, 'hello’\].
-2. Array that was sorted on the previous step, is reversed. So, the final result is \['hello’, 'world’\].
+1. At first, the source array (\['hello', 'world'\]) is sorted according to the result of the lambda function applied to the elements of the arrays. The elements that are passed in the second array (\[2, 1\]), define the sorting keys for corresponding elements from the source array. The result is an array \['world', 'hello'\].
+2. Array that was sorted on the previous step, is reversed. So, the final result is \['hello', 'world'\].
 
 Other examples are shown below.
 
@@ -1584,7 +1584,7 @@ Result:
 If one argument is passed, it counts the number of different elements in the array.
 If multiple arguments are passed, it counts the number of different tuples of elements at corresponding positions in multiple arrays.
 
-If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray’, arr).
+If you want to get a list of unique items in an array, you can use arrayReduce('groupUniqArray', arr).
 
 ## arrayJoin(arr)
 
@@ -2278,7 +2278,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 └─────────────────────┘
 ```
 
-Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayFilter(func, arr1, ...)
 
@@ -2311,7 +2311,7 @@ SELECT
 └─────┘
 ```
 
-Note that the `arrayFilter` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayFilter` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayFill(func, arr1, ...)
 
@@ -2329,7 +2329,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 └──────────────────────────────────┘
 ```
 
-Note that the `arrayFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayReverseFill(func, arr1, ...)
 
@@ -2347,7 +2347,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 └────────────────────────────────────┘
 ```
 
-Note that the `arrayReverseFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayReverseFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arraySplit(func, arr1, ...)
 
@@ -2365,7 +2365,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └─────────────────┘
 ```
 
-Note that the `arraySplit` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arraySplit` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayReverseSplit(func, arr1, ...)
 
@@ -2383,7 +2383,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └───────────────────┘
 ```
 
-Note that the `arrayReverseSplit` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayReverseSplit` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayExists(\[func,\] arr1, ...)
 
@@ -2423,7 +2423,7 @@ arrayFirstOrNull(func, arr1, ...)
 
 **Implementation details**
 
-Note that the `arrayFirstOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayFirstOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 **Example**
 
@@ -2467,7 +2467,7 @@ Result:
 
 Returns the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayLastOrNull
 
@@ -2491,7 +2491,7 @@ arrayLastOrNull(func, arr1, ...)
 
 **Implementation details**
 
-Note that the `arrayLastOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayLastOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 **Example**
 
@@ -2523,13 +2523,13 @@ Result:
 
 Returns the index of the first element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayLastIndex(func, arr1, ...)
 
 Returns the index of the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayMin
 

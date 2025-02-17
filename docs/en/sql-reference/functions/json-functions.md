@@ -844,7 +844,7 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 
 
 ### JSONExtractArrayRaw
 
-Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn’t an array, then an empty array will be returned.
+Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn't an array, then an empty array will be returned.
 
 **Syntax**
 
