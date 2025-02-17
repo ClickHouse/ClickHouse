@@ -351,7 +351,7 @@ For example, the expression
 
 is transformed to 
 
-```The correct language for the fenced code block is `python`.
+```
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
