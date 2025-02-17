@@ -25,6 +25,7 @@
 #include <Common/EventNotifier.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ShuffleHost.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>

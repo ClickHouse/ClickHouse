@@ -106,6 +106,8 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
+}
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
     auto nodes = extractAllTableReferences(query_tree);
@@ -130,7 +132,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
     const StoragePtr & storage)
@@ -154,7 +156,6 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
-}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
