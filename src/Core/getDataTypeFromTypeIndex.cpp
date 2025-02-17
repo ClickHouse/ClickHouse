@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeFactory.h>
 
 namespace DB
 {
@@ -47,68 +48,70 @@ bool isSimpleDataType(TypeIndex type_index)
 DataTypePtr getSimpleDataTypeFromTypeIndex(TypeIndex type_index)
 {
     DataTypePtr data_type;
-    switch (type_index)
-    {
-        case TypeIndex::UInt8:
-            data_type = std::make_shared<DataTypeNumber<UInt8>>();
-            break;
-        case TypeIndex::UInt16:
-            data_type = std::make_shared<DataTypeNumber<UInt16>>();
-            break;
-        case TypeIndex::UInt32:
-            data_type = std::make_shared<DataTypeNumber<UInt32>>();
-            break;
-        case TypeIndex::UInt64:
-            data_type = std::make_shared<DataTypeNumber<UInt64>>();
-            break;
-        case TypeIndex::UInt128:
-            data_type = std::make_shared<DataTypeNumber<UInt128>>();
-            break;
-        case TypeIndex::UInt256:
-            data_type = std::make_shared<DataTypeNumber<UInt256>>();
-            break;
-        case TypeIndex::Int8:
-            data_type = std::make_shared<DataTypeNumber<Int8>>();
-            break;
-        case TypeIndex::Int16:
-            data_type = std::make_shared<DataTypeNumber<Int16>>();
-            break;
-        case TypeIndex::Int32:
-            data_type = std::make_shared<DataTypeNumber<Int32>>();
-            break;
-        case TypeIndex::Int64:
-            data_type = std::make_shared<DataTypeNumber<Int64>>();
-            break;
-        case TypeIndex::Int128:
-            data_type = std::make_shared<DataTypeNumber<Int128>>();
-            break;
-        case TypeIndex::Int256:
-            data_type = std::make_shared<DataTypeNumber<Int256>>();
-            break;
-        case TypeIndex::Float32:
-            data_type = std::make_shared<DataTypeFloat32>();
-            break;
-        case TypeIndex::Float64:
-            data_type = std::make_shared<DataTypeFloat64>();
-            break;
-        case TypeIndex::Date:
-            data_type = std::make_shared<DataTypeDate>();
-            break;
-        case TypeIndex::Date32:
-            data_type = std::make_shared<DataTypeDate32>();
-            break;
-        case TypeIndex::DateTime:
-            data_type = std::make_shared<DataTypeDateTime>();
-            break;
-        case TypeIndex::UUID:
-            data_type = std::make_shared<DataTypeUUID>();
-            break;
-        case TypeIndex::String:
-            data_type = std::make_shared<DataTypeString>();
-            break;
-        default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type index: {}", type_index);
-    }
+    std::string_view name = magic_enum::enum_name(type_index);
+    data_type = DataTypeFactory::instance().get(std::string(name), nullptr);
+    // switch (type_index)
+    // {
+    //     case TypeIndex::UInt8:
+    //         data_type = std::make_shared<DataTypeNumber<UInt8>>();
+    //         break;
+    //     case TypeIndex::UInt16:
+    //         data_type = std::make_shared<DataTypeNumber<UInt16>>();
+    //         break;
+    //     case TypeIndex::UInt32:
+    //         data_type = std::make_shared<DataTypeNumber<UInt32>>();
+    //         break;
+    //     case TypeIndex::UInt64:
+    //         data_type = std::make_shared<DataTypeNumber<UInt64>>();
+    //         break;
+    //     case TypeIndex::UInt128:
+    //         data_type = std::make_shared<DataTypeNumber<UInt128>>();
+    //         break;
+    //     case TypeIndex::UInt256:
+    //         data_type = std::make_shared<DataTypeNumber<UInt256>>();
+    //         break;
+    //     case TypeIndex::Int8:
+    //         data_type = std::make_shared<DataTypeNumber<Int8>>();
+    //         break;
+    //     case TypeIndex::Int16:
+    //         data_type = std::make_shared<DataTypeNumber<Int16>>();
+    //         break;
+    //     case TypeIndex::Int32:
+    //         data_type = std::make_shared<DataTypeNumber<Int32>>();
+    //         break;
+    //     case TypeIndex::Int64:
+    //         data_type = std::make_shared<DataTypeNumber<Int64>>();
+    //         break;
+    //     case TypeIndex::Int128:
+    //         data_type = std::make_shared<DataTypeNumber<Int128>>();
+    //         break;
+    //     case TypeIndex::Int256:
+    //         data_type = std::make_shared<DataTypeNumber<Int256>>();
+    //         break;
+    //     case TypeIndex::Float32:
+    //         data_type = std::make_shared<DataTypeFloat32>();
+    //         break;
+    //     case TypeIndex::Float64:
+    //         data_type = std::make_shared<DataTypeFloat64>();
+    //         break;
+    //     case TypeIndex::Date:
+    //         data_type = std::make_shared<DataTypeDate>();
+    //         break;
+    //     case TypeIndex::Date32:
+    //         data_type = std::make_shared<DataTypeDate32>();
+    //         break;
+    //     case TypeIndex::DateTime:
+    //         data_type = std::make_shared<DataTypeDateTime>();
+    //         break;
+    //     case TypeIndex::UUID:
+    //         data_type = std::make_shared<DataTypeUUID>();
+    //         break;
+    //     case TypeIndex::String:
+    //         data_type = std::make_shared<DataTypeString>();
+    //         break;
+    //     default:
+    //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported type index: {}", type_index);
+    // }
     return data_type;
 }
 

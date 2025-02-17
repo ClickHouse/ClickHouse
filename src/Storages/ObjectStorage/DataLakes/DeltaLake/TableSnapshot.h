@@ -29,20 +29,25 @@ public:
 
     DB::ObjectIterator iterate();
 
-    const DB::NamesAndTypesList & getSchema();
+    const DB::NamesAndTypesList & getTableSchema();
+
+    const DB::NamesAndTypesList & getReadSchema();
 
 private:
     class Iterator;
     using KernelExternEngine = TemplatedKernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
     using KernelSnapshot = TemplatedKernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
+    using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
 
     const KernelHelperPtr helper;
     const LoggerPtr log;
 
     KernelExternEngine engine;
     KernelSnapshot snapshot;
+    KernelScan scan;
     size_t snapshot_version;
-    std::optional<DB::NamesAndTypesList> schema;
+    std::optional<DB::NamesAndTypesList> table_schema;
+    std::optional<DB::NamesAndTypesList> read_schema;
 
     void initSnapshot();
     ffi::SharedSnapshot * getSnapshot();

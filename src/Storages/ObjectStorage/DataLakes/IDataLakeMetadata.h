@@ -19,6 +19,7 @@ public:
     virtual ~IDataLakeMetadata() = default;
     virtual Strings getDataFiles() const = 0;
     virtual NamesAndTypesList getTableSchema() const = 0;
+    virtual NamesAndTypesList getReadSchema() const { return getTableSchema(); }
     virtual bool operator==(const IDataLakeMetadata & other) const = 0;
     virtual const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const = 0;
     virtual bool supportsPartitionPruning() { return false; }

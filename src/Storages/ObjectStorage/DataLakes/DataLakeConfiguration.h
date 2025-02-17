@@ -140,6 +140,24 @@ private:
         {
             current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
         }
+        auto read_schema = current_metadata->getReadSchema();
+        if (!read_schema.empty())
+        {
+            ColumnsWithTypeAndName columns;
+            for (const auto & [name, type] : read_schema)
+                columns.emplace_back(type, name);
+            info.format_header = Block(columns);
+
+            std::vector<NameAndTypePair> read_columns;
+            for (const auto & [column_name, _] : info.requested_columns)
+            {
+                const auto pos = info.source_header.getPositionByName(column_name);
+                const auto & column = info.format_header.getByPosition(pos);
+                read_columns.emplace_back(column.name, column.type);
+            }
+            info.requested_columns = NamesAndTypesList(read_columns.begin(), read_columns.end());
+        }
+
         auto column_mapping = current_metadata->getColumnNameToPhysicalNameMapping();
         if (!column_mapping.empty())
         {

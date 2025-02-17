@@ -143,17 +143,29 @@ ffi::SharedSnapshot * TableSnapshot::getSnapshot()
 DB::ObjectIterator TableSnapshot::iterate()
 {
     initSnapshot();
-    return std::make_shared<TableSnapshot::Iterator>(engine, snapshot, helper->getDataPath(), getSchema(), log);
+    return std::make_shared<TableSnapshot::Iterator>(engine, snapshot, helper->getDataPath(), getReadSchema(), log);
 }
 
-const DB::NamesAndTypesList & TableSnapshot::getSchema()
+const DB::NamesAndTypesList & TableSnapshot::getTableSchema()
 {
-    if (!schema.has_value())
+    if (!table_schema.has_value())
     {
-        schema = getSchemaFromSnapshot(getSnapshot());
-        LOG_TEST(log, "Fetched schema: {}", schema->toString());
+        table_schema = getTableSchemaFromSnapshot(getSnapshot());
+        LOG_TEST(log, "Fetched table schema: {}", table_schema->toString());
     }
-    return schema.value();
+    return table_schema.value();
+}
+
+const DB::NamesAndTypesList & TableSnapshot::getReadSchema()
+{
+    if (!read_schema.has_value())
+    {
+        auto * current_snapshot = getSnapshot();
+        chassert(engine.get());
+        read_schema = getReadSchemaFromSnapshot(current_snapshot, engine.get());
+        LOG_TEST(log, "Fetched read schema: {}", read_schema->toString());
+    }
+    return read_schema.value();
 }
 
 }

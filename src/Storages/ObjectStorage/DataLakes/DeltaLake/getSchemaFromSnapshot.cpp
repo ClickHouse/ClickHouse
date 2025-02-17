@@ -4,6 +4,7 @@
 
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
+#include "KernelPointerWrapper.h"
 
 #include <Core/TypeId.h>
 #include <Core/getDataTypeFromTypeIndex.h>
@@ -47,7 +48,6 @@ private:
 
         /// Column name.
         const std::string name;
-        std::string physical_name;
         /// Column type.
         const DB::TypeIndex type;
         const bool nullable;
@@ -75,7 +75,33 @@ private:
 class SchemaVisitor
 {
 public:
-    static DB::NamesAndTypesList visit(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
+    static DB::NamesAndTypesList visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
+    {
+        auto visitor = createVisitor(data);
+        size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
+        return data.getSchemaResult();
+    }
+
+    static DB::NamesAndTypesList visitReadSchema(
+        ffi::SharedSnapshot * snapshot,
+        ffi::SharedExternEngine * engine,
+        SchemaVisitorData & data)
+    {
+        using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+        KernelScan scan = KernelUtils::unwrapResult(ffi::scan(snapshot, engine, /* predicate */{}), "scan");
+
+        auto * scan_state = ffi::get_global_scan_state(scan.get());
+        auto * schema = ffi::get_global_read_schema(scan_state);
+
+        auto visitor = createVisitor(data);
+        size_t result = ffi::visit_schema(schema, &visitor);
+        chassert(result == 0, "Unexpected result: " + DB::toString(result));
+        return data.getSchemaResult();
+    }
+
+private:
+    static ffi::EngineSchemaVisitor createVisitor(SchemaVisitorData & data)
     {
         ffi::EngineSchemaVisitor visitor;
         visitor.data = &data;
@@ -99,13 +125,9 @@ public:
         visitor.visit_map = &mapTypeVisitor;
         visitor.visit_decimal = &decimalTypeVisitor;
 
-        size_t result = ffi::visit_schema(snapshot, &visitor);
-        chassert(result == 0, "Unexpected result: " + DB::toString(result));
-
-        return data.getSchemaResult();
+        return visitor;
     }
 
-private:
     static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
@@ -119,25 +141,13 @@ private:
         return id;
     }
 
-    static std::string getColumnPhysicalName(const ffi::CStringMap * metadata)
-    {
-        auto raw_value = ffi::get_from_string_map(
-            metadata,
-            KernelUtils::toDeltaString("delta.columnMapping.physicalName"),
-            KernelUtils::allocateString);
-        auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
-        if (value)
-            return *value;
-        return "";
-    }
-
     template <DB::TypeIndex type, bool is_bool = false>
     static void simpleTypeVisitor(
         void * data,
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        const ffi::CStringMap * metadata)
+        const ffi::CStringMap * /* metadata */)
     {
         SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
         auto it = state->type_lists.find(sibling_list_id);
@@ -151,13 +161,12 @@ private:
         const std::string column_name(name.ptr, name.len);
 
         SchemaVisitorData::Field field(column_name, std::move(type), nullable);
-        field.physical_name = getColumnPhysicalName(metadata);
         field.is_bool = is_bool;
 
         LOG_TEST(
             state->log,
-            "List id: {}, column name: {}, type: {}, nullable: {}, physical name: {}",
-            sibling_list_id, column_name, type, nullable, field.physical_name);
+            "List id: {}, column name: {}, type: {}, nullable: {}",
+            sibling_list_id, column_name, type, nullable);
 
         it->second->push_back(std::move(field));
     }
@@ -167,7 +176,7 @@ private:
         uintptr_t sibling_list_id,
         ffi::KernelStringSlice name,
         bool nullable,
-        const ffi::CStringMap * metadata,
+        const ffi::CStringMap * /* metadata */,
         uint8_t precision,
         uint8_t scale)
     {
@@ -189,7 +198,6 @@ private:
             sibling_list_id, column_name, type, nullable);
 
         SchemaVisitorData::Field field(column_name, type, nullable);
-        field.physical_name = getColumnPhysicalName(metadata);
         field.precision = precision;
         field.scale = scale;
 
@@ -271,7 +279,7 @@ DB::NamesAndTypesList SchemaVisitorData::getSchemaResult()
     for (size_t i = 0; i < types.size(); ++i)
     {
         const auto & field = (*type_lists[0])[i];
-        result.emplace_back(field.physical_name.empty() ? field.name : field.physical_name, types[i]);
+        result.emplace_back(field.name, types[i]);
     }
     return DB::NamesAndTypesList(result.begin(), result.end());
 }
@@ -356,10 +364,17 @@ DB::DataTypes SchemaVisitorData::getDataTypesFromTypeList(size_t list_idx)
     return types;
 }
 
-DB::NamesAndTypesList getSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
+DB::NamesAndTypesList getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
 {
     SchemaVisitorData data;
-    SchemaVisitor::visit(snapshot, data);
+    SchemaVisitor::visitTableSchema(snapshot, data);
+    return data.getSchemaResult();
+}
+
+DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
+{
+    SchemaVisitorData data;
+    SchemaVisitor::visitReadSchema(snapshot, engine, data);
     return data.getSchemaResult();
 }
 

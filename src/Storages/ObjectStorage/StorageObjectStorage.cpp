@@ -493,6 +493,7 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
             configuration->updateAndGetCurrentSchema(object_storage, context);
         else
             configuration->update(object_storage, context);
+
         auto table_structure = configuration->tryGetTableStructureFromMetadata();
         if (table_structure)
         {

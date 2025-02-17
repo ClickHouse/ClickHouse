@@ -31,6 +31,8 @@ public:
 
     NamesAndTypesList getTableSchema() const override;
 
+    NamesAndTypesList getReadSchema() const override;
+
     const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return noop; }
 
     bool operator ==(const IDataLakeMetadata &) const override

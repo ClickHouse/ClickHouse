@@ -1983,7 +1983,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 10
+    files_to_generate = 50
 
     failed_files_event_before = int(
         node.query(
@@ -1994,7 +1994,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,

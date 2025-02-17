@@ -35,7 +35,12 @@ ObjectIterator DeltaLakeMetadata::iterate() const
 
 NamesAndTypesList DeltaLakeMetadata::getTableSchema() const
 {
-    return table_snapshot->getSchema();
+    return table_snapshot->getTableSchema();
+}
+
+NamesAndTypesList DeltaLakeMetadata::getReadSchema() const
+{
+    return table_snapshot->getReadSchema();
 }
 
 }
