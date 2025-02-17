@@ -6178,7 +6178,7 @@ Result:
 In addition to the UUID functions listed here, there is dedicated [UUID function documentation](../functions/uuid-functions.md).
 :::
 
-Accepts a 16 byte string and returns a UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
+Accepts a 16 byte string and returns a UUID by interpreting each 8-byte half in little-endian byte order. If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
 
 **Syntax**
 

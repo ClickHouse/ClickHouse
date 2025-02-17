@@ -2,9 +2,14 @@
 slug: /en/operations/configuration-files
 sidebar_position: 50
 sidebar_label: Configuration Files
+title: Configuration Files
 ---
 
-# Configuration Files
+:::note
+Please note that XML-based Settings Profiles and configuration files are currently not supported for ClickHouse Cloud. Therefore, in ClickHouse Cloud, you won't find a config.xml file. Instead, you should use SQL commands to manage settings through Settings Profiles.
+
+For further details, see ["Configuring Settings"](https://clickhouse.com/docs/en/manage/settings)
+:::
 
 The ClickHouse server can be configured with configuration files in XML or YAML syntax.
 In most installation types, the ClickHouse server runs with `/etc/clickhouse-server/config.xml` as default configuration file, but it is also possible to specify the location of the configuration file manually at server startup using command line option `--config-file` or `-C`.
