@@ -925,11 +925,9 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
             {{entry, CHSetting(max_bytes_func, {"32768", "65536", "1048576", "4194304", "33554432", "50000000"}, false)}});
         serverSettings.insert({{entry, CHSetting(max_bytes_func, {"0", "4", "8", "32", "1024", "4096", "10000", "50000000"}, false)}});
     }
-
-    const auto block_size_func = highRange;
     performanceSettings.insert(
-        {{"max_block_size", CHSetting(block_size_func, {"1024", "2048", "4096", "8192", "16384", "131072"}, false)}});
-    serverSettings.insert({{"max_block_size", CHSetting(block_size_func, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}});
+        {{"max_block_size", CHSetting(highRange, {"1024", "2048", "4096", "8192", "16384", "131072"}, false)}});
+    serverSettings.insert({{"max_block_size", CHSetting(highRange, {"4", "8", "32", "64", "1024", "4096", "1000000"}, false)}});
 
     if (!fc.timezones.empty())
     {
