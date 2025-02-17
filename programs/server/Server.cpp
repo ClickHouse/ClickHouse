@@ -649,7 +649,7 @@ void sanityChecks(Server & server)
     std::string logs_path = server.config().getString("logger.log", "");
 
     if (server.logger().is(Poco::Message::PRIO_TEST))
-        server.context()->addOrUpdateWarningMessage("ServerLoggingLevel", "Server logging level is set to 'test' and performance is degraded. This cannot be used in production.");
+        server.context()->addOrUpdateWarningMessage(Context::WarningType::SERVER_LOGGING_LEVEL_TEST, "Server logging level is set to 'test' and performance is degraded. This cannot be used in production.");
 
 #if defined(OS_LINUX)
     try
@@ -664,7 +664,7 @@ void sanityChecks(Server & server)
         };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
         if (!fast_clock_sources.contains(readLine(filename)))
-            server.context()->addOrUpdateWarningMessage("LinuxNotUsingFastClockSource", "Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED, "Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -674,7 +674,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/vm/overcommit_memory";
         if (readNumber(filename) == 2)
-            server.context()->addOrUpdateWarningMessage("LinuxMemoryOvercommitDisable", "Linux memory overcommit is disabled. Check " + String(filename));
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED, "Linux memory overcommit is disabled. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -684,7 +684,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
         if (readLine(filename).find("[always]") != std::string::npos)
-            server.context()->addOrUpdateWarningMessage("LinuxTransparentHugepagesSetToAlways", "Linux transparent hugepages are set to \"always\". Check " + String(filename));
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS, "Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -694,7 +694,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/pid_max";
         if (readNumber(filename) < 30000)
-            server.context()->addOrUpdateWarningMessage("LinuxMaxPIDIsTooLow", "Linux max PID is too low. Check " + String(filename));
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_MAX_PID_TOO_LOW, "Linux max PID is too low. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -704,7 +704,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/threads-max";
         if (readNumber(filename) < 30000)
-            server.context()->addOrUpdateWarningMessage("LinuxThreadsMaxCountIsTooLow", "Linux threads max count is too low. Check " + String(filename));
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW, "Linux threads max count is too low. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -714,7 +714,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
-            server.context()->addOrUpdateWarningMessage("DelayAccountingIsNotEnabled", "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it using `echo 1 > " + String(filename) + "` or by using sysctl.");
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::DELAY_ACCOUNTING_DISABLED, "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it using `echo 1 > " + String(filename) + "` or by using sysctl.");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -722,13 +722,13 @@ void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addOrUpdateWarningMessage("DiabledRotationalDisk", "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
+        server.context()->addOrUpdateWarningMessage(Context::WarningType::ROTATIONAL_DISK_WITH_DISABLED_READHEAD, "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
 #endif
 
     try
     {
         if (getAvailableMemoryAmount() < (2l << 30))
-            server.context()->addOrUpdateWarningMessage("AvailableMemoryIsTooLow", "Available memory at server startup is too low (2GiB).");
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::AVAILABLE_MEMORY_TOO_LOW, "Available memory at server startup is too low (2GiB).");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -737,7 +737,7 @@ void sanityChecks(Server & server)
     try
     {
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-            server.context()->addOrUpdateWarningMessage("AvailableDiskSpaceIsTooLow","Available disk space for data at server startup is too low (1GiB): " + String(data_path));
+            server.context()->addOrUpdateWarningMessage(Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,"Available disk space for data at server startup is too low (1GiB): " + String(data_path));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -749,7 +749,7 @@ void sanityChecks(Server & server)
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
-                server.context()->addOrUpdateWarningMessage("AvailableDiskSpaceForLogsIsTooLow", "Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
+                server.context()->addOrUpdateWarningMessage(Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS, "Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -758,7 +758,7 @@ void sanityChecks(Server & server)
 
     if (server.context()->getMergeTreeSettings()[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
-        server.context()->addOrUpdateWarningMessage("SettingZeroCopyReplicationIsEnabled", "The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
+        server.context()->addOrUpdateWarningMessage(Context::WarningType::SETTING_ZERO_COPY_REPLICATION_ENABLED, "The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
             " But the feature of 'zero-copy replication' is under development and is not ready for production."
             " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
@@ -804,7 +804,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 if (result != "1\n" && result != "true\n")
                 {
                     if (result != "0\n" && result != "false\n")
-                        context->addOrUpdateWarningMessage("SkippingConditionQuery", fmt::format("The condition query returned `{}`, which can't be interpreted as a boolean (`0`, `false`, `1`, `true`). Will skip this query.", result));
+                        context->addOrUpdateWarningMessage(Context::WarningType::SKIPPING_CONDITION_QUERY, fmt::format("The condition query returned `{}`, which can't be interpreted as a boolean (`0`, `false`, `1`, `true`). Will skip this query.", result));
 
                     continue;
                 }
@@ -986,11 +986,11 @@ try
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    global_context->addOrUpdateWarningMessage("ServerWasBuiltInDebugMode", "Server was built in debug mode. It will work slowly.");
+    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, "Server was built in debug mode. It will work slowly.");
 #endif
 
     if (ThreadFuzzer::instance().isEffective())
-        global_context->addOrUpdateWarningMessage("ThreadFuzzerIsEnabled", "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+        global_context->addOrUpdateWarningMessage(Context::WarningType::THREAD_FUZZER_IS_ENABLED, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
     auto sanitizers = getSanitizerNames();
@@ -1003,11 +1003,11 @@ try
     else
         log_message = fmt::format("sanitizers ({})", fmt::join(sanitizers, ", "));
 
-    global_context->addOrUpdateWarningMessage(fmt::format("ServerWasBuiltWith_{}", log_message), fmt::format("Server was built with {}. It will work slowly.", log_message));
+    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_WITH_SANITIZERS, fmt::format("Server was built with {}. It will work slowly.", log_message));
 #endif
 
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
-    global_context->addOrUpdateWarningMessage("ServerWasBuiltWithCoverage", "Server was built with code coverage. It will work slowly.");
+    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_WITH_COVERAGE, "Server was built with code coverage. It will work slowly.");
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
@@ -1274,7 +1274,7 @@ try
     fs::path path = path_str;
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path_str, [&](const std::string & message){ global_context->addOrUpdateWarningMessage("ProcessUserMatchesDataOwner", message); });
+    assertProcessUserMatchesDataOwner(path_str, [&](const std::string & message){ global_context->addOrUpdateWarningMessage(Context::WarningType::PROCESS_USER_MATCHES_DATA_OWNER, message); });
 
     global_context->setPath(path_str);
 
@@ -1338,7 +1338,7 @@ try
                 if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
                 {
                     /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                    global_context->addOrUpdateWarningMessage("ServerRunUnderDebugger", fmt::format(
+                    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_RUN_UNDER_DEBUGGER, fmt::format(
                         "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
                         calculated_binary_hash));
                 }
@@ -1497,7 +1497,7 @@ try
 
         if (rlim.rlim_cur < 30000)
         {
-            global_context->addOrUpdateWarningMessage("MaximumNumberOfThreadsIsLowerThan3000", "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
+            global_context->addOrUpdateWarningMessage(Context::WarningType::MAX_NUM_THREADS_LOWER_THAN_LIMIT, "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
         }
     }
 

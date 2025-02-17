@@ -746,15 +746,15 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
 
     if (num_pending_mutations > max_pending_mutations_to_warn)
         context->addOrUpdateWarningMessage(
-            "NumberOfPendingMutations", fmt::format("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
+            Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT, fmt::format("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
     if (num_pending_mutations <= max_pending_mutations_to_warn)
-        context->removeWarningMessage("NumberOfPendingMutations");
+        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
 
     if (num_stuck_mutations > max_stuck_mutations_to_warn)
         context->addOrUpdateWarningMessage(
-            "NumberOfStuckMutations", fmt::format("The number of stuck mutations is more than {}.", max_pending_mutations_to_warn));
+            Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT, fmt::format("The number of stuck mutations is more than {}.", max_pending_mutations_to_warn));
     if (num_stuck_mutations <= max_stuck_mutations_to_warn)
-        context->removeWarningMessage("NumberOfStuckMutations");
+        context->removeWarningMessage(Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT);
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)

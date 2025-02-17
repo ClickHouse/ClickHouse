@@ -595,11 +595,48 @@ public:
     String getFilesystemCacheUser() const;
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
-    /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::unordered_map<String, String> getWarnings() const;
-    void addOrUpdateWarningMessage(const String & warning, const String & message) const;
+    /// Different kinds of warnings available for use with the `system.warnings` table.
+    /// More can be added as necessary. These are used to track if a warning is already
+    /// present to be able to add, remove or update warnings from the table
+    enum class WarningType
+    {
+        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
+        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
+        AVAILABLE_MEMORY_TOO_LOW,
+        DELAY_ACCOUNTING_DISABLED,
+        DB_ORDINARY_DEPRECATED,
+        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
+        LINUX_MAX_PID_TOO_LOW,
+        LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MAX_THREADS_COUNT_TOO_LOW,
+        LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        MAX_ATTACHED_TABLES,
+        MAX_ATTACHED_VIEWS,
+        MAX_ATTACHED_DICTIONARIES,
+        MAX_ATTACHED_DATABASES,
+        MAX_ACTIVE_PARTS,
+        MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+        MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT,
+        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        OBSOLETE_SETTINGS,
+        PROCESS_USER_MATCHES_DATA_OWNER,
+        RABBITMQ_UNSUPPORTED_COLUMNS,
+        REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
+        SERVER_LOGGING_LEVEL_TEST,
+        SERVER_RUN_UNDER_DEBUGGER,
+        SERVER_BUILT_IN_DEBUG_MODE,
+        SERVER_BUILT_WITH_SANITIZERS,
+        SERVER_BUILT_WITH_COVERAGE,
+        SETTING_ZERO_COPY_REPLICATION_ENABLED,
+        SKIPPING_CONDITION_QUERY,
+        THREAD_FUZZER_IS_ENABLED
+    };
+
+    std::unordered_map<Context::WarningType, String> getWarnings() const;
+    void addOrUpdateWarningMessage(WarningType warning, const String & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
-    void removeWarningMessage(const String & warning) const;
+    void removeWarningMessage(WarningType warning) const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 

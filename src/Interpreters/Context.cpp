@@ -525,7 +525,7 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<Context::Dashboards> dashboards;
 
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-    std::unordered_map<String, String> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
+    std::unordered_map<Context::WarningType, String> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -923,14 +923,14 @@ struct ContextSharedPart : boost::noncopyable
         trace_collector.emplace();
     }
 
-    void addOrUpdateWarningMessage(const String & warning, const String & message) TSA_REQUIRES(mutex)
+    void addOrUpdateWarningMessage(Context::WarningType warning, const String & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
         LOG_WARNING(log, "{}", message);
         warnings[warning] = message;
     }
 
-    void removeWarningMessage(const String & warning) TSA_REQUIRES(mutex)
+    void removeWarningMessage(Context::WarningType warning) TSA_REQUIRES(mutex)
     {
         if (warnings.contains(warning))
         {
@@ -1211,26 +1211,26 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-std::unordered_map<String, String> Context::getWarnings() const
+std::unordered_map<Context::WarningType, String> Context::getWarnings() const
 {
-    std::unordered_map<String, String> common_warnings;
+    std::unordered_map<Context::WarningType, String> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings["MaxAttachedTables"]
+            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES]
                 = (fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings["MaxAttachedViews"]
+            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS]
                 = (fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings["MaxAttachedDictionaries"]
+            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES]
                 = (fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings["MaxAttachedDatabases"]
+            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES]
                 = (fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings["MaxActiveParts"] = (fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
+            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = (fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1252,7 +1252,7 @@ std::unordered_map<String, String> Context::getWarnings() const
         res = res + "]" + (single_element ? " is" : " are")
             + " changed. "
               "Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        common_warnings["ObsoleteSettings"] = (res);
+        common_warnings[Context::WarningType::OBSOLETE_SETTINGS] = (res);
     }
 
     return common_warnings;
@@ -1492,7 +1492,7 @@ void Context::setUserScriptsPath(const String & path)
     shared->user_scripts_path = path;
 }
 
-void Context::addOrUpdateWarningMessage(const String & warning, const String & message) const
+void Context::addOrUpdateWarningMessage(WarningType warning, const String & message) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
@@ -1511,7 +1511,6 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
     if (is_called.exchange(true))
         return;
 
-    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
     /// We don't use getFlagsPath method, because it takes a shared lock.
     auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
     auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
@@ -1519,13 +1518,10 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
             "Example: sudo touch '{}' && sudo chmod 666 '{}'",
             database_name,
             convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
-
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
-    if (!is_supressed)
-        shared->addOrUpdateWarningMessage("DeprecatedDatabaseEngineOrdinary", message);
+    shared->addOrUpdateWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED, message);
 }
 
-void Context::removeWarningMessage(const String & warning) const
+void Context::removeWarningMessage(WarningType warning) const
 {
     std::lock_guard lock(shared->mutex);
     shared->removeWarningMessage(warning);
