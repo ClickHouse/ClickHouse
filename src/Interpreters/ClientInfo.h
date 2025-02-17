@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Common/OpenTelemetryTracingContext.h>
 
+#include <time.h>
 
 namespace Poco::Net
 {
