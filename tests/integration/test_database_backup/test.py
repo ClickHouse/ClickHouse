@@ -1,6 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.s3_tools import list_s3_objects
 
 cluster = ClickHouseCluster(__file__)
 
@@ -21,6 +22,16 @@ def start_cluster():
         cluster.shutdown()
 
 
+def cleanup_backup_files(instance):
+    instance.exec_in_container(["bash", "-c", "rm -rf /backups/"])
+    instance.exec_in_container(["bash", "-c", "rm -rf /local_plain/"])
+
+    minio = cluster.minio_client
+    s3_objects = list_s3_objects(minio, cluster.minio_bucket, prefix="")
+    for s3_object in s3_objects:
+        minio.remove_object(cluster.minio_bucket, s3_object)
+
+
 @pytest.mark.parametrize(
     "backup_destination",
     [
@@ -32,6 +43,8 @@ def start_cluster():
     ],
 )
 def test_database_backup_database(backup_destination):
+    cleanup_backup_files(instance)
+
     instance.query(
         f"""
         DROP DATABASE IF EXISTS test_database;
@@ -87,6 +100,7 @@ def test_database_backup_database(backup_destination):
 
     instance.query("DROP DATABASE test_database_backup")
     instance.query("DROP DATABASE test_database")
+    cleanup_backup_files(instance)
 
 
 @pytest.mark.parametrize(
@@ -100,6 +114,8 @@ def test_database_backup_database(backup_destination):
     ],
 )
 def test_database_backup_table(backup_destination):
+    cleanup_backup_files(instance)
+
     instance.query(
         f"""
         DROP DATABASE IF EXISTS test_database;
@@ -129,3 +145,4 @@ def test_database_backup_table(backup_destination):
 
     instance.query("DROP DATABASE test_table_backup")
     instance.query("DROP DATABASE test_database")
+    cleanup_backup_files(instance)
