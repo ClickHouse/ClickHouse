@@ -36,10 +36,6 @@ function run_with_retry()
     return 1
 }
 
-function fn_exists() {
-    declare -F "$1" > /dev/null;
-}
-
 function collect_core_dumps()
 {
   find . -type f -maxdepth 1 -name 'core.*' | while read -r core; do

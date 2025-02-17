@@ -260,10 +260,6 @@ function prepare_stateful_data() {
     clickhouse-client --query "SELECT count() FROM test.visits"
 }
 
-function fn_exists() {
-    declare -F "$1" > /dev/null;
-}
-
 function run_tests()
 {
     set -x
