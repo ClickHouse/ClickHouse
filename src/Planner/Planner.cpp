@@ -105,6 +105,7 @@ namespace Setting
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
+    extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -1494,7 +1495,7 @@ void Planner::buildPlanForQueryNode()
         settings_copy = settings;
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryCacheStep instead of building the rest of the plan.
-    if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
+    if (can_use_query_cache && settings[Setting::query_cache_for_subqueries] && settings[Setting::enable_reads_from_query_cache])
     {
         QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles());
         auto reader = std::make_shared<QueryCacheReader>(query_cache->createReader(key));
@@ -1904,7 +1905,7 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
-    if (checkCanWriteQueryCache(ast, query_context)) {
+    if (settings[Setting::query_cache_for_subqueries] && checkCanWriteQueryCache(ast, query_context)) {
         QueryCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
             query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
