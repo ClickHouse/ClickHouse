@@ -215,7 +215,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -386,7 +386,9 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     };
 
     if (first)
+    {
         reorder_column([&]() { return columns.cbegin(); });
+    }
     else if (!after_column.empty() && column_name != after_column)
     {
         /// Checked first

@@ -47,7 +47,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
 endif ()
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that
-# prlimit is compiler, and clang++ is its input file, and refuses to work  with
+# prlimit is compiler, and clang++ is its input file, and refuses to work with
 # multiple inputs, e.g in ccache log:
 # [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
 #
@@ -92,6 +92,8 @@ string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
+option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
+option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
     # Also set WITH_COVERAGE=1 for better fuzzing process
@@ -114,8 +116,11 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
+endif()
 
-    add_compile_definitions(FUZZING_MODE=1)
+if (ENABLE_BUZZHOUSE)
+    set (ENABLE_SSL 1)
+    set (ENABLE_PROTOBUF 1)
 endif()
 
 # Global libraries
@@ -156,8 +161,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWIT
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
 endif()
-
-no_warning(enum-constexpr-conversion) # breaks Protobuf in clang-16
 
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
@@ -223,7 +226,7 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$"))
+if (CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$") AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 else ()
@@ -471,8 +474,8 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
-# Ensure that we always use the dummy launchers for our own code.
-set_dummy_launchers_if_needed()
+# Sets dummy launchers to suppress linking. Used for clang-tidy builds.
+enable_dummy_launchers_if_needed()
 
 if (NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")

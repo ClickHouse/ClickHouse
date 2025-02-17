@@ -31,6 +31,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/scope_guard.h>
 
 #include <base/isSharedPtrUnique.h>
@@ -791,7 +792,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    it->second = {};
+    it->second = {nullptr, nullptr};
 }
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)

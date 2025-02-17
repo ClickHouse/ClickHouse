@@ -4,14 +4,12 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
-#include <Core/Block.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include "config.h"
@@ -21,6 +19,7 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
+class Block;
 struct MergeTreeWriterSettings;
 
 namespace ErrorCodes
@@ -70,6 +69,9 @@ struct IMergeTreeIndexGranule
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
     virtual bool empty() const = 0;
+
+    /// The in-memory size of the granule. Not expected to be 100% accurate.
+    virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
@@ -207,7 +209,7 @@ struct IMergeTreeIndex
             "MergedCondition is not implemented for index of type {}", index.type);
     }
 
-    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
+    Names getColumnsRequiredForIndexCalc() const;
 
     const IndexDescription & index;
 };
