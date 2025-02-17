@@ -204,6 +204,7 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
 
 
 def test_dns_cache_update(cluster_with_dns_cache_update):
+    node4.wait_for_start(5)
     node4.set_hosts([("127.255.255.255", "lost_host")])
 
     with pytest.raises(QueryRuntimeException):
@@ -229,6 +230,12 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
         )
     ) == TSV("lost_host\t127.0.0.1\n")
     assert TSV(node4.query("SELECT hostName()")) == TSV("node4")
+
+    # Reset the node4 state
+    node4.set_hosts([])
+    node4.query("DROP TABLE distributed_lost_host")
+    # Probably a bug: `SYSTEM DROP DNS CACHE` doesn't work with distributed engine
+    cluster.restart_service("node4")
 
 
 @pytest.mark.parametrize("node_name", ["node5", "node6"])
