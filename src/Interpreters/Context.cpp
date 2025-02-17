@@ -525,7 +525,7 @@ struct ContextSharedPart : boost::noncopyable
     std::optional<Context::Dashboards> dashboards;
 
     std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-    std::unordered_map<Context::WarningType, String> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
+    std::unordered_map<Context::WarningType, Context::Warning> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
 
     /// Background executors for *MergeTree tables
     /// Has background executors for MergeTree tables been initialized?
@@ -923,10 +923,10 @@ struct ContextSharedPart : boost::noncopyable
         trace_collector.emplace();
     }
 
-    void addOrUpdateWarningMessage(Context::WarningType warning, const String & message) TSA_REQUIRES(mutex)
+    void addOrUpdateWarningMessage(Context::WarningType warning, const Context::Warning & message) TSA_REQUIRES(mutex)
     {
         /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message);
+        LOG_WARNING(log, "{}", message.message);
         warnings[warning] = message;
     }
 
@@ -935,7 +935,7 @@ struct ContextSharedPart : boost::noncopyable
         if (warnings.contains(warning))
         {
             /// While removing the warning, log it with INFO level before it's removed from the `system.warnings` table.
-            LOG_INFO(log, "Removing warning {}", warnings[warning]);
+            LOG_INFO(log, "Removing warning {}", warnings[warning].message);
             warnings.erase(warning);
         }
     }
@@ -1211,26 +1211,33 @@ String Context::getFilesystemCacheUser() const
     return shared->filesystem_cache_user;
 }
 
-std::unordered_map<Context::WarningType, String> Context::getWarnings() const
+std::unordered_map<Context::WarningType, Context::Warning> Context::getWarnings() const
 {
-    std::unordered_map<Context::WarningType, String> common_warnings;
+    std::unordered_map<Context::WarningType, Context::Warning> common_warnings;
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
+        constexpr auto message_format_string = "The number of attached {} is more than {}.";
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES]
-                = (fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
+            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = Context::Warning{
+                .message = fmt::format(message_format_string, "tables", shared->max_table_num_to_warn),
+                .message_format_string = message_format_string};
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS]
-                = (fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
+            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] = Context::Warning{
+                .message = fmt::format(message_format_string, "views", shared->max_view_num_to_warn),
+                .message_format_string = message_format_string};
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES]
-                = (fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
+            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] = Context::Warning{
+                .message = fmt::format(message_format_string, "dictionaries", shared->max_dictionary_num_to_warn),
+                .message_format_string = message_format_string};
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES]
-                = (fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
+            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = Context::Warning{
+                .message = fmt::format(message_format_string, "databases", shared->max_database_num_to_warn),
+                .message_format_string = message_format_string};
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = (fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
+            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = Context::Warning{
+                .message = fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn),
+                .message_format_string = "The number of active parts is more than {}."};
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1238,21 +1245,14 @@ std::unordered_map<Context::WarningType, String> Context::getWarnings() const
     if (!obsolete_settings.empty())
     {
         bool single_element = obsolete_settings.size() == 1;
-        String res = single_element ? "Obsolete setting [" : "Obsolete settings [";
-
-        bool first = true;
-        for (const auto & setting : obsolete_settings)
-        {
-            res += first ? "" : ", ";
-            res += "'";
-            res += setting;
-            res += "'";
-            first = false;
-        }
-        res = res + "]" + (single_element ? " is" : " are")
-            + " changed. "
-              "Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-        common_warnings[Context::WarningType::OBSOLETE_SETTINGS] = (res);
+        // String res = single_element ? "Obsolete setting [" : "Obsolete settings [";
+        constexpr auto message_format_string
+            = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
+              "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
+        String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
+        String message = fmt::format(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
+        common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
+            = Context::Warning{.message = message, .message_format_string = message_format_string};
     }
 
     return common_warnings;
@@ -1492,12 +1492,12 @@ void Context::setUserScriptsPath(const String & path)
     shared->user_scripts_path = path;
 }
 
-void Context::addOrUpdateWarningMessage(WarningType warning, const String & message) const
+void Context::addOrUpdateWarningMessage(WarningType warning, const Warning & message) const
 {
     std::lock_guard lock(shared->mutex);
     auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
 
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message, suppress_re);
+    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message.message, suppress_re);
     if (!is_supressed)
         shared->addOrUpdateWarningMessage(warning, message);
 }
@@ -1513,12 +1513,18 @@ void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_nam
 
     /// We don't use getFlagsPath method, because it takes a shared lock.
     auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
-    auto message = fmt::format("Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-            "To convert this database to the new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
-            "Example: sudo touch '{}' && sudo chmod 666 '{}'",
-            database_name,
-            convert_databases_flag.string(), convert_databases_flag.string(), convert_databases_flag.string());
-    shared->addOrUpdateWarningMessage(Context::WarningType::DB_ORDINARY_DEPRECATED, message);
+    constexpr auto message_format_string
+        = "Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
+          "To convert this database to the new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
+          "Example: sudo touch '{}' && sudo chmod 666 '{}'";
+    auto message = fmt::format(
+        message_format_string,
+        database_name,
+        convert_databases_flag.string(),
+        convert_databases_flag.string(),
+        convert_databases_flag.string());
+    shared->addOrUpdateWarningMessage(
+        Context::WarningType::DB_ORDINARY_DEPRECATED, Context::Warning{.message = message, .message_format_string = message_format_string});
 }
 
 void Context::removeWarningMessage(WarningType warning) const

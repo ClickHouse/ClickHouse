@@ -745,14 +745,26 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     auto max_stuck_mutations_to_warn = context->getMaxStuckMutationsToWarn();
 
     if (num_pending_mutations > max_pending_mutations_to_warn)
+    {
+        constexpr auto message_format_string = "The number of pending mutations is more than {}.";
         context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT, fmt::format("The number of pending mutations is more than {}.", max_pending_mutations_to_warn));
+            Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+            Context::Warning{
+                .message = fmt::format(message_format_string, max_pending_mutations_to_warn),
+                .message_format_string = message_format_string});
+    }
     if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
 
     if (num_stuck_mutations > max_stuck_mutations_to_warn)
+    {
+        constexpr auto message_format_string = "The number of stuck mutations is more than {}.";
         context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT, fmt::format("The number of stuck mutations is more than {}.", max_pending_mutations_to_warn));
+            Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT,
+            Context::Warning{
+                .message = fmt::format(message_format_string, max_pending_mutations_to_warn),
+                .message_format_string = message_format_string});
+    }
     if (num_stuck_mutations <= max_stuck_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT);
 }

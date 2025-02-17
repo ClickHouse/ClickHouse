@@ -633,8 +633,14 @@ public:
         THREAD_FUZZER_IS_ENABLED
     };
 
-    std::unordered_map<Context::WarningType, String> getWarnings() const;
-    void addOrUpdateWarningMessage(WarningType warning, const String & message) const;
+    struct Warning
+    {
+        String message;
+        String message_format_string;
+    };
+
+    std::unordered_map<Context::WarningType, Context::Warning> getWarnings() const;
+    void addOrUpdateWarningMessage(WarningType warning, const Warning & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
 
