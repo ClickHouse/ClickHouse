@@ -1295,7 +1295,7 @@ Returns the current version of ClickHouse as a string in the form of:
 - Patch version
 - Number of commits since the previous stable release.
 
-```plaintext
+```text
 major_version.minor_version.patch_version.number_of_commits_since_the_previous_stable_release
 ```
 
@@ -2913,7 +2913,7 @@ SELECT getSetting('custom_a');
 
 Result:
 
-```
+```text
 123
 ```
 
@@ -2950,7 +2950,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
 
 Result:
 
-```
+```text
 my_value
 100
 NULL
@@ -4236,7 +4236,7 @@ Returns the ID of a [transaction](/docs/en/guides/developer/transactional#transa
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
-```
+```xml
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>
@@ -4287,7 +4287,7 @@ Returns the newest snapshot (Commit Sequence Number) of a [transaction](/docs/en
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
-```
+```xml
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>
@@ -4334,7 +4334,7 @@ Returns the oldest snapshot (Commit Sequence Number) that is visible for some ru
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
-```
+```xml
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>

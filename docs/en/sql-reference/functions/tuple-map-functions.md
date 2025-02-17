@@ -79,7 +79,7 @@ select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 
 Result:
 
-```
+```javascript
 ┌─mapFromArrays(['a', 'b', 'c'], [1, 2, 3])─┐
 │ {'a':1,'b':2,'c':3}                       │
 └───────────────────────────────────────────┘
@@ -93,7 +93,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 
 Result:
 
-```
+```python
 ┌─mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))─┐
 │ {1:('a',1),2:('b',2),3:('c',3)}                       │
 └───────────────────────────────────────────────────────┘
@@ -105,7 +105,7 @@ SELECT mapFromArrays(map('a', 1, 'b', 2, 'c', 3), [1, 2, 3])
 
 Result:
 
-```
+```python
 ┌─mapFromArrays(map('a', 1, 'b', 2, 'c', 3), [1, 2, 3])─┐
 │ {('a',1):1,('b',2):2,('c',3):3}                       │
 └───────────────────────────────────────────────────────┘
@@ -196,6 +196,12 @@ FORMAT Vertical;
 
 Result:
 
+```yaml
+
+```
+m:              {'John':'33','Paula':'31'}
+map_serialized: {'John':'33','Paula':'31'}
+map_restored:   {'John':'33','Paula':'31'}
 ```
 Row 1:
 ──────

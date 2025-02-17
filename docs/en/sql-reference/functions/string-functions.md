@@ -1036,7 +1036,7 @@ SELECT substringIndex('www.clickhouse.com', '.', 2)
 ```
 
 Result:
-```
+```sql
 ┌─substringIndex('www.clickhouse.com', '.', 2)─┐
 │ www.clickhouse                               │
 └──────────────────────────────────────────────┘

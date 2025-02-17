@@ -691,7 +691,7 @@ auto s = std::string{"Hello"};
 
 **2.** Constructs which have convenient syntactic sugar in modern C++, e.g.
 
-```
+```cpp
 // Traditional way without syntactic sugar
 template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
 std::pair<int, int> func(const E<G> & e) // explicitly specified return type

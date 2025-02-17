@@ -345,13 +345,13 @@ Operators are converted to their corresponding functions during query parsing, t
 
 For example, the expression 
 
-```
+```text
 1 + 2 * 3 + 4
 ```
 
 is transformed to 
 
-```
+```The correct language for the fenced code block is `python`.
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 

@@ -64,7 +64,7 @@ In order to enable the SSH server capability, you need to uncomment or place the
 
 The host key is an integral part of a SSH protocol. The public part of this key is stored in the `~/.ssh/known_hosts` file on the client side and typically needed to prevent man-in-the-middle type of attacks. When connecting to the server for the first time you will see the message below:
 
-```
+```shell
 The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
 RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
 This key is not known by any other names
@@ -75,7 +75,7 @@ This, in fact means: "Do you want to remember the public key of this host and co
 
 You can tell your SSH client not to verify the host by passing an option:
 
-```
+```bash
 ssh -o "StrictHostKeyChecking no" user@host
 ```
 

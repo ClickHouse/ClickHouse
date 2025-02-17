@@ -432,7 +432,7 @@ ORDER BY
 ```
 
 Result:
-```
+```text
 ┌─────────d1─┬─────────d2─┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-12 │ 1970-01-01 │          │
@@ -638,7 +638,7 @@ SELECT * FROM timeseries;
 ```
 And we'd like to fill missing values for each sensor independently with 1 second interval.
 The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`:
-```
+```sql
 SELECT *
 FROM timeseries
 ORDER BY

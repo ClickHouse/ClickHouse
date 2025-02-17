@@ -40,7 +40,7 @@ clickhouse git-import -h
 
 This help also provides the DDL for each of the above tables e.g.
 
-```
+```sql
 CREATE TABLE git.commits
 (
     hash String,

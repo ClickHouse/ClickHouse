@@ -13,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
 
-```
+```python
 metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: value2, ...}
 metric_name2[...] = ...
 ```
@@ -237,7 +237,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job
 ```
 
 This statement will add columns
-```
+```sql
     `instance` String,
     `job` String
 ```

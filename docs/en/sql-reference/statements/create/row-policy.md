@@ -63,7 +63,7 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 
 Here is the general formula:
 
-```
+```python
 row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
                  (all of the restrictive policies's conditions are non-zero)
 ```

@@ -54,7 +54,7 @@ To check the status of the Git submodules, run `git submodule status`.
 
 If you get the following error message
 
-```
+```bash
 Permission denied (publickey).
 fatal: Could not read from remote repository.
 
@@ -224,7 +224,7 @@ CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew
 
 Import the data:
 
-```
+```bash
 clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
 clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 ```

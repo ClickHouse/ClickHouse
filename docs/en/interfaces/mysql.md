@@ -94,7 +94,7 @@ You can create extra users to use with the MySQL interface if, for example, you 
 
 If you created a new MySQL user, and you see the following error while connecting via MySQL CLI client:
 
-```
+```sql
 ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
 ```
 
@@ -112,7 +112,7 @@ Add the [mysql_port](../operations/server-configuration-parameters/settings.md#m
 
 Startup your ClickHouse server and look for a log message similar to the following that mentions Listening for MySQL compatibility protocol:
 
-```
+```bash
 {} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
 ```
 

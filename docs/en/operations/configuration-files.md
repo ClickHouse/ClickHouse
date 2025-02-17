@@ -119,7 +119,7 @@ The same is possible using `from_zk` (ZooKeeper node):
 </clickhouse>
 ```
 
-```
+```shell
 # clickhouse-keeper-client
 / :) touch /zk_configs
 / :) create /zk_configs/postgresql_port "9005"

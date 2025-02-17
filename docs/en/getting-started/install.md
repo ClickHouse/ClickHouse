@@ -291,14 +291,14 @@ To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/dev
 
 You can compile packages and install them or use programs without installing packages.
 
-```
+```xml
 Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
 You'll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-```
+```bash
 /var/lib/clickhouse/data/default/
 /var/lib/clickhouse/metadata/default/
 ```
@@ -390,7 +390,7 @@ For more information, see the section ["Command-line client"](/docs/en/interface
 
 Example:
 
-```
+```bash
 $ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
