@@ -18,6 +18,8 @@ from collections import OrderedDict, defaultdict
 from itertools import chain
 from typing import Any, Dict, List, Optional
 
+import yaml  # type: ignore[import-untyped]
+
 from ci_utils import kill_ci_runner
 from env_helper import IS_CI
 from integration_test_images import IMAGES
@@ -464,7 +466,7 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def _get_parallel_tests_skip_list(repo_path):
-        skip_list_file_path = f"{repo_path}/tests/integration/parallel_skip.json"
+        skip_list_file_path = f"{repo_path}/tests/integration/parallel_skip.yaml"
         if (
             not os.path.isfile(skip_list_file_path)
             or os.path.getsize(skip_list_file_path) == 0
@@ -476,7 +478,7 @@ class ClickhouseIntegrationTestsRunner:
 
         skip_list_tests = []
         with open(skip_list_file_path, "r", encoding="utf-8") as skip_list_file:
-            skip_list_tests = json.load(skip_list_file)
+            skip_list_tests = yaml.safe_load(skip_list_file)
         return list(sorted(skip_list_tests))
 
     @staticmethod
