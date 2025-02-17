@@ -1,4 +1,10 @@
 <clickhouse>
+    <tls_log>
+        <database>system</database>
+        <table>tls_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </tls_log>
     <!-- HTTP API with TLS (HTTPS).
          You have to configure certificate to enable this interface.
          See the openSSL section below.
@@ -19,7 +25,6 @@
             <caConfig>/etc/clickhouse-server/config.d/ca-cert.pem</caConfig>
             <verificationMode>relaxed</verificationMode>
         </server>
-
         <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>

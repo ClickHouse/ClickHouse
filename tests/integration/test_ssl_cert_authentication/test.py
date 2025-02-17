@@ -1,4 +1,4 @@
-import logging
+import json
 import os.path
 import ssl
 import urllib.parse
@@ -416,3 +416,88 @@ def test_x509_san_wildcard_support():
     )
 
     instance.query("DROP USER brian")
+
+
+@pytest.mark.parametrize("protocol", ["tcp", "https"])
+@pytest.mark.parametrize(
+    "user,cert_name,expected",
+    [
+        (
+            "john",
+            "client1",
+            {
+                "type": "success",
+                "user": "john",
+                "subject": "CN:client1",
+                "certificate_not_before": "2024-06-26 10:25:04",
+                "certificate_not_after": "2034-06-24 10:25:04",
+                "certificate_serial": "05F10C67567FE30795D77AF2540F6AC8D4CF246D",
+                "certificate_issuer": "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=ca",
+            },
+        ),
+        (
+            "john",
+            "wrong",
+            {
+                "type": "failure",
+                "user": "",  # can't extract user name when TLS handshake fails
+                "subject": "CN:client",
+                "certificate_not_before": "2024-06-26 10:25:05",
+                "certificate_not_after": "2034-06-24 10:25:05",
+                "certificate_serial": "31C5F647C2361FCBCDB404878B4128B9F2205845",
+                "certificate_issuer": "/C=RU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=client",
+            },
+        ),
+    ],
+)
+def test_tls_log(protocol, user, cert_name, expected):
+    instance.query("DROP TABLE IF EXISTS system.tls_log")
+    # materialise system.tls_log table
+    instance.query("SYSTEM FLUSH LOGS")
+    try:
+        if protocol == "https":
+            execute_query_https("SELECT currentUser()", user=user, cert_name=cert_name)
+        else:
+            execute_query_native(
+                instance, "SELECT currentUser()", user=user, cert_name=cert_name
+            )
+    except Exception as e:
+        if expected['type'] == 'failure':
+            assert 'alert unknown ca' in str(e)
+        else:
+            raise(e)
+
+    instance.query("SYSTEM FLUSH LOGS")
+
+    assert(json.loads(instance.query_with_retry(
+        "SELECT type, user, certificate_subjects[1] AS subject, certificate_not_before, certificate_not_after, certificate_serial, certificate_issuer FROM system.tls_log ORDER BY event_time desc limit 1 FORMAT JSONEachRow",
+        check_callback=lambda res: json.loads(res) == expected
+    ))) == expected
+
+    # make sure dates are reported correctly (most recent date is within 5 mins of the event)
+    assert int(instance.query("SELECT dateDiff('seconds', max(event_time), now()) from system.tls_log").strip()) < (5 * 60)
+
+def test_tls_log_collapses_failures():
+    instance.query("DROP TABLE IF EXISTS system.tls_log")
+    # materialise system.tls_log table
+    instance.query("SYSTEM FLUSH LOGS")
+    for _ in range(10):
+        try:
+            execute_query_native(
+                instance, "SELECT currentUser()", user="john", cert_name="wrong"
+            )
+        except Exception:
+            # query is expected to fail: invalid certificate
+            pass
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert int(instance.query_with_retry(
+        "SELECT sum(failure_count) from system.tls_log",
+        check_callback=lambda res: int(res.strip()) >= 10,
+    ).strip()) >= 10
+
+    # we're making sure 10 faiure events don't produce 10 distinct log lines
+    assert int(instance.query("SELECT count() from system.tls_log").strip()) < 10
+
+    # make sure dates are reported correctly (most recent date is within 5 mins of the event)
+    assert int(instance.query("SELECT dateDiff('seconds', max(event_time), now()) from system.tls_log").strip()) < (5 * 60)

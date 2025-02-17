@@ -31,7 +31,8 @@
     M(AsynchronousInsertLogElement) \
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
-    M(QueryMetricLogElement)
+    M(QueryMetricLogElement) \
+    M(TLSLogElement)
 
 namespace Poco
 {
@@ -216,6 +217,8 @@ public:
     static consteval bool shouldTurnOffLogger() { return false; }
 
 protected:
+    // Allow subclasses to flush accumulated data
+    virtual void onFlushNotification() {}
     void stopFlushThread() final;
 
     std::shared_ptr<SystemLogQueue<LogElement>> queue;

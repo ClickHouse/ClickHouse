@@ -30,6 +30,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/TLSLog.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ZooKeeperLog.h>
