@@ -1,63 +1,31 @@
 #pragma once
-
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
-
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include "delta_kernel_ffi.hpp"
 
-namespace DB
+namespace DB::ErrorCodes
 {
-namespace ErrorCodes
-{
-    extern const int DELTA_KERNEL_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
-}
 namespace DeltaLake
 {
 
+/**
+ * Helper methods for use with delta-kernel-rs.
+ */
 struct KernelUtils
 {
-    static ffi::KernelStringSlice toDeltaString(const std::string & s)
-    {
-        return ffi::KernelStringSlice{ .ptr = s.data(), .len = s.size() };
-    }
+    static ffi::KernelStringSlice toDeltaString(const std::string & string);
 
-    static std::string fromDeltaString(const struct ffi::KernelStringSlice slice)
-    {
-        return std::string(slice.ptr, slice.len);
-    }
+    static std::string fromDeltaString(const struct ffi::KernelStringSlice slice);
 
-    static void * allocateString(const struct ffi::KernelStringSlice slice)
-    {
-        return new std::string(slice.ptr, slice.len);
-    }
+    static void * allocateString(const struct ffi::KernelStringSlice slice);
 
-    struct KernelError : ffi::EngineError
-    {
-        static ffi::EngineError * allocateError(ffi::KernelError etype_, ffi::KernelStringSlice msg)
-        {
-            auto error = new KernelError;
-            error->etype = etype_;
-            error->error_message = std::string(msg.ptr, msg.len);
-            return error;
-        }
-
-        [[noreturn]] void rethrow(const std::string & from)
-        {
-            throw DB::Exception(
-                DB::ErrorCodes::DELTA_KERNEL_ERROR,
-                "Received DeltaLake kernel error: {} (in {})",
-                error_message, from);
-        }
-
-        // The error message from Kernel
-        std::string error_message;
-    };
+    static ffi::EngineError * allocateError(ffi::KernelError etype, ffi::KernelStringSlice message);
 
     template <class T>
     static T unwrapResult(ffi::ExternResult<T> result, const std::string & from)
@@ -68,14 +36,21 @@ struct KernelUtils
         if (result.tag == ffi::ExternResult<T>::Tag::Err)
         {
             if (result.err._0)
-            {
-                auto kernel_error = static_cast<KernelUtils::KernelError *>(result.err._0);
-                kernel_error->rethrow(from);
-            }
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Received DeltaLake unknown kernel error");
+                rethrow(result.err._0, from);
+
+            /// TODO: delete error
+
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Received DeltaLake unknown kernel error");
         }
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid error ExternResult tag found!");
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Invalid error ExternResult tag found!");
     }
+
+private:
+    [[noreturn]] static void rethrow(ffi::EngineError * error, const std::string & from);
 };
 
 }

@@ -1,19 +1,19 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
-
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #include "KernelHelper.h"
 #include "KernelUtils.h"
-#include <Storages/ObjectStorage/S3/Configuration.h>
 
 namespace DB::ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DeltaLake
 {
 
+/// A helper class to manage S3-compatible storage types.
 class S3KernelHelper final : public IKernelHelper
 {
 public:
@@ -26,18 +26,20 @@ public:
         , access_key_id(access_key_id_)
         , secret_access_key(secret_access_key_)
         , region(region_)
-        , table_path(getTablePath(url_))
+        , table_location(getTableLocation(url_))
     {
     }
 
-    const std::string & getTablePath() const override { return table_path; }
+    const std::string & getTableLocation() const override { return table_location; }
 
     const std::string & getDataPath() const override { return url.key; }
 
     ffi::EngineBuilder * createBuilder() const override
     {
         ffi::EngineBuilder * builder = KernelUtils::unwrapResult(
-            ffi::get_engine_builder(KernelUtils::toDeltaString(table_path), KernelUtils::KernelError::allocateError),
+            ffi::get_engine_builder(
+                KernelUtils::toDeltaString(table_location),
+                &KernelUtils::allocateError),
             "get_engine_builder");
 
         auto set_option = [&](const std::string & name, const std::string & value)
@@ -59,9 +61,9 @@ private:
     const std::string access_key_id;
     const std::string secret_access_key;
     const std::string region;
-    const std::string table_path;
+    const std::string table_location;
 
-    static std::string getTablePath(const DB::S3::URI & url)
+    static std::string getTableLocation(const DB::S3::URI & url)
     {
         return "s3://" + url.bucket + "/" + url.key;
     }

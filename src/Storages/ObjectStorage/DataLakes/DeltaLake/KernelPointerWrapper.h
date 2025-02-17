@@ -4,17 +4,18 @@
 namespace DeltaLake
 {
 
+/**
+ * DeltaKernel exposes many of its internal structures via raw pointers
+ * and deletion functions for each of them.
+ * This class represents a RAII wrapper to manage such objects.
+ */
 template <typename KernelType>
 struct KernelPointerWrapper
 {
-    KernelPointerWrapper() : ptr(nullptr), free_func(nullptr)
-    {
-    }
+    KernelPointerWrapper() : ptr(nullptr), free_func(nullptr) {}
 
     KernelPointerWrapper(KernelType * ptr_, void (*free_func_)(KernelType *))
-        : ptr(ptr_), free_func(free_func_)
-    {
-    }
+        : ptr(ptr_), free_func(free_func_) {}
 
     KernelPointerWrapper(KernelPointerWrapper && other) noexcept
         : ptr(other.ptr)

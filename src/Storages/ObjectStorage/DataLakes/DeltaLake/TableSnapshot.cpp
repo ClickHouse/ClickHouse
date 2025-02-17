@@ -140,7 +140,7 @@ void TableSnapshot::initSnapshot()
     auto * engine_builder = helper->createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot(KernelUtils::toDeltaString(helper->getTablePath()), engine.get()), "snapshot");
+        ffi::snapshot(KernelUtils::toDeltaString(helper->getTableLocation()), engine.get()), "snapshot");
     snapshot_version = ffi::version(snapshot.get());
 
     LOG_TEST(log, "Snapshot version: {}", snapshot_version);

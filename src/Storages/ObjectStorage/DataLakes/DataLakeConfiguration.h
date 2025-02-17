@@ -157,6 +157,10 @@ private:
         auto read_schema = current_metadata->getReadSchema();
         if (!read_schema.empty())
         {
+            /// There is a difference between "table schema" and "read schema".
+            /// "table schema" is a schema from data lake table metadata,
+            /// while "read schema" is a schema from data files.
+            /// In most cases they would be the same.
             auto [header, names] = getHeaderAndNames(read_schema);
             if (names != info.format_header.getNames())
             {
@@ -164,15 +168,17 @@ private:
                     log, "Format header: {}, source header: {}, read schema: {}",
                     info.format_header.dumpNames(), info.source_header.dumpNames(), header.dumpNames());
 
-                info.format_header = std::move(header);
-
+                /// Go through requested columns and change column name
+                /// from table schema to column name from read schema.
                 std::vector<NameAndTypePair> read_columns;
                 for (const auto & [column_name, _] : info.requested_columns)
                 {
-                    const auto pos = info.source_header.getPositionByName(column_name);
-                    const auto & column = info.format_header.getByPosition(pos);
+                    const auto pos = info.format_header.getPositionByName(column_name);
+                    const auto & column = header.getByPosition(pos);
                     read_columns.emplace_back(column.name, column.type);
                 }
+
+                info.format_header = std::move(header);
                 info.requested_columns = NamesAndTypesList(read_columns.begin(), read_columns.end());
             }
         }

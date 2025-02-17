@@ -115,7 +115,7 @@ public:
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<std::pair<Source::ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
+        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
 
         struct NextKeyFromBucket
         {
