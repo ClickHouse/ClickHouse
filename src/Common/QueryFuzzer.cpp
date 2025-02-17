@@ -1431,18 +1431,39 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         if (AggregateUtils::isAggregateFunction(*fn))
         {
-            if (fn->arguments && !fn->arguments->children.empty() && fuzz_rand() % 30 == 0)
+            if (fn->arguments && !fn->arguments->children.empty())
             {
-                ///Add or remove distinct to aggregate
-                static const String distinct_suffix = "Distinct";
+                if (fuzz_rand() % 30 == 0)
+                {
+                    /// Replace aggregate function
+                    static const Strings common_aggrs = {"count", "min", "max", "sum", "avg", "any"};
 
-                if (endsWith(fn->name, distinct_suffix))
-                {
-                    fn->name = fn->name.substr(0, fn->name.length() - distinct_suffix.size());
+                    for (const auto & entry : common_aggrs)
+                    {
+                        if (startsWith(fn->name, entry))
+                        {
+                            String nfname = pickRandomlyFromVector(fuzz_rand, common_aggrs);
+                            /// keep modifiers
+                            nfname += fn->name.substr(entry.length(), fn->name.size() - entry.length());
+
+                            fn->name = nfname;
+                            break;
+                        }
+                    }
                 }
-                else
+                if (fuzz_rand() % 30 == 0)
                 {
-                    fn->name = fn->name + distinct_suffix;
+                    /// Add or remove distinct to aggregate
+                    static const String distinct_suffix = "Distinct";
+
+                    if (endsWith(fn->name, distinct_suffix))
+                    {
+                        fn->name = fn->name.substr(0, fn->name.length() - distinct_suffix.size());
+                    }
+                    else
+                    {
+                        fn->name = fn->name + distinct_suffix;
+                    }
                 }
             }
             fuzzNullsAction(fn->nulls_action);

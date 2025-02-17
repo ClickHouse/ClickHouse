@@ -7,12 +7,12 @@
 
 #include <pcg-random/pcg_random.hpp>
 
-#include <Common/SettingsChanges.h>
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
+#include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
 
@@ -136,6 +136,13 @@ private:
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+
+    template <typename T>
+    const T & pickRandomlyFromVector(pcg64 & rand, const std::vector<T> & vals)
+    {
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        return vals[d(rand)];
+    }
 };
 
 }
