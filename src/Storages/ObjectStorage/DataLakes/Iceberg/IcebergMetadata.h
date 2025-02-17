@@ -49,8 +49,6 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
 
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
@@ -124,9 +122,6 @@ private:
     Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
-
-    //Fields are needed only for providing dynamic polymorphism
-    std::unordered_map<String, String> column_name_to_physical_name;
 };
 
 }

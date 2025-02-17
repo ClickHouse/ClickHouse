@@ -127,6 +127,20 @@ public:
 
 private:
     DataLakeMetadataPtr current_metadata;
+    LoggerPtr log = getLogger("DataLakeConfiguration");
+
+    std::pair<Block, Names> getHeaderAndNames(const NamesAndTypesList & columns)
+    {
+        Block header;
+        Names names;
+        names.reserve(columns.size());
+        for (const auto & name_type : columns)
+        {
+            header.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+            names.push_back(name_type.name);
+        }
+        return {header, names};
+    }
 
     ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
@@ -143,30 +157,26 @@ private:
         auto read_schema = current_metadata->getReadSchema();
         if (!read_schema.empty())
         {
-            ColumnsWithTypeAndName columns;
-            for (const auto & [name, type] : read_schema)
-                columns.emplace_back(type, name);
-            info.format_header = Block(columns);
-
-            std::vector<NameAndTypePair> read_columns;
-            for (const auto & [column_name, _] : info.requested_columns)
+            auto [header, names] = getHeaderAndNames(read_schema);
+            if (names != info.format_header.getNames())
             {
-                const auto pos = info.source_header.getPositionByName(column_name);
-                const auto & column = info.format_header.getByPosition(pos);
-                read_columns.emplace_back(column.name, column.type);
-            }
-            info.requested_columns = NamesAndTypesList(read_columns.begin(), read_columns.end());
-        }
+                LOG_TEST(
+                    log, "Format header: {}, source header: {}, read schema: {}",
+                    info.format_header.dumpNames(), info.source_header.dumpNames(), header.dumpNames());
 
-        auto column_mapping = current_metadata->getColumnNameToPhysicalNameMapping();
-        if (!column_mapping.empty())
-        {
-            for (const auto & [column_name, physical_name] : column_mapping)
-            {
-                auto & column = info.format_header.getByName(column_name);
-                column.name = physical_name;
+                info.format_header = std::move(header);
+
+                std::vector<NameAndTypePair> read_columns;
+                for (const auto & [column_name, _] : info.requested_columns)
+                {
+                    const auto pos = info.source_header.getPositionByName(column_name);
+                    const auto & column = info.format_header.getByPosition(pos);
+                    read_columns.emplace_back(column.name, column.type);
+                }
+                info.requested_columns = NamesAndTypesList(read_columns.begin(), read_columns.end());
             }
         }
+
         return info;
     }
 

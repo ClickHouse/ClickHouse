@@ -26,6 +26,7 @@ public:
         const KernelSnapshot & snapshot_,
         const std::string & data_prefix_,
         const DB::NamesAndTypesList & schema_,
+        const DB::Names & partition_columns_,
         LoggerPtr log_)
         : scan(KernelUtils::unwrapResult(ffi::scan(snapshot_.get(), engine_.get(), /* predicate */{}), "scan"))
         , scan_data_iterator(KernelUtils::unwrapResult(
@@ -33,6 +34,7 @@ public:
             "kernel_scan_data_init"))
         , data_prefix(data_prefix_)
         , schema(schema_)
+        , partition_columns(partition_columns_)
         , log(log_)
     {
     }
@@ -75,29 +77,38 @@ public:
         const struct ffi::CStringMap * partition_map)
     {
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
-
-        std::string path_string = fs::path(context->data_prefix) / KernelUtils::fromDeltaString(path);
+        std::string full_path = fs::path(context->data_prefix) / KernelUtils::fromDeltaString(path);
 
         DB::ObjectInfoWithParitionColumns::PartitionColumnsInfo partitions_info;
-        for (const auto & name_and_type : context->schema)
+        for (const auto & partition_column : context->partition_columns)
         {
-            auto * raw_value = ffi::get_from_string_map(partition_map, KernelUtils::toDeltaString(name_and_type.name), KernelUtils::allocateString);
+            auto * raw_value = ffi::get_from_string_map(partition_map, KernelUtils::toDeltaString(partition_column), KernelUtils::allocateString);
             auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
             if (value)
-                partitions_info.emplace_back(name_and_type, DB::parseFieldFromString(*value, name_and_type.type));
+            {
+                auto name_and_type = context->schema.tryGetByName(partition_column);
+                if (!name_and_type)
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::LOGICAL_ERROR,
+                        "Cannot find column `{}` in schema, there are only columns: `{}`",
+                        partition_column, fmt::join(context->schema.getNames(), ", "));
+                }
+                partitions_info.emplace_back(name_and_type.value(), DB::parseFieldFromString(*value, name_and_type->type));
+            }
         }
 
         DB::ObjectInfoPtr object;
         if (partitions_info.empty())
-            object = std::make_shared<DB::ObjectInfo>(path_string, size);
+            object = std::make_shared<DB::ObjectInfo>(full_path, size);
         else
-            object = std::make_shared<DB::ObjectInfoWithParitionColumns>(std::move(partitions_info), path_string, size);
+            object = std::make_shared<DB::ObjectInfoWithParitionColumns>(std::move(partitions_info), full_path, size);
 
         context->data_files.push_back(object);
         LOG_TEST(
             context->log,
             "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
-            path_string, size, stats->num_records, partitions_info.size());
+            full_path, size, stats->num_records, partitions_info.size());
     }
 
 private:
@@ -108,6 +119,7 @@ private:
     const KernelScanDataIterator scan_data_iterator;
     const std::string data_prefix;
     const DB::NamesAndTypesList & schema;
+    const DB::Names & partition_columns;
     const LoggerPtr log;
 
     std::deque<DB::ObjectInfoPtr> data_files;
@@ -127,7 +139,8 @@ void TableSnapshot::initSnapshot()
 
     auto * engine_builder = helper->createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
-    snapshot = KernelUtils::unwrapResult(ffi::snapshot(KernelUtils::toDeltaString(helper->getTablePath()), engine.get()), "snapshot");
+    snapshot = KernelUtils::unwrapResult(
+        ffi::snapshot(KernelUtils::toDeltaString(helper->getTablePath()), engine.get()), "snapshot");
     snapshot_version = ffi::version(snapshot.get());
 
     LOG_TEST(log, "Snapshot version: {}", snapshot_version);
@@ -143,7 +156,13 @@ ffi::SharedSnapshot * TableSnapshot::getSnapshot()
 DB::ObjectIterator TableSnapshot::iterate()
 {
     initSnapshot();
-    return std::make_shared<TableSnapshot::Iterator>(engine, snapshot, helper->getDataPath(), getReadSchema(), log);
+    return std::make_shared<TableSnapshot::Iterator>(
+        engine,
+        snapshot,
+        helper->getDataPath(),
+        getTableSchema(),
+        getPartitionColumns(),
+        log);
 }
 
 const DB::NamesAndTypesList & TableSnapshot::getTableSchema()
@@ -162,10 +181,28 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema()
     {
         auto * current_snapshot = getSnapshot();
         chassert(engine.get());
-        read_schema = getReadSchemaFromSnapshot(current_snapshot, engine.get());
-        LOG_TEST(log, "Fetched read schema: {}", read_schema->toString());
+        std::tie(read_schema, partition_columns) = getReadSchemaAndPartitionColumnsFromSnapshot(current_snapshot, engine.get());
+
+        LOG_TEST(
+            log, "Fetched read schema: {}, partition columns: {}",
+            read_schema->toString(), fmt::join(partition_columns.value(), ", "));
     }
     return read_schema.value();
+}
+
+const DB::Names & TableSnapshot::getPartitionColumns()
+{
+    if (!partition_columns.has_value())
+    {
+        auto * current_snapshot = getSnapshot();
+        chassert(engine.get());
+        std::tie(read_schema, partition_columns) = getReadSchemaAndPartitionColumnsFromSnapshot(current_snapshot, engine.get());
+
+        LOG_TEST(
+            log, "Fetched read schema: {}, partition columns: {}",
+            read_schema->toString(), fmt::join(partition_columns.value(), ", "));
+    }
+    return partition_columns.value();
 }
 
 }

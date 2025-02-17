@@ -40,7 +40,19 @@ NamesAndTypesList DeltaLakeMetadata::getTableSchema() const
 
 NamesAndTypesList DeltaLakeMetadata::getReadSchema() const
 {
-    return table_snapshot->getReadSchema();
+    auto schema = table_snapshot->getReadSchema();
+    auto partition_columns = table_snapshot->getPartitionColumns();
+    if (!partition_columns.empty())
+    {
+        auto table_schema = getTableSchema();
+        for (const auto & column : partition_columns)
+        {
+            auto name_and_type = table_schema.tryGetByName(column);
+            if (name_and_type.has_value())
+                schema.insert(schema.end(), name_and_type.value());
+        }
+    }
+    return schema;
 }
 
 }
