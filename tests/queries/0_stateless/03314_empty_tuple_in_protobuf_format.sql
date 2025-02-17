@@ -1,3 +1,5 @@
+-- Tag: no-fasttest
+
 DROP TABLE IF EXISTS t0;
 
 SET engine_file_truncate_on_insert = 1;
