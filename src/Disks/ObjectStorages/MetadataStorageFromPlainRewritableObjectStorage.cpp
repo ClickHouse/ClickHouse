@@ -117,7 +117,9 @@ void loadDirectoryTree(
         num_files);
 }
 
-std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::loadPathPrefixMap()
 {
     auto result = std::make_shared<InMemoryDirectoryPathMap>();
     using Map = InMemoryDirectoryPathMap::Map;
@@ -133,7 +135,25 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
     settings.remote_fs_buffer_size = 1024;  /// These files are small.
 
     LOG_DEBUG(log, "Loading metadata");
+
+    /// This method can do both initial loading and incremental refresh of the metadata.
+    ///
+    /// We will list directories under __meta and compare it with the current list in memory.
+    /// Some directories may be new and some no longer exist in the storage.
+    /// We want to update the state in memory without holding a lock,
+    /// and we can do it while allowing certain race-conditions.
+
+    /// So, we obtain a list, then apply changes by:
+    /// 1. Deleting every directory in memory that no longer present in the storage;
+    ///    This works correctly under the assumption that if a directory with a certain name was deleted it cannot appear again.
+    ///    And this assumption is satisfied, because every name is a unique random value.
+    /// 2. Checking the value of `prefix.path` for every new directory and adding it to the state in memory.
+    ///    There is (?) a race condition, leading to the possibility to add a directory that was just deleted.
+    ///    This race condition can be ignored for MergeTree tables.
+
     size_t num_files = 0;
+    size_t num_files_added = 0;
+    size_t num_files_removed = 0;
 
     std::mutex mutex;
     InMemoryDirectoryPathMap::Map map;
@@ -148,8 +168,10 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
             if (remote_metadata_path.filename() != PREFIX_PATH_FILE_NAME)
                 continue;
 
+            if (path_map->map.contains())
+
             runner(
-                [remote_metadata_path, path, &object_storage, &mutex, &map, &log, &settings, &metadata_key_prefix]
+                [remote_metadata_path, path, &mutex, &map, &log, &settings, this]
                 {
                     setThreadName("PlainRWMetaLoad");
 
@@ -242,22 +264,46 @@ std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & 
         auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
         CurrentMetrics::add(metric, result->map.size());
     }
-    return result;
 }
 
+void MetadataStorageFromPlainRewritableObjectStorage::refresh()
+{
+    /// We will list directories under __meta and compare it with the current list in memory.
+    /// Some directories may be new and some no longer exist in the storage.
+    /// We want to update the state in memory without holding a lock,
+    /// and we can do it while allowing certain race-conditions.
+
+    /// So, we obtain a list, then apply changes by:
+    /// 1. Deleting every directory in memory that no longer present in the storage;
+    ///    This works correctly under the assumption that if a directory with a certain name was deleted it cannot appear again.
+    ///    And this assumption is satisfied, because every name is a unique random value.
+    /// 2. Checking the value of `prefix.path` for every new directory and adding it to the state in memory.
+    ///    There is (?) a race condition, leading to the possibility to add a directory that was just deleted.
+    ///    This race condition can be ignored for MergeTree tables.
+
+    LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
+    LOG_DEBUG(log, "Refreshing metadata");
+    size_t num_files_added = 0;
+    size_t num_files_removed = 0;
+
+    for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
+    {
+
+    }
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
-    , path_map(loadPathPrefixMap(metadata_key_prefix, object_storage))
 {
     if (object_storage->isWriteOnce())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
+
+    loadPathPrefixMap();
 
     if (useSeparateLayoutForMetadata())
     {

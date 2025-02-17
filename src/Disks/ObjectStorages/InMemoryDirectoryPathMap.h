@@ -41,8 +41,6 @@ struct InMemoryDirectoryPathMap
         std::set<FileNamesIterator, FileNameIteratorComparator> filename_iterators;
     };
 
-    using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;
-
     std::optional<RemotePathInfo> getRemotePathInfoIfExists(const std::string & path)
     {
         auto base_path = path;
@@ -64,8 +62,15 @@ struct InMemoryDirectoryPathMap
 
     mutable SharedMutex mutex;
 
+    /// A set of logical paths of all files.
     FileNames TSA_GUARDED_BY(mutex) unique_filenames;
+
+    /// A mapping from logical filesystem path to the storage path.
+    using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;
     Map TSA_GUARDED_BY(mutex) map;
+
+    /// A set of known storage paths (randomly-assigned names).
+    FileNames TSA_GUARDED_BY(mutex) remote_directories;
 };
 
 }
