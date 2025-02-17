@@ -6,6 +6,8 @@ from hashlib import md5
 from pathlib import Path
 from typing import List
 
+from praktika.utils import Shell
+
 from . import Job
 from .docker import Docker
 from .settings import Settings
@@ -24,10 +26,14 @@ class Digest:
         hash_string = hash_obj.hexdigest()
         return hash_string
 
+    @classmethod
+    def get_null_digest(cls):
+        return "f" * Settings.CACHE_DIGEST_LEN
+
     def calc_job_digest(self, job_config: Job.Config, docker_digests):
         config = job_config.digest_config
         if not config:
-            return "f" * Settings.CACHE_DIGEST_LEN
+            return self.get_null_digest()
 
         cache_key = self._hash_digest_config(config)
 
@@ -49,6 +55,11 @@ class Digest:
             hash_md5 = hashlib.md5()
             for i, file_path in enumerate(included_files):
                 hash_md5 = self._calc_file_digest(file_path, hash_md5)
+            if config.with_git_submodules:
+                submodules_shas = Shell.get_output(
+                    "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
+                )
+                hash_md5.update(submodules_shas.encode())
             digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
 
         self.digest_cache[cache_key] = digest

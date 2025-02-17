@@ -29,6 +29,14 @@ struct DeserializeBinaryBulkStateObjectDynamicPath : public ISerialization::Dese
     ISerialization::DeserializeBinaryBulkStatePtr nested_state;
     bool read_from_shared_data;
     ColumnPtr shared_data;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateObjectDynamicPath>(*this);
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void SerializationObjectDynamicPath::enumerateStreams(
