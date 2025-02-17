@@ -72,7 +72,7 @@ struct ConstructBitInt256<unsigned>
 
 template <size_t Bits, typename Signed>
 requires(Bits == 256)
-auto toBitInt256(const wide::integer<Bits, Signed> & n)
+constexpr auto toBitInt256(const wide::integer<Bits, Signed> & n)
 {
     using T = ConstructBitInt256<Signed>::Type;
     return *reinterpret_cast<const T *>(&n);
@@ -80,7 +80,7 @@ auto toBitInt256(const wide::integer<Bits, Signed> & n)
 
 template <typename T>
 requires(std::is_same_v<T, BitInt256> || std::is_same_v<T, BitUInt256>)
-auto fromBitInt256(const T & n)
+constexpr auto fromBitInt256(const T & n)
 {
     using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
     return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
@@ -229,6 +229,7 @@ struct common_type<Arithmetic, wide::integer<Bits, Signed>> : common_type<wide::
 
 }
 
+#pragma clang attribute push (__attribute__((no_sanitize("undefined"))), apply_to=function)
 namespace wide
 {
 
@@ -294,7 +295,7 @@ struct integer<Bits, Signed>::_impl
     }
 
     template <typename T>
-    constexpr static auto NO_SANITIZE_UNDEFINED to_Integral(T f) noexcept
+    constexpr static auto to_Integral(T f) noexcept
     {
         /// NOTE: this can be called with DB::Decimal, and in this case, result
         /// will be wrong
@@ -649,7 +650,7 @@ private:
     }
 
     template <typename T>
-    constexpr static integer<Bits, Signed> NO_SANITIZE_UNDEFINED multiply(const integer<Bits, Signed> & lhs, const T & rhs)
+    constexpr static integer<Bits, Signed> multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
         if constexpr (could_use_bitint256)
         {
@@ -1389,7 +1390,7 @@ constexpr integer<Bits, Signed>::operator long double() const noexcept
 }
 
 template <size_t Bits, typename Signed>
-constexpr NO_SANITIZE_UNDEFINED integer<Bits, Signed>::operator double() const noexcept
+constexpr integer<Bits, Signed>::operator double() const noexcept
 {
     return static_cast<double>(static_cast<long double>(*this));
 }
@@ -1610,6 +1611,7 @@ constexpr bool operator!=(const Arithmetic & lhs, const Arithmetic2 & rhs)
 #undef CT
 
 }
+#pragma clang attribute pop
 
 namespace std
 {
