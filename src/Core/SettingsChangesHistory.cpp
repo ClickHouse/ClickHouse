@@ -125,6 +125,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
             {"use_concurrency_control", false, true, "Enable concurrency control by default"},
+            {"join_algorithm", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"},
             /// Release closed. Please use 25.1
         });
         addSettingsChanges(settings_changes_history, "24.11",
