@@ -288,7 +288,7 @@ public:
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {
-        return isEnabledAlgorithm(join_algorithms, val);
+        return isEnabledAlgorithm(join_algorithm, val);
     }
 
     bool allowParallelHashJoin() const;
