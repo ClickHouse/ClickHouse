@@ -15,6 +15,11 @@
 
 namespace fs = std::filesystem;
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DeltaLake
 {
 
