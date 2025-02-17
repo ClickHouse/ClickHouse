@@ -226,7 +226,7 @@ public:
                         else
                         {
                             size_t offset_to = sizeof(ToFieldType) > copy_size ? sizeof(ToFieldType) - copy_size : 0;
-                            memcpy(reinterpret_cast<char*>(&vec_res[i]) + offset_to, &data_from[index - offset], copy_size);
+                            reverseMemcpy(reinterpret_cast<char*>(&vec_res[i]) + offset_to, &data_from[index - offset], copy_size);
                         }
                         offset += step;
                     }
