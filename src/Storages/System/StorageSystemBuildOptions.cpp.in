@@ -62,6 +62,7 @@ const char * auto_config_build[]
     "USE_ARROW", "@USE_ARROW@",
     "USE_ORC", "@USE_ORC@",
     "USE_MSGPACK", "@USE_MSGPACK@",
+    "USE_QPL", "@USE_QPL@",
     "USE_QATLIB", "@USE_QATLIB@",
     "CLICKHOUSE_CLOUD", "@CLICKHOUSE_CLOUD@",
     "GIT_HASH", "@GIT_HASH@",

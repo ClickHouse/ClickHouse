@@ -264,18 +264,6 @@ function fn_exists() {
     declare -F "$1" > /dev/null;
 }
 
-# FIXME: to not break old builds, clean on 2023-09-01
-function try_run_with_retry() {
-    local total_retries="$1"
-    shift
-
-    if fn_exists run_with_retry; then
-        run_with_retry "$total_retries" "$@"
-    else
-        "$@"
-    fi
-}
-
 function run_tests()
 {
     set -x
@@ -359,7 +347,7 @@ function run_tests()
     fi
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
+    run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
 
@@ -368,7 +356,6 @@ function run_tests()
         --check-zookeeper-session
         --hung-check
         --print-time
-        --no-drop-if-fail
         --capture-client-stacktrace
         --queries "/repo/tests/queries"
         --test-runs "$NUM_TRIES"
@@ -408,7 +395,7 @@ logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_th
 
 # Try to get logs while server is running
 failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latecy_log
 do
     if ! clickhouse-client ${logs_saver_client_options} -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
         failed_to_save_logs=1
@@ -480,7 +467,7 @@ if [ $failed_to_save_logs -ne 0 ]; then
     #   directly
     # - even though ci auto-compress some files (but not *.tsv) it does this only
     #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log
+    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
     do
         clickhouse-local ${logs_saver_client_options} "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
 
@@ -528,8 +515,6 @@ fi
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 rm -rf /var/lib/clickhouse/data/system/*/
-tar -chf /test_output/store.tar /var/lib/clickhouse/store ||:
-tar -chf /test_output/metadata.tar /var/lib/clickhouse/metadata/*.sql ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

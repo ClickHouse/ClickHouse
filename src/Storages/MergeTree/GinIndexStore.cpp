@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/FST.h>
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -37,7 +38,7 @@ bool GinIndexPostingsBuilder::contains(UInt32 row_id) const
     if (useRoaring())
         return rowid_bitmap.contains(row_id);
 
-    const auto * const it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
+    const auto it = std::find(rowid_lst.begin(), rowid_lst.begin() + rowid_lst_length, row_id);
     return it != rowid_lst.begin() + rowid_lst_length;
 }
 

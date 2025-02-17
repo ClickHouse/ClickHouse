@@ -12,6 +12,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -28,7 +29,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
@@ -63,6 +63,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
@@ -807,6 +808,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         compression_level,
         !settings[Setting::allow_suspicious_codecs],
         settings[Setting::allow_experimental_codecs],
+        settings[Setting::enable_deflate_qpl_codec],
         settings[Setting::enable_zstd_qat_codec]);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 

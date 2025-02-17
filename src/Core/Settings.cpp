@@ -1,4 +1,5 @@
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
@@ -1298,6 +1299,12 @@ Possible values:
 
 - Any positive integer.
 )", 0) \
+DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
+Enables caching of columns metadata from the file prefixes during reading from Wide parts in MergeTree.
+)", 0) \
+DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
+Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
+)", 0) \
     DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
 Merge parts only in one partition in select final
 )", 0) \
@@ -1659,7 +1666,7 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
 ```
 
@@ -2194,6 +2201,9 @@ If it is set to true, allow to specify meaningless compression codecs.
     DECLARE(Bool, enable_zstd_qat_codec, false, R"(
 If turned on, the ZSTD_QAT codec may be used to compress columns.
 )", 0) \
+    DECLARE(Bool, enable_deflate_qpl_codec, false, R"(
+If turned on, the DEFLATE_QPL codec may be used to compress columns.
+)", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
 
@@ -2543,16 +2553,12 @@ See also:
 - [Join table engine](../../engines/table-engines/special/join.md)
 - [join_default_strictness](#join_default_strictness)
 )", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, JoinAlgorithm::DEFAULT, R"(
+    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
 Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
 Possible values:
-
-- default
-
- Same as `direct,parallel_hash,hash`, i.e. try to use direct join, parallel hash join, and hash join join (in this order).
 
 - grace_hash
 
@@ -2599,6 +2605,12 @@ Possible values:
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
+
+- default (deprecated)
+
+ Legacy value, please don't use anymore.
+ Same as `direct,hash`, i.e. try to use direct join and hash join join (in this order).
+
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
 Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
@@ -3246,6 +3258,9 @@ Connection pool push/pop retries number for PostgreSQL table engine and database
 )", 0) \
     DECLARE(Bool, postgresql_connection_pool_auto_close_connection, false, R"(
 Close connection before returning connection to the pool.
+)", 0) \
+    DECLARE(Float, postgresql_fault_injection_probability, 0.0f, R"(
+Approximate probability of failing internal (for replication) PostgreSQL queries. Valid value is in interval [0.0f, 1.0f]
 )", 0) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
@@ -4317,7 +4332,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#setting_max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
+Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
 
 Possible values:
 
@@ -4865,7 +4880,7 @@ Possible values:
 
 **See Also**
 
-- [max_block_size](#setting_max_block_size)
+- [max_block_size](#max_block_size)
 - [min_insert_block_size_rows](#min_insert_block_size_rows)
 )", 0) \
     DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
@@ -5863,7 +5878,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 - cross to inner join optimization
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
-Populate constant comparison in AND chains to enhance filtering ability. Support operators <, <=, >, >=, = and mix of them. For example, (a < b) AND (b < c) AND (c < 5) would be (a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5).
+Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
@@ -5899,6 +5914,15 @@ As each series represents a node in Keeper, it is recommended to have no more th
 )", 0) \
     DECLARE(Bool, use_hive_partitioning, true, R"(
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md/#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md/#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md/#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md/#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md/#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
+)", 0) \
+    DECLARE(Bool, apply_settings_from_server, true, R"(
+Whether the client should accept settings from server.
+
+This only affects operations performed on the client side, in particular parsing the INSERT input data and formatting the query result. Most of query execution happens on the server and is not affected by this setting.
+
+Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
+
+Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0) \
     \
     /* ####################################################### */ \
@@ -5988,7 +6012,7 @@ If it is set to true, allow to use experimental full-text index.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_join_condition, false, R"(
-Support join with inequal conditions which involve columns from both left and right table. e.g. t1.y < t2.y.
+Support join with inequal conditions which involve columns from both left and right table. e.g. `t1.y < t2.y`.
 )", EXPERIMENTAL) \
     \
     DECLARE(Bool, allow_experimental_live_view, false, R"(
@@ -6039,6 +6063,9 @@ Enable Kusto Query Language (KQL) - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
+Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
     \
     /** Experimental tsToGrid aggregate function. */ \
@@ -6123,7 +6150,6 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
-    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
@@ -6311,6 +6337,10 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
 
             /// If this setting was changed manually, we don't change it
             if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
+                continue;
+
+            /// Don't mark as changed if the value isn't really changed
+            if (get(final_name) == change.previous_value)
                 continue;
 
             BaseSettings::set(final_name, change.previous_value);

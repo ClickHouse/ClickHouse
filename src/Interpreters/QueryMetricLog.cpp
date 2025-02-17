@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/logger_useful.h>
 #include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeDate.h>

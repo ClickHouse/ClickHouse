@@ -50,6 +50,8 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/thread_local_rng.h>
+
 
 namespace DB
 {
@@ -809,7 +811,7 @@ void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_co
 
 void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
 {
-    UInt32 max_log_ptr;
+    UInt32 max_log_ptr{};
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
     for (const auto & [table_name, create_table_query] : table_name_to_metadata)
     {
@@ -827,7 +829,7 @@ void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
 
 void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
 {
-    UInt32 max_log_ptr;
+    UInt32 max_log_ptr{};
     auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
     auto table_names_local = getAllTableNames(local_context);
 
@@ -1083,7 +1085,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.is_backup_restore = flags.distributed_backup_restore;
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags.internal);
 
     Strings hosts_to_wait;
     Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -1960,7 +1962,8 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
     /// Some ALTERs are not replicated on database level
     if (const auto * alter = query_ptr->as<const ASTAlterQuery>())
     {
-        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter() || is_keeper_map_table(query_ptr) || alter->isFreezeAlter())
+        if (alter->isAttachAlter() || alter->isFetchAlter() || alter->isDropPartitionAlter()
+            || is_keeper_map_table(query_ptr) || alter->isFreezeAlter() || alter->isUnlockSnapshot())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))

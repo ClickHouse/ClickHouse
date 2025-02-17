@@ -13,11 +13,13 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -99,17 +101,31 @@ bool isSafePrimaryKey(const KeyDescription & primary_key)
     return true;
 }
 
-int compareValues(const Values & lhs, const Values & rhs)
+int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
 {
     size_t size = std::min(lhs.size(), rhs.size());
 
-    for (size_t i = 0; i < size; ++i)
+    if (in_reverse_order)
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
-            return -1;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (applyVisitor(FieldVisitorAccurateLess(), rhs[i], lhs[i]))
+                return -1;
 
-        if (!applyVisitor(FieldVisitorAccurateEquals(), lhs[i], rhs[i]))
-            return 1;
+            if (!applyVisitor(FieldVisitorAccurateEquals(), rhs[i], lhs[i]))
+                return 1;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
+                return -1;
+
+            if (!applyVisitor(FieldVisitorAccurateEquals(), lhs[i], rhs[i]))
+                return 1;
+        }
     }
 
     return 0;
@@ -147,7 +163,8 @@ public:
         return values;
     }
 
-    std::optional<size_t> findRightmostMarkLessThanValueInRange(size_t part_index, Values value, size_t range_begin, size_t range_end) const
+    std::optional<size_t> findRightmostMarkLessThanValueInRange(
+        size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
         size_t right = range_end;
@@ -155,7 +172,7 @@ public:
         while (left < right)
         {
             size_t middle = left + (right - left) / 2;
-            int compare_result = compareValues(getValue(part_index, middle), value);
+            int compare_result = compareValues(getValue(part_index, middle), value, in_reverse_order);
             if (compare_result != -1)
                 right = middle;
             else
@@ -168,12 +185,14 @@ public:
         return right - 1;
     }
 
-    std::optional<size_t> findRightmostMarkLessThanValueInRange(size_t part_index, Values value, MarkRange mark_range) const
+    std::optional<size_t>
+    findRightmostMarkLessThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
     {
-        return findRightmostMarkLessThanValueInRange(part_index, value, mark_range.begin, mark_range.end);
+        return findRightmostMarkLessThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
-    std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, size_t range_begin, size_t range_end) const
+    std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(
+        size_t part_index, Values value, size_t range_begin, size_t range_end, bool in_reverse_order) const
     {
         size_t left = range_begin;
         size_t right = range_end;
@@ -181,7 +200,7 @@ public:
         while (left < right)
         {
             size_t middle = left + (right - left) / 2;
-            int compare_result = compareValues(getValue(part_index, middle), value);
+            int compare_result = compareValues(getValue(part_index, middle), value, in_reverse_order);
             if (compare_result != 1)
                 left = middle + 1;
             else
@@ -194,9 +213,10 @@ public:
         return left;
     }
 
-    std::optional<size_t> findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, MarkRange mark_range) const
+    std::optional<size_t>
+    findLeftmostMarkGreaterThanValueInRange(size_t part_index, Values value, MarkRange mark_range, bool in_reverse_order) const
     {
-        return findLeftmostMarkGreaterThanValueInRange(part_index, value, mark_range.begin, mark_range.end);
+        return findLeftmostMarkGreaterThanValueInRange(part_index, value, mark_range.begin, mark_range.end, in_reverse_order);
     }
 
     size_t getMarkRows(size_t part_idx, size_t mark) const
@@ -253,7 +273,7 @@ struct PartsRangesIterator
 
     [[maybe_unused]] bool operator<(const PartsRangesIterator & other) const
     {
-        int compare_result = compareValues(value, other.value);
+        int compare_result = compareValues(value, other.value, in_reverse_order);
         if (compare_result == -1)
             return true;
         if (compare_result == 1)
@@ -315,6 +335,7 @@ struct PartsRangesIterator
     }
 
     Values value;
+    bool in_reverse_order;
     MarkRange range;
     size_t part_index;
     EventType event;
@@ -374,7 +395,7 @@ String toString(const std::vector<PartsRangesIterator> & ranges_iterators)
     return buffer.str();
 }
 
-SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, const LoggerPtr & logger)
+SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, bool in_reverse_order, const LoggerPtr & logger)
 {
     /** Split ranges in data parts into intersecting ranges in data parts and non intersecting ranges in data parts.
       *
@@ -442,14 +463,22 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
         {
             const auto & index_granularity = ranges_in_data_parts[part_index].data_part->index_granularity;
             parts_ranges.push_back(
-                {index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart});
+                {index_access.getValue(part_index, range.begin),
+                 in_reverse_order,
+                 range,
+                 part_index,
+                 PartsRangesIterator::EventType::RangeStart});
 
             const bool value_is_defined_at_end_mark = range.end < index_granularity->getMarksCount();
             if (!value_is_defined_at_end_mark)
                 continue;
 
             parts_ranges.push_back(
-                {index_access.getValue(part_index, range.end), range, part_index, PartsRangesIterator::EventType::RangeEnd});
+                {index_access.getValue(part_index, range.end),
+                 in_reverse_order,
+                 range,
+                 part_index,
+                 PartsRangesIterator::EventType::RangeEnd});
         }
     }
 
@@ -507,9 +536,8 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
 
                 /// Case 1 Range Start after Range Start
                 size_t begin = previous_part_range.range.begin;
-                std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(previous_part_range.part_index,
-                    current_part_range.value,
-                    previous_part_range.range);
+                std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(
+                    previous_part_range.part_index, current_part_range.value, previous_part_range.range, in_reverse_order);
 
                 if (!end_optional)
                     continue;
@@ -543,15 +571,13 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
                 continue;
 
             /// Case 2 Range Start after Range End
-            std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(other_interval_part_index,
-                previous_part_range.value,
-                other_interval_range);
+            std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(
+                other_interval_part_index, previous_part_range.value, other_interval_range, in_reverse_order);
             if (!begin_optional)
                 continue;
 
-            std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(other_interval_part_index,
-                current_part_range.value,
-                other_interval_range);
+            std::optional<size_t> end_optional = index_access.findRightmostMarkLessThanValueInRange(
+                other_interval_part_index, current_part_range.value, other_interval_range, in_reverse_order);
             if (!end_optional)
                 continue;
 
@@ -596,9 +622,8 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
         chassert(previous_part_range.event == PartsRangesIterator::EventType::RangeEnd);
 
         /// Case 4 Range End after Range End
-        std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(current_part_range.part_index,
-            previous_part_range.value,
-            current_part_range.range);
+        std::optional<size_t> begin_optional = index_access.findLeftmostMarkGreaterThanValueInRange(
+            current_part_range.part_index, previous_part_range.value, current_part_range.range, in_reverse_order);
         size_t end = current_part_range.range.end;
 
         if (begin_optional && end - *begin_optional >= min_number_of_marks_for_non_intersecting_range)
@@ -641,9 +666,8 @@ SplitPartsRangesResult splitPartsRanges(RangesInDataParts ranges_in_data_parts, 
     return {std::move(non_intersecting_ranges_in_data_parts), std::move(intersecting_ranges_in_data_parts)};
 }
 
-std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(RangesInDataParts intersecting_ranges_in_data_parts,
-    size_t max_layers,
-    const LoggerPtr & logger)
+std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersectingPartsRangesIntoLayers(
+    RangesInDataParts intersecting_ranges_in_data_parts, size_t max_layers, bool in_reverse_order, const LoggerPtr & logger)
 {
     /** We will advance the iterator pointing to the mark with the smallest PK value until
       * there will be not less than rows_per_layer rows in the current layer (roughly speaking).
@@ -663,7 +687,12 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
         for (const auto & range : intersecting_ranges_in_data_parts[part_index].ranges)
         {
             const auto & index_granularity = intersecting_ranges_in_data_parts[part_index].data_part->index_granularity;
-            PartsRangesIterator parts_range_start{index_access.getValue(part_index, range.begin), range, part_index, PartsRangesIterator::EventType::RangeStart};
+            PartsRangesIterator parts_range_start{
+                index_access.getValue(part_index, range.begin),
+                in_reverse_order,
+                range,
+                part_index,
+                PartsRangesIterator::EventType::RangeStart};
             PartRangeIndex parts_range_start_index(parts_range_start);
             parts_ranges_queue.push({std::move(parts_range_start), std::move(parts_range_start_index)});
 
@@ -671,7 +700,12 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
             if (!value_is_defined_at_end_mark)
                 continue;
 
-            PartsRangesIterator parts_range_end{index_access.getValue(part_index, range.end), range, part_index, PartsRangesIterator::EventType::RangeEnd};
+            PartsRangesIterator parts_range_end{
+                index_access.getValue(part_index, range.end),
+                in_reverse_order,
+                range,
+                part_index,
+                PartsRangesIterator::EventType::RangeEnd};
             PartRangeIndex parts_range_end_index(parts_range_end);
             parts_ranges_queue.push({std::move(parts_range_end), std::move(parts_range_end_index)});
         }
@@ -764,10 +798,20 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
     {
         auto & layer = result_layers[i];
 
-        LOG_TEST(logger, "Layer {} {} filter values in ({}, {}])",
-            i,
-            layer.getDescriptions().describe(),
-            i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
+        if (in_reverse_order)
+        {
+            LOG_TEST(logger, "Layer {} {} filter values in [{}, {}))",
+                i,
+                layer.getDescriptions().describe(),
+                i < borders.size() ? ::toString(borders[i]) : "-inf", i ? ::toString(borders[i - 1]) : "+inf");
+        }
+        else
+        {
+            LOG_TEST(logger, "Layer {} {} filter values in ({}, {}])",
+                i,
+                layer.getDescriptions().describe(),
+                i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
+        }
 
         std::stable_sort(
             layer.begin(),
@@ -780,13 +824,14 @@ std::pair<std::vector<RangesInDataParts>, std::vector<Values>> splitIntersecting
 
 
 /// Will return borders.size()+1 filters in total, i-th filter will accept rows with PK values within the range (borders[i-1], borders[i]].
-ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders)
+ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> & borders, bool in_reverse_order)
 {
     auto add_and_condition = [&](ASTPtr & result, const ASTPtr & foo) { result = (!result) ? foo : makeASTFunction("and", result, foo); };
 
     /// Produces ASTPtr to predicate (pk_col0, pk_col1, ... , pk_colN) > (value[0], value[1], ... , value[N]), possibly with conversions.
     /// For example, if table PK is (a, toDate(d)), where `a` is UInt32 and `d` is DateTime, and PK columns values are (8192, 19160),
     /// it will build the following predicate: greater(tuple(a, toDate(d)), tuple(8192, cast(19160, 'Date'))).
+    /// If @in_reverse_order == true, compare values in reverse order.
     auto lexicographically_greater = [&](const Values & values) -> ASTPtr
     {
         ASTs pks_ast;
@@ -831,7 +876,7 @@ ASTs buildFilters(const KeyDescription & primary_key, const std::vector<Values> 
         ASTPtr pk_columns_as_tuple = makeASTFunction("tuple", pks_ast);
         ASTPtr values_as_tuple = makeASTFunction("tuple", values_ast);
 
-        return makeASTFunction("greater", pk_columns_as_tuple, values_as_tuple);
+        return makeASTFunction(in_reverse_order ? "less" : "greater", pk_columns_as_tuple, values_as_tuple);
     };
 
     ASTs filters(borders.size() + 1);
@@ -916,9 +961,25 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         return result;
     }
 
+    bool in_reverse_order = false;
+    if (!primary_key.reverse_flags.empty())
+    {
+        in_reverse_order = primary_key.reverse_flags[0];
+        for (size_t i = 1; i < primary_key.reverse_flags.size(); ++i)
+        {
+            /// It's not possible to split parts when some keys are in ascending
+            /// order while others are in descending order.
+            if (in_reverse_order != primary_key.reverse_flags[i])
+            {
+                result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
+                return result;
+            }
+        }
+    }
+
     if (split_parts_ranges_into_intersecting_and_non_intersecting_final)
     {
-        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, logger);
+        SplitPartsRangesResult split_result = splitPartsRanges(intersecting_parts_ranges, in_reverse_order, logger);
         result.non_intersecting_parts_ranges = std::move(split_result.non_intersecting_parts_ranges);
         intersecting_parts_ranges = std::move(split_result.intersecting_parts_ranges);
     }
@@ -933,8 +994,8 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     if (max_layers <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "max_layer should be greater than 1");
 
-    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, logger);
-    auto filters = buildFilters(primary_key, borders);
+    auto && [layers, borders] = splitIntersectingPartsRangesIntoLayers(intersecting_parts_ranges, max_layers, in_reverse_order, logger);
+    auto filters = buildFilters(primary_key, borders, in_reverse_order);
     result.merging_pipes.resize(layers.size());
 
     for (size_t i = 0; i < layers.size(); ++i)
@@ -949,8 +1010,14 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
         auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
         reorderColumns(actions, result.merging_pipes[i].getHeader(), filter_function->getColumnName());
         ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
-        auto description = fmt::format(
-            "filter values in ({}, {}]", i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
+        auto description = in_reverse_order ? fmt::format(
+                                                  "filter values in [{}, {})",
+                                                  i < borders.size() ? ::toString(borders[i]) : "-inf",
+                                                  i ? ::toString(borders[i - 1]) : "+inf")
+                                            : fmt::format(
+                                                  "filter values in ({}, {}]",
+                                                  i ? ::toString(borders[i - 1]) : "-inf",
+                                                  i < borders.size() ? ::toString(borders[i]) : "+inf");
         result.merging_pipes[i].addSimpleTransform(
             [&](const Block & header)
             {

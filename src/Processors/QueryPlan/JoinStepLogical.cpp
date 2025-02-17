@@ -11,6 +11,7 @@
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/StorageJoin.h>
 #include <ranges>
 #include <Core/Settings.h>
@@ -387,7 +388,7 @@ bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::Join
         {
             auto [left_key_node, right_key_node] = leftAndRightNodes(predicate);
             bool null_safe_comparison = PredicateOperator::NullSafeEquals == predicate.op;
-            if (null_safe_comparison && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
+            if (null_safe_comparison && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))
             {
                 /**
                   * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
@@ -543,7 +544,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
                 && join_expression.disjunctive_conditions.empty();
 
             if (!can_convert_to_cross)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "No equality condition found in JOIN ON expression {}",
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
                     formatJoinCondition(join_expression.condition));
             join_info.kind = JoinKind::Cross;
         }

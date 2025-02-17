@@ -192,6 +192,8 @@ public:
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
 
+    bool isPlain() const;
+
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it
     /// does support BACKUP to this disk, but does not support INSERT into

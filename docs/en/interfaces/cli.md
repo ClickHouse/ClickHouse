@@ -549,7 +549,7 @@ Substitution value for a parameter of a [query with parameters](#cli-queries-wit
 
 **`-q [ --query ] <query>`**
 
-The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple comma-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
+The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple semicolon-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
 
 A single query can also be specified without a parameter:
 ```bash
