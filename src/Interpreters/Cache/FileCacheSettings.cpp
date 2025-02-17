@@ -171,6 +171,11 @@ void FileCacheSettings::loadFromConfig(const Poco::Util::AbstractConfiguration &
             continue;
         impl->set(key, config.getString(config_prefix + "." + key));
     }
+
+    auto cache_policy = (*this)[FileCacheSetting::cache_policy].value;
+    boost::to_upper(cache_policy);
+    (*this)[FileCacheSetting::cache_policy] = cache_policy;
+
     validate();
 }
 
@@ -180,6 +185,11 @@ void FileCacheSettings::loadFromCollection(const NamedCollection & collection)
     {
         impl->set(key, collection.get<String>(key));
     }
+
+    auto cache_policy = (*this)[FileCacheSetting::cache_policy].value;
+    boost::to_upper(cache_policy);
+    (*this)[FileCacheSetting::cache_policy] = cache_policy;
+
     validate();
 }
 
