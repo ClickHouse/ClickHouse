@@ -93,7 +93,7 @@ Here you should see the message `Connected to ClickHouse server` from console wh
 Complete below three steps mentioned in [Star Schema Benchmark](https://clickhouse.com/docs/en/getting-started/example-datasets/star-schema)
 - Creating tables in ClickHouse
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
-- Converting “star schema” to de-normalized “flat schema”
+- Converting "star schema" to de-normalized "flat schema"
 
 Set up database with IAA Deflate codec
 
