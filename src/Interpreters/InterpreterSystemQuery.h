@@ -57,7 +57,7 @@ private:
 
     /// Tries to get a replicated table and restart it
     /// Returns pointer to a newly created table if the restart was successful
-    StoragePtr tryRestartReplica(const StorageID & replica, ContextMutablePtr context);
+    StoragePtr doRestartReplica(const StorageID & replica, ContextMutablePtr context, bool throw_on_error);
 
     void restartReplica(const StorageID & replica, ContextMutablePtr system_context);
     void restartReplicas(ContextMutablePtr system_context);

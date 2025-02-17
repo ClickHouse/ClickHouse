@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace ActionLocks
@@ -895,7 +896,7 @@ void InterpreterSystemQuery::restoreReplica()
                              getContext()->getProcessListElementSafe()});
 }
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
+StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
@@ -908,9 +909,19 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
 
-    /// Detach actions
-    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    if (!table)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", replica);
         return nullptr;
+    }
+    const StorageID replica_table_id = table->getStorageID();
+    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+        return nullptr;
+    }
 
     SCOPE_EXIT({
         if (table)
@@ -925,9 +936,8 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
-    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(uuid);
+    database->waitDetachedTableNotInUse(replica_table_id.uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -947,8 +957,8 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         LoadingStrictnessLevel::ATTACH);
 
     database->attachTable(system_context, replica.table_name, new_table, data_path);
-    if (new_table->getStorageID().uuid != uuid)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", uuid, new_table->getStorageID().uuid);
+    if (new_table->getStorageID().uuid != replica_table_id.uuid)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
     new_table->startup();
     LOG_TRACE(log, "Restarted replica {}", new_table->getStorageID().getNameForLogs());
@@ -958,8 +968,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 void InterpreterSystemQuery::restartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
-    if (!tryRestartReplica(replica, system_context))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+    doRestartReplica(replica, system_context, /*throw_on_error=*/ true);
 }
 
 void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
@@ -995,7 +1004,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
+        pool.scheduleOrThrowOnError([&]() { doRestartReplica(replica, system_context, /*throw_on_error=*/ false); });
     }
     pool.wait();
 }
