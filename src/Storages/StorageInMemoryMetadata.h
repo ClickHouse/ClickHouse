@@ -144,9 +144,6 @@ struct StorageInMemoryMetadata
     /// Returns true if there is set table TTL, any column TTL or any move TTL.
     bool hasAnyTTL() const { return hasAnyColumnTTL() || hasAnyTableTTL(); }
 
-    /// Returns true if only rows TTL is set, not even rows where.
-    bool hasOnlyRowsTTL() const;
-
     /// Common tables TTLs (for rows and moves).
     TTLTableDescription getTableTTLs() const;
     bool hasAnyTableTTL() const;
@@ -187,9 +184,6 @@ struct StorageInMemoryMetadata
     /// Block with ordinary + materialized columns.
     Block getSampleBlock() const;
 
-    /// Block with ordinary + materialized columns + subcolumns.
-    Block getSampleBlockWithSubcolumns() const;
-
     /// Block with ordinary + ephemeral.
     Block getSampleBlockInsertable() const;
 
@@ -225,9 +219,6 @@ struct StorageInMemoryMetadata
     /// Returns columns names in sorting key specified by user in ORDER BY
     /// expression. For example: 'a', 'x * y', 'toStartOfMonth(date)', etc.
     Names getSortingKeyColumns() const;
-    /// Returns reverse indicators of columns in sorting key specified by user in ORDER BY
-    /// expression. For example: ('a' DESC, 'x * y', 'toStartOfMonth(date)' DESC) -> {1, 0, 1}.
-    std::vector<bool> getSortingKeyReverseFlags() const;
 
     /// Returns column names that need to be read for FINAL to work.
     Names getColumnsRequiredForFinal() const { return getColumnsRequiredForSortingKey(); }

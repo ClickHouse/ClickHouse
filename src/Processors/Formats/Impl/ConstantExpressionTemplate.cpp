@@ -2,7 +2,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -14,7 +13,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
@@ -34,11 +32,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -547,8 +540,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         ParserArrayOfLiterals parser_array;
         ParserTupleOfLiterals parser_tuple;
 
-        IParser::Pos iterator(
-            token_iterator, static_cast<unsigned>(settings[Setting::max_parser_depth]), static_cast<unsigned>(settings[Setting::max_parser_backtracks]));
+        IParser::Pos iterator(token_iterator, static_cast<unsigned>(settings.max_parser_depth), static_cast<unsigned>(settings.max_parser_backtracks));
         while (iterator->begin < istr.position())
             ++iterator;
         Expected expected;
@@ -590,62 +582,64 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
         columns[column_idx]->insert(array_same_types);
         return true;
     }
-
-    Field number;
-    if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
-    {
-        istr.position() += 4;
-    }
     else
     {
-        /// ParserNumber::parse(...) is about 20x slower than strtod(...)
-        /// because of using ASTPtr, Expected and Tokens, which are not needed here.
-        /// Parse numeric literal in the same way, as ParserNumber does, but use strtod and strtoull directly.
-        bool negative = *istr.position() == '-';
-        if (negative || *istr.position() == '+')
-            ++istr.position();
-
-        static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
-        char buf[MAX_LENGTH_OF_NUMBER + 1];
-        size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
-        memcpy(buf, istr.position(), bytes_to_copy);
-        buf[bytes_to_copy] = 0;
-
-        const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
-
-        char * pos_double = buf;
-        errno = 0;
-        Float64 float_value = std::strtod(buf, &pos_double);
-        if (pos_double == buf || errno == ERANGE || float_value < 0)
-            return false;
-
-        if (negative)
-            float_value = -float_value;
-
-        char * pos_integer = buf;
-        errno = 0;
-        UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
-        if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
+        Field number;
+        if (type_info.is_nullable && 4 <= istr.available() && 0 == strncasecmp(istr.position(), "NULL", 4))
         {
-            istr.position() += pos_integer - buf;
-            if (negative && type_info.main_type == Type::Int64)
-                number = static_cast<Int64>(-uint_value);
-            else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
-                number = uint_value;
+            istr.position() += 4;
+        }
+        else
+        {
+            /// ParserNumber::parse(...) is about 20x slower than strtod(...)
+            /// because of using ASTPtr, Expected and Tokens, which are not needed here.
+            /// Parse numeric literal in the same way, as ParserNumber does, but use strtod and strtoull directly.
+            bool negative = *istr.position() == '-';
+            if (negative || *istr.position() == '+')
+                ++istr.position();
+
+            static constexpr size_t MAX_LENGTH_OF_NUMBER = 319;
+            char buf[MAX_LENGTH_OF_NUMBER + 1];
+            size_t bytes_to_copy = std::min(istr.available(), MAX_LENGTH_OF_NUMBER);
+            memcpy(buf, istr.position(), bytes_to_copy);
+            buf[bytes_to_copy] = 0;
+
+            const bool hex_like = bytes_to_copy >= 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X');
+
+            char * pos_double = buf;
+            errno = 0;
+            Float64 float_value = std::strtod(buf, &pos_double);
+            if (pos_double == buf || errno == ERANGE || float_value < 0)
+                return false;
+
+            if (negative)
+                float_value = -float_value;
+
+            char * pos_integer = buf;
+            errno = 0;
+            UInt64 uint_value = std::strtoull(buf, &pos_integer, hex_like ? 16 : 10);
+            if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
+            {
+                istr.position() += pos_integer - buf;
+                if (negative && type_info.main_type == Type::Int64)
+                    number = static_cast<Int64>(-uint_value);
+                else if (type_info.main_type == Type::UInt64 && (!negative || uint_value == 0))
+                    number = uint_value;
+                else
+                    return false;
+            }
+            else if (type_info.main_type == Type::Float64)
+            {
+                istr.position() += pos_double - buf;
+                number = float_value;
+            }
             else
                 return false;
         }
-        else if (type_info.main_type == Type::Float64)
-        {
-            istr.position() += pos_double - buf;
-            number = float_value;
-        }
-        else
-            return false;
-    }
 
-    columns[column_idx]->insert(number);
-    return true;
+        columns[column_idx]->insert(number);
+        return true;
+    }
 }
 
 ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, size_t column_idx, const DataTypePtr & expected_type, size_t offset)

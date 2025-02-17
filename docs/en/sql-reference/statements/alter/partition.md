@@ -131,8 +131,8 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
-- The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
 ## REPLACE PARTITION
 
@@ -144,15 +144,15 @@ This query copies the data partition from `table1` to `table2` and replaces the 
 
 Note that:
 
-- Data won't be deleted from `table1`.
+- Data won’t be deleted from `table1`.
 - `table1` may be a temporary table.
 
 For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
-- The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
 ## MOVE PARTITION TO TABLE
 
@@ -166,9 +166,9 @@ For the query to run successfully, the following conditions must be met:
 
 - Both tables must have the same structure.
 - Both tables must have the same partition key, the same order by key and the same primary key.
+- Both tables must have the same indices and projections.
 - Both tables must have the same storage policy.
 - Both tables must be the same engine family (replicated or non-replicated).
-- The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
 ## CLEAR COLUMN IN PARTITION
 
@@ -252,7 +252,7 @@ Downloads a partition from another server. This query only works for the replica
 
 The query does the following:
 
-1.  Downloads the partition|part from the specified shard. In 'path-in-zookeeper' you must specify a path to the shard in ZooKeeper.
+1.  Downloads the partition|part from the specified shard. In ‘path-in-zookeeper’ you must specify a path to the shard in ZooKeeper.
 2.  Then the query puts the downloaded data to the `detached` directory of the `table_name` table. Use the [ATTACH PARTITION\|PART](#attach-partitionpart) query to add the data to the table.
 
 For example:
@@ -270,7 +270,7 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 
 Note that:
 
-- The `ALTER ... FETCH PARTITION|PART` query isn't replicated. It places the part or partition to the `detached` directory only on the local server.
+- The `ALTER ... FETCH PARTITION|PART` query isn’t replicated. It places the part or partition to the `detached` directory only on the local server.
 - The `ALTER TABLE ... ATTACH` query is replicated. It adds the data to all replicas. The data is added to one of the replicas from the `detached` directory, and to the others - from neighboring replicas.
 
 Before downloading, the system checks if the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
@@ -288,8 +288,8 @@ ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr T
 The `ALTER TABLE t MOVE` query:
 
 - Not replicated, because different replicas can have different storage policies.
-- Returns an error if the specified disk or volume is not configured. Query also returns an error if conditions of data moving, that specified in the storage policy, can't be applied.
-- Can return an error in the case, when data to be moved is already moved by a background process, concurrent `ALTER TABLE t MOVE` query or as a result of background data merging. A user shouldn't perform any additional actions in this case.
+- Returns an error if the specified disk or volume is not configured. Query also returns an error if conditions of data moving, that specified in the storage policy, can’t be applied.
+- Can return an error in the case, when data to be moved is already moved by a background process, concurrent `ALTER TABLE t MOVE` query or as a result of background data merging. A user shouldn’t perform any additional actions in this case.
 
 Example:
 
@@ -351,7 +351,7 @@ ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 
 - As a value from the `partition` column of the `system.parts` table. For example, `ALTER TABLE visits DETACH PARTITION 201901`.
-- Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH/ATTACH FROM. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
+- Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
 - As a tuple of expressions or constants that matches (in types) the table partitioning keys tuple. In the case of a single element partitioning key, the expression should be wrapped in the `tuple (...)` function. For example, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 - In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/docs/en/operations/system-tables/detached_parts.md/#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.

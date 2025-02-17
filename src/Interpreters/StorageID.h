@@ -27,6 +27,7 @@ class ASTQueryWithTableAndOutput;
 class ASTTableIdentifier;
 class Context;
 
+// TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
 struct StorageID
 {
     String database_name;
@@ -99,7 +100,13 @@ struct StorageID
     /// Calculates hash using only the database and table name of a StorageID.
     struct DatabaseAndTableNameHash
     {
-        size_t operator()(const StorageID & storage_id) const;
+        size_t operator()(const StorageID & storage_id) const
+        {
+            SipHash hash_state;
+            hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
+            hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
+            return hash_state.get64();
+        }
     };
 
     /// Checks if the database and table name of two StorageIDs are equal.

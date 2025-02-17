@@ -67,7 +67,7 @@ curl "$CLICKHOUSE_URL" --silent --fail --show-error --data "SELECT sum(is_leader
 
 wait;
 
-$CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT -nq "
 SYSTEM FLUSH LOGS;
 
 -- Check that number of ZK request is less then a half of (total replicas * concurrency)

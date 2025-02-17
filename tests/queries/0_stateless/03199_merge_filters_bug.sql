@@ -1,5 +1,3 @@
-set allow_reorder_prewhere_conditions=0;
-
 drop table if exists t1;
 drop table if exists t2;
 
@@ -51,23 +49,7 @@ tmp1 AS
         fs1
     FROM t2
     LEFT JOIN tmp1 USING (fs1)
-    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 0, query_plan_merge_filters=0;
-
-WITH
-tmp1 AS
-(
-    SELECT
-        CAST(s1, 'FixedString(10)') AS fs1,
-        s2 AS sector,
-        s3
-    FROM t1
-    WHERE  (s3 != 'test')
-)
-    SELECT
-        fs1
-    FROM t2
-    LEFT JOIN tmp1 USING (fs1)
-    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 1, query_plan_merge_filters=1;
+    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 0;
 
 optimize table t1 final;
 
@@ -85,20 +67,4 @@ tmp1 AS
         fs1
     FROM t2
     LEFT JOIN tmp1 USING (fs1)
-    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 0, query_plan_merge_filters=0;
-
-WITH
-tmp1 AS
-(
-    SELECT
-        CAST(s1, 'FixedString(10)') AS fs1,
-        s2 AS sector,
-        s3
-    FROM t1
-    WHERE  (s3 != 'test')
-)
-    SELECT
-        fs1
-    FROM t2
-    LEFT JOIN tmp1 USING (fs1)
-    WHERE (fs1 IN ('test')) SETTINGS enable_multiple_prewhere_read_steps = 1, query_plan_merge_filters=1;
+    WHERE (fs1 IN ('test'));

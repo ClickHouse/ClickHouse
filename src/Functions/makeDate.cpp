@@ -10,7 +10,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/DecimalFunctions.h>
 #include <Interpreters/castColumn.h>
 
 #include <Common/DateLUT.h>
@@ -737,7 +736,7 @@ Converts a number containing the year, month and day number to a Date.
 This functions is the opposite of function `toYYYYMMDD()`.
 The output is undefined if the input does not encode a valid Date value.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
     factory.registerFunction<FunctionYYYYYMMDDToDate<Date32Traits>>(
@@ -745,7 +744,7 @@ The output is undefined if the input does not encode a valid Date value.
             .description = R"(
 Like function `YYYYMMDDToDate()` but produces a Date32.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>(
@@ -755,7 +754,7 @@ Converts a number containing the year, month, day, hour, minute and second numbe
 The output is undefined if the input does not encode a valid DateTime value.
 This functions is the opposite of function `toYYYYMMDD()`.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime64>(
@@ -764,7 +763,7 @@ This functions is the opposite of function `toYYYYMMDD()`.
 Like function `YYYYMMDDhhmmssToDate()` but produces a DateTime64.
 Accepts an additional, optional `precision` parameter after the `timezone` parameter.
 )",
-            .category{"Dates and Times"}
+            .categories{"Dates and Times"}
         }
     );
 }

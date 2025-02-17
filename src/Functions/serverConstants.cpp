@@ -9,7 +9,6 @@
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
 
 #include <Poco/Environment.h>
@@ -180,7 +179,7 @@ Can be changed with SET timezone = 'New/Tz'
 [example:timezone]
     )",
     .examples{{"timezone", "SELECT timezone();", ""}},
-    .category{"Other"}
+    .categories{"Constant", "Miscellaneous"}
 });
 factory.registerAlias("timeZone", "timezone");
 }
@@ -195,7 +194,7 @@ Returns the timezone name in which server operates.
 [example:serverTimezone]
     )",
      .examples{{"serverTimezone", "SELECT serverTimezone();", ""}},
-     .category{"Other"}
+     .categories{"Constant", "Miscellaneous"}
 });
     factory.registerAlias("serverTimeZone", "serverTimezone");
 }
@@ -237,7 +236,7 @@ Returns the value of `display_name` from config or server FQDN if not set.
 [example:displayName]
 )",
             .examples{{"displayName", "SELECT displayName();", ""}},
-            .category{"Other"}
+            .categories{"Constant", "Miscellaneous"}
         });
 }
 
