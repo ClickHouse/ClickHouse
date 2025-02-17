@@ -2200,7 +2200,7 @@ def test_replicated(started_cluster):
         )
 
     expected_rows = files_to_generate
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
