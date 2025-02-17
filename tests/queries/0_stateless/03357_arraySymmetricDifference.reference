@@ -1,0 +1,22 @@
+Negative tests
+Const arguments
+[]
+[]
+[2,3]
+['b','c']
+[3,NULL]
+[1,3]
+[]
+[]
+[]
+[2,3]
+Array(Tuple(Nullable(UInt8), Array(Nullable(String))))
+Non-const arguments
+[(2,['c','']),(NULL,['c'])]
+[(3,['g','']),(NULL,['f'])]
+[(4,['j','']),(NULL,['i'])]
+[(5,['m','']),(NULL,['l'])]
+[]
+[]
+[]
+[]
