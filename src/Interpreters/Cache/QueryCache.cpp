@@ -22,6 +22,7 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
+#include "Parsers/ASTSelectQuery.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -225,7 +226,7 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        if (auto * set_clause = ast->as<ASTSetQuery>())
+        auto remove_query_cache_settings = [](ASTSetQuery * set_clause)
         {
             chassert(!set_clause->is_standalone);
 
@@ -235,13 +236,27 @@ public:
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
+        };
+
+        if (auto * select_clause = ast->as<ASTSelectQuery>())
+        {
+            if (auto select_settings = select_clause->settings())
+            {
+                auto* set_clause = select_settings->as<ASTSetQuery>();
+
+                remove_query_cache_settings(set_clause);
+
+                /// Remove SETTINGS clause completely if it is empty
+                /// E.g. SELECT 1 SETTINGS use_query_cache = true
+                /// and SET use_query_cache = true; SELECT 1;
+                /// will match.
+                if (set_clause->changes.empty())
+                    select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
+            }
         }
     }
 
-    /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
-    /// E.g. SELECT 1 SETTINGS use_query_cache = true
-    /// and  SELECT 1;
-    /// currently don't match.
+
 };
 
 using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSettingsMatcher, true>;
