@@ -23,14 +23,13 @@ Thus, we will create a correct CMake target using Corrosion, and then rename it 
 Since Rust data types are not compatible with C/C++ data types, we will use our empty library project to create shim methods for conversion of data received from C/C++, calling library methods, and inverse conversion for output data. For example, this method was written for BLAKE3:
 
 ```rust
-
-```rust
 #[no_mangle]
 pub unsafe extern "C" fn blake3_apply_shim(
     begin: *const c_char,
     _size: u32,
     out_char_data: *mut u8,
 ```
+```rust
 #[no_mangle]
 pub unsafe extern "C" fn blake3_apply_shim(
     begin: *const c_char,
@@ -59,7 +58,7 @@ After writing the code for the shim methods, we need to prepare the header file 
 
 An example of a build script that can auto-generate a header file:
 
-```
+```rust
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
     let package_name = env::var("CARGO_PKG_NAME").unwrap();
