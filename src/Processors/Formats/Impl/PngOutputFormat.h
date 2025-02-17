@@ -28,7 +28,7 @@ private:
 
     size_t max_width;
     size_t max_height;
-
+    
     FormatSettings format_settings;
     Serializations serializations;
     std::unique_ptr<PngWriter> writer;
