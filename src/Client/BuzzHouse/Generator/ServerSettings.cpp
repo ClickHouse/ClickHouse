@@ -338,18 +338,37 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const DB::Strings & choices
-                 = {"'default'",
-                    "'grace_hash'",
-                    "'direct, hash'",
-                    "'hash'",
-                    "'parallel_hash'",
-                    "'partial_merge'",
-                    "'direct'",
-                    "'auto'",
-                    "'full_sorting_merge'",
-                    "'prefer_partial_merge'"};
-             return rg.pickRandomlyFromVector(choices);
+             String res;
+             DB::Strings choices
+                 = {"auto",
+                    "default",
+                    "direct",
+                    "full_sorting_merge",
+                    "grace_hash",
+                    "hash",
+                    "parallel_hash",
+                    "partial_merge",
+                    "prefer_partial_merge"};
+
+             if (rg.nextBool())
+             {
+                 res = rg.pickRandomlyFromVector(choices);
+             }
+             else
+             {
+                 const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+
+                 std::shuffle(choices.begin(), choices.end(), rg.generator);
+                 for (uint32_t i = 0; i < nalgo; i++)
+                 {
+                     if (i != 0)
+                     {
+                         res += ",";
+                     }
+                     res += choices[i];
+                 }
+             }
+             return "'" + res + "'";
          },
          {"'default'",
           "'grace_hash'",
