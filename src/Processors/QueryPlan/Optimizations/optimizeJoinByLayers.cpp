@@ -250,10 +250,10 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     for (size_t i = 0; i < splits.size(); ++i)
         analysis_results[i]->split_parts = std::move(splits[i]);
 
-    for (const auto & join_and_sharding : data.joins)
+    for (auto & join_and_sharding : data.joins)
     {
-        join_and_sharding->sharding.resize(data.common_prefix);
-        join_and_sharding->join->enableJoinByLayers(std::move(join_and_sharding->sharding));
+        join_and_sharding.sharding.resize(data.common_prefix);
+        join_and_sharding.join->enableJoinByLayers(std::move(join_and_sharding.sharding));
     }
 
     for (const auto & sorting_step : data.sorting_steps)
