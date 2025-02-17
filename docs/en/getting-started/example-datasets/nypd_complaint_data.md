@@ -407,12 +407,12 @@ Result:
 ```
 Ordering by cardinality, the `ORDER BY` becomes:
 
-```
+```sql
 ORDER BY ( BORO_NM, OFNS_DESC, RPT_DT )
 ```
 :::note
 The table below will use more easily read column names, the above names will be mapped to
-```
+```sql
 ORDER BY ( borough, offense_description, date_reported )
 ```
 :::
