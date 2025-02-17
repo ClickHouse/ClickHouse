@@ -10,14 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
-    extern const int CANNOT_WRITE_AFTER_BUFFER_CANCELED;
-    extern const int LOGICAL_ERROR;
-}
-
-
 /** A simple abstract class for buffered data writing (char sequences) somewhere.
   * Unlike std::ostream, it provides access to the internal buffer,
   *  and also allows you to manually manage the position inside the buffer.
