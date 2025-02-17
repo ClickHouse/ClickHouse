@@ -26,13 +26,14 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
         { "last_error_message",      std::make_shared<DataTypeString>(), "Message for the last error."},
         { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
         { "remote",                  std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
+        { "query_id",                std::make_shared<DataTypeString>(), "Id of a query that caused an error." },
     };
 }
 
 
 void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
+    auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote, const auto & query_id)
     {
         if (error.count || context->getSettingsRef()[Setting::system_events_show_zero_values])
         {
@@ -51,9 +52,11 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
                 res_columns[col_num++]->insert(trace_array);
             }
             res_columns[col_num++]->insert(remote);
+            res_columns[col_num++]->insert(query_id);
         }
     };
 
+    const auto & query_id = context->getInitialQueryId();
     for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
     {
         const auto & error = ErrorCodes::values[i].get();
@@ -62,8 +65,8 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         if (name.empty())
             continue;
 
-        add_row(name, i, error.local,  /* remote= */ false);
-        add_row(name, i, error.remote, /* remote= */ true);
+        add_row(name, i, error.local,  /* remote= */ false, query_id);
+        add_row(name, i, error.remote, /* remote= */ true, query_id);
     }
 }
 
