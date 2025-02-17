@@ -7,7 +7,6 @@
 #include "KernelPointerWrapper.h"
 
 #include <Core/TypeId.h>
-#include <Core/getDataTypeFromTypeIndex.h>
 #include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -27,6 +26,45 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
+
+namespace
+{
+    DataTypePtr getSimpleDataTypeFromTypeIndex(TypeIndex type_index)
+    {
+        std::string_view name = magic_enum::enum_name(type_index);
+        return DB::DataTypeFactory::instance().get(std::string(name), nullptr);
+    }
+
+    bool isSimpleDataType(TypeIndex type_index)
+    {
+        DataTypePtr data_type;
+        switch (type_index)
+        {
+            case TypeIndex::UInt8: [[fallthrough]];
+            case TypeIndex::UInt16: [[fallthrough]];
+            case TypeIndex::UInt32: [[fallthrough]];
+            case TypeIndex::UInt64: [[fallthrough]];
+            case TypeIndex::UInt128: [[fallthrough]];
+            case TypeIndex::UInt256: [[fallthrough]];
+            case TypeIndex::Int8: [[fallthrough]];
+            case TypeIndex::Int16: [[fallthrough]];
+            case TypeIndex::Int32: [[fallthrough]];
+            case TypeIndex::Int64: [[fallthrough]];
+            case TypeIndex::Int128: [[fallthrough]];
+            case TypeIndex::Int256: [[fallthrough]];
+            case TypeIndex::Float32: [[fallthrough]];
+            case TypeIndex::Float64: [[fallthrough]];
+            case TypeIndex::Date: [[fallthrough]];
+            case TypeIndex::Date32: [[fallthrough]];
+            case TypeIndex::DateTime: [[fallthrough]];
+            case TypeIndex::UUID: [[fallthrough]];
+            case TypeIndex::String:
+                return true;
+            default:
+                return false;
+        }
+    }
+}
 }
 
 namespace DeltaLake
@@ -35,8 +73,10 @@ namespace DeltaLake
 class SchemaVisitorData
 {
     friend class SchemaVisitor;
+
 public:
     DB::NamesAndTypesList getSchemaResult();
+    const DB::Names & getPartitionColumns() { return partition_columns; }
 
 private:
     DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
@@ -50,17 +90,20 @@ private:
         const std::string name;
         /// Column type.
         const DB::TypeIndex type;
+        /// Column nullability.
         const bool nullable;
-        /// If type is complex, whether it can contain nullable values.
+
+        /// If type is complex (array, map, struct), whether it can contain nullable values.
         bool value_contains_null;
-        /// If type is complex, list id of the child list
+        /// If type is complex (array, map, struct), list id of the child list.
         size_t child_list_id;
-        /// If type is simple, a flag to distringuish
+
+        size_t precision = 0; /// For Decimal.
+        size_t scale = 0; /// For Decimal.
+
+        /// If type is simple, a flag to distinguish
         /// between Bool and UInt8 in case of TypeIndex::UInt8.
         bool is_bool = false;
-        /// For Decimal.
-        size_t precision = 0;
-        size_t scale = 0;
     };
     using Fields = std::vector<Field>;
 
@@ -68,6 +111,11 @@ private:
     std::unordered_map<size_t, std::unique_ptr<Fields>> type_lists;
     /// Global counter for type lists.
     size_t list_counter = 0;
+    /// A list of partition columns.
+    /// Partition columns are not shown in global read schema,
+    /// because they are not stored in the actual data,
+    /// but instead in data paths directories.
+    DB::Names partition_columns;
 
     const LoggerPtr log = getLogger("SchemaVisitor");
 };
@@ -75,29 +123,33 @@ private:
 class SchemaVisitor
 {
 public:
-    static DB::NamesAndTypesList visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
+    using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelGlobalScanState = TemplatedKernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+    using KernelSharedSchema = TemplatedKernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
+    using KernelStringSliceIterator = TemplatedKernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
+
+    static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         auto visitor = createVisitor(data);
         size_t result = ffi::visit_snapshot_schema(snapshot, &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
-        return data.getSchemaResult();
     }
 
-    static DB::NamesAndTypesList visitReadSchema(
+    static void visitReadSchema(
         ffi::SharedSnapshot * snapshot,
         ffi::SharedExternEngine * engine,
         SchemaVisitorData & data)
     {
-        using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
         KernelScan scan = KernelUtils::unwrapResult(ffi::scan(snapshot, engine, /* predicate */{}), "scan");
-
-        auto * scan_state = ffi::get_global_scan_state(scan.get());
-        auto * schema = ffi::get_global_read_schema(scan_state);
+        KernelGlobalScanState scan_state = ffi::get_global_scan_state(scan.get());
+        KernelSharedSchema schema = ffi::get_global_read_schema(scan_state.get());
 
         auto visitor = createVisitor(data);
-        size_t result = ffi::visit_schema(schema, &visitor);
+        size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
-        return data.getSchemaResult();
+
+        KernelStringSliceIterator partition_columns_iter = ffi::get_partition_columns(scan_state.get());
+        while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
 private:
@@ -126,6 +178,12 @@ private:
         visitor.visit_decimal = &decimalTypeVisitor;
 
         return visitor;
+    }
+
+    static void visitPartitionColumn(void * data, ffi::KernelStringSlice slice)
+    {
+        SchemaVisitorData * state = static_cast<SchemaVisitorData *>(data);
+        state->partition_columns.push_back(KernelUtils::fromDeltaString(slice));
     }
 
     static uintptr_t makeFieldList(void * data, uintptr_t capacity_hint)
@@ -371,11 +429,12 @@ DB::NamesAndTypesList getTableSchemaFromSnapshot(ffi::SharedSnapshot * snapshot)
     return data.getSchemaResult();
 }
 
-DB::NamesAndTypesList getReadSchemaFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
+std::pair<DB::NamesAndTypesList, DB::Names>
+getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi::SharedExternEngine * engine)
 {
     SchemaVisitorData data;
     SchemaVisitor::visitReadSchema(snapshot, engine, data);
-    return data.getSchemaResult();
+    return {data.getSchemaResult(), data.getPartitionColumns()};
 }
 
 }

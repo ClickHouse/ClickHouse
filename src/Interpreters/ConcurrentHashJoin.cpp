@@ -593,12 +593,6 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
     return hash;
 }
 
-UInt64 calculateCacheKey(
-    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
-{
-    return calculateCacheKey(table_join, preCalculateCacheKey(right_table_expression, select_query_info));
-}
-
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
     chassert(table_join && table_join->oneDisjunct());

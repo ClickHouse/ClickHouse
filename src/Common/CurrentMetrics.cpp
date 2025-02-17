@@ -209,6 +209,9 @@
     M(DiskPlainRewritableS3FileCount, "Number of file entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     M(DiskPlainRewritableS3UniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     \
+    M(MergeTreeFetchPartitionThreads, "Number of threads for ALTER TABLE FETCH PARTITION") \
+    M(MergeTreeFetchPartitionThreadsActive, "Number of threads for ALTER TABLE FETCH PARTITION fetching part") \
+    M(MergeTreeFetchPartitionThreadsScheduled, "Number of queued or active part fetches in ALTER TABLE FETCH PARTITION") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
     M(MergeTreePartsLoaderThreadsScheduled, "Number of queued or active jobs in the MergeTree parts loader thread pool.") \

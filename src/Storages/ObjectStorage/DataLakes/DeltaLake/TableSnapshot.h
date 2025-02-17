@@ -33,6 +33,8 @@ public:
 
     const DB::NamesAndTypesList & getReadSchema();
 
+    const DB::Names & getPartitionColumns();
+
 private:
     class Iterator;
     using KernelExternEngine = TemplatedKernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
@@ -48,6 +50,7 @@ private:
     size_t snapshot_version;
     std::optional<DB::NamesAndTypesList> table_schema;
     std::optional<DB::NamesAndTypesList> read_schema;
+    std::optional<DB::Names> partition_columns;
 
     void initSnapshot();
     ffi::SharedSnapshot * getSnapshot();

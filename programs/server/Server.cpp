@@ -236,6 +236,7 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_size;
@@ -1216,6 +1217,11 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
+    getFetchPartitionThreadPool().initialize(
+        server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
+        0, // FETCH PARTITION is relatively rare, no need to keep threads
+        server_settings[ServerSetting::max_fetch_partition_thread_pool_size]);
+
     getActivePartsLoadingThreadPool().initialize(
         server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
         0, // We don't need any threads once all the parts will be loaded
@@ -1931,6 +1937,11 @@ try
                 new_server_settings[ServerSetting::max_backups_io_thread_pool_size],
                 new_server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
                 new_server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
+
+            getFetchPartitionThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
+                0, // FETCH PARTITION is relatively rare, no need to keep threads
+                new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size]);
 
             getActivePartsLoadingThreadPool().reloadConfiguration(
                 new_server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],

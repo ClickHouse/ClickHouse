@@ -23,8 +23,6 @@ public:
 
     NamesAndTypesList getTableSchema() const override { return {}; }
 
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
     bool operator ==(const IDataLakeMetadata & other) const override
     {
         const auto * hudi_metadata = dynamic_cast<const HudiMetadata *>(&other);
@@ -42,7 +40,6 @@ private:
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable Strings data_files;
-    std::unordered_map<String, String> column_name_to_physical_name;
 
     Strings getDataFilesImpl() const;
 };

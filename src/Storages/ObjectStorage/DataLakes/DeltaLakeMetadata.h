@@ -33,8 +33,6 @@ public:
 
     NamesAndTypesList getReadSchema() const override;
 
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return noop; }
-
     bool operator ==(const IDataLakeMetadata &) const override
     {
         return false;
@@ -56,7 +54,6 @@ public:
 private:
     const LoggerPtr log;
     const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
-    std::unordered_map<String, String> noop; /// Not needed for delta lake.
 };
 
 }
