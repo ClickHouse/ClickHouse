@@ -28,7 +28,7 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
     /// TODO: Fill in all the comments
     return ColumnsDescription
     {
-        {"type", getSettingsTypeEnum(), "The group of settings (Core, MergeTree...)"},
+        {"type", getSettingsTypeEnum(), "The group of settings (Session, MergeTree...)"},
         {"version", std::make_shared<DataTypeString>(), "The ClickHouse server version."},
         {"changes",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(
