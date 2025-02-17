@@ -50,7 +50,7 @@ namespace DB::Histogram
     {
     }
 
-    Metric& MetricFamily::withLabels(LabelValues label_values)
+    Metric & MetricFamily::withLabels(LabelValues label_values)
     {
         assert(label_values.size() == labels.size());
         std::lock_guard lock(mutex);

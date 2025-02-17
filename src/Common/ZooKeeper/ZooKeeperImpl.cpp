@@ -88,9 +88,9 @@ namespace Metrics::ResponseTime
     Histogram::Metric & multi = mf.withLabels({"multi"});
 
     template <typename Response>
-    auto instrument(std::function<void(const Response &)> callback, Histogram::Metric & histogram)
+    void instrument(std::function<void(const Response &)> & callback, Histogram::Metric & histogram)
     {
-        return [&histogram, callback, timer = Stopwatch()](const Response & response)
+        callback = [&histogram, callback, timer = Stopwatch()](const Response & response)
         {
             const Int64 response_time = timer.elapsedMilliseconds();
             histogram.observe(response_time);
