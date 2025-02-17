@@ -16,7 +16,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 ## Description
 
 Differs from the [`PrettySpace`](./PrettySpace.md) format in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) are not used. 
-This is necessary for displaying this format in a browser, as well as for using the 'watch' command-line utility.
+This is necessary for displaying this format in a browser, as well as for using the ‘watch’ command-line utility.
 
 ## Example Usage
 

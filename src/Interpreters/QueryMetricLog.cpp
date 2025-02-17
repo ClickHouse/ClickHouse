@@ -2,8 +2,6 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/LockGuard.h>
-#include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>

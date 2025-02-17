@@ -1,13 +1,14 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <limits>
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
-#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const TYPE &(VAR_NAME))
-#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(String & ret, const uint32_t quote, const TYPE &(VAR_NAME))
+#define CONV_FN(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const TYPE &(VAR_NAME))
+#define CONV_FN_QUOTE(TYPE, VAR_NAME) void TYPE##ToString(std::string & ret, const uint32_t quote, const TYPE &(VAR_NAME))
 
 namespace BuzzHouse
 {
@@ -112,7 +113,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-void convertToSQLString(String & ret, const String & s)
+void convertToSQLString(std::string & ret, const std::string & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -351,14 +352,14 @@ CONV_FN(NumericLiteral, nl)
 
 CONV_FN(HugeIntLiteral, huge)
 {
-    const HugeInt val(huge.upper(), huge.lower());
-    ret += val.toString();
+    HugeInt val(huge.upper(), huge.lower());
+    val.toString(ret);
 }
 
 CONV_FN(UHugeIntLiteral, uhuge)
 {
-    const UHugeInt val(uhuge.upper(), uhuge.lower());
-    ret += val.toString();
+    UHugeInt val(uhuge.upper(), uhuge.lower());
+    val.toString(ret);
 }
 
 CONV_FN(IntLiteral, int_val)
@@ -402,7 +403,7 @@ CONV_FN(LiteralValue, lit_val)
             ret += lit_val.no_quote_str();
             break;
         case LitValType::kHexString: {
-            const String & s = lit_val.hex_string();
+            const std::string & s = lit_val.hex_string();
             ret += "x'";
             for (size_t i = 0; i < s.length(); i++)
             {
@@ -623,12 +624,6 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_LEGR:
             ret += " <> ";
             break;
-        case BINOP_IS_NOT_DISTINCT_FROM:
-            ret += " IS NOT DISTINCT FROM ";
-            break;
-        case BINOP_LEEQGR:
-            ret += " <=> ";
-            break;
         case BINOP_AND:
             ret += " AND ";
             break;
@@ -692,7 +687,7 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
-void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
+void BottomTypeNameToString(std::string & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
     switch (btn.bottom_one_of_case())
@@ -751,50 +746,19 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                 {
                     case BottomTypeNameType::kDecimal: {
                         const Decimal & dec = btn.decimal();
-
                         ret += "Decimal";
-                        if (dec.has_decimaln())
+                        if (dec.has_precision())
                         {
-                            uint32_t precision = 0;
-                            const DecimalN & dn = dec.decimaln();
+                            const uint32_t precision = std::max<uint32_t>(1, dec.precision() % 77);
 
-                            switch (dn.precision())
-                            {
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                                    precision = 9;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                                    precision = 18;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                                    precision = 38;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                                    precision = 76;
-                                    break;
-                            }
-                            ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
                             ret += "(";
-                            ret += std::to_string(dn.scale() % (precision + 1));
-                            ret += ")";
-                        }
-                        else if (dec.has_decimal_simple())
-                        {
-                            const DecimalSimple & ds = dec.decimal_simple();
-
-                            if (ds.has_precision())
+                            ret += std::to_string(precision);
+                            if (dec.has_scale())
                             {
-                                const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
-
-                                ret += "(";
-                                ret += std::to_string(precision);
-                                if (ds.has_scale())
-                                {
-                                    ret += ",";
-                                    ret += std::to_string(ds.scale() % (precision + 1));
-                                }
-                                ret += ")";
+                                ret += ",";
+                                ret += std::to_string(dec.scale() % (precision + 1));
                             }
+                            ret += ")";
                         }
                     }
                     break;
@@ -1030,10 +994,9 @@ CONV_FN(ExprLike, elike)
 {
     ExprToString(ret, elike.expr1());
     ret += " ";
-    if (elike.not_() && elike.keyword() != ExprLike_PossibleKeywords::ExprLike_PossibleKeywords_REGEXP)
+    if (elike.not_())
         ret += "NOT ";
-    ret += ExprLike_PossibleKeywords_Name(elike.keyword());
-    ret += " ";
+    ret += "LIKE ";
     ExprToString(ret, elike.expr2());
 }
 
@@ -1070,8 +1033,6 @@ CONV_FN(ExprBetween, ebetween)
     ret += "))";
 }
 
-CONV_FN(ExplainQuery, explain);
-
 CONV_FN(ExprIn, ein)
 {
     const ExprList & elist = ein.expr();
@@ -1098,7 +1059,7 @@ CONV_FN(ExprIn, ein)
     }
     else if (ein.has_sel())
     {
-        ExplainQueryToString(ret, ein.sel());
+        SelectToString(ret, ein.sel());
     }
     else
     {
@@ -1113,7 +1074,7 @@ CONV_FN(ExprAny, eany)
     BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
     ret += eany.anyall() ? "ALL" : "ANY";
     ret += "(";
-    ExplainQueryToString(ret, eany.sel());
+    SelectToString(ret, eany.sel());
     ret += ")";
 }
 
@@ -1122,7 +1083,7 @@ CONV_FN(ExprExists, exists)
     if (exists.not_())
         ret += "NOT ";
     ret += "EXISTS (";
-    ExplainQueryToString(ret, exists.select());
+    SelectToString(ret, exists.select());
     ret += ")";
 }
 
@@ -1367,7 +1328,7 @@ CONV_FN(SQLWindowCall, wc)
 
 CONV_FN(FrameSpecSubLeftExpr, fssle)
 {
-    String next = FrameSpecSubLeftExpr_Which_Name(fssle.which());
+    std::string next = FrameSpecSubLeftExpr_Which_Name(fssle.which());
 
     if (fssle.which() > FrameSpecSubLeftExpr_Which_UNBOUNDED_PRECEDING && fssle.has_expr())
     {
@@ -1380,7 +1341,7 @@ CONV_FN(FrameSpecSubLeftExpr, fssle)
 
 CONV_FN(FrameSpecSubRightExpr, fsslr)
 {
-    String next = FrameSpecSubRightExpr_Which_Name(fsslr.which());
+    std::string next = FrameSpecSubRightExpr_Which_Name(fsslr.which());
 
     if (fsslr.which() > FrameSpecSubRightExpr_Which_UNBOUNDED_FOLLOWING && fsslr.has_expr())
     {
@@ -1521,7 +1482,7 @@ CONV_FN(ComplicatedExpr, expr)
             break;
         case ExprType::kSubquery:
             ret += "(";
-            ExplainQueryToString(ret, expr.subquery());
+            SelectToString(ret, expr.subquery());
             ret += ")";
             break;
         case ExprType::kFuncCall:
@@ -1594,6 +1555,8 @@ CONV_FN(Expr, expr)
         FieldAccessToString(ret, expr.field());
     }
 }
+
+// ~~~~SELECT~~~~
 
 CONV_FN(ResultColumn, rc)
 {
@@ -1713,7 +1676,7 @@ CONV_FN(JoinClause, jc)
 CONV_FN(JoinedDerivedQuery, tos)
 {
     ret += "(";
-    ExplainQueryToString(ret, tos.select());
+    SelectToString(ret, tos.select());
     ret += ")";
     if (tos.has_table_alias())
     {
@@ -1753,13 +1716,9 @@ CONV_FN(FileFunc, ff)
     {
         ret += "CSV";
     }
+    ret += "', '";
+    ret += ff.structure();
     ret += "'";
-    if (ff.has_structure())
-    {
-        ret += ", '";
-        ret += ff.structure();
-        ret += "'";
-    }
     if (ff.has_fcomp())
     {
         ret += ", '";
@@ -1902,67 +1861,6 @@ CONV_FN(S3Func, sfunc)
     ret += ")";
 }
 
-CONV_FN(SQLTableFuncCall, sfc)
-{
-    ret += SQLTableFunc_Name(sfc.func()).substr(2);
-    ret += '(';
-    for (int i = 0; i < sfc.args_size(); i++)
-    {
-        const SQLFuncArg & sfa = sfc.args(i);
-
-        if (i != 0)
-        {
-            ret += ", ";
-        }
-        if (sfa.has_lambda())
-        {
-            LambdaExprToString(ret, sfa.lambda());
-        }
-        else if (sfa.has_expr())
-        {
-            ExprToString(ret, sfa.expr());
-        }
-        else
-        {
-            ret += "1";
-        }
-    }
-    ret += ')';
-}
-
-CONV_FN(MergeFunc, mfunc)
-{
-    ret += "merge(";
-    if (mfunc.has_mdatabase())
-    {
-        ret += "REGEXP('";
-        ret += mfunc.mdatabase();
-        ret += "'), ";
-    }
-    ret += "'";
-    ret += mfunc.mtable();
-    ret += "')";
-}
-
-CONV_FN(ClusterFunc, cluster)
-{
-    ret += ClusterFunc_CName_Name(cluster.cname());
-    ret += "('";
-    ret += cluster.ccluster();
-    ret += "', '";
-    ret += cluster.cdatabase();
-    ret += "', '";
-    ret += cluster.ctable();
-    ret += "'";
-    if (cluster.has_sharding_key())
-    {
-        ret += ", '";
-        ret += cluster.sharding_key();
-        ret += "'";
-    }
-    ret += ")";
-}
-
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -1991,15 +1889,6 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kS3:
             S3FuncToString(ret, tf.s3());
-            break;
-        case TableFunctionType::kFunc:
-            SQLTableFuncCallToString(ret, tf.func());
-            break;
-        case TableFunctionType::kMerge:
-            MergeFuncToString(ret, tf.merge());
-            break;
-        case TableFunctionType::kCluster:
-            ClusterFuncToString(ret, tf.cluster());
             break;
         default:
             ret += "numbers(10)";
@@ -2276,13 +2165,13 @@ CONV_FN(SelectStatementCore, ssc)
 CONV_FN(SetQuery, setq)
 {
     ret += "(";
-    ExplainQueryToString(ret, setq.sel1());
+    SelectToString(ret, setq.sel1());
     ret += ") ";
     ret += SetQuery_SetOp_Name(setq.set_op());
     ret += " ";
     ret += AllOrDistinct_Name(setq.s_or_d());
     ret += " (";
-    ExplainQueryToString(ret, setq.sel2());
+    SelectToString(ret, setq.sel2());
     ret += ")";
 }
 
@@ -2392,10 +2281,6 @@ CONV_FN(DatabaseEngine, deng)
 CONV_FN(CreateDatabase, create_database)
 {
     ret += "CREATE DATABASE ";
-    if (create_database.if_not_exists())
-    {
-        ret += "IF NOT EXISTS ";
-    }
     DatabaseToString(ret, create_database.database());
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
@@ -2656,7 +2541,7 @@ CONV_FN(TableEngineParam, tep)
             break;
         case TableEngineParamType::kRegexp:
             ret += "REGEXP('";
-            ret += tep.regexp();
+            tep.regexp();
             ret += "')";
             break;
         default:
@@ -2742,27 +2627,24 @@ CONV_FN(TTLExpr, ttl_expr)
 
 CONV_FN(TableEngine, te)
 {
-    if (te.has_engine())
-    {
-        const TableEngineValues tengine = te.engine();
+    const TableEngineValues tengine = te.engine();
 
-        ret += " ENGINE = ";
-        if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
-        {
-            ret += TableEngineOption_Name(te.toption()).substr(1);
-        }
-        ret += TableEngineValues_Name(tengine);
-        ret += "(";
-        for (int i = 0; i < te.params_size(); i++)
-        {
-            if (i != 0)
-            {
-                ret += ", ";
-            }
-            TableEngineParamToString(ret, te.params(i));
-        }
-        ret += ")";
+    ret += " ENGINE = ";
+    if (te.has_toption() && tengine >= TableEngineValues::MergeTree && tengine <= TableEngineValues::VersionedCollapsingMergeTree)
+    {
+        ret += TableEngineOption_Name(te.toption()).substr(1);
     }
+    ret += TableEngineValues_Name(tengine);
+    ret += "(";
+    for (int i = 0; i < te.params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        TableEngineParamToString(ret, te.params(i));
+    }
+    ret += ")";
     if (te.has_order())
     {
         ret += " ORDER BY ";
@@ -2807,20 +2689,9 @@ CONV_FN(CreateTableAs, create_table)
 
 CONV_FN(CreateTable, create_table)
 {
-    switch (create_table.create_opt())
-    {
-        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create:
-            ret += "CREATE";
-            break;
-        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace:
-            ret += "REPLACE";
-            break;
-        case CreateTable_CreateTableOption::CreateTable_CreateTableOption_CreateOrReplace:
-            ret += "CREATE OR REPLACE";
-            break;
-    }
+    ret += create_table.replace() ? "REPLACE" : "CREATE";
     ret += " ";
-    if (create_table.create_opt() == CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create && create_table.is_temp())
+    if (!create_table.replace() && create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3125,24 +2996,8 @@ CONV_FN(CheckTable, ct)
 
 CONV_FN(DescTable, dt)
 {
-    ret += "DESCRIBE ";
-    using DescType = DescTable::DescOneofCase;
-    switch (dt.desc_oneof_case())
-    {
-        case DescType::kEst:
-            ExprSchemaTableToString(ret, dt.est());
-            break;
-        case DescType::kSel:
-            ret += "(";
-            SelectToString(ret, dt.sel());
-            ret += ")";
-            break;
-        case DescType::kStf:
-            SQLTableFuncCallToString(ret, dt.stf());
-            break;
-        default:
-            ret += "t0";
-    }
+    ret += "DESCRIBE TABLE ";
+    ExprSchemaTableToString(ret, dt.est());
     if (dt.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -3152,6 +3007,7 @@ CONV_FN(DescTable, dt)
 
 CONV_FN(DeduplicateExpr, de)
 {
+    ret += " DEDUPLICATE";
     if (de.has_col_list())
     {
         ret += " BY ";
@@ -3184,14 +3040,9 @@ CONV_FN(OptimizeTable, ot)
     }
     if (ot.has_dedup())
     {
-        ret += " DEDUPLICATE";
-        if (ot.cleanup())
-        {
-            ret += " CLEANUP";
-        }
         DeduplicateExprToString(ret, ot.dedup());
     }
-    else if (ot.cleanup())
+    if (ot.cleanup())
     {
         ret += " CLEANUP";
     }
@@ -3267,44 +3118,28 @@ CONV_FN(RefreshableView, rv)
 
 CONV_FN(CreateView, create_view)
 {
-    const bool replace = create_view.replace();
     const bool materialized = create_view.materialized();
     const bool refreshable = create_view.has_refresh();
 
-    if (create_view.replace())
-    {
-        ret += "REPLACE TABLE";
-    }
-    else
-    {
-        ret += "CREATE ";
-        if (materialized)
-        {
-            ret += "MATERIALIZED ";
-        }
-        ret += "VIEW";
-    }
+    ret += create_view.replace() ? "REPLACE" : "CREATE";
     ret += " ";
+    if (materialized)
+    {
+        ret += "MATERIALIZED ";
+    }
+    ret += "VIEW ";
     ExprSchemaTableToString(ret, create_view.est());
     if (materialized)
     {
-        if (!replace && refreshable)
+        if (refreshable)
         {
             ret += " ";
             RefreshableViewToString(ret, create_view.refresh());
         }
-        if (!replace && create_view.has_to())
+        if (create_view.has_to_est())
         {
-            const CreateMatViewTo & cmvt = create_view.to();
-
             ret += " TO ";
-            ExprSchemaTableToString(ret, cmvt.est());
-            if (cmvt.has_col_list())
-            {
-                ret += "(";
-                ColumnPathListToString(ret, 0, cmvt.col_list());
-                ret += ")";
-            }
+            ExprSchemaTableToString(ret, create_view.to_est());
         }
         if (create_view.has_engine())
         {
@@ -3314,7 +3149,7 @@ CONV_FN(CreateView, create_view)
         {
             ret += " POPULATE";
         }
-        if (!replace && refreshable && create_view.empty())
+        if (refreshable && create_view.empty())
         {
             ret += " EMPTY";
         }
@@ -3612,7 +3447,7 @@ CONV_FN(AlterTableItem, alter)
         case AlterType::kMovePartitionTo:
             ret += "MOVE ";
             PartitionExprToString(ret, alter.move_partition_to().partition());
-            ret += " TO TABLE ";
+            ret += " FROM ";
             ExprSchemaTableToString(ret, alter.move_partition_to().est());
             break;
         case AlterType::kClearColumnPartition:
@@ -3709,7 +3544,7 @@ CONV_FN(Attach, at)
     ret += SQLObject_Name(at.sobject());
     ret += " ";
     SQLObjectNameToString(ret, at.object());
-    if (at.sobject() != SQLObject::DATABASE && at.has_as_replicated())
+    if (at.has_as_replicated())
     {
         ret += " AS";
         ret += at.as_replicated() ? "" : " NOT";
@@ -4012,9 +3847,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDropCache:
             ret += "DROP CACHE";
             break;
-        case CmdType::kDropSkipIndexCache:
-            ret += "DROP SKIPPING INDEX CACHE";
-            break;
         default:
             ret += "REFRESH VIEW";
     }
@@ -4087,34 +3919,47 @@ CONV_FN(SQLQueryInner, query)
 
 CONV_FN(ExplainQuery, explain)
 {
-    if (explain.is_explain())
+    ret += "EXPLAIN";
+    if (explain.has_expl())
     {
-        ret += "EXPLAIN ";
-        if (explain.has_expl())
+        ret += " ";
+        ret += ExplainQuery_ExplainValues_Name(explain.expl());
+        std::replace(ret.begin(), ret.end(), '_', ' ');
+    }
+    if (explain.has_expl() && explain.expl() <= ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE && explain.opts_size())
+    {
+        ret += " ";
+        for (int i = 0; i < explain.opts_size(); i++)
         {
-            String nexplain = ExplainQuery_ExplainValues_Name(explain.expl());
+            std::string ostr;
+            const ExplainOption & eopt = explain.opts(i);
 
-            std::replace(nexplain.begin(), nexplain.end(), '_', ' ');
-            ret += nexplain;
-            ret += " ";
-        }
-        if (explain.opts_size())
-        {
-            for (int i = 0; i < explain.opts_size(); i++)
+            if (i != 0)
             {
-                const ExplainOption & eopt = explain.opts(i);
-
-                if (i != 0)
-                {
-                    ret += ", ";
-                }
-                ret += ExplainOption_ExplainOpt_Name(eopt.opt());
-                ret += " = ";
-                ret += std::to_string(eopt.val());
+                ret += ", ";
             }
-            ret += " ";
+            switch (explain.expl())
+            {
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PLAN:
+                    ostr += ExpPlanOpt_Name(static_cast<ExpPlanOpt>((eopt.opt() % 5) + 1));
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
+                    ostr += ExpPipelineOpt_Name(static_cast<ExpPipelineOpt>((eopt.opt() % 3) + 1));
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_QUERY_TREE:
+                    ostr += ExpQueryTreeOpt_Name(static_cast<ExpQueryTreeOpt>((eopt.opt() % 3) + 1));
+                    break;
+                default:
+                    assert(0);
+            }
+            ostr = ostr.substr(5);
+            std::transform(ostr.begin(), ostr.end(), ostr.begin(), [](unsigned char c) { return std::tolower(c); });
+            ret += ostr;
+            ret += " = ";
+            ret += std::to_string(eopt.val());
         }
     }
+    ret += " ";
     SQLQueryInnerToString(ret, explain.inner_query());
 }
 
@@ -4123,6 +3968,9 @@ CONV_FN(SQLQuery, query)
     using QueryType = SQLQuery::QueryOneofCase;
     switch (query.query_oneof_case())
     {
+        case QueryType::kInnerQuery:
+            SQLQueryInnerToString(ret, query.inner_query());
+            break;
         case QueryType::kExplain:
             ExplainQueryToString(ret, query.explain());
             break;

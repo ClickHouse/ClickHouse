@@ -6,7 +6,6 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>

@@ -33,6 +33,8 @@
 
 #include <boost/range/algorithm_ext/push_back.hpp>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -377,11 +379,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
-            break;
-        }
-        case ASTAlterCommand::UNLOCK_SNAPSHOT:
-        {
-            required_access.emplace_back(AccessType::ALTER_UNLOCK_SNAPSHOT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

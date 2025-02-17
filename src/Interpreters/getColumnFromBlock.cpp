@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/castColumn.h>
 

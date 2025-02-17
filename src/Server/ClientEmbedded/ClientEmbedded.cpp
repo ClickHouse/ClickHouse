@@ -8,8 +8,6 @@
 #include "Common/setThreadName.h"
 #include <Common/Exception.h>
 
-#include <iomanip>
-
 
 namespace DB
 {

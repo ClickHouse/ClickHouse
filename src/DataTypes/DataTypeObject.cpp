@@ -307,6 +307,19 @@ std::optional<String> tryGetSubObjectSubcolumn(std::string_view subcolumn_name)
     return path + String(buf.position(), buf.available());
 }
 
+/// Return sub-path by specified prefix.
+/// For example, for prefix a.b:
+/// a.b.c.d -> c.d, a.b.c -> c
+String getSubPath(const String & path, const String & prefix)
+{
+    return path.substr(prefix.size() + 1);
+}
+
+std::string_view getSubPath(std::string_view path, const String & prefix)
+{
+    return path.substr(prefix.size() + 1);
+}
+
 }
 
 std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const
@@ -317,16 +330,16 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// we should return JSON column with data {"c" : {"d" : 10, "e" : Hello}, "f" : [1, 2, 3]}
     if (auto sub_object_subcolumn = tryGetSubObjectSubcolumn(subcolumn_name))
     {
-        const String & prefix = *sub_object_subcolumn + ".";
+        const String & prefix = *sub_object_subcolumn;
         /// Collect new typed paths.
         std::unordered_map<String, DataTypePtr> typed_sub_paths;
         /// Collect serializations for typed paths. They will be needed for sub-object subcolumn deserialization.
         std::unordered_map<String, SerializationPtr> typed_paths_serializations;
         for (const auto & [path, type] : typed_paths)
         {
-            if (path.starts_with(prefix))
+            if (path.starts_with(prefix) && path.size() != prefix.size())
             {
-                typed_sub_paths[path.substr(prefix.size())] = type;
+                typed_sub_paths[getSubPath(path, prefix)] = type;
                 typed_paths_serializations[path] = type->getDefaultSerialization();
             }
         }
@@ -346,15 +359,15 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
             auto & result_typed_columns = result_object_column.getTypedPaths();
             for (const auto & [path, column] : object_column.getTypedPaths())
             {
-                if (path.starts_with(prefix))
-                    result_typed_columns[path.substr(prefix.size())] = column;
+                if (path.starts_with(prefix) && path.size() != prefix.size())
+                    result_typed_columns[getSubPath(path, prefix)] = column;
             }
 
             std::vector<std::pair<String, ColumnPtr>> result_dynamic_paths;
             for (const auto & [path, column] :  object_column.getDynamicPaths())
             {
-                if (path.starts_with(prefix))
-                    result_dynamic_paths.emplace_back(path.substr(prefix.size()), column);
+                if (path.starts_with(prefix) && path.size() != prefix.size())
+                    result_dynamic_paths.emplace_back(getSubPath(path, prefix), column);
             }
             result_object_column.setDynamicPaths(result_dynamic_paths);
 
@@ -374,9 +387,13 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                     if (!path.starts_with(prefix))
                         break;
 
-                    auto sub_path = path.substr(prefix.size());
-                    result_shared_data_paths->insertData(sub_path.data(), sub_path.size());
-                    result_shared_data_values->insertFrom(*shared_data_values, lower_bound_index);
+                    /// Don't include path that is equal to the prefix.
+                    if (path.size() != prefix.size())
+                    {
+                        auto sub_path = getSubPath(path, prefix);
+                        result_shared_data_paths->insertData(sub_path.data(), sub_path.size());
+                        result_shared_data_values->insertFrom(*shared_data_values, lower_bound_index);
+                    }
                 }
                 result_shared_data_offsets.push_back(result_shared_data_paths->size());
             }

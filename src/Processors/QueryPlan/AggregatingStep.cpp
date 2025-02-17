@@ -1,7 +1,6 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>

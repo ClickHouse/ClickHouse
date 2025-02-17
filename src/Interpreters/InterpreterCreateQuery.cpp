@@ -13,12 +13,12 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
-#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/atomicRename.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Defines.h>
@@ -357,11 +357,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         db_disk->removeFileIfExists(metadata_file_tmp_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
-        writeMetadataFile(
-            db_disk,
-            /*file_path=*/metadata_file_tmp_path,
-            /*content=*/statement,
-            /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+        auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
     }
 
     /// We attach database before loading it's tables, so do not allow concurrent DDL queries
@@ -1578,8 +1581,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         chassert(!ddl_guard);
 
+        auto db_disk = getContext()->getDatabaseDisk();
+
         fs::path user_files = fs::path(getContext()->getUserFilesPath()).lexically_normal();
-        fs::path root_path = fs::path(getContext()->getPath()).lexically_normal();
+        fs::path root_path = fs::path(db_disk->getPath()).lexically_normal();
 
         if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
@@ -2481,11 +2486,15 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
-    writeMetadataFile(
-        db_disk,
-        /*file_path=*/table_metadata_tmp_path,
-        /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    {
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
+    }
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
 

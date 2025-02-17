@@ -119,7 +119,7 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
-                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny)
+                else if (join_kind == JoinKind::Right)
                     query_tree_node = join_node.getRightTableExpression().get();
                 else
                     return {};

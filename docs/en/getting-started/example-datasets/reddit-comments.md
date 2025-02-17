@@ -1,11 +1,11 @@
 ---
-description: "Dataset containing publicly available comments on Reddit from December 2005 to March 2023 with over 14B rows of data in JSON format"
 slug: /en/getting-started/example-datasets/reddit-comments
 sidebar_label: Reddit comments
-title: "Reddit comments dataset"
 ---
 
-This dataset contains publicly available comments on Reddit that go back to December, 2005, to March, 2023, and contains over 14B rows of data. The raw data is in JSON format in compressed files and the rows look like the following:
+# Reddit comments dataset
+
+This dataset contains publicly-available comments on Reddit that go back to December, 2005, to March, 2023, and contains over 14B rows of data. The raw data is in JSON format in compressed files and the rows look like the following:
 
 ```json
 {"controversiality":0,"body":"A look at Vietnam and Mexico exposes the myth of market liberalisation.","subreddit_id":"t5_6","link_id":"t3_17863","stickied":false,"subreddit":"reddit.com","score":2,"ups":2,"author_flair_css_class":null,"created_utc":1134365188,"author_flair_text":null,"author":"frjo","id":"c13","edited":false,"parent_id":"t3_17863","gilded":0,"distinguished":null,"retrieved_on":1473738411}

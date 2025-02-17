@@ -35,7 +35,6 @@ public:
         String s3_storage_class;
         ContextPtr context;
         bool is_internal_backup = false;
-        bool is_lightweight_snapshot = false;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;

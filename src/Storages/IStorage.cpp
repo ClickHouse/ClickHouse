@@ -1,6 +1,5 @@
 #include <Storages/IStorage.h>
 
-#include <Disks/IStoragePolicy.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>

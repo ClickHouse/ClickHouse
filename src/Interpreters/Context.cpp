@@ -803,18 +803,6 @@ struct ContextSharedPart : boost::noncopyable
         FileCacheFactory::instance().clear();
 
         {
-            std::lock_guard lock(clusters_mutex);
-            if (cluster_discovery)
-            {
-                LOG_TRACE(log, "Shutting down ClusterDiscovery");
-                /// Reset cluster_discovery if any.
-                /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
-                /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
-                cluster_discovery.reset();
-            }
-        }
-
-        {
             // Disk selector might not be initialized if there was some error during
             // its initialization. Don't try to initialize it again on shutdown.
             if (merge_tree_disk_selector)
@@ -4586,17 +4574,6 @@ std::shared_ptr<MetricLog> Context::getMetricLog() const
 }
 
 
-std::shared_ptr<LatencyLog> Context::getLatencyLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->latency_log;
-}
-
-
 std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -5403,7 +5380,7 @@ void Context::setClientVersion(UInt64 client_version_major, UInt64 client_versio
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 }
 
-void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
+void Context::setScriptLineNumbers(uint32_t query_number, uint32_t line_number)
 {
     client_info.script_query_number = query_number;
     client_info.script_line_number = line_number;

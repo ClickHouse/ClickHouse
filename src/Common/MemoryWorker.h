@@ -37,7 +37,7 @@ struct ICgroupsReader
 class MemoryWorker
 {
 public:
-    explicit MemoryWorker(uint64_t period_ms_, bool correct_tracker_);
+    explicit MemoryWorker(uint64_t period_ms_);
 
     enum class MemoryUsageSource : uint8_t
     {
@@ -65,7 +65,6 @@ private:
     LoggerPtr log;
 
     uint64_t period_ms;
-    bool correct_tracker = false;
 
     MemoryUsageSource source{MemoryUsageSource::None};
 

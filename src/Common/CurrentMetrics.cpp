@@ -190,7 +190,6 @@
     M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
     M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
-    M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
     M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
     M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
     M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
@@ -272,6 +271,8 @@
     M(PartsDeleteOnDestroy, "Part was moved to another disk and should be deleted in own destructor.") \
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
+    M(ActiveDataMutations, "Number of data mutations in all tables that are not finished and can be applied on the fly.") \
+    M(ActiveMetadataMutations, "Number of metadata mutations in all tables that are not finished and can be applied on the fly.") \
     M(MMappedFiles, "Total number of mmapped files.") \
     M(MMappedFileBytes, "Sum size of mmapped file regions.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \

@@ -707,35 +707,16 @@ size_t ColumnObjectDeprecated::allocatedBytes() const
     return res;
 }
 
-void ColumnObjectDeprecated::forEachMutableSubcolumn(MutableColumnCallback callback)
+void ColumnObjectDeprecated::forEachSubcolumn(MutableColumnCallback callback)
 {
     for (auto & entry : subcolumns)
         for (auto & part : entry->data.data)
             callback(part);
 }
 
-void ColumnObjectDeprecated::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     for (auto & entry : subcolumns)
-    {
-        for (auto & part : entry->data.data)
-        {
-            callback(*part);
-            part->forEachMutableSubcolumnRecursively(callback);
-        }
-    }
-}
-
-void ColumnObjectDeprecated::forEachSubcolumn(ColumnCallback callback) const
-{
-    for (const auto & entry : subcolumns)
-        for (auto & part : entry->data.data)
-            callback(part);
-}
-
-void ColumnObjectDeprecated::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
-{
-    for (const auto & entry : subcolumns)
     {
         for (auto & part : entry->data.data)
         {

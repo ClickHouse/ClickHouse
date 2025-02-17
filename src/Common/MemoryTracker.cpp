@@ -524,15 +524,14 @@ void MemoryTracker::updateRSS(Int64 rss_)
     total_memory_tracker.rss.store(rss_, std::memory_order_relaxed);
 }
 
-void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
+void MemoryTracker::updateAllocated(Int64 allocated_)
 {
     Int64 new_amount = allocated_;
-    if (log_change)
-        LOG_INFO(
-            getLogger("MemoryTracker"),
-            "Correcting the value of global memory tracker from {} to {}",
-            ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
-            ReadableSize(allocated_));
+    LOG_INFO(
+        getLogger("MemoryTracker"),
+        "Correcting the value of global memory tracker from {} to {}",
+        ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
+        ReadableSize(allocated_));
     total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);

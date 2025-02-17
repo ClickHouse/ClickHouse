@@ -5329,7 +5329,7 @@ toTypeName(b): Decimal(76, 0)
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
 All these functions accept one argument.
 
-When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
+When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can’t be parsed, an exception is thrown and the request is canceled.
 
 When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
@@ -6041,7 +6041,7 @@ reinterpretAsDate(x)
 **Implementation details**
 
 :::note
-If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
 :::
 
 **Example**
@@ -6081,7 +6081,7 @@ reinterpretAsDateTime(x)
 **Implementation details**
 
 :::note
-If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
 :::
 
 **Example**
@@ -7082,7 +7082,7 @@ Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except t
 
 Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](../data-types/datetime.md/#data_type-datetime) data type.
 
-The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
+The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse’s and some other date and time formats.
 
 **Syntax**
 

@@ -64,15 +64,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.2",
-        {
-            {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
-            {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
-            {"postgresql_fault_injection_probability", 0., 0., "New setting"},
-        });
         addSettingsChanges(settings_changes_history, "25.1",
         {
-            /// Release closed. Please use 25.2
             {"allow_not_comparable_types_in_order_by", true, false, "Don't allow not comparable types in order by by default"},
             {"allow_not_comparable_types_in_comparison_functions", true, false, "Don't allow not comparable types in comparison functions by default"},
             {"output_format_json_pretty_print", false, true, "Print values in a pretty format in JSON output format by default"},
@@ -86,11 +79,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
-            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
-            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
-            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
-            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"use_hive_partitioning", false, true, "Enabled the setting by default."},
             {"query_plan_try_use_vector_search", false, true, "New setting."},
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
@@ -113,12 +102,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
-            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
             {"optimize_extract_common_expressions", false, true, "Optimize WHERE, PREWHERE, ON, HAVING and QUALIFY expressions by extracting common expressions out from disjunction of conjunctions."},
-            /// Release closed. Please use 25.2
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
@@ -652,13 +639,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
-        addSettingsChanges(merge_tree_settings_changes_history, "25.2",
-        {
-            {"table_disk", false, false, "New setting"},
-        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
-            /// Release closed. Please use 25.2
             {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", false, false, "New setting to fetch parts data from other replicas"},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "Added new setting to limit max bytes for min_age_to_force_merge."},
             {"enable_max_bytes_limit_for_min_age_to_force_merge", false, false, "New setting"},
@@ -690,7 +672,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_use_metadata_hints_cache", true, true, "Cloud sync"},
             {"notify_newest_block_number", false, false, "Cloud sync"},
             {"allow_reduce_blocking_parts_task", false, false, "Cloud sync"},
-            /// Release closed. Please use 25.2
         });
         addSettingsChanges(merge_tree_settings_changes_history, "24.12",
         {

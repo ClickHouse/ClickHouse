@@ -31,7 +31,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <base/scope_guard.h>
 
 #include <base/isSharedPtrUnique.h>

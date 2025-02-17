@@ -14,8 +14,6 @@ public:
 
     ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const override;
 
-    bool isRandom() const override { return true; }
-
 private:
     const String storage_key_prefix;
 

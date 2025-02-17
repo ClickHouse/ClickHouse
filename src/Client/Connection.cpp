@@ -38,7 +38,6 @@
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
-#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -227,7 +226,7 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
         connected = true;
         setDescription();
 
-        sendHello(timeouts.handshake_timeout);
+        sendHello();
         receiveHello(timeouts.handshake_timeout);
 
         if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS)
@@ -368,7 +367,7 @@ void Connection::disconnect()
 }
 
 
-void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_timeout)
+void Connection::sendHello()
 {
     /** Disallow control characters in user controlled parameters
       *  to mitigate the possibility of SSRF.
@@ -421,7 +420,7 @@ void Connection::sendHello([[maybe_unused]] const Poco::Timespan & handshake_tim
         writeStringBinary(String(EncodedUserInfo::SSH_KEY_AUTHENTICAION_MARKER) + user, *out);
         writeStringBinary(password, *out);
 
-        performHandshakeForSSHAuth(handshake_timeout);
+        performHandshakeForSSHAuth();
     }
 #endif
     else if (!jwt.empty())
@@ -458,10 +457,8 @@ void Connection::sendAddendum()
 
 
 #if USE_SSH
-void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout)
+void Connection::performHandshakeForSSHAuth()
 {
-    TimeoutSetter timeout_setter(*socket, handshake_timeout, handshake_timeout);
-
     String challenge;
     {
         writeVarUInt(Protocol::Client::SSHChallengeRequest, *out);
@@ -478,7 +475,11 @@ void Connection::performHandshakeForSSHAuth(const Poco::Timespan & handshake_tim
         else if (packet_type == Protocol::Server::Exception)
             receiveException()->rethrow();
         else
-            throwUnexpectedPacket(timeout_setter, packet_type, "SSHChallenge or Exception");
+        {
+            /// Close connection, to not stay in unsynchronised state.
+            disconnect();
+            throwUnexpectedPacket(packet_type, "SSHChallenge or Exception");
+        }
     }
 
     writeVarUInt(Protocol::Client::SSHChallengeResponse, *out);
@@ -572,7 +573,15 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else
-        throwUnexpectedPacket(timeout_setter, packet_type, "Hello or Exception");
+    {
+        /// Reset timeout_setter before disconnect,
+        /// because after disconnect socket will be invalid.
+        timeout_setter.reset();
+
+        /// Close connection, to not stay in unsynchronised state.
+        disconnect();
+        throwUnexpectedPacket(packet_type, "Hello or Exception");
+    }
 }
 
 void Connection::setDefaultDatabase(const String & database)
@@ -703,7 +712,7 @@ bool Connection::ping(const ConnectionTimeouts & timeouts)
         }
 
         if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(timeout_setter, pong, "Pong");
+            throwUnexpectedPacket(pong, "Pong");
     }
     catch (const Poco::Exception & e)
     {
@@ -742,7 +751,7 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
     if (response_type == Protocol::Server::Exception)
         receiveException()->rethrow();
     else if (response_type != Protocol::Server::TablesStatusResponse)
-        throwUnexpectedPacket(timeout_setter, response_type, "TablesStatusResponse");
+        throwUnexpectedPacket(response_type, "TablesStatusResponse");
 
     TablesStatusResponse response;
     response.read(*in, server_revision);
@@ -809,14 +818,6 @@ void Connection::sendQuery(
         compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
-
-    /// Avoid reusing connections that had been left in the intermediate state
-    /// (i.e. not all packets had been sent).
-    bool completed = false;
-    SCOPE_EXIT({
-        if (!completed)
-            disconnect();
-    });
 
     writeVarUInt(Protocol::Client::Query, *out);
     writeStringBinary(query_id, *out);
@@ -937,8 +938,6 @@ void Connection::sendQuery(
         sendData(Block(), "", false);
         out->next();
     }
-
-    completed = true;
 }
 
 
@@ -1477,14 +1476,8 @@ InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement(
 }
 
 
-void Connection::throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected)
+void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {
-    /// Reset timeout_setter before disconnect, because after disconnect socket will be invalid.
-    timeout_setter.reset();
-
-    /// Close connection, to avoid leaving it in an unsynchronised state.
-    disconnect();
-
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
                        getDescription(), expected, String(Protocol::Server::toString(packet_type)));

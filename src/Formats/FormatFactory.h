@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Allocator.h>
+#include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>

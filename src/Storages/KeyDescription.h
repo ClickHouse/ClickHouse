@@ -1,14 +1,11 @@
 #pragma once
 
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
 {
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
 /// Common structure for primary, partition and other storage keys
 struct KeyDescription
 {

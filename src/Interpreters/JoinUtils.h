@@ -3,8 +3,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
-#include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Core/Joins.h>
 
 namespace DB
 {

@@ -159,9 +159,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
 QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes)
 {
     const auto & header = node->step->getOutputHeader();
-    if (!header && !actions_dag.getInputs().empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header, dag: {}",
-        actions_dag.dumpDAG());
+    if (!header)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header");
 
     QueryPlanStepPtr step;
 

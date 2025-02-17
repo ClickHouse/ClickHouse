@@ -832,10 +832,6 @@ Result:
 └─────────────────┘
 ```
 
-:::note `||` operator
-Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
-:::
-
 ## concatAssumeInjective
 
 Like [concat](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective. Can be used for optimization of GROUP BY.
@@ -1473,7 +1469,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — The characters to trim. [String](../data-types/string.md).
+- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
 - `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
@@ -1501,15 +1497,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimLeft(input_string[, trim_characters])
+trimLeft(input_string)
 ```
 
-Alias: `ltrim`.
+Alias: `ltrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1536,15 +1531,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimRight(input_string[, trim_characters])
+trimRight(input_string)
 ```
 
-Alias: `rtrim`.
+Alias: `rtrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1571,15 +1565,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from both
 **Syntax**
 
 ``` sql
-trimBoth(input_string[, trim_characters])
+trimBoth(input_string)
 ```
 
-Alias: `trim`.
+Alias: `trim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 

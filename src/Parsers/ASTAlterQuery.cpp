@@ -568,11 +568,6 @@ bool ASTAlterQuery::isFreezeAlter() const
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
 }
 
-bool ASTAlterQuery::isUnlockSnapshot() const
-{
-    return isOneCommandTypeOnly(ASTAlterCommand::UNLOCK_SNAPSHOT);
-}
-
 bool ASTAlterQuery::isAttachAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::ATTACH_PARTITION);

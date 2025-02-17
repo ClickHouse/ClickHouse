@@ -39,9 +39,7 @@ namespace ErrorCodes
     M(Bool, check_projection_parts) \
     M(Bool, allow_backup_broken_projections) \
     M(Bool, write_access_entities_dependents) \
-    M(Bool, allow_checksums_from_remote_paths) \
     M(Bool, internal) \
-    M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid) \
     /// M(Int64, compression_level)

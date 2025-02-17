@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
@@ -180,8 +179,6 @@ void IOutputFormat::onProgress(const Progress & progress)
     if (writesProgressConcurrently())
     {
         has_progress_update_to_write = true;
-
-        /// Do not write progress too frequently.
         if (elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
         {
             std::unique_lock lock(writing_mutex, std::try_to_lock);
@@ -194,11 +191,6 @@ void IOutputFormat::onProgress(const Progress & progress)
             }
         }
     }
-}
-
-void IOutputFormat::setProgress(Progress progress)
-{
-    statistics.progress = std::move(progress);
 }
 
 }

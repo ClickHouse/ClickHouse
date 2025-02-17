@@ -22,18 +22,17 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
-#include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
 namespace DB
@@ -204,27 +203,6 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node)
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
 {
     return isQueryOrUnionNode(node.get());
-}
-
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
-{
-    /// The case of lambda argument. Example:
-    /// arrayMap(X -> X + Y, [0])
-    ///
-    /// X would have lambda as a source node
-    /// Y comes from outer scope and requires ordinary check.
-    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
-        return false;
-
-    while (scope_to_check != nullptr)
-    {
-        if (scope_to_check->registered_table_expression_nodes.contains(column_source))
-            return false;
-        if (isQueryOrUnionNode(scope_to_check->scope_node))
-            return true;
-        scope_to_check = scope_to_check->parent_scope;
-    }
-    return true;
 }
 
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,
@@ -995,105 +973,6 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNo
     auto columns_to_select_list = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::Ordinary));
     NamesAndTypes columns_to_select(columns_to_select_list.begin(), columns_to_select_list.end());
     return buildSubqueryToReadColumnsFromTableExpression(columns_to_select, table_node, context);
-}
-
-bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expression)
-{
-    QueryTreeNodes stack = { node };
-    while (!stack.empty())
-    {
-        auto current = stack.back();
-        stack.pop_back();
-
-        switch (current->getNodeType())
-        {
-            case QueryTreeNodeType::CONSTANT:
-                break;
-            case QueryTreeNodeType::COLUMN:
-            {
-                auto * column_node = current->as<ColumnNode>();
-                auto source = column_node->getColumnSourceOrNull();
-                if (source && table_expression && !source->isEqual(*table_expression))
-                    return true;
-                break;
-            }
-            default:
-            {
-                for (const auto & child : current->getChildren())
-                {
-                    if (child)
-                        stack.push_back(child);
-                }
-            }
-        }
-    }
-    return false;
-}
-
-void removeExpressionsThatDoNotDependOnTableIdentifiers(
-    QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context)
-{
-    auto * function = expression->as<FunctionNode>();
-    if (!function)
-        return;
-
-    if (function->getFunctionName() != "and")
-    {
-        if (hasUnknownColumn(expression, table_expression))
-            expression = nullptr;
-        return;
-    }
-
-    QueryTreeNodesDeque conjunctions;
-    QueryTreeNodesDeque processing{ expression };
-
-    while (!processing.empty())
-    {
-        auto node = std::move(processing.front());
-        processing.pop_front();
-
-        if (auto * function_node = node->as<FunctionNode>())
-        {
-            if (function_node->getFunctionName() == "and")
-                std::ranges::copy(
-                    function_node->getArguments(),
-                    std::back_inserter(processing)
-                );
-            else
-                conjunctions.push_back(node);
-        }
-        else
-        {
-            conjunctions.push_back(node);
-        }
-    }
-
-    std::swap(processing, conjunctions);
-
-    for (const auto & node : processing)
-    {
-        if (!hasUnknownColumn(node, table_expression))
-            conjunctions.push_back(node);
-    }
-
-    if (conjunctions.empty())
-    {
-        expression = {};
-        return;
-    }
-    if (conjunctions.size() == 1)
-    {
-        expression = conjunctions[0];
-        return;
-    }
-
-    function->getArguments().getNodes().clear();
-    std::ranges::move(conjunctions, std::back_inserter(function->getArguments().getNodes()));
-
-    const auto function_impl = FunctionFactory::instance().get("and", context);
-    function->resolveAsFunction(function_impl->build(function->getArgumentColumns()));
 }
 
 }

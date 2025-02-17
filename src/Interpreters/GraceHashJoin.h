@@ -91,8 +91,6 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    void forceSpill() { force_spill = true; }
-
 private:
     void initBuckets();
     /// Create empty join for in-memory processing.
@@ -150,7 +148,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 };
 
 }

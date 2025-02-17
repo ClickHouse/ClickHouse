@@ -6,7 +6,6 @@
 #    include <Columns/ColumnMap.h>
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
-#    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnsCommon.h>
 #    include <Columns/ColumnsDateTime.h>
 #    include <Columns/ColumnsNumber.h>
@@ -31,7 +30,6 @@
 #    include <IO/ReadBufferFromMemory.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
-#    include <Interpreters/Set.h>
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <orc/MemoryPool.hh>
@@ -544,7 +542,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped), format_settings);
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped));
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -1087,7 +1085,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     }
 
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header, format_settings);
+        return getNamesAndRecursivelyNullableTypes(header);
     return header.getNamesAndTypesList();
 }
 

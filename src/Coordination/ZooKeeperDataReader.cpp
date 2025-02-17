@@ -9,8 +9,6 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperStorage_fwd.h>
-#include <Coordination/KeeperStorage.h>
 
 
 namespace DB

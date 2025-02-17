@@ -25,9 +25,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/indexHint.h>
 
-#include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Set.h>
 
 #include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
