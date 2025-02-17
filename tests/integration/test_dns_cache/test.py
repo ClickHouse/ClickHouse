@@ -218,9 +218,10 @@ node6 = cluster.add_instance(
 )
 
 
-@pytest.mark.parametrize("node", [node5, node6])
-def test_user_access_ip_change(cluster_with_dns_cache_update, node):
-    node_name = node.name
+@pytest.mark.parametrize("node_name", ["node5", "node6"])
+def test_user_access_ip_change(cluster_with_dns_cache_update, node_name):
+    node = cluster.instances[node_name]
+    node.wait_for_start(5)
     node_num = node.name[-1]
     # getaddrinfo(...) may hang for a log time without this options
     node.exec_in_container(
@@ -249,17 +250,15 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node):
         ],
     )
 
-    cluster.restart_instance_with_ip_change(
-        node3, "2001:3984:3989::1:88{}3".format(node_num)
-    )
-    cluster.restart_instance_with_ip_change(
-        node4, "2001:3984:3989::1:88{}4".format(node_num)
-    )
+    node3_ipv6 = node3.ipv6_address
+    cluster.restart_instance_with_ip_change(node3, f"2001:3984:3989::1:88{node_num}3")
+    node4_ipv6 = node4.ipv6_address
+    cluster.restart_instance_with_ip_change(node4, f"2001:3984:3989::1:88{node_num}4")
 
     with pytest.raises(QueryRuntimeException):
-        node3.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
+        node3.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     with pytest.raises(QueryRuntimeException):
-        node4.query("SELECT * FROM remote('{}', 'system', 'one')".format(node_name))
+        node4.query(f"SELECT * FROM remote('{node_name}', 'system', 'one')")
     # now wrong addresses are cached
 
     node.set_hosts([])
@@ -292,6 +291,12 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node):
         retry_count=retry_count,
         sleep_time=1,
     )
+    # Reset the test state to the initial
+    cluster.restart_instance_with_ip_change(node3, node3_ipv6)
+    cluster.restart_instance_with_ip_change(node4, node4_ipv6)
+    if node_name == "node5":
+        # Node 5 has internal state changed and must be restarted
+        cluster.restart_service(node_name)
 
 
 def test_host_is_drop_from_cache_after_consecutive_failures(
