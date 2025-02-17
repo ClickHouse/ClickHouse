@@ -13,18 +13,23 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <bit>
-#include <string>
-#include <type_traits>
 #include <Core/Defines.h>
 #include <base/extended_types.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 #include <base/hex.h>
-#include <Common/transformEndianness.h>
+
+#include <array>
+#include <bit>
+#include <string>
 
 #include <city.h>
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#include <Common/transformEndianness.h>
+
+#include <type_traits>
+#endif
 
 #define SIPROUND                                                  \
     do                                                            \
@@ -159,18 +164,17 @@ public:
     template <typename Transform = void, typename T>
     ALWAYS_INLINE void update(const T & x)
     {
-        if constexpr (std::endian::native == std::endian::big)
-        {
-            auto transformed_x = x;
-            if constexpr (!std::is_same_v<Transform, void>)
-                transformed_x = Transform()(x);
-            else
-                DB::transformEndianness<std::endian::little>(transformed_x);
-
-            update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
-        }
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        auto transformed_x = x;
+        if constexpr (!std::is_same_v<Transform, void>)
+            transformed_x = Transform()(x);
         else
-            update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+            DB::transformEndianness<std::endian::little>(transformed_x);
+
+        update(reinterpret_cast<const char *>(&transformed_x), sizeof(transformed_x)); /// NOLINT
+#else
+        update(reinterpret_cast<const char *>(&x), sizeof(x)); /// NOLINT
+#endif
     }
 
     ALWAYS_INLINE void update(const std::string & x) { update(x.data(), x.length()); }
@@ -204,8 +208,6 @@ public:
 
 
 #undef ROTL
-
-#include <cstddef>
 
 inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
