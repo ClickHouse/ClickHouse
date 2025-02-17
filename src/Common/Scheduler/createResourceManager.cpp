@@ -51,7 +51,7 @@ private:
                     return classifier->get(resource_name);
             }
             if (settings.throw_on_unknown_workload)
-                throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Access denied to resource '{}'", resource_name);
+                throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Could not access resource '{}'. Please check `throw_on_unknown_workload` setting", resource_name);
             else
                 return ResourceLink{};
         }
