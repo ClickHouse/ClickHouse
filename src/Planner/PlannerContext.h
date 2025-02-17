@@ -35,12 +35,15 @@ public:
     GlobalPlannerContext(
         const QueryNode * parallel_replicas_node_,
         const TableNode * parallel_replicas_table_,
-        FiltersForTableExpressionMap filters_for_table_expressions_)
+        FiltersForTableExpressionMap filters_for_table_expressions_,
+        bool qualify_column_names_ = true
+      )
         : parallel_replicas_node(parallel_replicas_node_)
         , parallel_replicas_table(parallel_replicas_table_)
         , filters_for_table_expressions(std::move(filters_for_table_expressions_))
-    {
-    }
+        , qualify_column_names(qualify_column_names_)
+        , column_identifiers()
+    {}
 
     /** Create column identifier for column node.
       *
@@ -67,6 +70,7 @@ public:
     const FiltersForTableExpressionMap filters_for_table_expressions;
 
 private:
+    bool qualify_column_names;
     std::unordered_set<ColumnIdentifier> column_identifiers;
 };
 

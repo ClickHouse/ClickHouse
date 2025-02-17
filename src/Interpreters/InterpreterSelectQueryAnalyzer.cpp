@@ -155,10 +155,14 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(
     if (storage_options.table)
     {
         auto * query_node = query_tree->as<QueryNode>();
-        if (!query_node || query_node->getJoinTree() != nullptr)
+        if (!query_node)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Invalid query provided during projection calculation: {}",
-                            query_node ? "Non-empty FROM clause" : "Received not a QueryNode");
+                            "Invalid query provided during projection calculation: Received not a QueryNode");
+        auto * identifier_node = query_node->getJoinTree()->as<IdentifierNode>();
+        if (identifier_node == nullptr || identifier_node->getIdentifier().getFullName() != "system.one")
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Invalid query provided during projection calculation: Invalid FROM clause");
+
         query_node->getJoinTree() = storage_options.table;
     }
 
@@ -218,7 +222,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, { .table = table_ }))
-    , planner(query_tree, select_query_options)
+    , planner(query_tree, select_query_options, /*qualify_column_names*/false)
 {}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -277,8 +281,12 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
 const Names & InterpreterSelectQueryAnalyzer::getRequiredColumns()
 {
     planner.buildQueryPlanIfNeeded();
-    auto const & table_expression_data = planner.getPlannerContext()->getTableExpressionDataOrThrow(query_tree);
-    return table_expression_data.getSelectedColumnsNames();
+    auto const & table_expression_data_map = planner.getPlannerContext()->getTableExpressionNodeToData();
+    if (table_expression_data_map.size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Expected to have only 1 table expression registered, but got: {}",
+        table_expression_data_map.size());
+    return table_expression_data_map.begin()->second.getSelectedColumnsNames();
 }
 
 const PlannerExpressionsAnalysisResult & InterpreterSelectQueryAnalyzer::getExpressionAnalysisResult()

@@ -1254,15 +1254,19 @@ PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     return std::make_shared<PlannerContext>(mutable_context, std::move(global_planner_context), select_query_options);
 }
 
-Planner::Planner(const QueryTreeNodePtr & query_tree_,
-    SelectQueryOptions & select_query_options_)
+Planner::Planner(
+    const QueryTreeNodePtr & query_tree_,
+    SelectQueryOptions & select_query_options_,
+    bool qualify_column_names
+)
     : query_tree(query_tree_)
     , select_query_options(select_query_options_)
     , planner_context(buildPlannerContext(query_tree, select_query_options,
         std::make_shared<GlobalPlannerContext>(
             findQueryForParallelReplicas(query_tree, select_query_options),
             findTableForParallelReplicas(query_tree, select_query_options),
-            collectFiltersForAnalysis(query_tree, select_query_options))))
+            collectFiltersForAnalysis(query_tree, select_query_options),
+            qualify_column_names)))
 {
 }
 

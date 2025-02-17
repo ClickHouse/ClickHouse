@@ -26,7 +26,7 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Name
     std::string column_identifier;
 
     const auto & source_alias = column_source_node->getAlias();
-    if (!source_alias.empty())
+    if (qualify_column_names && !source_alias.empty())
         column_identifier = source_alias + "." + column.name;
     else
         column_identifier = column.name;

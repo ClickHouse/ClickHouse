@@ -23,8 +23,11 @@ class Planner
 {
 public:
     /// Initialize planner with query tree after analysis phase
-    Planner(const QueryTreeNodePtr & query_tree_,
-        SelectQueryOptions & select_query_options_);
+    Planner(
+        const QueryTreeNodePtr & query_tree_,
+        SelectQueryOptions & select_query_options_,
+        bool qualify_column_names = true
+    );
 
     /// Initialize planner with query tree after query analysis phase and global planner context
     Planner(const QueryTreeNodePtr & query_tree_,
