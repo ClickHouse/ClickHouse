@@ -41,7 +41,17 @@ public:
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
 
-    void enableJoinByLayers(size_t prefix) { join_by_layers_prefix = prefix; }
+    struct PrimaryKeyNamesPair
+    {
+        std::string lhs_name;
+        std::string rhs_name;
+    };
+
+    using PrimaryKeySharding = std::vector<PrimaryKeyNamesPair>;
+
+    /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
+    /// Names are required for EXPLAIN only.
+    void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
 
 private:
     void updateOutputHeader() override;
@@ -59,7 +69,7 @@ private:
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
     bool swap_streams = false;
-    size_t join_by_layers_prefix = 0;
+    PrimaryKeySharding primary_key_sharding;
 };
 
 /// Special step for the case when Join is already filled.

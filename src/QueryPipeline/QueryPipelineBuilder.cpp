@@ -380,7 +380,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
 }
 
-std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByLayers(
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,
@@ -640,7 +640,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
     return left;
 }
 
-std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByLayers(
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShards(
     std::unique_ptr<QueryPipelineBuilder> left,
     std::unique_ptr<QueryPipelineBuilder> right,
     JoinPtr join,

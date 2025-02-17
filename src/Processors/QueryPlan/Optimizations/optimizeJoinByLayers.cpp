@@ -96,7 +96,7 @@ bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
     return false;
 }
 
-size_t findCommonPromaryKeyPrefixByJoinKey(
+JoinStep::PrimaryKeySharding findCommonPromaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
     const TableJoin::JoinOnClause & clause)
@@ -105,11 +105,11 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
 
     const auto & lhs_pk = lhs_reading->getStorageMetadata()->getPrimaryKey();
     if (lhs_pk.column_names.empty())
-        return 0;
+        return {};
 
     const auto & rhs_pk = rhs_reading->getStorageMetadata()->getPrimaryKey();
     if (rhs_pk.column_names.empty())
-        return 0;
+        return {};
 
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
@@ -126,7 +126,7 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
     const auto & rhs_pk_colum_names = rhs_pk.column_names;
     auto rhs_matches = matchTrees(rhs_pk_dag.getOutputs(), rhs_dag, false);
 
-    size_t useful_pk_columns = 0;
+    JoinStep::PrimaryKeySharding sharding;
 
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
@@ -140,7 +140,7 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
 
         size_t keys_size = clause.key_names_left.size();
 
-        for (size_t i = 0; i < keys_size && useful_pk_columns <= pos; ++i)
+        for (size_t i = 0; i < keys_size && sharding.size() <= pos; ++i)
         {
             const auto & left_name = clause.key_names_left[i];
             const auto & right_name = clause.key_names_right[i];
@@ -165,20 +165,26 @@ size_t findCommonPromaryKeyPrefixByJoinKey(
                 // std::cerr << lhs_pk_dag.dumpDAG() << std::endl;
                 // std::cerr << rhs_pk_dag.dumpDAG() << std::endl;
                 // std::cerr << "==== match\n";
-                ++useful_pk_columns;
+                sharding.emplace_back(lhs_pk_colum_names[pos], rhs_pk_colum_names[pos]);
             }
         }
 
-        if (useful_pk_columns <= pos)
+        if (sharding.size() <= pos)
             break;
     }
 
-    return useful_pk_columns;
+    return sharding;
 }
 
 struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
 {
-    std::list<JoinStep *> joins;
+    struct JoinAndSharding
+    {
+        JoinStep * join;
+        JoinStep::PrimaryKeySharding sharding;
+    };
+
+    std::list<JoinAndSharding> joins;
     std::list<ReadFromMergeTree *> sources;
     std::list<SortingStep *> sorting_steps;
     size_t common_prefix = std::numeric_limits<size_t>::max();
@@ -244,8 +250,11 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     for (size_t i = 0; i < splits.size(); ++i)
         analysis_results[i]->split_parts = std::move(splits[i]);
 
-    for (const auto & join_step : data.joins)
-        join_step->enableJoinByLayers(data.common_prefix);
+    for (const auto & join_and_sharding : data.joins)
+    {
+        join_and_sharding->sharding.resize(data.common_prefix);
+        join_and_sharding->join->enableJoinByLayers(std::move(join_and_sharding->sharding));
+    }
 
     for (const auto & sorting_step : data.sorting_steps)
         sorting_step->convertToPartitionedFinishSorting();
@@ -276,14 +285,14 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
         if (frame.next_child_to_process > 0)
             frame.results.push_back(std::move(result));
 
+        result = {};
+
         if (frame.next_child_to_process < frame.node->children.size())
         {
             stack.push({frame.node->children[frame.next_child_to_process]});
             ++frame.next_child_to_process;
             continue;
         }
-
-        result = {};
 
         if (auto * join_step = typeid_cast<JoinStep *>(frame.node->step.get()))
         {
@@ -315,13 +324,13 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
 
             // std::cerr << "can_split_join " << can_split_join << std::endl;
 
-            size_t common_prefix = 0;
+            JoinStep::PrimaryKeySharding sharding;
             if (can_split_join)
             {
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
                 // std::cerr << frame.results.back()->dag.dumpDAG() << std::endl;
 
-                common_prefix = findCommonPromaryKeyPrefixByJoinKey(
+                sharding = findCommonPromaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
                     frame.results.back()->joins.sources.front(), frame.results.back()->dag,
                     clauses[0]);
@@ -329,19 +338,20 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
 
             // std::cerr << "common_prefix " << common_prefix << std::endl;
 
-            if (common_prefix > 0)
+            if (!sharding.empty())
             {
                 result = std::move(frame.results.front());
-                result->joins.joins.emplace_back(join_step);
-                result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
-                result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
-                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
 
                 /// Here we choose the minimal common prefix.
                 /// Applying optimization to more joins is potentially better.
                 /// Hopefully, even the first PK column would be enough to shard the data.
-                result->joins.common_prefix = std::min(result->joins.common_prefix, common_prefix);
+                result->joins.common_prefix = std::min(result->joins.common_prefix, sharding.size());
                 result->joins.common_prefix = std::min(result->joins.common_prefix, frame.results.back()->joins.common_prefix);
+
+                result->joins.joins.emplace_back(join_step, std::move(sharding));
+                result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
+                result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
+                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
 
                 frame.results.back() = std::nullopt;
             }

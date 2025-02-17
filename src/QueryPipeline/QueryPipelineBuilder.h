@@ -131,7 +131,7 @@ public:
         bool keep_left_read_in_order,
         Processors * collected_processors = nullptr);
 
-    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByLayers(
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr join,
@@ -149,7 +149,7 @@ public:
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 
-    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByLayers(
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         JoinPtr table_join,

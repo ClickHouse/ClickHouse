@@ -109,43 +109,46 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    if (join->pipelineType() == JoinPipelineType::YShaped)
+    if (primary_key_sharding.empty())
     {
-        if (join_by_layers_prefix)
-        {
-            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByLayers(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
-        }
-        else
+        if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
                 std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
             joined_pipeline->resize(max_streams);
         }
-    }
-    else if (join_by_layers_prefix)
-    {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesByLayers(
-            std::move(pipelines[0]),
-            std::move(pipelines[1]),
-            join,
-            join_algorithm_header,
-            max_block_size,
-            min_block_size_bytes,
-            &processors);
+        else
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
+                std::move(pipelines[0]),
+                std::move(pipelines[1]),
+                join,
+                join_algorithm_header,
+                max_block_size,
+                min_block_size_bytes,
+                max_streams,
+                keep_left_read_in_order,
+                &processors);
+        }
     }
     else
     {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
-            std::move(pipelines[0]),
-            std::move(pipelines[1]),
-            join,
-            join_algorithm_header,
-            max_block_size,
-            min_block_size_bytes,
-            max_streams,
-            keep_left_read_in_order,
-            &processors);
+        if (join->pipelineType() == JoinPipelineType::YShaped)
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByShards(
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+        }
+        else
+        {
+            joined_pipeline = QueryPipelineBuilder::joinPipelinesByShards(
+                std::move(pipelines[0]),
+                std::move(pipelines[1]),
+                join,
+                join_algorithm_header,
+                max_block_size,
+                min_block_size_bytes,
+                &processors);
+        }
     }
 
     if (!use_new_analyzer)
@@ -187,8 +190,19 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << name << ": " << value << '\n';
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
-    if (join_by_layers_prefix)
-        settings.out << prefix << "Layers prefix: " << join_by_layers_prefix << "\n";
+    if (!primary_key_sharding.empty())
+    {
+        settings.out << prefix << "Layers prefix: [";
+        bool first = true;
+        for (const auto & [lhs, rhs] : primary_key_sharding)
+        {
+            settings.out << "(" << lhs << " = " << rhs << ")";
+            if (!first)
+                settings.out << ", ";
+        }
+
+        settings.out << "]\n";
+    }
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -197,8 +211,18 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
-    if (join_by_layers_prefix)
-        map.add("LayersPrefix", true);
+    if (!primary_key_sharding.empty())
+    {
+        auto array = std::make_unique<JSONBuilder::JSONArray>();
+        for (const auto & [lhs, rhs] : primary_key_sharding)
+        {
+            auto item = std::make_unique<JSONBuilder::JSONArray>();
+            item->add(lhs);
+            item->add(rhs);
+            array->add(std::move(item));
+        }
+        map.add("LayersPrefix", std::move(array));
+    }
 }
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
