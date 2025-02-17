@@ -474,7 +474,7 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
+                    "Arguments of function {} have nested type {}. "
                     "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_x->getName());
@@ -499,7 +499,7 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} has nested type {}. "
+                    "Arguments of function {} have nested type {}. "
                     "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_y->getName());
