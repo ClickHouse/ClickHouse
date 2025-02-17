@@ -16,7 +16,7 @@ DataTypePtr getSettingsTypeEnum()
     return std::make_shared<DataTypeEnum8>(
     DataTypeEnum8::Values
         {
-            {"Core", 0},
+            {"Session", 0},
             {"MergeTree", 1},
         });
 }
