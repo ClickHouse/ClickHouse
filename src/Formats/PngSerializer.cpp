@@ -62,12 +62,11 @@ struct RGBA
     UInt8 a;
 };
 
-struct Colors
+namespace Colors
 {
     static constexpr auto WHITE = RGBA{255, 255, 255, 255};
     static constexpr auto BLACK = RGBA{0, 0, 0, 255};
-    static constexpr auto TRANSPARENT = {0, 0, 0, 0};
-};
+}
 
 class PngSerializer::SerializerImpl
 {
@@ -75,7 +74,7 @@ public:
     SerializerImpl(size_t width_, size_t height_, PngWriter & writer_)
         : max_width(width_), max_height(height_), row_count(0), writer(writer_)
     {
-        pixels.reserve(4 * max_width * max_height, static_cast<UInt8>(0));
+        pixels.reserve(4 * max_width * max_height);
     }
 
     void commonSetColumns(const ColumnPtr * columns, size_t num_columns, size_t expected)
