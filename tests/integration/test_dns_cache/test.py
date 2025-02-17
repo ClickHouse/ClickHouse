@@ -70,25 +70,11 @@ def _fill_nodes(nodes, table_name):
 
 
 @pytest.fixture(scope="module", autouse=True)
-def cluster_without_dns_cache_update():
+def cluster_start():
     try:
         cluster.start()
 
         _fill_nodes([node1, node2], "test_table_drop")
-
-        yield cluster
-
-    except Exception as ex:
-        print(ex)
-        raise
-
-    finally:
-        cluster.shutdown()
-
-
-@pytest.fixture(scope="module", autouse=True)
-def cluster_with_dns_cache_update(cluster_without_dns_cache_update):
-    try:
         _fill_nodes([node3, node4], "test_table_update")
 
         yield cluster
@@ -101,9 +87,26 @@ def cluster_with_dns_cache_update(cluster_without_dns_cache_update):
         cluster.shutdown()
 
 
+@pytest.fixture(scope="function", autouse=True)
+def cluster_ready(cluster_start):
+    """
+    A fixture to check that all nodes in the cluster is up and running.
+    Many failures were found after the random-order + flaky testing were run on the file
+    """
+    try:
+        for node in (node1, node2, node3, node4, node5, node6, node7):
+            node.wait_for_start(10)
+
+        yield cluster
+
+    except Exception as ex:
+        print(ex)
+        raise
+
+
 # node1 is a source, node2 downloads data
 # node2 has long dns_cache_update_period, so dns cache update wouldn't work
-def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
+def test_ip_change_drop_dns_cache(cluster_ready):
     # Preserve node1 ipv6 before changing it
     node1_ipv6 = node1.ipv6_address
     # In this case we should manually set up the static DNS entries on the source host
@@ -157,7 +160,7 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
 
 # node3 is a source, node4 downloads data
 # node4 has short dns_cache_update_period, so testing update of dns cache
-def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
+def test_ip_change_update_dns_cache(cluster_ready):
     # Preserve original IP before change
     node3_ipv6 = node3.ipv6_address
     # First we check, that normal replication works
@@ -203,8 +206,7 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     cluster.restart_instance_with_ip_change(node3, node3_ipv6)
 
 
-def test_dns_cache_update(cluster_with_dns_cache_update):
-    node4.wait_for_start(5)
+def test_dns_cache_update(cluster_ready):
     node4.set_hosts([("127.255.255.255", "lost_host")])
 
     with pytest.raises(QueryRuntimeException):
@@ -239,9 +241,8 @@ def test_dns_cache_update(cluster_with_dns_cache_update):
 
 
 @pytest.mark.parametrize("node_name", ["node5", "node6"])
-def test_user_access_ip_change(cluster_with_dns_cache_update, node_name):
+def test_user_access_ip_change(cluster_ready, node_name):
     node = cluster.instances[node_name]
-    node.wait_for_start(5)
     node_num = node.name[-1]
     # getaddrinfo(...) may hang for a log time without this options
     node.exec_in_container(
@@ -319,9 +320,7 @@ def test_user_access_ip_change(cluster_with_dns_cache_update, node_name):
         cluster.restart_service(node_name)
 
 
-def test_host_is_drop_from_cache_after_consecutive_failures(
-    cluster_with_dns_cache_update,
-):
+def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
     with pytest.raises(QueryRuntimeException):
         node4.query(
             "SELECT * FROM remote('InvalidHostThatDoesNotExist', 'system', 'one')"
@@ -362,7 +361,7 @@ def _render_filter_config(allow_ipv4, allow_ipv6):
         (False, False),
     ],
 )
-def test_dns_resolver_filter(cluster_without_dns_cache_update, allow_ipv4, allow_ipv6):
+def test_dns_resolver_filter(cluster_ready, allow_ipv4, allow_ipv6):
     node = node7
     host_ipv6 = node.ipv6_address
     host_ipv4 = node.ipv4_address
