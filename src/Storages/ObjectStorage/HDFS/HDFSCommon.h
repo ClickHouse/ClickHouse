@@ -77,7 +77,11 @@ public:
         return *this;
     }
 
-    hdfsBuilder * get() { return hdfs_builder; }
+    hdfsBuilder * get() const { return hdfs_builder; }
+
+    #if USE_KRB5
+    void runKinit() const;
+    #endif // USE_KRB5
 
 private:
     void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix, bool isUser = false);
