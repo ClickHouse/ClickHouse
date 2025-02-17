@@ -1176,8 +1176,6 @@ struct ConvertThroughParsing
             // Time zone is already figured out during result type resolution, no need to do it here.
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
-            else if constexpr (to_datetime64 || to_time64)
-                local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
             else
                 local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
 
@@ -1286,7 +1284,7 @@ struct ConvertThroughParsing
                     {
                         time_t res;
                         parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<DataTypeTime>(vec_to[i], res);
+                        convertFromTime<ToDataType>(vec_to[i], res);
                     }
                     else
                     {
@@ -1362,10 +1360,16 @@ struct ConvertThroughParsing
 
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
                 {
-                    if constexpr (to_datetime64 || to_time64)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
                     else
@@ -2759,7 +2763,7 @@ public:
 
                 return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
             }
-            if (isTime64<Name, ToDataType>(arguments))
+            else if (isTime64<Name, ToDataType>(arguments))
             {
                 timezone_arg_position += 1;
                 scale = static_cast<UInt32>(arguments[1].column->get64(0));
@@ -3109,7 +3113,7 @@ public:
     {
         DataTypePtr res;
 
-        if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments)) // TODO
+        if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
         {
             validateFunctionArguments(*this, arguments,
                 FunctionArgumentDescriptors{{"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}},
@@ -3124,10 +3128,10 @@ public:
                 scale = extractToDecimalScale(arguments[1]);
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
-            if (to_datetime64)
-                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
-            else
+            if (isTime64<Name, ToDataType>(arguments))
                 res = scale == 0 ? res = std::make_shared<DataTypeTime>(timezone) : std::make_shared<DataTypeTime64>(scale, timezone);
+            else
+                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
         }
         else
         {
