@@ -5,6 +5,8 @@ set -e -x -a
 
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
+# shellcheck disable=SC1091
+source /basic_helpers.sh
 
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
