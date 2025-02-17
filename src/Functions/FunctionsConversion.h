@@ -1176,6 +1176,8 @@ struct ConvertThroughParsing
             // Time zone is already figured out during result type resolution, no need to do it here.
             if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
                 local_time_zone = &dt_col->getTimeZone();
+            else if constexpr (to_datetime64 || to_time64)
+                local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 2, 0);
             else
                 local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
 
