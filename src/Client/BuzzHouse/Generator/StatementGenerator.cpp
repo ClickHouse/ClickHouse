@@ -199,12 +199,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.is_deterministic = true;
             next.teng = TableEngineValues::MergeTree;
         }
-        const bool has_with_cols = collectionHas<SQLTable>(
-            [&next](const SQLTable & t)
-            {
-                return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
-                    && t.numberOfInsertableColumns() >= next.ncols && (t.is_deterministic || !next.is_deterministic);
-            });
+        const auto & table_to_lambda = [&next](const SQLTable & t)
+        {
+            return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
+                && t.numberOfInsertableColumns() >= next.ncols && (t.is_deterministic || !next.is_deterministic);
+        };
+        const bool has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = has_with_cols || !tables.empty();
         const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
 
@@ -237,16 +237,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             ExprSchemaTable * to_est = cmvt->mutable_est();
-            const SQLTable & t = has_with_cols
-                ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-                                                [&next](const SQLTable & tt)
-                                                {
-                                                    return (!tt.db || tt.db->attached == DetachStatus::ATTACHED)
-                                                        && tt.attached == DetachStatus::ATTACHED
-                                                        && tt.numberOfInsertableColumns() >= next.ncols;
-                                                }))
-                      .get()
-                : rg.pickValueRandomlyFromMap(this->tables);
+            const SQLTable & t = has_with_cols ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(table_to_lambda)).get()
+                                               : rg.pickValueRandomlyFromMap(this->tables);
 
             if (t.db)
             {
@@ -412,14 +404,13 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
     }
 }
 
+static const auto optimize_table_lambda = [](const SQLTable & t)
+{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily(); };
+
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
 {
     ExprSchemaTable * est = ot->mutable_est();
-    const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-        [](const SQLTable & st)
-        {
-            return (!st.db || st.db->attached == DetachStatus::ATTACHED) && st.attached == DetachStatus::ATTACHED && st.isMergeTreeFamily();
-        }));
+    const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(optimize_table_lambda));
 
     if (t.db)
     {
@@ -785,16 +776,18 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     }
 }
 
+static const auto exchange_table_lambda = [](const SQLTable & t)
+{
+    /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
+    return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer()
+        && !t.getCluster();
+};
+
 void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
 {
     ExprSchemaTable * est1 = et->mutable_est1();
     ExprSchemaTable * est2 = et->mutable_est2();
-    const auto & input = filterCollection<SQLTable>(
-        [](const SQLTable & t)
-        {
-            return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer()
-                && !t.getCluster();
-        });
+    const auto & input = filterCollection<SQLTable>(exchange_table_lambda);
 
     for (const auto & entry : input)
     {
@@ -821,13 +814,14 @@ void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchan
     }
 }
 
+static const auto alter_table_lambda = [](const SQLTable & t)
+{ return (t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isFileEngine(); };
+
 void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at)
 {
     ExprSchemaTable * est = at->mutable_est();
     const uint32_t nalters = rg.nextBool() ? 1 : ((rg.nextMediumNumber() % 4) + 1);
-    const bool has_tables = collectionHas<SQLTable>(
-        [](const SQLTable & tt)
-        { return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.isFileEngine(); });
+    const bool has_tables = collectionHas<SQLTable>(alter_table_lambda);
     const bool has_views = collectionHas<SQLView>(attached_views);
     std::optional<String> cluster;
 
@@ -883,14 +877,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
     }
     else if (has_tables)
     {
-        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-                                                                            [](const SQLTable & tt)
-                                                                            {
-                                                                                return (!tt.db || tt.db->attached == DetachStatus::ATTACHED)
-                                                                                    && tt.attached == DetachStatus::ATTACHED
-                                                                                    && !tt.isFileEngine();
-                                                                            }))
-                                                  .get());
+        SQLTable & t = const_cast<SQLTable &>(rg.pickRandomlyFromVector(filterCollection<SQLTable>(alter_table_lambda)).get());
         const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
         const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
@@ -1857,10 +1844,10 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
 }
 
-const auto has_merge_tree_func = [](const SQLTable & t)
+static const auto has_merge_tree_func = [](const SQLTable & t)
 { return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily(); };
 
-const auto has_refreshable_view_func = [](const SQLView & v)
+static const auto has_refreshable_view_func = [](const SQLView & v)
 { return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED && v.is_refreshable; };
 
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc)
@@ -2721,32 +2708,12 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t truncate = 2
         * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
                                 || collectionHas<SQLTable>(attached_tables));
-    const uint32_t optimize_table = 2
-        * static_cast<uint32_t>(collectionHas<SQLTable>(
-            [](const SQLTable & t)
-            {
-                return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily();
-            }));
+    const uint32_t optimize_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(optimize_table_lambda));
     const uint32_t check_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
     const uint32_t desc_table = 2;
-    const uint32_t exchange_tables = 1
-        * static_cast<uint32_t>(collectionCount<SQLTable>(
-                                    [](const SQLTable & t)
-                                    {
-                                        /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged
-                                        /// are on same cluster
-                                        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
-                                            && !t.hasDatabasePeer() && !t.getCluster();
-                                    })
-                                > 1);
-    const uint32_t alter_table = 6
-        * static_cast<uint32_t>(collectionHas<SQLTable>(
-                                    [](const SQLTable & t)
-                                    {
-                                        return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
-                                            && !t.isFileEngine();
-                                    })
-                                || collectionHas<SQLView>(attached_views));
+    const uint32_t exchange_tables = 1 * static_cast<uint32_t>(collectionCount<SQLTable>(exchange_table_lambda) > 1);
+    const uint32_t alter_table
+        = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(alter_table_lambda) || collectionHas<SQLView>(attached_views));
     const uint32_t set_values = 5;
     const uint32_t attach = 2
         * static_cast<uint32_t>(collectionHas<SQLTable>(detached_tables) || collectionHas<SQLView>(detached_views)

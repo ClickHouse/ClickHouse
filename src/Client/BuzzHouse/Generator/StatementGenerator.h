@@ -385,6 +385,16 @@ public:
     const std::function<bool(const SQLView &)> detached_views
         = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
+    template <typename T>
+    std::function<bool(const T &)> hasTableOrView(const SQLBase & b)
+    {
+        return [&b](const T & t)
+        {
+            return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
+                && (t.is_deterministic || !b.is_deterministic);
+        };
+    }
+
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
         : fc(fuzzc)
         , connections(conn)
