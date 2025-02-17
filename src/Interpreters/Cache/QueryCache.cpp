@@ -173,10 +173,12 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
-bool checkCanWriteQueryCache(ASTPtr ast, ContextPtr context) {
+bool checkCanWriteQueryCache(ASTPtr ast, ContextPtr context)
+{
     const Settings & settings = context->getSettingsRef();
 
-    if (context->getCanUseQueryCache() && settings[Setting::enable_writes_to_query_cache]) {
+    if (context->getCanUseQueryCache() && settings[Setting::enable_writes_to_query_cache])
+    {
         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
         const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
 
@@ -291,15 +293,13 @@ public:
     {
         if (auto * table_expression = ast->as<ASTTableIdentifier>())
         {
-            if (table_expression->alias.starts_with("__table")) {
+            if (table_expression->alias.starts_with("__table"))
                 table_expression->setAlias("");
-            }
         }
         else if (auto * identifier = ast->as<ASTIdentifier>())
         {
-            if (identifier->compound() && identifier->name_parts[0].starts_with("__table")) {
+            if (identifier->compound() && identifier->name_parts[0].starts_with("__table"))
                 identifier->setShortName(identifier->name_parts[1]);
-            }
         }
     }
 };
@@ -344,17 +344,20 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
 
     /// Some specific settings are added to subqueries (extremes 0, max_result_bytes 0, max_result_rows 0),
     /// however non subqueries don't have this settings in settings.changes() and therefore don't match in cache.
-    /// Try to also add default values for extremes, max_result_bytes, max_result_rows from settings. 
+    /// Try to also add default values for extremes, max_result_bytes, max_result_rows from settings.
 
-    if (!changed_settings.tryGet("extremes")) {
+    if (!changed_settings.tryGet("extremes"))
+    {
         changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
     }
 
-    if (!changed_settings.tryGet("max_result_bytes")) {
+    if (!changed_settings.tryGet("max_result_bytes"))
+    {
         changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
     }
 
-    if (!changed_settings.tryGet("max_result_bytes")) {
+    if (!changed_settings.tryGet("max_result_bytes"))
+    {
         changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
     }
 
@@ -523,9 +526,9 @@ void QueryCacheWriter::finalizeWrite()
 
     if (was_finalized.exchange(true))
         return;
-        
+
     std::lock_guard lock(mutex);
-    
+
     /// Check some reasons why the entry must not be cached:
 
     if (auto query_runtime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - query_start_time); query_runtime < min_query_runtime)

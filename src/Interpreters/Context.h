@@ -1124,7 +1124,7 @@ public:
     std::shared_ptr<QueryCache> getQueryCache() const;
     void clearQueryCache(const std::optional<String> & tag) const;
     bool getCanUseQueryCache() const;
-    void setCanUseQueryCache(bool can_use_query_cache_); 
+    void setCanUseQueryCache(bool can_use_query_cache_);
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

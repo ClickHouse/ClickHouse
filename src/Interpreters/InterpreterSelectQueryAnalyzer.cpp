@@ -240,7 +240,7 @@ std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlo
 BlockIO InterpreterSelectQueryAnalyzer::execute()
 {
     auto pipeline_builder = buildQueryPipeline();
-    
+
     BlockIO result;
     result.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
 

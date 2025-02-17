@@ -1318,7 +1318,7 @@ static BlockIO executeQueryImpl(
         QueryCachePtr query_cache = context->getQueryCache();
         const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-            && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());        
+            && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
         context->setCanUseQueryCache(can_use_query_cache);
         QueryCacheUsage query_cache_usage = QueryCacheUsage::None;
 
@@ -1402,9 +1402,8 @@ static BlockIO executeQueryImpl(
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
                 // We need to force to build it here to check if we need to ignore quota.
-                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get())) {
+                if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
                     interpreter_with_analyzer->getQueryPlan();
-                }
 
                 if (!interpreter->ignoreQuota() && !quota_checked)
                 {

@@ -45,7 +45,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
 
 void ASTWithAlias::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    if (!alias.empty() && !ignore_aliases) 
+    if (!alias.empty() && !ignore_aliases)
         hash_state.update(alias);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }

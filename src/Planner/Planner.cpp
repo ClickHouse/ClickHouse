@@ -158,9 +158,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
-    extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -1240,13 +1237,16 @@ void addReadFromQueryCacheStep(QueryPlan & query_plan,
 )
 {
     auto pipe = Pipe();
-    if (source) {
+    if (source)
+    {
         pipe.addSource(std::shared_ptr<SourceFromChunks>(source.release()));
     }
-    if (source_totals) {
+    if (source_totals)
+    {
         pipe.addTotalsSource(std::shared_ptr<SourceFromChunks>(source_totals.release()));
     }
-    if (source_extremes) {
+    if (source_extremes)
+    {
         pipe.addExtremesSource(std::shared_ptr<SourceFromChunks>(source_extremes.release()));
     }
 
@@ -1501,7 +1501,7 @@ void Planner::buildPlanForQueryNode()
         auto reader = std::make_shared<QueryCacheReader>(query_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
-            addReadFromQueryCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());            
+            addReadFromQueryCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
             return;
         }
     }
@@ -1905,7 +1905,8 @@ void Planner::buildPlanForQueryNode()
 
     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled,
     /// then add a step which stores the result in the query cache.
-    if (settings[Setting::query_cache_for_subqueries] && checkCanWriteQueryCache(ast, query_context)) {
+    if (settings[Setting::query_cache_for_subqueries] && checkCanWriteQueryCache(ast, query_context))
+    {
         QueryCache::Key key(
             ast, query_context->getCurrentDatabase(), *settings_copy, query_plan.getRootNode()->step->getOutputHeader(),
             query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
@@ -1929,7 +1930,7 @@ void Planner::buildPlanForQueryNode()
                                 settings[Setting::max_block_size],
                                 settings[Setting::query_cache_max_size_in_bytes],
                                 settings[Setting::query_cache_max_entries]));
-            
+
             auto stream_into_query_cache_step = std::make_unique<StreamInQueryCacheStep>(query_plan.getRootNode()->step->getOutputHeader(), query_cache_writer);
             query_plan.addStep(std::move(stream_into_query_cache_step));
         }

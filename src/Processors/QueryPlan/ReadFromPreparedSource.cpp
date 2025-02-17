@@ -36,8 +36,9 @@ ReadFromStorageStep::ReadFromStorageStep(
         processor->setStorageLimits(query_info.storage_limits);
 }
 
-ReadFromQueryCacheStep::ReadFromQueryCacheStep(Pipe pipe_) 
+ReadFromQueryCacheStep::ReadFromQueryCacheStep(Pipe pipe_)
     : ReadFromPreparedSource(std::move(pipe_))
-{}
+{
+}
 
 }

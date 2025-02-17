@@ -652,11 +652,13 @@ void QueryPipeline::finalizeWriteInQueryCache()
     /// and all StreamInQueryCacheTransforms can point to different QueryCacheWriter objects if subqueries are cached.
     /// We should call finalize() on all of them.
            
-    for (auto& processor : *processors) {
-        if (auto* stream_processor = dynamic_cast<StreamInQueryCacheTransform *>(&*processor); stream_processor) {
+    for (auto& processor : *processors)
+    {
+        if (auto* stream_processor = dynamic_cast<StreamInQueryCacheTransform *>(&*processor); stream_processor)
+        {
             stream_processor->finalizeWriteInQueryCache();
         }
-    } 
+    }
 }
 
 void QueryPipeline::readFromQueryCache(
