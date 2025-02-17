@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 
 namespace Poco::Net
