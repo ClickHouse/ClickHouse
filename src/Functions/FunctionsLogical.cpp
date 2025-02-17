@@ -697,6 +697,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         ColumnRawPtrs not_short_circuit_args;
         std::vector<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
+        Stopwatch watch;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)
         {
@@ -722,7 +723,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             new_args.swap(arguments);
 
         if (profile)
-            return executeShortCircuit<true>(new_args, result_type, profile);
+        {
+            auto coalesce_elapsed = watch.elapsed();
+            auto res = executeShortCircuit<true>(new_args, result_type, profile);
+            profile->executed_elapsed += coalesce_elapsed;
+            return res;
+        }
         return executeShortCircuit<false>(new_args, result_type, profile);
     }
 
