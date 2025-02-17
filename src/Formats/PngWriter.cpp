@@ -50,7 +50,7 @@ void PngStructWrapper::cleanup()
 
 PngWriter::PngWriter(WriteBuffer & out_, Int32 bit_depth_) : out(out_), bit_depth(bit_depth_)
 {
-    if (bit_depth >= 16 || bit_depth < 1)
+    if (bit_depth > 16 || bit_depth < 1)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid bit depth: {}", bit_depth);
     }
