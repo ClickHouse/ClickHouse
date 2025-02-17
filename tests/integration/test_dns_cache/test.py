@@ -330,6 +330,8 @@ def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
     # dns_update_short -> dns_max_consecutive_failures set to 6
     assert node4.wait_for_log_line(
         regexp="Code: 198. DB::NetException: Not found address of host: InvalidHostThatDoesNotExist.",
+        # There's noize in a normal log, let's search the error log for the exception
+        filename="/var/log/clickhouse-server/clickhouse-server.err.log",
         look_behind_lines=300,
     )
     assert node4.wait_for_log_line(
@@ -339,7 +341,9 @@ def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
         look_behind_lines=500,
     )
     assert node4.wait_for_log_line(
-        "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*"
+        "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*",
+        # Again, another fuze for noize in normal log after possible restart
+        look_behind_lines=1000,
     )
 
 
