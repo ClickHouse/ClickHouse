@@ -271,23 +271,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     return True
 
 
-def is_ubsan_build() -> bool:
-    try:
-        query = (
-            'clickhouse client -q "SELECT value FROM system.build_options '
-            "WHERE name = 'CXX_FLAGS'\" "
-        )
-        output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
-            .decode("utf-8")
-            .strip()
-        )
-        return "-fsanitize=undefined" in output
-    except Exception as e:
-        logging.info("Failed to get build flags: %s", str(e))
-        return False
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="ClickHouse script for running stresstest"
@@ -315,10 +298,6 @@ def main():
         raise argparse.ArgumentTypeError(
             "--drop-databases only used in hung check (--hung-check)"
         )
-
-    # FIXME Hung check with ubsan is temporarily disabled due to
-    # https://github.com/ClickHouse/ClickHouse/issues/45372
-    suppress_hung_check = is_ubsan_build()
 
     func_pipes = []
     func_pipes = run_func_test(
@@ -384,7 +363,7 @@ def main():
             res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
             if tee.stdin is not None:
                 tee.stdin.close()
-        if res != 0 and have_long_running_queries and not suppress_hung_check:
+        if res != 0 and have_long_running_queries:
             logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"
