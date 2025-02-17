@@ -5,6 +5,7 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Analyzer/IQueryTreeNode.h>
+#include "Analyzer/ColumnNode.h"
 
 namespace DB
 {
@@ -54,10 +55,15 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
-/* Returns true, if coulmn source is not registered in scopes that appear
+/* Checks, if coulmn source is not registered in scopes that appear
  * before nearest query scope.
+ * If column appears to be correlated in the scope than it be registered
+ * in corresponding QueryNode or UnionNode.
  */
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
+bool checkCorrelatedColumn(
+    IdentifierResolveScope * scope_to_check,
+    const ColumnNodePtr & column
+);
 
 DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 

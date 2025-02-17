@@ -1,5 +1,8 @@
+#include <memory>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include "Common/Logger.h"
 #include <Common/FieldVisitorToString.h>
+#include "Analyzer/IQueryOrUnionNode.h"
 
 #include <Columns/ColumnNullable.h>
 
@@ -112,6 +115,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool allow_experimental_correlated_subqueries;
 }
 
 
@@ -1374,9 +1378,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierInParentScopes(const 
     {
         auto current = nodes_to_process.back();
         nodes_to_process.pop_back();
-        if (auto * current_column = current->as<ColumnNode>())
+        if (ColumnNodePtr current_column = std::dynamic_pointer_cast<ColumnNode>(current))
         {
-            if (isDependentColumn(&scope, current_column->getColumnSource()))
+            auto is_correlated_column = checkCorrelatedColumn(&scope, current_column);
+            if (is_correlated_column && !scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
             {
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Resolved identifier '{}' in parent scope to expression '{}' with correlated column '{}'. In scope {}",
@@ -2857,7 +2862,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         in_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
 
         function_node_ptr = std::make_shared<FunctionNode>("in");
-        function_node_ptr->getArguments().getNodes() = {std::make_shared<ConstantNode>(1UL, constant_data_type), in_subquery};
+        function_node_ptr->getArguments().getNodes() = {
+            std::make_shared<ConstantNode>(1UL, constant_data_type),
+            std::move(in_subquery)
+        };
         node = function_node_ptr;
         function_name = "in";
         is_special_function_in = true;
