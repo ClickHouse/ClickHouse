@@ -1,4 +1,4 @@
--- Tag: no-fasttest
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS t0;
 
