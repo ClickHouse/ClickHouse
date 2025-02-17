@@ -2201,6 +2201,9 @@ If it is set to true, allow to specify meaningless compression codecs.
     DECLARE(Bool, enable_zstd_qat_codec, false, R"(
 If turned on, the ZSTD_QAT codec may be used to compress columns.
 )", 0) \
+    DECLARE(Bool, enable_deflate_qpl_codec, false, R"(
+If turned on, the DEFLATE_QPL codec may be used to compress columns.
+)", 0) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
 Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
 
@@ -6147,7 +6150,6 @@ Experimental tsToGrid aggregate function for Prometheus-like timeseries resampli
     MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
     MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
     MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
-    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
     MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
     MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
