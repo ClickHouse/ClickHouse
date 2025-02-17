@@ -112,14 +112,15 @@ bool FunctionTransposeBits::executeGeneric(const IColumn & src_data, const Colum
 template <typename T>
 bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
 {
-    using BitType = std::conditional_t<std::is_same_v<T, float>, uint32_t, uint64_t>;
-    int numbits = static_cast<int>(sizeof(T))*8;
 
     if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
     {
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
         PaddedPODArray<T> & res_vec = typeid_cast<ColumnVector<T> &>(res_data).getData();
         res_vec.resize(src_data.size());
+        
+        using BitType = std::conditional_t<std::is_same_v<T, float>, uint32_t, uint64_t>;
+        int numbits = static_cast<int>(sizeof(T))*8;
 
         size_t size = src_offsets.size();
         ColumnArray::Offset src_prev_offset = 0;
