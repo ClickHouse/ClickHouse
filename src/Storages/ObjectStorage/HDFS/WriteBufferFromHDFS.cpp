@@ -4,6 +4,7 @@
 
 #include "WriteBufferFromHDFS.h"
 #include "HDFSCommon.h"
+#include "HDFSErrorWrapper.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
@@ -26,11 +27,10 @@ extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
 }
 
-struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
+struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
 {
     std::string hdfs_uri;
     hdfsFile fout;
-    HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
     WriteSettings write_settings;
 
@@ -40,8 +40,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
             int replication_,
             const WriteSettings & write_settings_,
             int flags)
-        : hdfs_uri(hdfs_uri_)
-        , builder(createHDFSBuilder(hdfs_uri, config_))
+        : HDFSErrorWrapper(hdfs_uri_, config_)
+        , hdfs_uri(hdfs_uri_)
         , fs(createHDFSFS(builder.get()))
         , write_settings(write_settings_)
     {
@@ -63,14 +63,13 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         hdfsCloseFile(fs.get(), fout);
     }
 
-
     int write(const char * start, size_t size)
     {
         ResourceGuard rlock(write_settings.resource_link, size);
         int bytes_written;
         try
         {
-            bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
+            bytes_written = wrapErr<tSize>(hdfsWrite, fs.get(), fout, start, safe_cast<int>(size));
         }
         catch (...)
         {
@@ -94,7 +93,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
     void sync() const
     {
-        int result = hdfsSync(fs.get(), fout);
+        int result = wrapErr<int>(hdfsSync, fs.get(), fout);
         if (result < 0)
             throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {} {}", hdfs_uri, std::string(hdfsGetLastError()));
     }

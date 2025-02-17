@@ -7,6 +7,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
+#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -26,7 +27,7 @@ struct HDFSObjectStorageSettings
 };
 
 
-class HDFSObjectStorage : public IObjectStorage
+class HDFSObjectStorage : public IObjectStorage, public HDFSErrorWrapper
 {
 public:
 
@@ -37,7 +38,8 @@ public:
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
         bool lazy_initialize)
-        : config(config_)
+        : HDFSErrorWrapper(hdfs_root_path_, config_)
+        , config(config_)
         , settings(std::move(settings_))
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
@@ -125,7 +127,6 @@ private:
 
     const Poco::Util::AbstractConfiguration & config;
 
-    mutable HDFSBuilderWrapper hdfs_builder;
     mutable HDFSFSPtr hdfs_fs;
 
     mutable std::mutex init_mutex;
