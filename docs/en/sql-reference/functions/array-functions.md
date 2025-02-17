@@ -3216,7 +3216,7 @@ SELECT arrayRandomSample(['apple', 'banana', 'cherry', 'date'], 2) as res;
 
 Result:
 
-```python
+```response
 ┌─res────────────────┐
 │ ['cherry','apple'] │
 └────────────────────┘
@@ -3230,7 +3230,7 @@ SELECT arrayRandomSample([[1, 2], [3, 4], [5, 6]], 2) as res;
 
 Result:
 
-```python
+```response
 ┌─res───────────┐
 │ [[3,4],[5,6]] │
 └───────────────┘
@@ -3244,7 +3244,7 @@ SELECT arrayRandomSample([1, 2, 3], 5) as res;
 
 Result:
 
-```python
+```response
 ┌─res─────┐
 │ [3,1,2] │
 └─────────┘
@@ -3279,7 +3279,7 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2]);
 
 Result:
 
-```python
+```response
 ┌─arrayNormalizedGini([0.9, 0.3, 0.8, 0.7], [6, 1, 0, 2])──────────┐
 │ (0.18055555555555558,0.2638888888888889,0.6842105263157896) │
 └─────────────────────────────────────────────────────────────┘
