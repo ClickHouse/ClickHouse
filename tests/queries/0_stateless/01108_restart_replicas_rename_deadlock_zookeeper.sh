@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: deadlock, replica, no-parallel
+# Tags: deadlock, replica
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -62,7 +62,7 @@ for i in $(seq 4); do
     $CLICKHOUSE_CLIENT -q "SYSTEM SYNC REPLICA replica_01108_${i}_tmp" >/dev/null 2>&1
 done
 
-while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query LIKE 'RENAME%'") -gt 0 ]]; do
+while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database = currentDatabase() AND query LIKE 'RENAME%'") -gt 0 ]]; do
     sleep 1
 done;
 
