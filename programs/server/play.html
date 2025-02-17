@@ -349,7 +349,7 @@
 
         #run_div
         {
-            margin-top: 1rem;
+            margin-top: 0.5rem;
             display: grid;
             place-items: center;
             gap: 1rem;
@@ -430,6 +430,12 @@
         #toggle-light, #toggle-dark
         {
             cursor: pointer;
+            user-select: none;
+        }
+
+        [data-theme="light"] #toggle-light, [data-theme="dark"] #toggle-dark
+        {
+            display: none;
         }
 
         #data_div
@@ -715,7 +721,7 @@
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
                 <div id="stats"></div>
-                <div id="theme"><span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span></div>
+                <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </div>
         <div id="data_div">

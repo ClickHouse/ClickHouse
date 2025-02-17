@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/PasteJoinTransform.h>
 
 

@@ -6,6 +6,9 @@ on:
     - cron: 13 4 * * *
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}
+
 env:
   PYTHONUNBUFFERED: 1
   CHECKOUT_REF: ${{ github.head_ref }}

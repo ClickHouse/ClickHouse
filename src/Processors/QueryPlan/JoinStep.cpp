@@ -8,6 +8,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 
 namespace DB
@@ -50,7 +51,7 @@ std::vector<size_t> getPermutationForBlock(
 {
     std::vector<size_t> permutation;
     permutation.reserve(block.columns());
-    Block::NameMap name_map = block.getNamesToIndexesMap();
+    BlockNameMap name_map = getNamesToIndexesMap(block);
 
     bool is_trivial = true;
     for (const auto & other_block : {lhs_block, rhs_block})

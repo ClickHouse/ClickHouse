@@ -628,6 +628,7 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### cutToFirstSignificantSubdomainCustomWithWWWRFC
 
@@ -654,6 +655,7 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustom
 
@@ -706,6 +708,7 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustomRFC
 
@@ -732,6 +735,7 @@ firstSignificantSubdomainCustomRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### port
 

@@ -9,10 +9,10 @@ title: SHOW Statements
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
 
-- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select) (server setting)
-- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats#format_display_secrets_in_show_and_select) (format setting)  
+- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
+- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
 
-Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md#display-secrets) privilege.
+Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md/#displaysecretsinshowandselect) privilege.
 :::
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
