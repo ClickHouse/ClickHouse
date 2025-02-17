@@ -84,7 +84,6 @@ public:
 
 protected:
     #if USE_KRB5
-    void runKinit();
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_security_kerberos_ticket_cache_path;
