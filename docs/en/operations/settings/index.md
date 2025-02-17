@@ -13,13 +13,13 @@ XML-based Settings Profiles and [configuration files](https://clickhouse.com/doc
 There are two main groups of ClickHouse settings:
 
 - Global server settings
-- Query-level settings
+- Session settings
 
-The main distinction between global server settings and query-level settings is that global server settings must be set in configuration files, while query-level settings can be set in configuration files or with SQL queries.
+The main distinction between both is that global server settings apply globally for the ClickHouse server, while session settings apply to user sessions or even individual queries.
 
 Read about [global server settings](/docs/en/operations/server-configuration-parameters/settings.md) to learn more about configuring your ClickHouse server at the global server level.
 
-Read about [query-level settings](/docs/en/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the query level.
+Read about [session settings](/docs/en/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the session level.
 
 ## See non-default settings
 

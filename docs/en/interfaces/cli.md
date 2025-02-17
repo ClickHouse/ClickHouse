@@ -576,7 +576,7 @@ Query settings can be specified as command-line options in the client, for examp
 $ clickhouse-client --max_threads 1
 ```
 
-See [Core Settings](../operations/settings/settings.md) for a list of settings.
+See [Settings](../operations/settings/settings.md) for a list of settings.
 
 ### Formatting Options {#command-line-options-formatting}
 
