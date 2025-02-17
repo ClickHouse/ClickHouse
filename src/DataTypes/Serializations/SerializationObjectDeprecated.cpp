@@ -151,6 +151,13 @@ struct SerializationObjectDeprecated<Parser>::DeserializeStateObject : public IS
     DataTypePtr nested_type;
     SerializationPtr nested_serialization;
     DeserializeBinaryBulkStatePtr nested_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<SerializationObjectDeprecated<Parser>::DeserializeStateObject>(*this);
+        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 template <typename Parser>
