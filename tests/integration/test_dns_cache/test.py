@@ -104,10 +104,12 @@ def cluster_with_dns_cache_update(cluster_without_dns_cache_update):
 # node1 is a source, node2 downloads data
 # node2 has long dns_cache_update_period, so dns cache update wouldn't work
 def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
+    # Preserve node1 ipv6 before changing it
+    node1_ipv6 = node1.ipv6_address
     # In this case we should manually set up the static DNS entries on the source host
     # to exclude resplving addresses automatically added by docker.
     # We use ipv6 for hosts, but resolved DNS entries may contain an unexpected ipv4 address.
-    node2.set_hosts([("2001:3984:3989::1:1111", "node1")])
+    node2.set_hosts([(node1_ipv6, "node1")])
     # drop DNS cache
     node2.query("SYSTEM DROP DNS CACHE")
     node2.query("SYSTEM DROP CONNECTIONS CACHE")
@@ -120,8 +122,9 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "3")
 
     # We change source node ip
-    cluster.restart_instance_with_ip_change(node1, "2001:3984:3989::1:7777")
-    node2.set_hosts([("2001:3984:3989::1:7777", "node1")])
+    node1_new_ipv6 = "2001:3984:3989::1:7777"
+    cluster.restart_instance_with_ip_change(node1, node1_new_ipv6)
+    node2.set_hosts([(node1_new_ipv6, "node1")])
 
     # Put some data to source node1
     node1.query(
@@ -144,6 +147,12 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
     node1.query("INSERT INTO test_table_drop VALUES ('2018-10-01', 8)")
     assert node1.query("SELECT count(*) from test_table_drop") == "7\n"
     assert_eq_with_retry(node2, "SELECT count(*) from test_table_drop", "7")
+
+    # Reset the nodes state
+    node1.query("TRUNCATE TABLE test_table_drop")
+    node2.query("TRUNCATE TABLE test_table_drop")
+    cluster.restart_service("node2")
+    cluster.restart_instance_with_ip_change(node1, node1_ipv6)
 
 
 # node3 is a source, node4 downloads data
