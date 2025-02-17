@@ -6,6 +6,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 
 namespace DB
 {

@@ -1,30 +1,33 @@
 #include <Interpreters/QueryLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <array>
 
@@ -318,13 +321,13 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     columns[i++]->insert(client_info.current_user);
     columns[i++]->insert(client_info.current_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    columns[i++]->insert(client_info.current_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    columns[i++]->insert(client_info.current_address->port());
 
     columns[i++]->insert(client_info.initial_user);
     columns[i++]->insert(client_info.initial_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
-    columns[i++]->insert(client_info.initial_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
+    columns[i++]->insert(client_info.initial_address->port());
     columns[i++]->insert(client_info.initial_query_start_time);
     columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 

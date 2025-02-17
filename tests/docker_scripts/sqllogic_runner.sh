@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# shellcheck disable=SC1091
+source /basic_helpers.sh
+
 set -exu
 trap "exit" INT TERM
 
@@ -26,10 +29,10 @@ ls -la /test_output
 echo "File in /sqllogictest"
 ls -la /sqllogictest
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
 
 # install test configs
 # /clickhouse-tests/config/install.sh
