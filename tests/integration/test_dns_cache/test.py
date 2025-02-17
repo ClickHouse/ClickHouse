@@ -158,6 +158,8 @@ def test_ip_change_drop_dns_cache(cluster_without_dns_cache_update):
 # node3 is a source, node4 downloads data
 # node4 has short dns_cache_update_period, so testing update of dns cache
 def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
+    # Preserve original IP before change
+    node3_ipv6 = node3.ipv6_address
     # First we check, that normal replication works
     node3.query(
         "INSERT INTO test_table_update VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)"
@@ -194,6 +196,11 @@ def test_ip_change_update_dns_cache(cluster_with_dns_cache_update):
     node3.query("INSERT INTO test_table_update VALUES ('2018-10-01', 8)")
     assert node3.query("SELECT count(*) from test_table_update") == "7\n"
     assert_eq_with_retry(node4, "SELECT count(*) from test_table_update", "7")
+
+    # Reset the test state
+    node3.query("TRUNCATE TABLE test_table_update")
+    node4.query("TRUNCATE TABLE test_table_update")
+    cluster.restart_instance_with_ip_change(node3, node3_ipv6)
 
 
 def test_dns_cache_update(cluster_with_dns_cache_update):
