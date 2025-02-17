@@ -74,7 +74,7 @@ else()
     set(profile "release")
 endif()
 
-corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib)
+corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib LOCKED FLAGS --offline)
 corrosion_set_env_vars(delta_kernel_ffi "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
 corrosion_add_target_rustflags(delta_kernel_ffi "-C" "link-arg=-fuse-ld=lld")
 
