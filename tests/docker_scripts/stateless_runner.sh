@@ -28,12 +28,12 @@ TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -
 echo "Chosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
-dpkg -i package_folder/clickhouse-library-bridge_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-library-bridge_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
 
 echo "$BUGFIX_VALIDATE_CHECK"
 
