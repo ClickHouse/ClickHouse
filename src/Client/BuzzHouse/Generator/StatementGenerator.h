@@ -271,8 +271,8 @@ private:
     void generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);
-    TableEngineValues getNextTableEngine(RandomGenerator & rg, bool use_external_integrations);
-    PeerTableDatabase getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng);
+    void getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b);
+    void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
     void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);

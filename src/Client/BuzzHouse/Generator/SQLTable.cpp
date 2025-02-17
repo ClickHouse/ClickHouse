@@ -801,15 +801,26 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     else if (te->has_engine() && b.isBufferEngine())
     {
         const bool has_tables = collectionHas<SQLTable>(
-            [](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; });
+            [&](const SQLTable & t)
+            {
+                return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
+                    && (t.is_deterministic || !b.is_deterministic);
+            });
         const bool has_views = collectionHas<SQLView>(
-            [](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; });
+            [&](const SQLView & v)
+            {
+                return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED
+                    && (v.is_deterministic || !b.is_deterministic);
+            });
 
         if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-                [](const SQLTable & tt)
-                { return tt.db && tt.db->attached == DetachStatus::ATTACHED && tt.attached == DetachStatus::ATTACHED; }));
+                [&](const SQLTable & tt)
+                {
+                    return tt.db && tt.db->attached == DetachStatus::ATTACHED && tt.attached == DetachStatus::ATTACHED
+                        && (tt.is_deterministic || !b.is_deterministic);
+                }));
 
             te->add_params()->mutable_database()->set_database("d" + std::to_string(t.db->dname));
             te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
@@ -817,8 +828,11 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         else
         {
             const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(
-                [](const SQLView & vv)
-                { return vv.db && vv.db->attached == DetachStatus::ATTACHED && vv.attached == DetachStatus::ATTACHED; }));
+                [&](const SQLView & vv)
+                {
+                    return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
+                        && (vv.is_deterministic || !b.is_deterministic);
+                }));
 
             te->add_params()->mutable_database()->set_database("d" + std::to_string(v.db->dname));
             te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
@@ -904,16 +918,27 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     {
         bool has_sharding_key = false;
         const bool has_tables = collectionHas<SQLTable>(
-            [](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; });
+            [&](const SQLTable & t)
+            {
+                return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
+                    && (t.is_deterministic || !b.is_deterministic);
+            });
         const bool has_views = collectionHas<SQLView>(
-            [](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; });
+            [&](const SQLView & v)
+            {
+                return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED
+                    && (v.is_deterministic || !b.is_deterministic);
+            });
 
         te->add_params()->set_svalue(rg.pickRandomlyFromVector(fc.clusters));
         if (has_tables && (!has_views || rg.nextSmallNumber() < 8))
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(
-                [](const SQLTable & tt)
-                { return tt.db && tt.db->attached == DetachStatus::ATTACHED && tt.attached == DetachStatus::ATTACHED; }));
+                [&](const SQLTable & tt)
+                {
+                    return tt.db && tt.db->attached == DetachStatus::ATTACHED && tt.attached == DetachStatus::ATTACHED
+                        && (tt.is_deterministic || !b.is_deterministic);
+                }));
 
             te->add_params()->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
             te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
@@ -928,8 +953,11 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         else
         {
             const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(
-                [](const SQLView & vv)
-                { return vv.db && vv.db->attached == DetachStatus::ATTACHED && vv.attached == DetachStatus::ATTACHED; }));
+                [&](const SQLView & vv)
+                {
+                    return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
+                        && (vv.is_deterministic || !b.is_deterministic);
+                }));
 
             te->add_params()->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
             te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
@@ -1349,53 +1377,64 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     to_add.insert(crname);
 }
 
-PeerTableDatabase StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, TableEngineValues teng)
+void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b)
 {
     chassert(this->ids.empty());
-    if (teng != TableEngineValues::Set)
+    if (b.is_deterministic && b.teng != TableEngineValues::Set)
     {
-        if (teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
+        if (b.teng != TableEngineValues::MySQL && connections.hasMySQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::MySQL));
         }
-        if (teng != TableEngineValues::PostgreSQL && connections.hasPostgreSQLConnection())
+        if (b.teng != TableEngineValues::PostgreSQL && connections.hasPostgreSQLConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::PostgreSQL));
         }
-        if (teng != TableEngineValues::SQLite && connections.hasSQLiteConnection())
+        if (b.teng != TableEngineValues::SQLite && connections.hasSQLiteConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::SQLite));
         }
-        if (teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree
+        if (b.teng >= TableEngineValues::MergeTree && b.teng <= TableEngineValues::VersionedCollapsingMergeTree
             && connections.hasClickHouseExtraServerConnection())
         {
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse));
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
         }
     }
-    const auto res = (this->ids.empty() || rg.nextBool()) ? PeerTableDatabase::None
-                                                          : static_cast<PeerTableDatabase>(rg.pickRandomlyFromVector(this->ids));
+    b.peer_table = (this->ids.empty() || rg.nextBool()) ? PeerTableDatabase::None
+                                                        : static_cast<PeerTableDatabase>(rg.pickRandomlyFromVector(this->ids));
     this->ids.clear();
-    return res;
 }
 
-TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, const bool use_external_integrations)
+void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_external_integrations, SQLBase & b)
 {
     const uint32_t noption = rg.nextSmallNumber();
-    const bool has_tables = collectionHas<SQLTable>(
-        [](const SQLTable & t) { return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED; });
-    const bool has_views = collectionHas<SQLView>(
-        [](const SQLView & v) { return v.db && v.db->attached == DetachStatus::ATTACHED && v.attached == DetachStatus::ATTACHED; });
 
+    b.is_deterministic = rg.nextSmallNumber() < 9;
     if (noption < 4)
     {
-        return TableEngineValues::MergeTree;
+        b.teng = TableEngineValues::MergeTree;
+        return;
     }
     if (noption < 9)
     {
         std::uniform_int_distribution<uint32_t> table_engine(1, TableEngineValues::VersionedCollapsingMergeTree);
-        return static_cast<TableEngineValues>(table_engine(rg.generator));
+        b.teng = static_cast<TableEngineValues>(table_engine(rg.generator));
+        return;
     }
+    const bool has_tables = collectionHas<SQLTable>(
+        [&](const SQLTable & t)
+        {
+            return t.db && t.db->attached == DetachStatus::ATTACHED && t.attached == DetachStatus::ATTACHED
+                && (t.is_deterministic || !b.is_deterministic);
+        });
+    const bool has_views = collectionHas<SQLView>(
+        [&](const SQLView & v)
+        {
+            return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED
+                && (v.is_deterministic || !b.is_deterministic);
+        });
+
     chassert(this->ids.empty());
     this->ids.emplace_back(MergeTree);
     this->ids.emplace_back(ReplacingMergeTree);
@@ -1453,9 +1492,8 @@ TableEngineValues StatementGenerator::getNextTableEngine(RandomGenerator & rg, c
         }
     }
 
-    const auto res = static_cast<TableEngineValues>(rg.pickRandomlyFromVector(this->ids));
+    b.teng = static_cast<TableEngineValues>(rg.pickRandomlyFromVector(this->ids));
     this->ids.clear();
-    return res;
 }
 
 const std::vector<TableEngineValues> like_engs
@@ -1529,9 +1567,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         /// Create table with definition
         TableDef * colsdef = ct->mutable_table_def();
 
-        next.teng = getNextTableEngine(rg, true);
+        getNextTableEngine(rg, true, next);
         te->set_engine(next.teng);
-        next.peer_table = getNextPeerTableDatabase(rg, next.teng);
+        getNextPeerTableDatabase(rg, next);
         added_pkey |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isRedisEngine());
         const bool add_version_to_replacing = next.teng == TableEngineValues::ReplacingMergeTree && !next.hasPostgreSQLPeer()
             && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
@@ -1652,6 +1690,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
 
         next.teng = val;
         te->set_engine(val);
+        next.is_deterministic = rg.nextSmallNumber() < 9;
         cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
         if (t.db)
         {

@@ -188,24 +188,26 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     {
         TableEngine * te = cv->mutable_engine();
         const uint32_t nopt = rg.nextSmallNumber();
-        const bool has_with_cols = collectionHas<SQLTable>(
-            [&next](const SQLTable & t)
-            {
-                return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
-                    && t.numberOfInsertableColumns() >= next.ncols;
-            });
-        const bool has_tables = has_with_cols || !tables.empty();
-        const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
 
         if (nopt < 4)
         {
-            next.teng = getNextTableEngine(rg, false);
+            getNextTableEngine(rg, false, next);
             te->set_engine(next.teng);
         }
         else
         {
+            next.is_deterministic = true;
             next.teng = TableEngineValues::MergeTree;
         }
+        const bool has_with_cols = collectionHas<SQLTable>(
+            [&next](const SQLTable & t)
+            {
+                return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
+                    && t.numberOfInsertableColumns() >= next.ncols && (t.is_deterministic || !next.is_deterministic);
+            });
+        const bool has_tables = has_with_cols || !tables.empty();
+        const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
+
         chassert(this->entries.empty());
         for (uint32_t i = 0; i < next.ncols; i++)
         {
@@ -274,7 +276,11 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             cv->set_populate(!has_to && rg.nextSmallNumber() < 4);
         }
     }
-    if ((next.is_deterministic = rg.nextBool()))
+    else
+    {
+        next.is_deterministic = rg.nextSmallNumber() < 9;
+    }
+    if (next.is_deterministic)
     {
         this->setAllowNotDetermistic(false);
         this->enforceFinal(true);
@@ -312,7 +318,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     const uint32_t prob_space = drop_table + drop_view + drop_database + drop_function;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
 
     if (drop_table && nopt < (drop_table + 1))
     {
@@ -734,7 +740,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     const uint32_t prob_space = trunc_table + trunc_db_tables + trunc_db;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
 
     if (trunc_table && nopt < (trunc_table + 1))
     {
@@ -823,7 +829,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
         [](const SQLTable & tt)
         { return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED && !tt.isFileEngine(); });
     const bool has_views = collectionHas<SQLView>(attached_views);
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
 
     if (has_views && (!has_tables || rg.nextBool()))
     {
@@ -1734,7 +1740,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     const uint32_t prob_space = attach_table + attach_view + attach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
 
     if (attach_table && nopt < (attach_table + 1))
     {
@@ -1798,7 +1804,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     const uint32_t prob_space = detach_table + detach_view + detach_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
 
     if (detach_table && nopt < (detach_table + 1))
     {
@@ -2912,7 +2918,7 @@ static const std::vector<ExplainOptValues> explain_settings{
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery * eq)
 {
-    std::optional<ExplainQuery_ExplainValues> val = std::nullopt;
+    std::optional<ExplainQuery_ExplainValues> val;
 
     eq->set_is_explain(true);
     if (rg.nextSmallNumber() < 9)

@@ -1332,14 +1332,12 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
     String buf;
+    std::error_code ec;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
-    if (std::remove(out_path.generic_string().c_str()) && errno != ENOENT)
+    if (!std::filesystem::remove(out_path, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(fc.flush_log_wait_time));
@@ -1382,13 +1380,11 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
     String buf;
     String replaced;
+    std::error_code ec;
 
-    if (std::remove(fc.fuzz_out.generic_string().c_str()) && errno != ENOENT)
+    if (!std::filesystem::remove(fc.fuzz_out, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return;
     }
     if (fc.processServerQuery(fmt::format(

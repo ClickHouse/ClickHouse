@@ -294,9 +294,14 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 {
     const auto has_table_lambda = [&](const SQLTable & tt)
     {
-        return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
+        return (!tt.db || tt.db->attached == DetachStatus::ATTACHED)
+            && tt.attached == DetachStatus::ATTACHED
+            /* When comparing query success results, don't use tables from other RDBMS, SQL is very undefined */
             && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
-            && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer());
+            /* When a query is going to be compared against another ClickHouse server, make sure all tables exist that server */
+            && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
+            /* Don't use tables backing not deterministic views in query oracles */
+            && (tt.is_deterministic || this->allow_not_deterministic);
     };
     const auto has_view_lambda = [&](const SQLView & vv)
     {

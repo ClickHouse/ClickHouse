@@ -43,8 +43,8 @@ public:
     uint32_t cname = 0;
     SQLType * tp = nullptr;
     ColumnSpecial special = ColumnSpecial::NONE;
-    std::optional<bool> nullable = std::nullopt;
-    std::optional<DModifier> dmod = std::nullopt;
+    std::optional<bool> nullable;
+    std::optional<DModifier> dmod;
 
     SQLColumn() = default;
     SQLColumn(const SQLColumn & c)
@@ -106,7 +106,7 @@ public:
 struct SQLDatabase
 {
 public:
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
@@ -122,12 +122,12 @@ public:
 struct SQLBase
 {
 public:
-    bool is_temp = false;
+    bool is_temp = false, is_deterministic = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
-    std::optional<TableEngineOption> toption = std::nullopt;
+    std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
@@ -249,7 +249,7 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, is_deterministic = false;
+    bool is_materialized = false, is_refreshable = false;
     uint32_t ncols = 1, staged_ncols = 1;
 };
 
@@ -258,7 +258,7 @@ struct SQLFunction
 public:
     bool is_deterministic = false;
     uint32_t fname = 0, nargs = 0;
-    std::optional<String> cluster = std::nullopt;
+    std::optional<String> cluster;
 
     std::optional<String> getCluster() const { return cluster; }
 };
@@ -279,9 +279,9 @@ public:
 struct ColumnPathChain
 {
 public:
-    std::optional<bool> nullable = std::nullopt;
+    std::optional<bool> nullable;
     ColumnSpecial special = ColumnSpecial::NONE;
-    std::optional<DModifier> dmod = std::nullopt;
+    std::optional<DModifier> dmod;
     std::vector<ColumnPathChainEntry> path;
 
     ColumnPathChain(
