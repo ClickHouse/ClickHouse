@@ -250,6 +250,7 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
+        std::string create_engine_name;
         const IAST * current_select = nullptr;
     };
 
@@ -315,6 +316,17 @@ public:
             /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
     }
 
+    String formatForAnything() const
+    {
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/true,
+            /*show_secrets=*/true,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+    }
+
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
     void cloneChildren();
@@ -350,7 +362,8 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
-        AsyncInsertFlush
+        AsyncInsertFlush,
+        ParallelWithQuery,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }

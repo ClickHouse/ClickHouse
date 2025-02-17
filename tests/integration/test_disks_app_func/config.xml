@@ -1,5 +1,8 @@
 <clickhouse>
     <path>/var/lib/clickhouse/</path>
+    <logger>
+        <clickhouse-disks>/clickhouse-disks.log</clickhouse-disks>
+    </logger>
     <storage_configuration>
         <disks>
             <test1>

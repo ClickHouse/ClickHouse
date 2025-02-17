@@ -1,96 +1,15 @@
-import subprocess
-import time
-
+from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-
-# TODO: generic functionality - move to separate file
-class ClickHouseBinary:
-    def __init__(self):
-        self.path = "/tmp/praktika/input/"
-        self.config_path = "/tmp/praktika/config"
-        self.start_cmd = (
-            f"{self.path}/clickhouse-server --config-file={self.config_path}/config.xml"
-        )
-        self.log_file = "/tmp/praktika/server.log"
-        self.port = 9000
-
-    def install(self):
-        Utils.add_to_PATH(self.path)
-        commands = [
-            f"mkdir -p {self.config_path}/users.d",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {self.config_path}",
-            f"cp -r --dereference ./programs/server/config.d {self.config_path}",
-            f"chmod +x {self.path}/clickhouse",
-            f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-server",
-            f"ln -sf {self.path}/clickhouse {self.path}/clickhouse-client",
-        ]
-        res = True
-        for command in commands:
-            res = res and Shell.check(command, verbose=True)
-        return res
-
-    def clickbench_config_tweaks(self):
-        content = """
-profiles:
-    default:
-        allow_introspection_functions: 1
-"""
-        file_path = f"{self.config_path}/users.d/allow_introspection_functions.yaml"
-        with open(file_path, "w") as file:
-            file.write(content)
-        return True
-
-    def start(self):
-        print(f"Starting ClickHouse server")
-        print("Command: ", self.start_cmd)
-        self.log_fd = open(self.log_file, "w")
-        self.proc = subprocess.Popen(
-            self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
-        )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
-            return False
-        print(f"ClickHouse server process started -> wait ready")
-        res = self.wait_ready()
-        if res:
-            print(f"ClickHouse server ready")
-        else:
-            print(f"ClickHouse server NOT ready")
-        return res
-
-    def wait_ready(self):
-        res, out, err = 0, "", ""
-        attempts = 30
-        delay = 2
-        for attempt in range(attempts):
-            res, out, err = Shell.get_res_stdout_stderr(
-                f'clickhouse-client --port {self.port} --query "select 1"', verbose=True
-            )
-            if out.strip() == "1":
-                print("Server ready")
-                break
-            else:
-                print(f"Server not ready, wait")
-            Utils.sleep(delay)
-        else:
-            Utils.print_formatted_error(
-                f"Server not ready after [{attempts*delay}s]", out, err
-            )
-            return False
-        return True
+temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 
 def main():
     res = True
     results = []
     stop_watch = Utils.Stopwatch()
-    ch = ClickHouseBinary()
+    ch = ClickHouseLight()
 
     if res:
         print("Install ClickHouse")
