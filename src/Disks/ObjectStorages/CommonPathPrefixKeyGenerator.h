@@ -19,7 +19,7 @@ namespace DB
 /// The key generator ensures that the original directory hierarchy is
 /// preserved, which is required for the MergeTree family.
 
-struct InMemoryDirectoryPathMap;
+class InMemoryDirectoryPathMap;
 class CommonPathPrefixKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:

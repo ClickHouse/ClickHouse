@@ -18,7 +18,7 @@
 namespace DB
 {
 
-struct InMemoryDirectoryPathMap;
+class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
