@@ -134,7 +134,7 @@ bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const Column
 
             int array_size = static_cast<int>(src_end - src);
 
-            if (src == src_end or array_size==0)
+            if (src == src_end)
                 continue;
 
             while (curr < src_end)
