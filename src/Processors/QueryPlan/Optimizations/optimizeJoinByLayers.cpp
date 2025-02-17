@@ -19,15 +19,19 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node, bool allow_full_sorting_join)
+ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
         if (reading->isQueryWithFinal())
             return nullptr;
-        if (!allow_full_sorting_join && reading->readsInOrder())
+
+        if (reading->isParallelReadingEnabled())
             return nullptr;
+
+        // if (reading->readsInOrder())
+        //     return nullptr;
 
         return reading;
     }
@@ -184,7 +188,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 {
     // std::cerr << "... apply for prefix " << data.common_prefix << " and joins " << data.joins.size() << std::endl;
 
-    if (data.common_prefix == 0 || data.joins.size() == 0)
+    if (data.common_prefix == 0 || data.joins.empty())
         return;
 
     RangesInDataParts all_parts;
@@ -247,7 +251,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
         sorting_step->convertToPartitionedFinishSorting();
 }
 
-void optimizeJoinByLayers(QueryPlan::Node & root, bool allow_full_sorting_join)
+void optimizeJoinByLayers(QueryPlan::Node & root)
 {
     struct Result
     {
@@ -294,7 +298,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root, bool allow_full_sorting_join)
             auto * hash_join = typeid_cast<HashJoin *>(join.get());
             auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
             auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
-            bool is_algo_supported = hash_join || concurrent_hash_join || (allow_full_sorting_join && full_sorting_merge_join);
+            bool is_algo_supported = hash_join || concurrent_hash_join || full_sorting_merge_join;
 
             bool can_split_left_table = frame.results.front() != std::nullopt && is_algo_supported && !join->hasDelayedBlocks();
             // std::cerr << "can_split_left_table " << can_split_left_table << std::endl;
@@ -351,16 +355,19 @@ void optimizeJoinByLayers(QueryPlan::Node & root, bool allow_full_sorting_join)
         {
             result = std::move(frame.results.front());
         }
-        else if (auto * source = findReadingStep(*frame.node, allow_full_sorting_join))
+        else if (auto * source = findReadingStep(*frame.node))
         {
             result.emplace();
             result->joins.sources.emplace_back(source);
             result->dag = makeSourceDAG(*source);
         }
         else if (auto * sorting = typeid_cast<SortingStep *>(frame.node->step.get());
-            sorting && allow_full_sorting_join &&
-            sorting->isSortingForMergeJoin() && sorting->getType() == SortingStep::Type::FinishSorting)
+            sorting && sorting->isSortingForMergeJoin() && sorting->getType() == SortingStep::Type::FinishSorting)
         {
+            /// Here we assume that read-in-order is applied for full sorting merge join.
+            /// The SortingStep can potentially apper from ORDER BY,
+            /// but it would be useless because JOIN does not enforce sorting by itself.
+
             // std::cerr << "============ Apply for sorting\n";
             result = std::move(frame.results[0]);
             result->joins.sorting_steps.push_back(sorting);

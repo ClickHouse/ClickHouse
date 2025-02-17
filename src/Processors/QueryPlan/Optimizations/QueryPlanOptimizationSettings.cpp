@@ -35,8 +35,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
-    extern const SettingsBool query_plan_optimize_join_read_by_layers;
-    extern const SettingsBool query_plan_optimize_full_sorting_merge_join_by_layers;
+    extern const SettingsBool query_plan_join_shard_by_pk_ranges;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & from)
@@ -73,8 +72,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
-    optimize_join_read_by_layers = from[Setting::query_plan_optimize_join_read_by_layers].value;
-    optimize_full_sorting_merge_join_by_layers = from[Setting::query_plan_optimize_full_sorting_merge_join_by_layers];
+    query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
     /// This comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;

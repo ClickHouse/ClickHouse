@@ -237,8 +237,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
 
-    if (optimization_settings.optimize_join_read_by_layers)
-        optimizeJoinByLayers(root, optimization_settings.optimize_full_sorting_merge_join_by_layers);
+    if (optimization_settings.query_plan_join_shard_by_pk_ranges)
+        optimizeJoinByLayers(root);
 }
 
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
