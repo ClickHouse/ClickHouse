@@ -70,7 +70,7 @@ def test_table_engine_and_source_grant():
         user="A",
     )
 
-    instance.query("GRANT SOURCES ON * TO A")
+    instance.query("GRANT SOURCES ON *.* TO A")
 
     instance.query(
         """
