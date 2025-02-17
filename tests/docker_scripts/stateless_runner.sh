@@ -264,18 +264,6 @@ function fn_exists() {
     declare -F "$1" > /dev/null;
 }
 
-# FIXME: to not break old builds, clean on 2023-09-01
-function try_run_with_retry() {
-    local total_retries="$1"
-    shift
-
-    if fn_exists run_with_retry; then
-        run_with_retry "$total_retries" "$@"
-    else
-        "$@"
-    fi
-}
-
 function run_tests()
 {
     set -x
@@ -359,7 +347,7 @@ function run_tests()
     fi
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
+    run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
 
@@ -527,8 +515,6 @@ fi
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 rm -rf /var/lib/clickhouse/data/system/*/
-tar -chf /test_output/store.tar /var/lib/clickhouse/store ||:
-tar -chf /test_output/metadata.tar /var/lib/clickhouse/metadata/*.sql ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

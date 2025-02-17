@@ -1,9 +1,10 @@
 ---
+description: "System table containing information about currently running background fetches."
 slug: /en/operations/system-tables/replicated_fetches
+title: "replicated_fetches"
+keywords: ["system table", "replicated_fetches"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# replicated_fetches
 
 <SystemTableCloud/>
 
