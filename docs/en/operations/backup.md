@@ -297,7 +297,8 @@ Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk]
 :::
 
 The destination for a backup will be specified like this:
-```python
+
+```sql
 S3('<S3 endpoint>/<directory>', '<Access key ID>', '<Secret access key>')
 ```
 
@@ -489,7 +490,8 @@ To write backups to an AzureBlobStorage container you need the following pieces 
 - Account Key (if url is specified)
 
 The destination for a backup will be specified like this:
-```python
+
+```sql
 AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
 ```
 
