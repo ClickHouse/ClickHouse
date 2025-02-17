@@ -79,7 +79,7 @@ select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 
 Result:
 
-```javascript
+```response
 ┌─mapFromArrays(['a', 'b', 'c'], [1, 2, 3])─┐
 │ {'a':1,'b':2,'c':3}                       │
 └───────────────────────────────────────────┘
@@ -196,13 +196,7 @@ FORMAT Vertical;
 
 Result:
 
-```yaml
-
-```
-m:              {'John':'33','Paula':'31'}
-map_serialized: {'John':'33','Paula':'31'}
-map_restored:   {'John':'33','Paula':'31'}
-```
+```response
 Row 1:
 ──────
 m:              {'John':'33','Paula':'31'}
