@@ -443,7 +443,7 @@ bool Dwarf::Section::next(std::string_view & chunk)
     auto length = is64_bit ? read<uint64_t>(chunk) : initial_length;
     SAFE_CHECK(length <= chunk.size(), "invalid DWARF section");
     chunk = std::string_view(chunk.data(), length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    data = std::string_view(chunk.end(), data.end() - chunk.end());
+    data = std::string_view(chunk.data() + chunk.size(), data.end() - chunk.end());
     return true;
 }
 
@@ -1818,7 +1818,7 @@ void Dwarf::LineNumberVM::init()
     uint64_t header_length = readOffset(data_, is64Bit_);
     SAFE_CHECK(header_length <= data_.size(), "invalid line number VM header length");
     std::string_view header(data_.data(), header_length);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
-    data_ = std::string_view(header.end(), data_.end() - header.end());
+    data_ = std::string_view(header.data() + header.size(), data_.end() - header.end());
 
     minLength_ = read<uint8_t>(header);
     if (version_ >= 4)
