@@ -77,7 +77,8 @@ ColumnPtr FunctionTransposeBits::executeImpl(const ColumnsWithTypeAndName & argu
 
     false // NOLINT
         || executeNumber<Float32>(*src_inner_col, offsets, *res_inner_col)
-        || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col);
+        || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col)
+        || executeGeneric(*src_inner_col, offsets, *res_inner_col);
 
     chassert(bool(src_nullable_col) == bool(res_nullable_col));
 
@@ -88,15 +89,34 @@ ColumnPtr FunctionTransposeBits::executeImpl(const ColumnsWithTypeAndName & argu
     return res_ptr;
 }
 
+bool FunctionTransposeBits::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
+{
+    size_t size = src_array_offsets.size();
+    res_data.reserve(size);
+
+    ColumnArray::Offset src_prev_offset = 0;
+    for (size_t i = 0; i < size; ++i)
+    {
+        ssize_t src_index = src_array_offsets[i] - 1;
+
+        while (src_index >= static_cast<ssize_t>(src_prev_offset))
+        {
+            res_data.insertFrom(src_data, src_index);
+            --src_index;
+        }
+
+        src_prev_offset = src_array_offsets[i];
+    }
+
+    return true;
+}
+
 
 template <typename T>
 bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
 {
-    int num_bits = 0;
-
-    if (std::is_same_v<T, float>) {
-        num_bits = 32;
-    } else num_bits = 64;
+    using BitType = std::conditional_t<std::is_same_v<T, float>, uint32_t, uint64_t>;
+    int numbits = static_cast<int>(sizeof(T))*8;
 
     if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
     {
@@ -121,28 +141,18 @@ bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const Column
 
             while (curr < src_end)
             {
-                for(int j=0; j<num_bits; j++){
-                    int idx = ((static_cast<int>(curr - src)) + j * array_size) / num_bits;
-                    int nthbit = ((static_cast<int>(curr - src)) + j * array_size) % num_bits;
+                for(int j=0; j < numbits; j++){
+                    int ind = static_cast<int>(curr - src);
+                    int idx = (ind + j * array_size) / numbits;
+                    int nthbit = (ind + j * array_size) % numbits;
                     auto * tgt = &res_vec[idx];
-                    if(num_bits==32){
-                        uint32_t bits32=0;
-                        memcpy(&bits32, curr, sizeof(bits32));
-                        bool bit_to_set = ( bits32 >> j) & 1;
-                        bits32=0;
-                        memcpy(&bits32, tgt, sizeof(bits32));  
-                        bits32 |= (static_cast<uint32_t>(bit_to_set) << (31-nthbit));
-                        memcpy(tgt, &bits32, sizeof(bits32));
-                    }
-                    else{
-                        uint64_t bits=0;
-                        memcpy(&bits, curr, sizeof(bits));
-                        bool bit_to_set = ( bits >> j) & 1;
-                        bits=0;
-                        memcpy(&bits, tgt, sizeof(bits));  
-                        bits |= (static_cast<uint64_t>(bit_to_set) << (63-nthbit));
-                        memcpy(tgt, &bits, sizeof(bits));
-                    }
+                    BitType bits=0;
+                    memcpy(&bits, curr, sizeof(bits));
+                    bool bit_to_set = ( bits >> j) & 1;
+                    bits=0;
+                    memcpy(&bits, tgt, sizeof(bits));  
+                    bits |= (static_cast<uint64_t>(bit_to_set) << (static_cast<int>(sizeof(T))*8-1-nthbit));
+                    memcpy(tgt, &bits, sizeof(bits));
                 }
                 curr++;
             }
