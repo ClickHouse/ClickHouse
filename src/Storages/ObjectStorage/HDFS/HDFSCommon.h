@@ -96,7 +96,6 @@ private:
     std::vector<std::pair<String, String>> config_stor;
 
     #if USE_KRB5
-    void runKinit();
     String hadoop_kerberos_keytab;
     String hadoop_kerberos_principal;
     String hadoop_security_kerberos_ticket_cache_path;
