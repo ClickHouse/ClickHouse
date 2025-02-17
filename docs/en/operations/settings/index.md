@@ -7,7 +7,7 @@ slug: /en/operations/settings/
 # Settings Overview
 
 :::note
-XML-based Settings Profiles and [configuration files](https://clickhouse.com/docs/en/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](https://clickhouse.com/docs/en/operations/access-rights#settings-profiles-management).
+XML-based Settings Profiles and [configuration files](/docs/en/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](/docs/en/operations/access-rights#settings-profiles-management).
 :::
 
 There are two main groups of ClickHouse settings:

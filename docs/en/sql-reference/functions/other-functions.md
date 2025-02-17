@@ -1238,7 +1238,7 @@ least(a, b)
 ```
 
 :::note
-Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## greatest
@@ -1252,7 +1252,7 @@ greatest(a, b)
 ```
 
 :::note
-Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## uptime
@@ -4057,7 +4057,7 @@ If the function is used in the context of a distributed query, it returns non-em
 
 ## showCertificate
 
-Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](https://clickhouse.com/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
 
 **Syntax**
 
@@ -4232,7 +4232,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the ID of a [transaction](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4242,7 +4242,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4282,7 +4282,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4293,7 +4293,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4329,7 +4329,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4340,7 +4340,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
