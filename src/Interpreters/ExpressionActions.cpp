@@ -456,9 +456,11 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
 
         node_in_actions_pos[node] = actions.size();
         IFunctionBase::ShortCircuitSettings short_circuit_settings;
-        bool is_short_circuit_function = node->type == ActionsDAG::ActionType::FUNCTION
+        bool could_lazy_executed = lazy_executed_nodes.contains(node);
+        bool worth_lazy_executed = node->type == ActionsDAG::ActionType::FUNCTION
             && node->function_base->isShortCircuit(short_circuit_settings, node->children.size()) && !node->children.empty();
-        actions.emplace_back(node, arguments, free_position, isNoExceptNode({node}), lazy_executed_nodes.contains(node), is_short_circuit_function);
+        worth_lazy_executed = worth_lazy_executed || could_lazy_executed;
+        actions.emplace_back(node, arguments, free_position, isNoExceptNode({node}), could_lazy_executed, worth_lazy_executed);
 
         for (const auto & parent : cur_info.parents)
         {
@@ -513,14 +515,13 @@ ExpressionActions::Action::Action(
     size_t result_position_,
     bool is_no_except_,
     bool could_lazy_executed_,
-    bool is_short_circuit_function_)
+    bool worth_lazy_executed_)
     : node(node_)
     , arguments(arguments_)
     , result_position(result_position_)
     , is_no_except(is_no_except_)
     , could_lazy_executed(could_lazy_executed_)
-    , worth_lazy_executed(could_lazy_executed_ || is_short_circuit_function_)
-    , is_short_circuit_function(is_short_circuit_function_)
+    , worth_lazy_executed(worth_lazy_executed_)
 {}
 
 
@@ -1043,7 +1044,7 @@ AdaptiveExpressionActions::AdaptiveExpressionActions(ActionsDAG actions_dag_, co
 void AdaptiveExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
     ExpressionActions::execute(block, num_rows, dry_run, allow_duplicates_in_input);
-    updateLazyExecuteSchedule(num_rows);
+    refreshLazyExecutedActions(num_rows);
 }
 
 void AdaptiveExpressionActions::executeFunctionAction(
@@ -1109,7 +1110,7 @@ void AdaptiveExpressionActions::executeFunctionAction(
 
         res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run, &profile);
 
-        updateFunctionActionProfile(action, profile);
+        onNewFunctionBatchProfile(action, profile);
         if (res_column.column->getDataType() != res_column.type->getColumnType())
         {
             throw Exception(
@@ -1124,25 +1125,29 @@ void AdaptiveExpressionActions::executeFunctionAction(
     }
 }
 
-void AdaptiveExpressionActions::updateFunctionActionProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
+void AdaptiveExpressionActions::onNewFunctionBatchProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile)
 {
-    auto add_profile = [](FunctionExecuteProfile & a, const FunctionExecuteProfile & b)
+    auto insert_profile = [](FunctionExecuteProfile & a, const FunctionExecuteProfile & b)
     {
         a.executed_rows = b.executed_rows;
         a.executed_elapsed += b.executed_elapsed;
         a.short_circuit_side_elapsed += b.short_circuit_side_elapsed;
     };
 
-    add_profile(action.current_round_profile, profile);
-    add_profile(action.accumulate_profile, profile);
+    insert_profile(action.current_round_profile, profile);
+    insert_profile(action.accumulate_profile, profile);
+
+    // update the profiles of its lazy executed arguments.
     for (const auto & arg_profile : profile.argument_profiles)
     {
-        auto & arg_action = actions[action.arguments[arg_profile.first].actions_pos];
-        updateFunctionActionProfile(arg_action, arg_profile.second);
+        const auto & func_arg_pos = arg_profile.first;
+        auto & arg_action = actions[action.arguments[func_arg_pos].actions_pos];
+        onNewFunctionBatchProfile(arg_action, arg_profile.second);
     }
 }
 
-void AdaptiveExpressionActions::updateLazyExecuteSchedule(size_t current_batch_rows)
+// Find the nodes which are worth to execute lazily.
+void AdaptiveExpressionActions::refreshLazyExecutedActions(size_t current_batch_rows)
 {
     const size_t update_on_every_rows = 20000;
 
@@ -1150,7 +1155,7 @@ void AdaptiveExpressionActions::updateLazyExecuteSchedule(size_t current_batch_r
     if (current_round_input_rows < update_on_every_rows)
         return;
 
-    propagateExtraElapsed();
+    appendProfileToActionsParent();
     findNotWorthLazyExecutedActions();
 
     for (auto & action : actions)
@@ -1160,18 +1165,20 @@ void AdaptiveExpressionActions::updateLazyExecuteSchedule(size_t current_batch_r
     current_round_input_rows = 0;
 }
 
-void AdaptiveExpressionActions::propagateExtraElapsed()
+// If an action is not executed lazily at current round, we add its elapsed time to its parent actions.
+// If it is executed layzily at current round, its elapsed has been included in its parent's elapsed.
+void AdaptiveExpressionActions::appendProfileToActionsParent()
 {
     for (auto & action : actions)
     {
         if (action.could_lazy_executed && !couldExecuteLazily(action))
         {
-            propagateExtraElapsed(action, action.current_round_profile.executed_elapsed);
+            appendProfileToActionParent(action, action.current_round_profile.executed_elapsed);
         }
     }
 }
 
-void AdaptiveExpressionActions::propagateExtraElapsed(ExpressionActions::Action & action, size_t extra_elapsed)
+void AdaptiveExpressionActions::appendProfileToActionParent(ExpressionActions::Action & action, size_t extra_elapsed)
 {
     if (!extra_elapsed)
         return;
@@ -1181,23 +1188,9 @@ void AdaptiveExpressionActions::propagateExtraElapsed(ExpressionActions::Action 
         parent_action.current_round_profile.executed_elapsed += extra_elapsed;
         if (couldExecuteLazily(parent_action))
         {
-            propagateExtraElapsed(parent_action, extra_elapsed);
+            appendProfileToActionParent(parent_action, extra_elapsed);
         }
     }
-}
-
-size_t AdaptiveExpressionActions::getLazyActionExecuteElapsed(const ExpressionActions::Action & action, bool need_round)
-{
-    size_t elapsed = need_round ? action.current_round_profile.executed_elapsed : action.accumulate_profile.executed_elapsed;
-    for (const auto & arg : action.arguments)
-    {
-        const auto & arg_action = actions[arg.actions_pos];
-        if (arg_action.could_lazy_executed)
-        {
-            elapsed += getLazyActionExecuteElapsed(actions[arg.actions_pos], need_round);
-        }
-    }
-    return elapsed;
 }
 
 void AdaptiveExpressionActions::findNotWorthLazyExecutedActions()

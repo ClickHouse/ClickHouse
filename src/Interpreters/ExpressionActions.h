@@ -49,19 +49,28 @@ public:
         Arguments arguments;
         size_t result_position;
 
+        /// Whether the function is noexcept for invalid input values. For example `divide(1, 0)` throws exception.
         bool is_no_except;
+
         /// Determine if this action should be executed lazily. If it should and the node type is FUNCTION, then the function
         /// won't be executed and will be stored with it's arguments in ColumnFunction with isShortCircuitArgument() = true.
         bool could_lazy_executed;
-        /// It's not free to lazy execute one node with short circuit. When the cost of filting out necessary rows and
-        /// expanding back to a full column is larger then fully execution of the column, we don't excute it lazily.
+
+        /// Indicates whether it is beneficial to execute this node lazily with short-circuit evaluation.
+        /// If the cost of filtering out unnecessary rows and expanding back to a full column is greater
+        /// than the cost of fully executing the column, then it is not worth executing lazily
         bool worth_lazy_executed;
-        bool is_short_circuit_function;
+
+        /// If this action's result is used by another action, called parent, then the position of the parent action in
+        /// `ExpressionActions::actions`.
         std::vector<size_t> parents_actions_pos;
+    
+        /// Keep track of the execution profile of the current round.
         FunctionExecuteProfile current_round_profile;
+        /// Keep track of the whole execution profile.
         FunctionExecuteProfile accumulate_profile;
 
-        explicit Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool is_no_except_,bool could_lazy_executed_, bool is_short_circuit_function_);
+        explicit Action(const Node * node_, const Arguments & arguments_, size_t result_position_, bool is_no_except_,bool could_lazy_executed_, bool worth_lazy_executed_);
 
         std::string toString() const;
         JSONBuilder::ItemPtr toTree() const;
@@ -176,12 +185,11 @@ private:
     size_t current_round_input_rows = 0;
 
     void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run) override;
-    void updateFunctionActionProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
-    void updateLazyExecuteSchedule(size_t current_batch_rows);
-    void propagateExtraElapsed();
-    void propagateExtraElapsed(ExpressionActions::Action & action, size_t extra_elapsed);
+    void onNewFunctionBatchProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
+    void refreshLazyExecutedActions(size_t current_batch_rows);
+    void appendProfileToActionsParent();
+    void appendProfileToActionParent(ExpressionActions::Action & action, size_t extra_elapsed);
     void findNotWorthLazyExecutedActions();
-    size_t getLazyActionExecuteElapsed(const ExpressionActions::Action & action, bool need_round);
 };
 
 namespace ExpressionActionsChainSteps
