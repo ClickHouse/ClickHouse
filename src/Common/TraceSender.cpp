@@ -6,6 +6,8 @@
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 
+#include <atomic>
+
 namespace
 {
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
@@ -75,8 +77,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         thread_id = MainThreadStatus::get()->thread_id;
     }
 
-    std::atomic_signal_fence(std::memory_order_acquire);
-    UInt64  parent_thread_id = DB::Exception::parent_thread_id;
+    UInt64  parent_thread_id = DB::Exception::parent_thread_id.load(std::memory_order_relaxed);
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
 
