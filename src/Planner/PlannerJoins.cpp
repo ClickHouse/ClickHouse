@@ -45,6 +45,9 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
+#include <stack>
+
+
 namespace DB
 {
 namespace Setting

@@ -8,7 +8,7 @@ keywords: [global server settings]
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import SystemLogParameters from '_snippets/_system-log-parameters.md'
+import SystemLogParameters from '@site/docs/en/operations/server-configuration-parameters/_snippets/_system-log-parameters.md'
 
 # Global Server Settings
 
@@ -1619,7 +1619,7 @@ The following settings can be configured by sub-tags:
 | `url`              | A location for redirect                                                                                                                                               |
 | `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
 | `status`           | Use with static type, response status code                                                                                                                            |
-| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params                             |
+| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params                             |
 | `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
 | `content_type`     | Use with static type, response content-type                                                                                                                           |
 | `response_content` | Use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
@@ -1908,8 +1908,8 @@ The following settings can be configured by sub-tags:
 |--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `host`                         | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
 | `port`                         | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
-| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
-| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
+| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `\{user_dn\}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
 | `verification_cooldown`        | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
 | `enable_tls`                   | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
 | `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).                                                                                                                                                                                                                                                                                                                |
@@ -1924,9 +1924,9 @@ Setting `user_dn_detection` can be configured with sub-tags:
 
 | Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
+| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}` and '\{bind_dn\}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
 | `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |                                                                                                                               
-| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
+| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, and `\{base_dn\}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
 
 Example:
 
@@ -2670,7 +2670,7 @@ Keys for server/client settings:
 | `loadDefaultCAFile`           | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
 | `cipherList`                  | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
 | `cacheSessions`               | Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                         | `false`                                    |
-| `sessionIdContext`            | A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.                                                                                                                                                        | `${application.name}`                      |
+| `sessionIdContext`            | A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.                                                                                                                                                        | `$\{application.name\}`                      |
 | `sessionCacheSize`            | The maximum number of sessions that the server caches. A value of `0` means unlimited sessions.                                                                                                                                                                                                                                                                                                                                                                        | [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)                            |
 | `sessionTimeout`              | Time for caching the session on the server in hours.                                                                                                                                                                                                                                                                                                                                                                                                                   | `2`                                        |
 | `extendedVerification`        | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
@@ -3766,7 +3766,7 @@ Select a parent field in the tabs below to view their children:
 It's possible that the proxy servers change dynamically. In that
 case, you can define the endpoint of a resolver. ClickHouse sends
 an empty GET request to that endpoint, the remote resolver should return the proxy host.
-ClickHouse will use it to form the proxy URI using the following template: `{proxy_scheme}://{proxy_host}:{proxy_port}`
+ClickHouse will use it to form the proxy URI using the following template: `\{proxy_scheme\}://\{proxy_host\}:{proxy_port}`
 
 **Configuration template**
 
@@ -3923,6 +3923,26 @@ Used to regulate how resources are utilized and shared between mutations and oth
 Type: `String`
 
 Default: `default`
+
+## throw_on_unknown_workload
+
+Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
+
+- If `true`, RESOURCE_ACCESS_DENIED exception is thrown from a query that is trying to access unknown workload. Useful to enforce resource scheduling for all queries after WORKLOAD hierarchy is established and contains WORKLOAD default.
+- If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+Type: String
+
+Default: false
+
+**Example**
+
+```xml
+<throw_on_unknown_workload>true</throw_on_unknown_workload>
+```
 
 ## workload_path
 

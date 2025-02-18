@@ -565,7 +565,7 @@ Use `unsigned` if necessary.
 
 Use the types `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, and `Int64`, as well as `size_t`, `ssize_t`, and `ptrdiff_t`.
 
-Don’t use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
+Don't use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
 
 **13.** Passing arguments.
 
@@ -601,17 +601,17 @@ Small libraries do not need this, either.
 
 For medium to large libraries, put everything in a `namespace`.
 
-In the library’s `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
+In the library's `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
 
 In a `.cpp` file, you can use a `static` or anonymous `namespace` to hide symbols.
 
-Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it’s better to use an `enum class`).
+Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it's better to use an `enum class`).
 
 **16.** Deferred initialization.
 
-If arguments are required for initialization, then you normally shouldn’t write a default constructor.
+If arguments are required for initialization, then you normally shouldn't write a default constructor.
 
-If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
+If later you'll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
 
 ``` cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
@@ -650,7 +650,7 @@ Use UTF-8 encoding in the log. In rare cases you can use non-ASCII characters in
 
 **20.** Input-output.
 
-Don’t use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
+Don't use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
 
 Use the `DB/IO` library instead.
 
@@ -691,7 +691,7 @@ auto s = std::string{"Hello"};
 
 **2.** Constructs which have convenient syntactic sugar in modern C++, e.g.
 
-```
+```cpp
 // Traditional way without syntactic sugar
 template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
 std::pair<int, int> func(const E<G> & e) // explicitly specified return type
@@ -778,7 +778,7 @@ Though only selected revisions are considered workable.
 
 Use branches for this purpose.
 
-If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You’ll need to finish it or remove it within a few days.
+If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You'll need to finish it or remove it within a few days.
 
 **9.** For non-trivial changes, use branches and publish them on the server.
 
@@ -798,7 +798,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **2.** Try the simplest solution.
 
-**3.** Don’t write code until you know how it’s going to work and how the inner loop will function.
+**3.** Don't write code until you know how it's going to work and how the inner loop will function.
 
 **4.** In the simplest cases, use `using` instead of classes or structs.
 
@@ -810,7 +810,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** Explicitly specifying `std::` for types from `stddef.h`
 
-is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it’s shorter.
+is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it's shorter.
 
 It is acceptable to add `std::`.
 

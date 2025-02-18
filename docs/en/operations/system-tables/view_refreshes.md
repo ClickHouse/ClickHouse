@@ -1,9 +1,10 @@
 ---
+description: "System table containing information about Refreshable Materialized Views."
 slug: /en/operations/system-tables/view_refreshes
+title: "view_refreshes"
+keywords: ["system table", "view_refreshes"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# view_refreshes
 
 <SystemTableCloud/>
 
