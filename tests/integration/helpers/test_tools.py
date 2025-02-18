@@ -147,7 +147,7 @@ def exec_query_with_retry(
             res = instance.query(query, timeout=30, settings=settings)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
-            break
+            return res
         except Exception as ex:
             exception = ex
             if not silent:
