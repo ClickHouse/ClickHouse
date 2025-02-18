@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
             {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
             {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
+            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -136,7 +137,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_bytes_ratio_before_external_sort", 0., 0., "New setting."},
             {"use_async_executor_for_materialized_views", false, false, "New setting."},
             {"http_response_headers", "", "", "New setting."},
-            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
             {"output_format_parquet_datetime_as_uint32", true, false, "Write DateTime as DateTime64(3) instead of UInt32 (these are the two Parquet types closest to DateTime)."},
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
