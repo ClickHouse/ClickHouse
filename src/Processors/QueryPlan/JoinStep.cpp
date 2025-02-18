@@ -192,13 +192,15 @@ void JoinStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << "Swapped: true\n";
     if (!primary_key_sharding.empty())
     {
-        settings.out << prefix << "Layers prefix: [";
+        settings.out << prefix << "Sharding: [";
         bool first = true;
         for (const auto & [lhs, rhs] : primary_key_sharding)
         {
-            settings.out << "(" << lhs << " = " << rhs << ")";
             if (!first)
                 settings.out << ", ";
+            first = false;
+
+            settings.out << "(" << lhs << " = " << rhs << ")";
         }
 
         settings.out << "]\n";
@@ -221,7 +223,7 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
             item->add(rhs);
             array->add(std::move(item));
         }
-        map.add("LayersPrefix", std::move(array));
+        map.add("Sharding", std::move(array));
     }
 }
 

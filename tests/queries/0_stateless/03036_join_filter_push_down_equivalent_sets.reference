@@ -38,7 +38,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-    Layers prefix: 1
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -130,7 +130,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-    Layers prefix: 1
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -222,7 +222,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-    Layers prefix: 1
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -325,7 +325,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-    Layers prefix: 1
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -430,7 +430,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-      Layers prefix: 1
+      Sharding: [(id = id)]
         Expression
         Header: __table1.id UInt64
                 __table1.value String
@@ -529,7 +529,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-      Layers prefix: 1
+      Sharding: [(id = id)]
         Expression
         Header: __table1.id UInt64
                 __table1.value String
@@ -615,7 +615,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-    Layers prefix: 1
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -720,7 +720,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-      Layers prefix: 1
+      Sharding: [(id = id)]
         Expression
         Header: __table1.id UInt64
                 __table1.value String
@@ -819,7 +819,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-      Layers prefix: 1
+      Sharding: [(id = id)]
         Expression
         Header: __table1.id UInt64
                 __table1.value String
@@ -925,7 +925,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-      Layers prefix: 1
+      Sharding: [(id = id)]
         Expression
         Header: __table1.id UInt64
                 __table1.value String
