@@ -1,6 +1,5 @@
 #include "IMergeTreeDataPart.h"
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
@@ -10,10 +9,8 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
-#include <IO/HashingReadBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -32,7 +29,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <base/JSON.h>
-#include <boost/algorithm/string/join.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>

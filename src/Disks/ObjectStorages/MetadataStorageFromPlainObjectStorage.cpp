@@ -1,17 +1,17 @@
 #include "MetadataStorageFromPlainObjectStorage.h"
 
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
+
 
 namespace DB
 {
@@ -169,6 +169,7 @@ MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
+        LOG_TRACE(getLogger("Metadata"), "Object key: {}", object_key.serialize());
         if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;

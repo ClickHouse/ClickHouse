@@ -1508,7 +1508,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     }
     catch (...)
     {
-        LOG_DEBUG(log, "Failed to load unexcepted data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
+        LOG_DEBUG(log, "Failed to load unexpected data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         if (!state.part)
         {
             /// Build a fake part and mark it as broken in case of filesystem error.
@@ -1521,7 +1521,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
         }
 
         state.is_broken = true;
-        tryLogCurrentException(log, fmt::format("while loading unexcepted part {} on path {}", part_name, part_path));
+        tryLogCurrentException(log, fmt::format("while loading unexpected part {} on path {}", part_name, part_path));
     }
 }
 
