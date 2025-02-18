@@ -6262,7 +6262,7 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 Result:
 
-```
+```text
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
@@ -6308,7 +6308,7 @@ SELECT
 
 Result:
 
-```
+```yaml
 ┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
 │              255 │                  1.50 │                  1 │
 └──────────────────┴───────────────────────┴────────────────────┘
@@ -7276,7 +7276,7 @@ FORMAT PrettyCompactMonoBlock;
 
 Result:
 
-```
+```sql
 ┌──────────────────────────a─┬─t──────────────────────────────┐
 │ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
 │ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │

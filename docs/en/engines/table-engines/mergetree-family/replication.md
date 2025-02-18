@@ -106,7 +106,7 @@ Example of setting the addresses of the auxiliary ZooKeeper cluster:
 To store table metadata in an auxiliary ZooKeeper cluster instead of the default ZooKeeper cluster, we can use SQL to create the table with
 ReplicatedMergeTree engine as follows:
 
-```
+```sql
 CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
@@ -139,11 +139,11 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
-```
+```sql
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 ```
 with:
-```
+```sql
 ENGINE = ReplicatedMergeTree
 ```
 :::
