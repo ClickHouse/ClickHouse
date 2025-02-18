@@ -48,8 +48,8 @@ template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
 template <> struct Construct<false, false, 16> { using Type = UInt128; };
 template <> struct Construct<false, false, 32> { using Type = UInt256; };
-template <> struct Construct<false, true, 1> { using Type = BFloat16; };
-template <> struct Construct<false, true, 2> { using Type = BFloat16; };
+template <> struct Construct<false, true, 1> { using Type = Float32; };
+template <> struct Construct<false, true, 2> { using Type = Float32; };
 template <> struct Construct<false, true, 4> { using Type = Float32; };
 template <> struct Construct<false, true, 8> { using Type = Float64; };
 template <> struct Construct<true, false, 1> { using Type = Int8; };
@@ -58,8 +58,8 @@ template <> struct Construct<true, false, 4> { using Type = Int32; };
 template <> struct Construct<true, false, 8> { using Type = Int64; };
 template <> struct Construct<true, false, 16> { using Type = Int128; };
 template <> struct Construct<true, false, 32> { using Type = Int256; };
-template <> struct Construct<true, true, 1> { using Type = BFloat16; };
-template <> struct Construct<true, true, 2> { using Type = BFloat16; };
+template <> struct Construct<true, true, 1> { using Type = Float32; };
+template <> struct Construct<true, true, 2> { using Type = Float32; };
 template <> struct Construct<true, true, 4> { using Type = Float32; };
 template <> struct Construct<true, true, 8> { using Type = Float64; };
 
@@ -205,7 +205,7 @@ struct ResultOfIf
             ConstructedType, Error>>>;
 };
 
-/** Before applying operator `%` and bitwise operations, operands are cast to whole numbers. */
+/** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
 template <typename A> struct ToInteger
 {
     using Type = typename Construct<

@@ -1,0 +1,8 @@
+position: 200
+label: 'Data ingestion'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Data ingestion
+  slug: /ja/integrations/data-ingestion

@@ -8,7 +8,6 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/RemoteHostFilter.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -533,7 +532,7 @@ void StorageHive::initMinMaxIndexExpression()
         partition_names = partition_name_types.getNames();
         partition_types = partition_name_types.getTypes();
         partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(partition_name_types), ExpressionActionsSettings(getContext()));
+            ActionsDAG(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
     }
 
     NamesAndTypesList all_name_types = metadata_snapshot->getColumns().getAllPhysical();
@@ -543,7 +542,7 @@ void StorageHive::initMinMaxIndexExpression()
             hivefile_name_types.push_back(column);
     }
     hivefile_minmax_idx_expr = std::make_shared<ExpressionActions>(
-        ActionsDAG(hivefile_name_types), ExpressionActionsSettings(getContext()));
+        ActionsDAG(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
 }
 
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
@@ -1124,7 +1123,6 @@ void registerStorageHive(StorageFactory & factory)
             .supports_settings = true,
             .supports_sort_order = true,
             .source_access_type = AccessType::HIVE,
-            .has_builtin_setting_fn = HiveSettings::hasBuiltin,
         });
 }
 

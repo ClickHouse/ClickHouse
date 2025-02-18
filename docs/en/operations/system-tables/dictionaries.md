@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/dictionaries
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # dictionaries
-
-<SystemTableCloud/>
 
 Contains information about [dictionaries](../../sql-reference/dictionaries/index.md).
 

@@ -1,13 +1,14 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <IO/ConnectionTimeouts.h>
 #include <Common/Throttler.h>
+#include <IO/ConnectionTimeouts.h>
+#include <Interpreters/ClientInfo.h>
+
 
 namespace DB
 {
 
-class ClientInfo;
 class Connection;
 class ReadBuffer;
 struct Settings;

@@ -5,14 +5,13 @@
 #include <Core/Settings.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <IO/LimitReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientApplicationBase.h>
+#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include "Common/logger_useful.h"
@@ -547,8 +546,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 
             for (size_t i = 0; i < rules_size; ++i)
             {
-                String original_pattern;
-                String exception_message;
+                String original_pattern, exception_message;
                 readStringBinary(original_pattern, *in);
                 readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
@@ -561,13 +559,6 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             UInt64 read_nonce;
             readIntBinary(read_nonce, *in);
             nonce.emplace(read_nonce);
-        }
-
-        if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
-        {
-            Settings settings;
-            settings.read(*in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-            settings_from_server = settings.changes();
         }
     }
     else if (packet_type == Protocol::Server::Exception)
@@ -592,12 +583,6 @@ void Connection::setDefaultDatabase(const String & database)
 const String & Connection::getDefaultDatabase() const
 {
     return default_database;
-}
-
-const SettingsChanges & Connection::settingsFromServer() const
-{
-    chassert(connected);
-    return settings_from_server;
 }
 
 const String & Connection::getDescription(bool with_extra) const /// NOLINT
@@ -834,28 +819,9 @@ void Connection::sendQuery(
     /// Per query settings.
     if (settings)
     {
-        std::optional<Settings> modified_settings;
-        const Settings * settings_to_send = settings;
-        if (!settings_from_server.empty())
-        {
-            /// Don't send settings that we got from the server in the first place.
-            modified_settings.emplace(*settings);
-            for (const SettingChange & change : settings_from_server)
-            {
-                Field value;
-                if (settings->tryGet(change.name, value) && value == change.value)
-                {
-                    // Mark as unchanged so it's not sent.
-                    modified_settings->setDefaultValue(change.name);
-                    chassert(!modified_settings->isChanged(change.name));
-                }
-            }
-            settings_to_send = &*modified_settings;
-        }
-
         auto settings_format = (server_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsWriteFormat::STRINGS_WITH_FLAGS
                                                                                                           : SettingsWriteFormat::BINARY;
-        settings_to_send->write(*out, settings_format);
+        settings->write(*out, settings_format);
     }
     else
         writeStringBinary("" /* empty string is a marker of the end of settings */, *out);
@@ -962,7 +928,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty(), format_settings);
     }
 
     if (scalar)
@@ -1227,18 +1193,6 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-UInt64 Connection::receivePacketType()
-{
-    /// Have we already read packet type?
-    if (last_input_packet_type)
-        return *last_input_packet_type;
-
-    UInt64 type;
-    readVarUInt(type, *in);
-    return last_input_packet_type.emplace(type);
-}
-
-
 Packet Connection::receivePacket()
 {
     try
@@ -1388,7 +1342,7 @@ void Connection::initBlockInput()
                 maybe_compressed_in = in;
         }
 
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision);
+        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
 
@@ -1398,7 +1352,7 @@ void Connection::initBlockLogsInput()
     if (!block_logs_in)
     {
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
@@ -1407,7 +1361,7 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
