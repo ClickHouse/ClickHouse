@@ -24,8 +24,11 @@ cargo install --version 0.2.7 cargo-local-registry
 ```bash
 export CH_TOP_DIR=$(git rev-parse --show-toplevel)
 export RUSTC_ROOT=$(rustc --print=sysroot)
-# Currently delta-lake is built without corrosion or the workspace
+# Currently delta-lake is built outside the workspace (TODO)
 export DELTA_LAKE_DIR="$CH_TOP_DIR"/contrib/delta-kernel-rs
+
+# Clean the vendor repo
+rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/*
 
 cd "$CH_TOP_DIR"/rust/workspace
 cargo local-registry --git --sync Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
