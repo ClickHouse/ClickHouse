@@ -46,7 +46,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
             /* format_settings */ std::nullopt, /// No format_settings
             /* mode */ LoadingStrictnessLevel::CREATE,
             /* distributed_processing */ true,
-            /*partition_by_=*/nullptr);
+            /* partition_by */ nullptr);
     }
     else
     {
@@ -54,10 +54,14 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration>::execute
             ITableFunctionCluster<Base>::cluster_name,
             configuration,
             object_storage,
+            context,
             StorageID(Base::getDatabaseName(), table_name),
             columns,
             ConstraintsDescription{},
-            context);
+            /* comment */ String{},
+            /* format_settings */ std::nullopt, /// No format_settings
+            /* mode */ LoadingStrictnessLevel::CREATE,
+            /* partition_by */ nullptr);
     }
 
     storage->startup();

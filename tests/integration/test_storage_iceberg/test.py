@@ -587,6 +587,28 @@ def test_types(started_cluster, format_version, storage_type):
     )
 
 
+def count_secondary_subqueries(started_cluster, query_id, expected, comment):
+    for node_name, replica in started_cluster.instances.items():
+        cluster_secondary_queries = (
+            replica.query(
+                f"""
+                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
+                WHERE
+                    type = 'QueryFinish'
+                    AND NOT is_initial_query
+                    AND initial_query_id='{query_id}'
+            """
+            )
+            .strip()
+            .split("\n")
+        )
+
+        logging.info(
+            f"[{node_name}] cluster_secondary_queries {comment}: {cluster_secondary_queries}"
+        )
+        assert len(cluster_secondary_queries) == expected
+
+
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "hdfs"])
 def test_cluster_table_function(started_cluster, format_version, storage_type):
@@ -693,82 +715,58 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         .split()
     )
 
+    instance.query(f"DROP TABLE IF EXISTS `{TABLE_NAME}` SYNC")
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
+    query_id_pure_table_engine = str(uuid.uuid4())
+    select_pure_table_engine = (
+        instance.query(
+            f"""
+            SELECT * FROM {TABLE_NAME}
+            """,
+            query_id=query_id_pure_table_engine,
+        )
+        .strip()
+        .split()
+    )
+    query_id_pure_table_engine_cluster = str(uuid.uuid4())
+    select_pure_table_engine_cluster = (
+        instance.query(
+            f"""
+            SELECT * FROM {TABLE_NAME}
+            SETTINGS object_storage_cluster='cluster_simple'
+            """,
+            query_id=query_id_pure_table_engine_cluster,
+        )
+        .strip()
+        .split()
+    )
+
     # Simple size check
     assert len(select_regular) == 600
     assert len(select_cluster) == 600
     assert len(select_cluster_alt_syntax) == 600
     assert len(select_cluster_table_engine) == 600
     assert len(select_remote_cluster) == 600
+    assert len(select_pure_table_engine) == 600
+    assert len(select_pure_table_engine_cluster) == 600
 
     # Actual check
     assert select_cluster == select_regular
     assert select_cluster_alt_syntax == select_regular
     assert select_cluster_table_engine == select_regular
     assert select_remote_cluster == select_regular
+    assert select_pure_table_engine == select_regular
+    assert select_pure_table_engine_cluster == select_regular
 
     # Check query_log
     for replica in started_cluster.instances.values():
         replica.query("SYSTEM FLUSH LOGS")
 
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart'
-                    AND NOT is_initial_query
-                    AND initial_query_id='{query_id_cluster}'
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart'
-                    AND NOT is_initial_query
-                    AND initial_query_id='{query_id_cluster_alt_syntax}'
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
-
-    for node_name, replica in started_cluster.instances.items():
-        cluster_secondary_queries = (
-            replica.query(
-                f"""
-                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
-                WHERE
-                    type = 'QueryStart'
-                    AND NOT is_initial_query
-                    AND initial_query_id='{query_id_cluster_table_engine}'
-            """
-            )
-            .strip()
-            .split("\n")
-        )
-
-        logging.info(
-            f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
-        )
-        assert len(cluster_secondary_queries) == 1
+    count_secondary_subqueries(started_cluster, query_id_cluster, 1, "table function")
+    count_secondary_subqueries(started_cluster, query_id_cluster_alt_syntax, 1, "table function alt syntax")
+    count_secondary_subqueries(started_cluster, query_id_cluster_table_engine, 1, "cluster table engine")
+    count_secondary_subqueries(started_cluster, query_id_pure_table_engine, 0, "table engine")
+    count_secondary_subqueries(started_cluster, query_id_pure_table_engine_cluster, 1, "table engine with cluster setting")
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])

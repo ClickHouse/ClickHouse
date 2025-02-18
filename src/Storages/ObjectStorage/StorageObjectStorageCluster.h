@@ -17,10 +17,15 @@ public:
         const String & cluster_name_,
         ConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
+        ContextPtr context_,
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        ContextPtr context_);
+        const String & comment_,
+        std::optional<FormatSettings> format_settings_,
+        LoadingStrictnessLevel mode_,
+        ASTPtr partition_by_ = nullptr
+    );
 
     std::string getName() const override;
 
@@ -31,11 +36,23 @@ public:
 
     void setClusterNameInSettings(bool cluster_name_in_settings_) { cluster_name_in_settings = cluster_name_in_settings_; }
 
+    String getClusterName(ContextPtr context) const override;
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
+
+    void readFallBackToPure(
+        QueryPlan & query_plan,
+        const Names & column_names,
+        const StorageSnapshotPtr & storage_snapshot,
+        SelectQueryInfo & query_info,
+        ContextPtr context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        size_t num_streams) override;
 
     /*
     In case the table was created with `object_storage_cluster` setting,
@@ -49,12 +66,18 @@ private:
     SELECT * FROM s3(...) SETTINGS object_storage_cluster='cluster'
     to make distributed request over cluster 'cluster'.
     */
-    void updateQueryForDistributedEngineIfNeeded(ASTPtr & query);
+    void updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context);
 
     const String engine_name;
     const StorageObjectStorage::ConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     bool cluster_name_in_settings;
+
+    std::shared_ptr<StorageObjectStorage> pure_storage;
+    String comment;
+    std::optional<FormatSettings> format_settings;
+    LoadingStrictnessLevel mode;
+    ASTPtr partition_by;
 };
 
 }

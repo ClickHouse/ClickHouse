@@ -23,6 +23,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsString object_storage_cluster;
 }
 
 namespace ErrorCodes
@@ -63,15 +64,24 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     const String & cluster_name_,
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
+    ContextPtr context_,
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    ContextPtr context_)
+    const String & comment_,
+    std::optional<FormatSettings> format_settings_,
+    LoadingStrictnessLevel mode_,
+    ASTPtr partition_by_
+)
     : IStorageCluster(
         cluster_name_, table_id_, getLogger(fmt::format("{}({})", configuration_->getEngineName(), table_id_.table_name)))
     , configuration{configuration_}
     , object_storage(object_storage_)
     , cluster_name_in_settings(false)
+    , comment(comment_)
+    , format_settings(format_settings_)
+    , mode(mode_)
+    , partition_by(partition_by_)
 {
     ColumnsDescription columns{columns_};
     std::string sample_path;
@@ -94,7 +104,7 @@ std::string StorageObjectStorageCluster::getName() const
     return configuration->getEngineName();
 }
 
-void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr & query)
+void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr & query, ContextPtr context)
 {
     // Change table engine on table function for distributed request
     // CREATE TABLE t (...) ENGINE=IcebergS3(...)
@@ -131,6 +141,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
         {"S3", "s3"},
         {"Azure", "azureBlobStorage"},
         {"HDFS", "hdfs"},
+        {"Iceberg", "icebergS3"},
         {"IcebergS3", "icebergS3"},
         {"IcebergAzure", "icebergAzure"},
         {"IcebergHDFS", "icebergHDFS"},
@@ -153,7 +164,7 @@ void StorageObjectStorageCluster::updateQueryForDistributedEngineIfNeeded(ASTPtr
     auto function_ast = std::make_shared<ASTFunction>();
     function_ast->name = table_function_name;
 
-    auto cluster_name = getClusterName();
+    auto cluster_name = getClusterName(context);
 
     if (cluster_name.empty())
     {
@@ -195,7 +206,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
-    updateQueryForDistributedEngineIfNeeded(query);
+    updateQueryForDistributedEngineIfNeeded(query, context);
 
     ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
 
@@ -245,6 +256,41 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         return "";
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+}
+
+void StorageObjectStorageCluster::readFallBackToPure(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    if (!pure_storage)
+        pure_storage = std::make_shared<StorageObjectStorage>(
+            configuration,
+            object_storage,
+            context,
+            getStorageID(),
+            getInMemoryMetadata().getColumns(),
+            getInMemoryMetadata().getConstraints(),
+            comment,
+            format_settings,
+            mode,
+            /* distributed_processing */false,
+            partition_by);
+
+    pure_storage->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+}
+
+String StorageObjectStorageCluster::getClusterName(ContextPtr context) const
+{
+    auto cluster_name_ = context->getSettingsRef()[Setting::object_storage_cluster].value;
+    if (cluster_name_.empty())
+        cluster_name_ = getOriginalClusterName();
+    return cluster_name_;
 }
 
 }

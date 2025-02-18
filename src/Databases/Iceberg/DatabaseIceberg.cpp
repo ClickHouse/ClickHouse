@@ -43,7 +43,6 @@ namespace DatabaseIcebergSetting
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
-    extern const SettingsString object_storage_cluster;
 }
 
 namespace ErrorCodes
@@ -240,33 +239,18 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
 
     auto cluster_name = settings[DatabaseIcebergSetting::object_storage_cluster].value;
 
-    if (cluster_name.empty())
-    {
-        return std::make_shared<StorageObjectStorage>(
-            configuration,
-            configuration->createObjectStorage(context_, /* is_readonly */ false),
-            context_,
-            StorageID(getDatabaseName(), name),
-            /* columns */columns,
-            /* constraints */ConstraintsDescription{},
-            /* comment */"",
-            getFormatSettings(context_),
-            LoadingStrictnessLevel::CREATE,
-            /* distributed_processing */false,
-            /* partition_by */nullptr,
-            /* lazy_init */true);
-    }
-    else
-    {
-        return std::make_shared<StorageObjectStorageCluster>(
-            cluster_name,
-            configuration,
-            configuration->createObjectStorage(context_, /* is_readonly */ false),
-            StorageID(getDatabaseName(), name),
-            columns,
-            ConstraintsDescription{},
-            context_);
-    }
+    return std::make_shared<StorageObjectStorageCluster>(
+        cluster_name,
+        configuration,
+        configuration->createObjectStorage(context_, /* is_readonly */ false),
+        context_,
+        StorageID(getDatabaseName(), name),
+        /* columns */columns,
+        /* constraints */ConstraintsDescription{},
+        /* comment */"",
+        /* format_settings */ getFormatSettings(context_),
+        /* mode */ LoadingStrictnessLevel::CREATE,
+        /* partition_by */nullptr);
 }
 
 DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(

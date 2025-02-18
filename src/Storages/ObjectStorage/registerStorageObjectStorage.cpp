@@ -20,11 +20,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsString object_storage_cluster;
-}
-
 namespace StorageObjectStorageSetting
 {
     extern const StorageObjectStorageSettingsString object_storage_cluster;
@@ -74,32 +69,18 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
 
-    if (cluster_name.empty())
-    {
-        return std::make_shared<StorageObjectStorage>(
-            configuration,
-            configuration->createObjectStorage(context, /* is_readonly */ false),
-            args.getContext(),
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.comment,
-            format_settings,
-            args.mode,
-            /* distributed_processing */ false,
-            partition_by);
-    }
-    else
-    {
-        return std::make_shared<StorageObjectStorageCluster>(
-            cluster_name,
-            configuration,
-            configuration->createObjectStorage(context, /* is_readonly */ false),
-            args.table_id,
-            args.columns,
-            args.constraints,
-            args.getContext());
-    }
+    return std::make_shared<StorageObjectStorageCluster>(
+        cluster_name,
+        configuration,
+        configuration->createObjectStorage(context, /* is_readonly */ false),
+        args.getContext(),
+        args.table_id,
+        args.columns,
+        args.constraints,
+        args.comment,
+        format_settings,
+        args.mode,
+        partition_by);
 }
 
 #endif
