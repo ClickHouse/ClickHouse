@@ -59,6 +59,12 @@ void StorageSystemHistogramMetrics::fillData(MutableColumns & res_columns, Conte
 
                 labels_map.pop_back();
             }
+
+            // _sum metric
+            res_columns[0]->insert(record->name + "_sum");
+            res_columns[1]->insert(metric->getSum());
+            res_columns[2]->insert(record->documentation);
+            res_columns[3]->insert(labels_map);
         }
     }
 }
