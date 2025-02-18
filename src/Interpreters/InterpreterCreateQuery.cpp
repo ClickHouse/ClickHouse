@@ -1221,6 +1221,16 @@ namespace
 
         return &engine_def.arguments->children;
     }
+
+    bool hasDynamicSubcolumns(const ColumnsDescription & columns)
+    {
+        return std::any_of(columns.begin(), columns.end(),
+            [](const auto & column)
+            {
+               return column.type->hasDynamicSubcolumns();
+            });
+    }
+
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1941,6 +1951,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Cannot create table with column of type Object, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
+
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Dynamic or JSON, "
             "because storage {} doesn't support dynamic subcolumns",
             res->getName());
     }

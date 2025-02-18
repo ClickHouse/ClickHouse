@@ -343,7 +343,7 @@ FORMAT Vertical;
 
 Result:
 
-```
+```response
 Row 1:
 ──────
 constraint_catalog:            def
