@@ -353,6 +353,12 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
 
     auto * list = assert_cast<ASTExpressionList *>(ast);
 
+    /// Permute list
+    if (!list->children.empty() && fuzz_rand() % 20 == 0)
+    {
+        std::shuffle(list->children.begin(), list->children.end(), fuzz_rand);
+    }
+
     // Remove element
     if (fuzz_rand() % 50 == 0 && list->children.size() > 1)
     {
@@ -396,6 +402,12 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
     }
 
     auto * impl = assert_cast<ASTExpressionList *>(ast);
+
+    /// Permute list
+    if (!impl->children.empty() && fuzz_rand() % 20 == 0)
+    {
+        std::shuffle(impl->children.begin(), impl->children.end(), fuzz_rand);
+    }
 
     // Remove element
     if (fuzz_rand() % 50 == 0 && impl->children.size() > 1)
@@ -1053,6 +1065,11 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
 
 void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
+    /// Permute list
+    if (!expr_list.children.empty() && fuzz_rand() % 20 == 0)
+    {
+        std::shuffle(expr_list.children.begin(), expr_list.children.end(), fuzz_rand);
+    }
     for (auto & child : expr_list.children)
     {
         if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
@@ -1622,6 +1639,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             else if (fuzz_rand() % 100 == 0)
             {
                 select->group_by_with_totals = !select->group_by_with_totals;
+            }
+            if (select->groupBy().get() && !select->groupBy()->children.empty() && fuzz_rand() % 20 == 0)
+            {
+                /// Permute GROUP BY list
+                auto * list = assert_cast<ASTExpressionList *>(select->groupBy().get());
+
+                std::shuffle(list->children.begin(), list->children.end(), fuzz_rand);
             }
             if (select->having().get())
             {
