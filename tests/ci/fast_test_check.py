@@ -115,8 +115,8 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_logs = [f for f in output_path.iterdir() if f.is_file()]
-    additional_logs.append(run_log_path)
+    additional_files = [f for f in output_path.iterdir() if f.is_file()]
+    additional_files.append(run_log_path)
 
     test_log_exists = (
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
@@ -147,7 +147,7 @@ def main():
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=additional_logs,
+        additional_files=additional_files,
         build_dir_for_upload=str(output_path / "binaries"),
     ).dump()
 
