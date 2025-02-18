@@ -1,7 +1,9 @@
 #include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/Exception.h>
 
+
 #if USE_SSL
+#include <Poco/Net/X509Certificate.h>
 #include <openssl/x509v3.h>
 #endif
 
