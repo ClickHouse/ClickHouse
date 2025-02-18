@@ -68,7 +68,7 @@ These are the recommended steps for a zero-downtime ClickHouse upgrade:
 
 :::note
 This error message is expected when there are multiple versions of ClickHouse running in a replicated environment.  You will stop seeing these when all replicas are upgraded to the same version.
-```
+```text
 MergeFromLogEntryTask: Code: 40. DB::Exception: Checksums of parts don't match:
 hash of uncompressed files doesn't match. (CHECKSUM_DOESNT_MATCH)  Data after merge is not
 byte-identical to data on another replicas.

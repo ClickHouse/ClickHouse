@@ -21,6 +21,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
