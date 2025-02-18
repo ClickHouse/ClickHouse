@@ -16,7 +16,7 @@ This feature is in beta and is not yet production-ready. If you need to work wit
 
 If you want to use the `JSON` type, and for the examples on this page, please use:
 
-```
+```sql
 SET enable_json_type = 1
 ```
 

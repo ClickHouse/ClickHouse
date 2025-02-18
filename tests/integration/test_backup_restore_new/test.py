@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import glob
 import os.path
 import random
@@ -6,6 +7,7 @@ import sys
 import uuid
 from collections import namedtuple
 from typing import Dict
+from datetime import datetime
 
 import pytest
 
@@ -118,10 +120,21 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
     return result
 
 
-BackupInfo = namedtuple(
-    "BackupInfo",
-    "name id status error num_files total_size num_entries uncompressed_size compressed_size files_read bytes_read",
-)
+@dataclass
+class BackupInfo:
+    name: str
+    id: int
+    start_time: datetime
+    end_time: datetime
+    status: str
+    error: str
+    num_files: int
+    total_size: int
+    num_entries: int
+    uncompressed_size: int
+    compressed_size: int
+    files_read: int
+    bytes_read: int
 
 
 def get_backup_info_from_system_backups(by_id=None, by_name=None):
@@ -134,6 +147,8 @@ def get_backup_info_from_system_backups(by_id=None, by_name=None):
     [
         name,
         id,
+        start_time,
+        end_time,
         status,
         error,
         num_files,
@@ -145,7 +160,7 @@ def get_backup_info_from_system_backups(by_id=None, by_name=None):
         bytes_read,
     ] = (
         instance.query(
-            f"SELECT name, id, status, error, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read "
+            f"SELECT name, id, start_time, end_time, status, error, num_files, total_size, num_entries, uncompressed_size, compressed_size, files_read, bytes_read "
             f"FROM system.backups WHERE {where_condition} LIMIT 1"
         )
         .strip("\n")
@@ -163,6 +178,8 @@ def get_backup_info_from_system_backups(by_id=None, by_name=None):
     return BackupInfo(
         name=name,
         id=id,
+        start_time=start_time,
+        end_time=end_time,
         status=status,
         error=error,
         num_files=num_files,
@@ -383,6 +400,7 @@ def test_increment_backup_without_changes():
     assert backup_info.error == ""
     assert backup_info.num_files > 0
     assert backup_info.total_size > 0
+    assert backup_info.start_time < backup_info.end_time
     assert (
         0 < backup_info.num_entries and backup_info.num_entries <= backup_info.num_files
     )
@@ -400,6 +418,8 @@ def test_increment_backup_without_changes():
     assert backup2_info.error == ""
     assert backup2_info.num_files == backup_info.num_files
     assert backup2_info.total_size == backup_info.total_size
+    assert backup2_info.start_time > backup_info.end_time
+    assert backup2_info.start_time < backup2_info.end_time
     assert backup2_info.num_entries == 0
     assert backup2_info.uncompressed_size > 0
     assert backup2_info.compressed_size == backup2_info.uncompressed_size
@@ -424,6 +444,7 @@ def test_increment_backup_without_changes():
     assert restore_info.num_files == backup2_info.num_files
     assert restore_info.total_size == backup2_info.total_size
     assert restore_info.num_entries == backup2_info.num_entries
+    assert restore_info.start_time < restore_info.end_time
     assert restore_info.uncompressed_size == backup2_info.uncompressed_size
     assert restore_info.compressed_size == backup2_info.compressed_size
     assert (
@@ -1750,6 +1771,7 @@ def test_system_backups():
     assert info.error == ""
     assert info.num_files > 0
     assert info.total_size > 0
+    assert info.start_time < info.end_time
     assert 0 < info.num_entries and info.num_entries <= info.num_files
     assert info.uncompressed_size > 0
     assert info.compressed_size == info.uncompressed_size
@@ -1781,6 +1803,7 @@ def test_system_backups():
     assert restore_info.name == escaped_backup_name
     assert restore_info.status == "RESTORED"
     assert restore_info.error == ""
+    assert restore_info.start_time < restore_info.end_time
     assert restore_info.num_files == info.num_files
     assert restore_info.total_size == info.total_size
     assert restore_info.num_entries == info.num_entries
