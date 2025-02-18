@@ -28,6 +28,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>

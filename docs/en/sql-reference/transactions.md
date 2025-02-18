@@ -145,14 +145,14 @@ Ok.
 
 :::tip
 If you see the following error, then check your configuration file to make sure that `allow_experimental_transactions` is set to `1` (or any value other than `0` or `false`).
-```
+```sql
 Code: 48. DB::Exception: Received from localhost:9000.
 DB::Exception: Transactions are not supported.
 (NOT_IMPLEMENTED)
 ```
 
 You can also check ClickHouse Keeper by issuing
-```
+```bash
 echo ruok | nc localhost 9181
 ```
 ClickHouse Keeper should respond with `imok`.

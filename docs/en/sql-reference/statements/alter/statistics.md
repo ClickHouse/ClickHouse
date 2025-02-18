@@ -31,7 +31,7 @@ Also, they are replicated, syncing statistics metadata via ZooKeeper.
 
 Adding two statistics types to two columns:
 
-```
+```sql
 ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
 ```
 

@@ -102,11 +102,6 @@ class Validator:
                                 [r in GHRunners for r in job.runs_on]
                             ), f"GH runners [{job.name}:{job.runs_on}] must not be used with S3 as artifact storage"
 
-                if job.allow_merge_on_failure:
-                    assert (
-                        workflow.enable_merge_ready_status
-                    ), f"Job property allow_merge_on_failure must be used only with enabled workflow.enable_merge_ready_status, workflow [{workflow.name}], job [{job.name}]"
-
             if workflow.enable_cache:
                 assert (
                     Settings.CI_CONFIG_RUNS_ON

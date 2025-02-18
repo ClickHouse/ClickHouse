@@ -11,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>

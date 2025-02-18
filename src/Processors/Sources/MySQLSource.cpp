@@ -3,12 +3,10 @@
 #if USE_MYSQL
 #include <vector>
 
-#include <Core/MySQL/MySQLReplication.h>
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/IDataType.h>
@@ -17,8 +15,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
@@ -170,8 +166,14 @@ namespace
                 {
                     size_t n = value.size();
                     UInt64 val = 0UL;
-                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
-                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
+                    char * to = reinterpret_cast<char *>(&val);
+                    memcpy(to, const_cast<char *>(value.data()), n);
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+                    char * start = to;
+                    char * end = to + n;
+                    std::reverse(start, end);
+#endif
                     assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }

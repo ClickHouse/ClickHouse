@@ -8,9 +8,12 @@ import re
 import subprocess
 import tempfile
 from contextlib import contextmanager
+from multiprocessing import Pool, cpu_count
 from typing import Any, List, Literal, Optional
 
 import __main__
+
+from ci_utils import Shell
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +116,39 @@ git_runner = Runner(set_cwd_to_git_root=True)
 
 def is_shallow() -> bool:
     return git_runner.run("git rev-parse --is-shallow-repository") == "true"
+
+
+def unshallow(thin: bool = True) -> None:
+    filter_arg = "--filter=tree:0" if thin else ""
+    Shell.check(
+        f"git fetch --unshallow --prune --no-recurse-submodules {filter_arg}  origin",
+        cwd=git_runner.cwd,
+    )
+
+
+def checkout_submodule(name: str) -> None:
+    """checkout the single submodule by its name"""
+    Shell.check(
+        f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
+    )
+
+
+def checkout_submodules() -> None:
+    """Parallel checkout of submodules. Argument `--jobs` does not really parallelize"""
+    jobs = min([cpu_count(), 20])
+    Shell.check("git submodule sync", cwd=git_runner.cwd)
+    Shell.check("git submodule init", cwd=git_runner.cwd)
+    # Get all submodule path
+    submodules = {
+        s.split("\n", maxsplit=1)[1]
+        for s in git_runner(
+            "git config --file .gitmodules --null --get-regexp '^submodule[.].+[.]path$'"
+        ).split("\0")
+        if "\n" in s
+    }
+
+    with Pool(jobs) as pool:
+        pool.map(checkout_submodule, submodules)
 
 
 @contextmanager

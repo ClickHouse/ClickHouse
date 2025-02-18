@@ -431,11 +431,17 @@ def test_rename(test_cluster):
     # so ddl query will always fail on some replicas even if query was actually executed by leader
     # Also such inconsistency in cluster configuration may lead to query duplication if leader suddenly changed
     # because path of lock in zk contains shard name, which is list of host names of replicas
+    #
+    # NOTE: we do not need to ignore errors here, since even though it is true
+    # that the conflict is possible (due to one replica uses IPs, and the other
+    # hostnames, so the lock path will be different, and the lock in DDLWorker
+    # will not avoid race), DDLWorker has retries for CANNOT_ASSIGN_ALTER.
     instance.query(
         "ALTER TABLE rename_shard ON CLUSTER cluster MODIFY COLUMN sid String DEFAULT concat('new', toString(id))",
-        ignore_error=True,
+        settings={
+            "alter_sync": 2,
+        },
     )
-    time.sleep(1)
 
     test_cluster.ddl_check_query(
         instance,

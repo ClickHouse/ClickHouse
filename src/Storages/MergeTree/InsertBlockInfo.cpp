@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 
 namespace DB

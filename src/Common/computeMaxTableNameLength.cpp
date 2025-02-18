@@ -2,6 +2,8 @@
 #include <Common/escapeForFileName.h>
 
 #include <filesystem>
+#include <unistd.h>
+
 
 namespace DB
 {

@@ -1,5 +1,8 @@
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <Interpreters/sortBlock.h>
 #include <base/sort.h>
 #include <Common/PODArray.h>

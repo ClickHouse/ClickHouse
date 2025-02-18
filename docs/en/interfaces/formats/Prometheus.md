@@ -28,7 +28,7 @@ Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, w
 
 ## Example Usage
 
-```
+```yaml
 ┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
 │ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
 │ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
@@ -53,7 +53,7 @@ Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, w
 
 Will be formatted as:
 
-```
+```text
 # HELP http_request_duration_seconds A histogram of the request duration.
 # TYPE http_request_duration_seconds histogram
 http_request_duration_seconds_bucket{le="0.05"} 24054

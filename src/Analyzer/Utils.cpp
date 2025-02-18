@@ -195,6 +195,28 @@ void makeUniqueColumnNamesInBlock(Block & block)
     }
 }
 
+bool isExpressionNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::FUNCTION
+        || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+bool isFunctionExpressionNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::LAMBDA;
+}
+
+bool isSubqueryNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+bool isTableExpressionNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+        isSubqueryNodeType(node_type);
+}
+
 bool isQueryOrUnionNode(const IQueryTreeNode * node)
 {
     auto node_type = node->getNodeType();
@@ -225,6 +247,34 @@ bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeN
         scope_to_check = scope_to_check->parent_scope;
     }
     return true;
+}
+
+DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
+{
+    auto node_type = query_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::CONSTANT:
+            [[fallthrough]];
+        case QueryTreeNodeType::COLUMN:
+        {
+            return query_tree_node->getResultType();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & function_node = query_tree_node->as<FunctionNode &>();
+            if (function_node.isResolved())
+                return function_node.getResultType();
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    return nullptr;
 }
 
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,

@@ -1,8 +1,8 @@
 #include "ParquetBlockInputFormat.h"
-#include <boost/algorithm/string/case_conv.hpp>
 
 #if USE_PARQUET
 
+#include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
@@ -30,6 +30,8 @@
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 namespace ProfileEvents
 {
     extern const Event ParquetFetchWaitTimeMicroseconds;
@@ -53,6 +55,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int LOGICAL_ERROR;

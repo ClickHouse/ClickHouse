@@ -255,6 +255,12 @@ void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
         thread_frame_pointers.frame_pointers = std::move(frame_pointers);
 }
 
+void Exception::clearThreadFramePointers()
+{
+    if (can_use_thread_frame_pointers)
+        thread_frame_pointers.frame_pointers.clear();
+}
+
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
 {
     if (!isLoggingEnabled())

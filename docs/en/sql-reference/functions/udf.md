@@ -307,13 +307,13 @@ This means that functions can be performed on different servers.
 For example, in the query `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
 
 - if a `distributed_table` has at least two shards, the functions 'g' and 'h' are performed on remote servers, and the function 'f' is performed on the requestor server.
-- if a `distributed_table` has only one shard, all the 'f', 'g’, and 'h’ functions are performed on this shard’s server.
+- if a `distributed_table` has only one shard, all the 'f', 'g', and 'h' functions are performed on this shard's server.
 
 The result of a function usually does not depend on which server it is performed on. However, sometimes this is important.
 For example, functions that work with dictionaries use the dictionary that exists on the server they are running on.
 Another example is the `hostName` function, which returns the name of the server it is running on in order to make `GROUP BY` by servers in a `SELECT` query.
 
-If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an 'any’ aggregate function or add it to a key in `GROUP BY`.
+If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an 'any' aggregate function or add it to a key in `GROUP BY`.
 
 ## SQL User Defined Functions
 

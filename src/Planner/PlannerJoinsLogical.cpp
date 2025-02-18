@@ -46,6 +46,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinInfo.h>
 
+#include <stack>
+
 namespace DB
 {
 

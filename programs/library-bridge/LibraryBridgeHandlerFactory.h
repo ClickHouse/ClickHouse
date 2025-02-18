@@ -12,14 +12,16 @@ class LibraryBridgeHandlerFactory : public HTTPRequestHandlerFactory, WithContex
 {
 public:
     LibraryBridgeHandlerFactory(
-        const std::string & name_,
-        ContextPtr context_);
+        std::string name_,
+        ContextPtr context_,
+        std::vector<std::string> libraries_paths_);
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
 
 private:
     LoggerPtr log;
     const std::string name;
+    const std::vector<std::string> libraries_paths;
 };
 
 }

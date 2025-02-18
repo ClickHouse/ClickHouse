@@ -3,7 +3,6 @@
 #include <base/Decimal.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/LatencyBuckets.h>
-#include <Columns/IColumn.h>
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/PeriodicLog.h>

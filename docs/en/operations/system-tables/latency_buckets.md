@@ -1,17 +1,19 @@
 ---
+description: "System table containing information about bucket bounds used by `latency_log`."
 slug: /en/operations/system-tables/latency_buckets
+title: "latency_buckets"
+keywords: ["system table", "latency_buckets"]
 ---
-# latency_buckets
 
-Contains buckets bounds used by [latency_log](../../operations/system-tables/latency_log.md).
+Contains bucket bounds used by [latency_log](../../operations/system-tables/latency_log.md).
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.latency_buckets FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 LatencyEvent_S3FirstByteReadAttempt1Microseconds:      [100,1000,10000,100000,300000,500000,1000000,2000000,5000000,10000000,15000000,20000000,25000000,30000000,35000000,4294967295]

@@ -25,6 +25,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
@@ -715,43 +716,44 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (const auto & index : args.query.columns_list->indices->children)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
-
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+                if (!args.query.attach && (
+                    ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
                 }
             }
+        }
 
-            /// Try to add "implicit" min-max indexes on all columns
-            for (const auto & column : metadata.columns)
+        /// Try to add "implicit" min-max indexes on all columns
+        for (const auto & column : metadata.columns)
+        {
+            if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
+                || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
             {
-                if ((isNumber(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns])
-                    || (isString(column.type) && (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns]))
+                bool minmax_index_exists = false;
+
+                for (const auto & index : metadata.secondary_indices)
                 {
-                    bool minmax_index_exists = false;
-
-                    for (const auto & index: metadata.secondary_indices)
+                    if (index.column_names.front() == column.name && index.type == "minmax")
                     {
-                        if (index.column_names.front() == column.name && index.type == "minmax")
-                        {
-                            minmax_index_exists = true;
-                            break;
-                        }
+                        minmax_index_exists = true;
+                        break;
                     }
-
-                    if (minmax_index_exists)
-                        continue;
-
-                    auto index_type = makeASTFunction("minmax");
-                    auto index_ast = std::make_shared<ASTIndexDeclaration>(
-                            std::make_shared<ASTIdentifier>(column.name), index_type,
-                            IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
-                    index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
-                    metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, columns, context));
                 }
+
+                if (minmax_index_exists)
+                    continue;
+
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(
+                        std::make_shared<ASTIdentifier>(column.name), index_type,
+                        IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                auto new_index = IndexDescription::getIndexFromAST(index_ast, columns, context);
+                metadata.secondary_indices.push_back(std::move(new_index));
             }
         }
 

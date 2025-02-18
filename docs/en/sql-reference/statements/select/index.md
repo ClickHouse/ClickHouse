@@ -193,7 +193,7 @@ INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
 SELECT * APPLY(sum) FROM columns_transformers;
 ```
 
-```
+```text
 ┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
 │    220 │     18 │    347 │
 └────────┴────────┴────────┘
@@ -215,7 +215,7 @@ SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table
 SELECT * EXCEPT (i) from columns_transformers;
 ```
 
-```
+```text
 ┌──j─┬───k─┐
 │ 10 │ 324 │
 │  8 │  23 │
@@ -240,7 +240,7 @@ SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 ```
 
-```
+```text
 ┌───i─┬──j─┬───k─┐
 │ 101 │ 10 │ 324 │
 │ 121 │  8 │  23 │
@@ -259,7 +259,7 @@ Using the same modifier multiple times.
 SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
 ```
 
-```
+```text
 ┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
 │                        2 │                        3 │
 └──────────────────────────┴──────────────────────────┘
@@ -271,7 +271,7 @@ Using multiple modifiers in a single query.
 SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 ```
 
-```
+```text
 ┌─sum(plus(i, 1))─┬─sum(k)─┐
 │             222 │    347 │
 └─────────────────┴────────┘

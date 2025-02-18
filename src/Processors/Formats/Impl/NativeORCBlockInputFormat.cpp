@@ -31,6 +31,7 @@
 #    include <IO/ReadBufferFromMemory.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
+#    include <Interpreters/Set.h>
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <orc/MemoryPool.hh>

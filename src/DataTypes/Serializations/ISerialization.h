@@ -4,6 +4,7 @@
 #include <Core/Types_fwd.h>
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
@@ -105,7 +106,12 @@ public:
 
     struct DeserializeBinaryBulkState
     {
+        DeserializeBinaryBulkState() = default;
+        DeserializeBinaryBulkState(const DeserializeBinaryBulkState &) = default;
+
         virtual ~DeserializeBinaryBulkState() = default;
+
+        virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
     };
 
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
@@ -270,13 +276,7 @@ public:
 
         bool position_independent_encoding = true;
 
-        /// True if data type names should be serialized in binary encoding.
-        bool data_types_binary_encoding = false;
-
         bool use_compact_variant_discriminators_serialization = false;
-
-        /// Serialize JSON column as single String column with serialized JSON values.
-        bool write_json_as_string = false;
 
         enum class ObjectAndDynamicStatisticsMode
         {
@@ -288,6 +288,9 @@ public:
 
         /// Use old V1 serialization of JSON and Dynamic types. Needed for compatibility.
         bool use_v1_object_and_dynamic_serialization = false;
+
+        bool native_format = false;
+        const FormatSettings * format_settings = nullptr;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -300,15 +303,20 @@ public:
 
         bool position_independent_encoding = true;
 
-        /// True if data type names should be deserialized in binary encoding.
-        bool data_types_binary_encoding = false;
-
         bool native_format = false;
+        const FormatSettings * format_settings;
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
 
         bool object_and_dynamic_read_statistics = false;
+
+        /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
+        StreamCallback dynamic_subcolumns_callback;
+        /// Callback to start prefetches for specific substreams during prefixes deserialization.
+        StreamCallback prefixes_prefetch_callback;
+        /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
+        ThreadPool * prefixes_deserialization_thread_pool = nullptr;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -467,6 +475,9 @@ public:
 
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isDynamicOrObjectStructureSubcolumn(const SubstreamPath & path);
+
+    /// Return true if the specified path contains prefix that should be deserialized in deserializeBinaryBulkStatePrefix.
+    static bool hasPrefix(const SubstreamPath & path);
 
 protected:
     template <typename State, typename StatePtr>

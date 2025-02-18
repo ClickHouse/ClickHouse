@@ -3,6 +3,8 @@
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 
+#include <Interpreters/Context.h>
+
 #include <base/insertAtEnd.h>
 
 namespace CurrentMetrics

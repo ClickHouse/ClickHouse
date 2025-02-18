@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -554,6 +555,12 @@ public:
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
 
+    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
+
+    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
+
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
 
@@ -877,6 +884,7 @@ public:
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
@@ -884,6 +892,7 @@ public:
     ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
 
@@ -894,6 +903,7 @@ public:
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
 
@@ -1190,11 +1200,21 @@ protected:
     /// under lockForShare if rename is possible.
     String relative_data_path;
 
+private:
+    /// Columns and secondary indices sizes can be calculated lazily.
+    mutable std::mutex columns_and_secondary_inices_sizes_mutex;
+    mutable bool are_columns_and_secondary_inices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
-    ColumnSizeByName column_sizes;
-
+    mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
-    IndexSizeByName secondary_index_sizes;
+    mutable IndexSizeByName secondary_index_sizes;
+
+protected:
+    void resetColumnSizes()
+    {
+        column_sizes.clear();
+        are_columns_and_secondary_inices_sizes_calculated = false;
+    }
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -1366,11 +1386,12 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesImpl();
+    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
-    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
-    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
+    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
+    void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
+    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;

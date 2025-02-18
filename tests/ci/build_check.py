@@ -12,9 +12,10 @@ import docker_images_helper
 from ci_config import CI
 from ci_utils import Shell
 from env_helper import REPO_COPY, S3_BUILDS_BUCKET
-from git_helper import Git
+from git_helper import Git, checkout_submodules, unshallow
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
+from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import (
@@ -161,17 +162,11 @@ def main():
 
     if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
         print("Unshallow repo")
-        Shell.check(
-            "git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0  origin",
-            verbose=True,
-        )
+        unshallow()
 
     print("Fetch submodules")
     # TODO: test sparse checkout: update-submodules.sh?
-    Shell.check(
-        "git submodule init && git submodule update --depth 1 --recursive --jobs 20",
-        verbose=True,
-    )
+    checkout_submodules()
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -233,6 +228,24 @@ def main():
                 "The dockerd looks down, won't upload anything and generate report"
             )
             sys.exit(1)
+    else:
+        static_bin_name = CI.get_build_config(build_name).static_binary_name
+        if pr_info.is_master and static_bin_name:
+            s3 = S3Helper()
+            # Full binary with debug info:
+            s3_path_full = "/".join(
+                (pr_info.base_ref, static_bin_name, "clickhouse-full")
+            )
+            binary_full = Path(build_output_path) / "clickhouse"
+            url_full = s3.upload_build_file_to_s3(binary_full, s3_path_full)
+            print(f"::notice ::Binary static URL (with debug info): {url_full}")
+            # Stripped binary without debug info:
+            s3_path_compact = "/".join(
+                (pr_info.base_ref, static_bin_name, "clickhouse")
+            )
+            binary_compact = Path(build_output_path) / "clickhouse-stripped"
+            url_compact = s3.upload_build_file_to_s3(binary_compact, s3_path_compact)
+            print(f"::notice ::Binary static URL (compact): {url_compact}")
 
     JobReport(
         description=version.describe,

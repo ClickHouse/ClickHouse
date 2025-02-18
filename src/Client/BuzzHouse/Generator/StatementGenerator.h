@@ -18,7 +18,11 @@ public:
 
     SQLRelationCol() = default;
 
-    SQLRelationCol(const String rname, const DB::Strings names) : rel_name(rname), path(names) { }
+    SQLRelationCol(const String rname, const DB::Strings names)
+        : rel_name(rname)
+        , path(names)
+    {
+    }
 
     void AddRef(ColumnPath * cp) const
     {
@@ -40,7 +44,10 @@ public:
 
     SQLRelation() = default;
 
-    explicit SQLRelation(const String n) : name(n) { }
+    explicit SQLRelation(const String n)
+        : name(n)
+    {
+    }
 };
 
 class GroupCol
@@ -50,7 +57,11 @@ public:
     Expr * gexpr = nullptr;
 
     GroupCol() = default;
-    GroupCol(SQLRelationCol c, Expr * g) : col(c), gexpr(g) { }
+    GroupCol(SQLRelationCol c, Expr * g)
+        : col(c)
+        , gexpr(g)
+    {
+    }
 };
 
 class QueryLevel
@@ -64,7 +75,10 @@ public:
 
     QueryLevel() = default;
 
-    explicit QueryLevel(const uint32_t n) : level(n) { }
+    explicit QueryLevel(const uint32_t n)
+        : level(n)
+    {
+    }
 };
 
 const constexpr uint32_t allow_set = (1 << 0), allow_cte = (1 << 1), allow_distinct = (1 << 2), allow_from = (1 << 3),
@@ -284,7 +298,7 @@ private:
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
     void refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
-    void generateSubquery(RandomGenerator & rg, Select * sel);
+    void generateSubquery(RandomGenerator & rg, ExplainQuery * eq);
     void generateColRef(RandomGenerator & rg, Expr * expr);
     void generateLiteralValue(RandomGenerator & rg, Expr * expr);
     void generatePredicate(RandomGenerator & rg, Expr * expr);
@@ -293,12 +307,13 @@ private:
     void generateLambdaCall(RandomGenerator & rg, uint32_t nparams, LambdaExpr * lexpr);
     void generateFuncCall(RandomGenerator & rg, bool allow_funcs, bool allow_aggr, SQLFuncCall * func_call);
     void generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call);
+    void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
 
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, OrderByStatement * ob);
 
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
     void generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
-    void generateOffset(RandomGenerator & rg, OffsetStatement * off);
+    void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
         bool enforce_having,
@@ -316,7 +331,7 @@ private:
     void setTableRemote(RandomGenerator & rg, bool table_engine, const SQLTable & t, TableFunction * tfunc);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
-    void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, Select * sel);
+    void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, uint32_t ncols, Select * sel);
     void generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
     void generateSelect(RandomGenerator & rg, bool top, bool force_global_agg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
@@ -370,7 +385,10 @@ public:
         = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
     StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
-        : fc(fuzzc), connections(conn), supports_cloud_features(scf), replica_setup(hrs)
+        : fc(fuzzc)
+        , connections(conn)
+        , supports_cloud_features(scf)
+        , replica_setup(hrs)
     {
         chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
     }

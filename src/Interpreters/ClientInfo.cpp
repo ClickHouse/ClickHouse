@@ -5,6 +5,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <Common/config_version.h>
 
@@ -19,6 +20,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+ClientInfo::ClientInfo()
+{
+    current_address = std::make_shared<Poco::Net::SocketAddress>();
+    initial_address = std::make_shared<Poco::Net::SocketAddress>();
 }
 
 std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
@@ -46,6 +53,13 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
 }
 
+String ClientInfo::getLastForwardedForHost() const
+{
+    auto addr = getLastForwardedFor();
+    return addr ? addr->host().toString() : "";
+}
+
+
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -57,7 +71,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 
     writeBinary(initial_user, out);
     writeBinary(initial_query_id, out);
-    writeBinary(initial_address.toString(), out);
+    writeBinary(initial_address->toString(), out);
 
     if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
         writeBinary(initial_query_start_time_microseconds, out);
@@ -148,7 +162,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     String initial_address_string;
     readBinary(initial_address_string, in);
-    initial_address = Poco::Net::SocketAddress(initial_address_string);
+    initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address_string);
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {

@@ -2,8 +2,9 @@
 
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Parsers/getInsertQuery.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Port.h>
 
 
 namespace DB

@@ -1,9 +1,10 @@
 ---
+description: "System table containing history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk."
 slug: /en/operations/system-tables/metric_log
+title: "metric_log"
+keywords: ["system table", "metric_log"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# metric_log
 
 <SystemTableCloud/>
 

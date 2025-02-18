@@ -52,7 +52,7 @@ Higher-order functions can only accept lambda functions as their functional argu
 
 Examples:
 
-```
+```The correct language is `python`.
 x -> 2 * x
 str -> str != Referer
 ```

@@ -1,9 +1,10 @@
 ---
+description: "System table containing information about all cached file schemas."
 slug: /en/operations/system-tables/schema_inference_cache
+title: "schema_inference_cache"
+keywords: ["system table", "schema_inference_cache"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# schema_inference_cache
 
 <SystemTableCloud/>
 
@@ -30,7 +31,7 @@ Let's say we have a file `data.jsonl` with this content:
 :::tip
 Place `data.jsonl` in the `user_files_path` directory.  You can find this by looking
 in your ClickHouse configuration files. The default is:
-```
+```sql
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 :::

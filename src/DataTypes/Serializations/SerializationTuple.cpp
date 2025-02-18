@@ -654,6 +654,16 @@ struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBul
 struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinaryBulkState
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
+        new_state->states.reserve(states.size());
+        for (const auto & state : states)
+            new_state->states.push_back(state ? state->clone() : nullptr);
+
+        return new_state;
+    }
 };
 
 void SerializationTuple::enumerateStreams(

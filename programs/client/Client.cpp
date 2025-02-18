@@ -484,15 +484,7 @@ void Client::connect()
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
 
-            /// Apply setting changes received from server, but with lower priority than settings
-            /// changed from command line.
-            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
-            const Settings & settings = global_context->getSettingsRef();
-            std::erase_if(settings_from_server, [&](const SettingChange & change)
-            {
-                return settings.isChanged(change.name);
-            });
-            global_context->applySettingsChanges(settings_from_server);
+            settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
             break;
         }

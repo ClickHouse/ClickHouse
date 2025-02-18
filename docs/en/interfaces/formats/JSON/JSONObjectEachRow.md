@@ -36,7 +36,7 @@ The value of this setting is set to the name of a column, that is used as JSON k
 
 Let's say we have the table `test` with two columns:
 
-```
+```text
 ┌─object_name─┬─number─┐
 │ first_obj   │      1 │
 │ second_obj  │      2 │

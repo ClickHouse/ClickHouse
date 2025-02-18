@@ -30,7 +30,7 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
 - `url` — Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
   :::note GCS
   The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
-  ```
+```text
   https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
   ```
   and not ~~https://storage.cloud.google.com~~.

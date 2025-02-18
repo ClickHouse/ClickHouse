@@ -228,11 +228,14 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
 
 
 def subprocess_check_call(
-    args: Union[Sequence[str], str], detach: bool = False, nothrow: bool = False
+    args: Union[Sequence[str], str],
+    detach: bool = False,
+    nothrow: bool = False,
+    **kwargs,
 ) -> str:
     # Uncomment for debugging
     # logging.info('run:' + ' '.join(args))
-    return run_and_check(args, detach=detach, nothrow=nothrow)
+    return run_and_check(args, detach=detach, nothrow=nothrow, **kwargs)
 
 
 def get_odbc_bridge_path():
@@ -2042,8 +2045,18 @@ class ClickHouseCluster:
                 exec_cmd += ["-u", kwargs["user"]]
             if "privileged" in kwargs:
                 exec_cmd += ["--privileged"]
+
+            env = None
+            if "environment" in kwargs:
+                env = kwargs.pop("environment", None)
+                for k, v in env.items():
+                    exec_cmd += ["--env", k + "=" + v]
+
+            exec_cmd += [container_id]
+            exec_cmd += list(cmd)
+
             result = subprocess_check_call(
-                exec_cmd + [container_id] + list(cmd), detach=detach, nothrow=nothrow
+                exec_cmd, detach=detach, nothrow=nothrow, env=env
             )
             return result
         else:
@@ -2085,7 +2098,7 @@ class ClickHouseCluster:
                 [
                     "bash",
                     "-c",
-                    "echo {} | base64 --decode > {}".format(encodedStr, dest_path),
+                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(dest_path, encodedStr, dest_path),
                 ],
             )
 
@@ -3065,28 +3078,36 @@ class ClickHouseCluster:
                 )
 
             self.is_up = True
+            self.save_logs()
 
         except BaseException as e:
             logging.debug("Failed to start cluster: ")
             logging.debug(str(e))
-            logging.debug(traceback.print_exc())
+            logging.debug(traceback.format_exc())
+            self.save_logs()
             self.shutdown()
             raise
+
+    def save_logs(self) -> None:
+        # Launch the `docker-compose logs` in background to collect all the logs
+        # into the docker_logs_path file during the run
+        # Create directory log
+        os.makedirs(p.dirname(self.docker_logs_path), exist_ok=True)
+        # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
+        docker_logs_path = open(self.docker_logs_path, "w+", errors="replace")
+        subprocess.Popen(
+            self.base_cmd + ["logs", "--follow"],
+            stdout=docker_logs_path,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+        )
 
     def shutdown(self, kill=True, ignore_fatal=True):
         sanitizer_assert_instance = None
         fatal_log = None
 
         if self.up_called:
-            # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
-            with open(self.docker_logs_path, "w+", errors="replace") as f:
-                try:
-                    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
-                        self.base_cmd + ["logs"], stdout=f
-                    )
-                except Exception as e:
-                    logging.debug("Unable to get logs from docker.")
-                f.seek(0)
+            with open(self.docker_logs_path, "r") as f:
                 for line in f:
                     if SANITIZER_SIGN in line:
                         sanitizer_assert_instance = line.split("|")[0].strip()
@@ -3169,7 +3190,7 @@ class ClickHouseCluster:
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name):
+    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
@@ -3183,8 +3204,14 @@ class ClickHouseCluster:
         logging.debug(
             f"get_kazoo_client: {zoo_instance_name}, ip:{ip}, port:{port}, use_ssl:{use_ssl}"
         )
+        kazoo_retry = {
+            "max_tries": retries,
+        }
         zk = KazooClient(
             hosts=f"{ip}:{port}",
+            timeout=timeout,
+            connection_retry=kazoo_retry,
+            command_retry=kazoo_retry,
             use_ssl=use_ssl,
             verify_certs=False,
             certfile=self.zookeeper_certfile,

@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 

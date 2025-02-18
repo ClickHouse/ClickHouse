@@ -271,7 +271,7 @@ class Result(MetaClasses.Serializable):
         )
 
     @classmethod
-    def generate_skipped(cls, name, cache_record: Cache.CacheRecord, results=None):
+    def generate_skipped(cls, name, links=None, info="", results=None):
         return Result(
             name=name,
             status=Result.Status.SKIPPED,
@@ -279,15 +279,8 @@ class Result(MetaClasses.Serializable):
             duration=None,
             results=results or [],
             files=[],
-            links=[
-                Info().get_specific_report_url(
-                    pr_number=cache_record.pr_number,
-                    branch=cache_record.branch,
-                    sha=cache_record.sha,
-                    job_name=name,
-                )
-            ],
-            info=f"from cache",
+            links=links or [],
+            info=info,
         )
 
     @classmethod
@@ -568,7 +561,9 @@ class _ResultS3:
                 if isinstance(new_sub_results, Result):
                     new_sub_results = [new_sub_results]
                 for result_ in new_sub_results:
-                    workflow_result.update_sub_result(result_, drop_nested_results=True)
+                    workflow_result.update_sub_result(
+                        result_, drop_nested_results=True
+                    ).dump()
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(workflow_result, version=version + 1):
                 done = True

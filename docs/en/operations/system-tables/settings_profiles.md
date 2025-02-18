@@ -1,7 +1,9 @@
 ---
+description: "System table which contains properties of configured setting profiles."
 slug: /en/operations/system-tables/settings_profiles
+title: "settings_profiles"
+keywords: ["system table", "settings_profiles"]
 ---
-# settings_profiles
 
 Contains properties of configured setting profiles.
 

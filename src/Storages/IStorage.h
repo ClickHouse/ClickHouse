@@ -71,6 +71,8 @@ class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
 
+class ActionsDAG;
+
 struct ColumnSize
 {
     size_t marks = 0;

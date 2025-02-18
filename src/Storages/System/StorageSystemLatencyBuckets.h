@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <Columns/IColumn.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB

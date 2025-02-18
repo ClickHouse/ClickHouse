@@ -34,7 +34,7 @@ class S3:
         assert len(s3_path.split("/")) > 2, "check to not delete too much"
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
         if include:
-            cmd += f' --include "{include}"'
+            cmd += f' --exclude "*" --include "{include}"'
         cls.run_command_with_retries(cmd, retries=1)
         return
 

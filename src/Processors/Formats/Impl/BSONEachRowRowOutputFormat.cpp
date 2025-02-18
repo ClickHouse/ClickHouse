@@ -21,6 +21,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 
+#include <Processors/Port.h>
+
 
 namespace DB
 {

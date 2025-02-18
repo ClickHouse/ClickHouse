@@ -10,7 +10,6 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/quoteString.h>
-#include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
@@ -1368,13 +1367,14 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
     DatabaseTablesIterators database_table_iterators;
 
-    /// database_name argument is not a regexp
     if (!database_is_regexp)
+    {
+        /// database_name argument is not a regexp
         database_table_iterators.emplace_back(getDatabaseIterator(source_database_name_or_regexp, local_context));
-
-    /// database_name argument is a regexp
+    }
     else
     {
+        /// database_name argument is a regexp
         auto databases = DatabaseCatalog::instance().getDatabases();
 
         for (const auto & db : databases)

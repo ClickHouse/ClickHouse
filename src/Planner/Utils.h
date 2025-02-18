@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
 
 #include <Parsers/IAST_fwd.h>

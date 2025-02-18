@@ -1,9 +1,10 @@
 ---
+description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
 slug: /en/operations/system-tables/query_thread_log
+title: "query_thread_log"
+keywords: ["system table", "query_thread_log"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# query_thread_log
 
 <SystemTableCloud/>
 

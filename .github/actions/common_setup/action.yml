@@ -28,19 +28,3 @@ runs:
       run: |
           # to remove every leftovers
           sudo rm -fr "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
-    - name: Tune vm.mmap_rnd_bits for sanitizers
-      shell: bash
-      run: |
-          sudo sysctl vm.mmap_rnd_bits
-          # https://github.com/google/sanitizers/issues/856
-          echo "Tune vm.mmap_rnd_bits for sanitizers"
-          sudo sysctl vm.mmap_rnd_bits=28
-    - name: Avoid relying on internal AWS DNS
-      shell: bash
-      run: |
-          fqdn=$(hostname --fqdn)
-          echo "Current FQDN: $fqdn"
-          echo "127.0.0.1 $fqdn" | sudo tee -a /etc/hosts
-          resolvectl flush-caches
-          resolvectl query "$fqdn"
-          host "$fqdn"

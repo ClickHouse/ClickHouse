@@ -1,13 +1,12 @@
-#include <unordered_set>
 #include "config.h"
 
 #if USE_AVRO
 
-
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
 
-
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"

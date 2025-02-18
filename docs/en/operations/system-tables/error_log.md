@@ -1,9 +1,10 @@
 ---
+description: "System table containing the history of error values from table `system.errors`, periodically flushed to disk."
 slug: /en/operations/system-tables/error_log
+title: "error_log"
+keywords: ["system table", "error_log"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# error_log
 
 <SystemTableCloud/>
 

@@ -26,7 +26,7 @@ public:
         const UUID & user_id,
         const String & user_name,
         const boost::container::flat_set<UUID> & enabled_roles,
-        const Poco::Net::IPAddress & address,
+        const std::shared_ptr<Poco::Net::IPAddress> & address,
         const String & forwarded_address,
         const String & client_key,
         bool throw_if_client_key_empty);

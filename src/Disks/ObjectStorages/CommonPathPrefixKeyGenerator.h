@@ -2,9 +2,8 @@
 
 #include <Common/ObjectStorageKeyGenerator.h>
 
-#include <filesystem>
-#include <map>
 #include <optional>
+#include <vector>
 
 namespace DB
 {

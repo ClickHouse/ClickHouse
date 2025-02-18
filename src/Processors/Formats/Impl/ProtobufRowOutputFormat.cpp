@@ -7,6 +7,8 @@
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Formats/ProtobufWriter.h>
+#   include <Processors/Port.h>
+
 #   include <google/protobuf/descriptor.h>
 
 namespace DB

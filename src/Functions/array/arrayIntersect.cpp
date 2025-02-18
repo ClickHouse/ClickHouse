@@ -241,6 +241,11 @@ ColumnPtr FunctionArrayIntersect<Mode>::castRemoveNullable(const ColumnPtr & col
                 ErrorCodes::LOGICAL_ERROR, "Cannot cast tuple column to type {} in function {}", data_type->getName(), getName());
 
         auto columns_number = column_tuple->tupleSize();
+
+        /// Empty tuple
+        if (columns_number == 0)
+            return column;
+
         Columns columns(columns_number);
 
         const auto & types = tuple_type->getElements();

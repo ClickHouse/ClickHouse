@@ -11,6 +11,7 @@
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <unordered_set>
 

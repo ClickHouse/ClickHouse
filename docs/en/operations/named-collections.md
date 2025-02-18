@@ -82,7 +82,7 @@ you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
 
 To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
 `named_collections_storage` section in configuration file. The following example uses encryption and ZooKeeper/Keeper:
-```
+```xml
 <clickhouse>
   <named_collections_storage>
     <type>zookeeper_encrypted</type>

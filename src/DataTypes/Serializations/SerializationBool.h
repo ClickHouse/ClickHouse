@@ -1,11 +1,11 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
-#include <Columns/ColumnsNumber.h>
-#include <unordered_set>
 
 namespace DB
 {
+
+class IColumn;
 
 class SerializationBool final : public SerializationWrapper
 {

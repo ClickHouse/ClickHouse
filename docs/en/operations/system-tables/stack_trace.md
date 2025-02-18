@@ -1,9 +1,11 @@
 ---
+description: "System table which contains stack traces of all server threads. Allows developers to introspect the server state."
 slug: /en/operations/system-tables/stack_trace
+title: "stack_trace"
+keywords: ["system table", "stack_trace"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# stack_trace
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -19,7 +21,7 @@ Columns:
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A [stack trace](https://en.wikipedia.org/wiki/Stack_trace) which represents a list of physical addresses where the called methods are stored.
 
 :::tip
-Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](https://clickhouse.com/docs/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting).
+Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](/docs/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](/docs/knowledgebase/useful-queries-for-troubleshooting).
 :::
 
 **Example**

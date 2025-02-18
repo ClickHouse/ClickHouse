@@ -1,7 +1,9 @@
 ---
+description: "System table containing information about normal and aggregate functions."
 slug: /en/operations/system-tables/functions
+title: "functions"
+keywords: ["system table", "functions"]
 ---
-# functions
 
 Contains information about normal and aggregate functions.
 

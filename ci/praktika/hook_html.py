@@ -139,10 +139,10 @@ class HtmlRunnerHooks:
         summary_result.set_info(
             f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
             if info.pr_number
-            else f"{info.git_branch}  |  {info.git_sha}"
+            else f"{info.git_branch}  |  {Shell.get_output('git log -1 --pretty=%s | head -n1')}  |  {info.git_sha}"
         )
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = Info().get_report_url(latest=True)
+        page_url = Info().get_report_url(latest=bool(info.pr_number))
         print(f"CI Status page url [{page_url}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
@@ -172,15 +172,29 @@ class HtmlRunnerHooks:
     def configure(cls, _workflow):
         # generate pending Results for all jobs in the workflow
         if _workflow.enable_cache:
-            skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
+            workflow_config = RunConfig.from_fs(_workflow.name)
+            skipped_jobs = workflow_config.cache_success
+            filtered_job_and_reason = workflow_config.filtered_jobs
             job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
             results = []
-            for job in _workflow.jobs:
-                if job.name in skip_jobs:
-                    result = Result.generate_skipped(
-                        job.name, job_cache_records[job.name]
+            info = Info()
+            for skipped_job in skipped_jobs:
+                if skipped_job not in filtered_job_and_reason:
+                    cache_record = job_cache_records[skipped_job]
+                    report_link = info.get_specific_report_url(
+                        pr_number=cache_record.pr_number,
+                        branch=cache_record.branch,
+                        sha=cache_record.sha,
+                        job_name=skipped_job,
                     )
-                    results.append(result)
+                    result = Result.generate_skipped(
+                        skipped_job, [report_link], "reused from cache"
+                    )
+                else:
+                    result = Result.generate_skipped(
+                        skipped_job, info=filtered_job_and_reason[skipped_job]
+                    )
+                results.append(result)
             if results:
                 assert _ResultS3.update_workflow_results(
                     _workflow.name, new_sub_results=results
@@ -273,5 +287,5 @@ class HtmlRunnerHooks:
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=True),
+                url=Info().get_report_url(latest=bool(Info().pr_number)),
             )

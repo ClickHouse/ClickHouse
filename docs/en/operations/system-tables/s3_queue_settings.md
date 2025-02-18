@@ -1,10 +1,11 @@
 ---
+description: "System table containing information about the settings of S3Queue tables. Available from server version `24.10`."
 slug: /en/operations/system-tables/s3_queue_settings
+title: "s3_queue_settings"
+keywords: ["system table", "s3_queue_settings"]
 ---
-# s3_queue_settings
 
-Contains information about settings of [S3Queue](../../engines/table-engines/integrations/s3queue.md) tables.
-Available from `24.10` server version.
+Contains information about the settings of [S3Queue](../../engines/table-engines/integrations/s3queue.md) tables. Available from server version `24.10`.
 
 Columns:
 

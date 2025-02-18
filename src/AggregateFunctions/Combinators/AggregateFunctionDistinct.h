@@ -4,7 +4,6 @@
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <IO/ReadHelpersArena.h>

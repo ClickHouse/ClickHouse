@@ -9,11 +9,11 @@
 
 #include <DataTypes/Serializations/ISerialization.h>
 
-#include <Interpreters/Set.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
 
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/MergeTree/BoolMask.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 
@@ -27,6 +27,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
+class MergeTreeSetIndex;
 
 
 /** Condition on the index.

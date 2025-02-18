@@ -1,8 +1,6 @@
 #pragma once
 #include <vector>
 #include <Common/ColumnsHashing.h>
-#include <Interpreters/AggregationCommon.h>
-#include <Interpreters/AggregatedData.h>
 
 #include <Columns/ColumnString.h>
 namespace DB

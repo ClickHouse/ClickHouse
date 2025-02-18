@@ -5,7 +5,6 @@
 
 #include <bit>
 #include <new>
-#include <variant>
 
 
 using StringKey8 = UInt64;

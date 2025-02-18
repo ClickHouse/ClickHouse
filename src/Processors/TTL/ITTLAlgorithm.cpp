@@ -1,6 +1,7 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

@@ -12,6 +12,7 @@
 
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>

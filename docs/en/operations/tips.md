@@ -137,13 +137,13 @@ After that, run the `sudo update-grub` command then reboot to take effect.
 ## Hypervisor configuration
 
 If you are using OpenStack, set
-```
+```ini
 cpu_mode=host-passthrough
 ```
 in `nova.conf`.
 
 If you are using libvirt, set
-```
+```xml
 <cpu mode='host-passthrough'/>
 ```
 in XML configuration.

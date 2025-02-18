@@ -1,9 +1,10 @@
 ---
+description: "System table containing stack traces collected by the sampling query profiler."
 slug: /en/operations/system-tables/trace_log
+title: "trace_log"
+keywords: ["system table", "trace_log"]
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# trace_log
 
 <SystemTableCloud/>
 

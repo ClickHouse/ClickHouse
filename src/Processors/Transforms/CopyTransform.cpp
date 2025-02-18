@@ -1,5 +1,7 @@
 #include <Processors/Transforms/CopyTransform.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 

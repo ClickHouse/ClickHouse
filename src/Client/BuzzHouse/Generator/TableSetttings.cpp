@@ -13,6 +13,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_experimental_block_number_column", CHSetting(trueOrFalse, {}, false)},
     {"allow_experimental_replacing_merge_with_cleanup", CHSetting(trueOrFalse, {}, false)},
     {"allow_floating_point_partition_key", CHSetting(trueOrFalse, {}, false)},
+    {"allow_reduce_blocking_parts_task", CHSetting(trueOrFalse, {}, false)},
     {"allow_remote_fs_zero_copy_replication", CHSetting(trueOrFalse, {}, false)},
     {"allow_suspicious_indices", CHSetting(trueOrFalse, {}, false)},
     {"allow_vertical_merges_from_compact_to_wide_parts", CHSetting(trueOrFalse, {}, false)},
@@ -239,7 +240,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
-         {Merge, {}}});
+         {Merge, {}},
+         {Distributed, distributedTableSettings}});
 }
 
 }

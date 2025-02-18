@@ -60,7 +60,7 @@ ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
 
 Or using [named collections](/docs/en/operations/named-collections.md):
 
-```
+```xml
 <named_collections>
     <redis_creds>
         <host>localhost</host>
@@ -147,7 +147,7 @@ Join:
 
 Join with other tables.
 
-```
+```sql
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 

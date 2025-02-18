@@ -135,7 +135,7 @@ SELECT count() FROM sample_mflix_table
    └─────────┘
 ```
 
-```SQL
+```sql
 -- JSONExtractString cannot be pushed down to MongoDB
 SET mongodb_throw_on_unsupported_query = 0;
 
@@ -165,7 +165,7 @@ directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
 
-```SQL
+```sql
 -- Find top 3 movies based on Cormac McCarthy's books
 SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
 FROM sample_mflix_table

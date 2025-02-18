@@ -175,10 +175,13 @@ public:
 
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
+    bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine();
+            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
+            || isDistributedEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
@@ -248,7 +251,11 @@ public:
     const String cname;
     SQLType * tp = nullptr;
 
-    ColumnPathChainEntry(const String cn, SQLType * t) : cname(cn), tp(t) { }
+    ColumnPathChainEntry(const String cn, SQLType * t)
+        : cname(cn)
+        , tp(t)
+    {
+    }
 };
 
 struct ColumnPathChain
@@ -261,7 +268,10 @@ public:
 
     ColumnPathChain(
         const std::optional<bool> nu, const ColumnSpecial cs, const std::optional<DModifier> dm, const std::vector<ColumnPathChainEntry> p)
-        : nullable(nu), special(cs), dmod(dm), path(p)
+        : nullable(nu)
+        , special(cs)
+        , dmod(dm)
+        , path(p)
     {
     }
 

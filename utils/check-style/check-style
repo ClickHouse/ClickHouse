@@ -468,6 +468,10 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 # DOS/Windows newlines
 find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
 
+# Left/right single/double quotation marks (too easy to confuse with standard single/double quotation marks)
+EXCLUDE_QUOTATION_MARKS='src/Functions/HTMLCharacterReference.generated.cpp|src/Parsers/Lexer.cpp'
+find $ROOT_PATH/{base,src,programs,utils,docs/en} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | grep -vP $EXCLUDE_QUOTATION_MARKS | xargs grep -l -P '”|“|‘|’' && echo "^ Files contain left or right single/double quotation marks: ”, “, ‘, or ’."
+
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |

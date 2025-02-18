@@ -283,7 +283,7 @@ void ThreadStatus::detachFromGroup()
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
-    /// flash untracked memory before resetting memory_tracker parent
+    /// flush untracked memory before resetting memory_tracker parent
     flushUntrackedMemory();
 
     finalizeQueryProfiler();

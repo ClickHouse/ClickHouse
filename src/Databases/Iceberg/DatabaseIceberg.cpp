@@ -153,16 +153,11 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
 std::string DatabaseIceberg::getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const
 {
     auto endpoint_from_settings = settings[DatabaseIcebergSetting::storage_endpoint].value;
-    if (!endpoint_from_settings.empty())
-    {
-        return std::filesystem::path(endpoint_from_settings)
-            / table_metadata.getLocation(/* path_only */true)
-            / "";
-    }
+    if (endpoint_from_settings.empty())
+        return table_metadata.getLocation();
     else
-    {
-        return std::filesystem::path(table_metadata.getLocation(/* path_only */false)) / "";
-    }
+        return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
+
 }
 
 bool DatabaseIceberg::empty() const
@@ -217,7 +212,7 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
             "or storage credentials need to be specified in database engine arguments in CREATE query");
     }
 
-    LOG_TEST(log, "Using table endpoint: {}", table_endpoint);
+    LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
 
