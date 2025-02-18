@@ -70,12 +70,6 @@ def test_aliases_in_default_expr_not_break_table_structure(start_cluster, engine
 
     node.query(f"DROP TABLE {table_name}")
 
-    # smoke tests for the keeper_response_time_ms metric
-    sums_ok = int(node.query("SELECT sum(value) > 0 FROM system.metrics WHERE name = 'keeper_response_time_ms_sum'").strip())
-    assert sums_ok
-
-    counts_ok = int(node.query("SELECT sum(value) > 0 FROM system.metrics WHERE name = 'keeper_response_time_ms_count'").strip())
-    assert counts_ok
-
-    buckets_ok = int(node.query("SELECT sum(value) > 0 FROM system.metrics WHERE name = 'keeper_response_time_ms_bucket'").strip())
-    assert buckets_ok
+    # smoke test for the keeper_response_time_ms metric
+    counters_ok = int(node.query("SELECT sum(value) > 0 FROM system.histogram_metrics WHERE name = 'keeper_response_time_ms'").strip())
+    assert counters_ok
