@@ -8,6 +8,8 @@ keywords: [analyzer]
 
 # Analyzer
 
+<BetaBadge />
+
 ## Known incompatibilities
 
 In ClickHouse version `24.3`, the new query analyzer was enabled by default.

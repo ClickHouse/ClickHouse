@@ -12,7 +12,7 @@
 #include <IO/TimeoutSetter.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Client/ClientApplicationBase.h>
+#include <Client/ClientBase.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionParameters.h>
 #include "Common/logger_useful.h"
@@ -547,8 +547,7 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
 
             for (size_t i = 0; i < rules_size; ++i)
             {
-                String original_pattern;
-                String exception_message;
+                String original_pattern, exception_message;
                 readStringBinary(original_pattern, *in);
                 readStringBinary(exception_message, *in);
                 password_complexity_rules.push_back({std::move(original_pattern), std::move(exception_message)});
@@ -962,7 +961,7 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
+        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty(), format_settings);
     }
 
     if (scalar)
@@ -1227,18 +1226,6 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
 }
 
 
-UInt64 Connection::receivePacketType()
-{
-    /// Have we already read packet type?
-    if (last_input_packet_type)
-        return *last_input_packet_type;
-
-    UInt64 type;
-    readVarUInt(type, *in);
-    return last_input_packet_type.emplace(type);
-}
-
-
 Packet Connection::receivePacket()
 {
     try
@@ -1388,7 +1375,7 @@ void Connection::initBlockInput()
                 maybe_compressed_in = in;
         }
 
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision);
+        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
 
@@ -1398,7 +1385,7 @@ void Connection::initBlockLogsInput()
     if (!block_logs_in)
     {
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
@@ -1407,7 +1394,7 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 

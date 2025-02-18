@@ -211,9 +211,7 @@ void CompressionCodecGCD::doDecompressData(const char * source, UInt32 source_si
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
 
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
-
-    if (bytes_to_skip != static_cast<UInt8>(source[1]))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress GCD-encoded data. File has wrong header");
+    chassert(bytes_to_skip == static_cast<UInt8>(source[1]));
 
     UInt32 output_size = uncompressed_size - bytes_to_skip;
 

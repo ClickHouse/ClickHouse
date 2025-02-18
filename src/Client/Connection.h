@@ -128,7 +128,6 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
-    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
@@ -167,6 +166,11 @@ public:
     }
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
+    void setFormatSettings(const FormatSettings & settings) override
+    {
+        format_settings = settings;
+    }
 
 private:
     String host;
@@ -276,6 +280,8 @@ private:
     LoggerWrapper log_wrapper;
 
     AsyncCallback async_callback = {};
+
+    std::optional<FormatSettings> format_settings;
 
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();

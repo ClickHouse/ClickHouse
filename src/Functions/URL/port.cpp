@@ -138,12 +138,12 @@ REGISTER_FUNCTION(Port)
     factory.registerFunction<FunctionPort>(FunctionDocumentation
     {
         .description=R"(Returns the port or `default_port` if there is no port in the URL (or in case of validation error).)",
-        .category{"URLs"}
+        .categories{"URL"}
     });
     factory.registerFunction<FunctionPortRFC>(FunctionDocumentation
     {
         .description=R"(Similar to `port`, but conforms to RFC 3986.)",
-        .category{"URLs"}
+        .categories{"URL"}
     });
 }
 

@@ -84,12 +84,9 @@ public:
         const bool is_compressed;
 
         /// The SELECT query as plain string, displayed in SYSTEM.QUERY_CACHE. Stored explicitly, i.e. not constructed from the AST, for the
-        /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which would otherwise look
-        /// ugly in SYSTEM.QUERY_CACHE.
+        /// sole reason that QueryCache-related SETTINGS are pruned from the AST (see removeQueryCacheSettings()) which will look ugly in
+        /// SYSTEM.QUERY_CACHE.
         const String query_string;
-
-        /// ID of the query.
-        const String query_id;
 
         /// A tag (namespace) for distinguish multiple entries of the same query.
         /// This member has currently no use besides that SYSTEM.QUERY_CACHE can populate the 'tag' column conveniently without having to
@@ -101,7 +98,6 @@ public:
             const String & current_database,
             const Settings & settings,
             Block header_,
-            const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
@@ -111,7 +107,6 @@ public:
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
-            const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
 
         bool operator==(const Key & other) const;

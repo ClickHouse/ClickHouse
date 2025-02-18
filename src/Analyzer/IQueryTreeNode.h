@@ -10,6 +10,8 @@
 
 #include <Parsers/IAST_fwd.h>
 
+#include <Analyzer/Identifier.h>
+
 class SipHash;
 
 namespace DB
@@ -40,7 +42,6 @@ enum class QueryTreeNodeType : uint8_t
     TABLE_FUNCTION,
     QUERY,
     ARRAY_JOIN,
-    CROSS_JOIN,
     JOIN,
     UNION
 };

@@ -590,16 +590,6 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        /** Alias to expression in JOIN ON section may be used in SELECT.
-          * Optimization that is safe for JOIN ON may not be safe for SELECT, for example:
-          * Values `NULL` and `false` are not equivalent in SELECT, so we cannot change type from Nullable(UInt8) to UInt8 there, while it's valid for `JOIN ON`.
-          * Also, operator <=> can be used in JOIN ON, but not in SELECT, so we need to keep original expression `a = b OR isNull(a) AND isNull(b) there.
-          *
-          * FIXME: May be removed after https://github.com/ClickHouse/ClickHouse/pull/66143
-          */
-        if (node.use_count() > 1)
-            node = node->clone();
-
         auto * function_node = node->as<FunctionNode>();
 
         QueryTreeNodePtr new_node = nullptr;
@@ -947,7 +937,8 @@ private:
 
                 if (collapse_to_false)
                 {
-                    auto false_node = std::make_shared<ConstantNode>(0u, function_node.getResultType());
+                    auto false_value = std::make_shared<ConstantValue>(0u, function_node.getResultType());
+                    auto false_node = std::make_shared<ConstantNode>(std::move(false_value));
                     node = std::move(false_node);
                     return;
                 }

@@ -50,8 +50,8 @@ SELECT * FROM test_table;
 
 ## 仮想カラム
 
-- `_path` — `URL` へのパス。型: `LowCardinality(String)`。
-- `_file` — `URL` のリソース名。型: `LowCardinality(String)`。
+- `_path` — `URL` へのパス。型: `LowCardinalty(String)`。
+- `_file` — `URL` のリソース名。型: `LowCardinalty(String)`。
 - `_size` — リソースのサイズ（バイト単位）。型: `Nullable(UInt64)`。サイズが不明な場合、この値は `NULL` です。
 - `_time` — ファイルの最終変更時間。型: `Nullable(DateTime)`。時間が不明な場合、この値は `NULL` です。
 - `_headers` - HTTP レスポンスヘッダー。型: `Map(LowCardinality(String), LowCardinality(String))`。

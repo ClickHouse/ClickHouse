@@ -17,8 +17,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
-
-#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/String.h>
 
@@ -241,7 +239,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
@@ -251,7 +249,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
@@ -303,8 +301,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
     /// 2. if replication slot already exist, start_lsn is read from pg_replication_slots as
     ///    `confirmed_flush_lsn` - the address (LSN) up to which the logical slot's consumer has confirmed receiving data.
     ///    Data older than this is not available anymore.
-    String snapshot_name;
-    String start_lsn;
+    String snapshot_name, start_lsn;
 
     /// Also lets have a separate non-replication connection, because we need two parallel transactions and
     /// one connection can have one transaction at a time.
@@ -337,7 +334,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (Exception & e)
             {
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
@@ -384,7 +381,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (Exception & e)
             {
                 e.addMessage("while loading table {}.{}", postgres_database, table_name);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
 
                 if (throw_on_error)
                     throw;
@@ -446,7 +443,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
         table_structure = std::make_unique<PostgreSQLTableStructure>();
     }
     if (!table_structure->physical_columns)
@@ -511,15 +508,22 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
 void PostgreSQLReplicationHandler::cleanupFunc()
 {
-    /// It is very important to make sure temporary replication slots are removed!
-    /// So just in case every 30 minutes check if one still exists.
-    postgres::Connection connection(connection_info);
-    String last_committed_lsn;
-    connection.execWithRetry([&](pqxx::nontransaction & tx)
+    try
     {
-        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-            dropReplicationSlot(tx, /* temporary */true);
-    });
+        /// It is very important to make sure temporary replication slots are removed!
+        /// So just in case every 30 minutes check if one still exists.
+        postgres::Connection connection(connection_info);
+        String last_committed_lsn;
+        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        {
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+                dropReplicationSlot(tx, /* temporary */true);
+        });
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 
     if (!stop_synchronization)
         cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
@@ -543,7 +547,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 
     if (stop_synchronization)
@@ -662,8 +666,7 @@ void PostgreSQLReplicationHandler::createReplicationSlot(
 {
     assert(temporary || !user_managed_slot);
 
-    String query_str;
-    String slot_name;
+    String query_str, slot_name;
     if (temporary)
         slot_name = tmp_replication_slot;
     else
@@ -1066,8 +1069,7 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
     {
         LOG_TRACE(log, "Adding table `{}` to replication", postgres_table_name);
         postgres::Connection replication_connection(connection_info, /* replication */true);
-        String snapshot_name;
-        String start_lsn;
+        String snapshot_name, start_lsn;
         StorageInfo nested_storage_info{ nullptr, {} };
 
         {

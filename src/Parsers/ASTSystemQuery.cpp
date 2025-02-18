@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -110,12 +110,12 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         if (database)
         {
-            database->format(ostr, settings, state, frame);
+            database->formatImpl(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(ostr, settings, state, frame);
         return ostr;
     };
 
@@ -227,7 +227,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             if (query_settings)
             {
                 ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
-                query_settings->format(ostr, settings, state, frame);
+                query_settings->formatImpl(ostr, settings, state, frame);
             }
 
             break;
@@ -414,7 +414,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::RESET_COVERAGE:

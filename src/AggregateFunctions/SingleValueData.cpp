@@ -159,7 +159,7 @@ void SingleValueDataBase::setGreatestNotNullIf(
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &) const
+void SingleValueDataFixed<T>::insertResultInto(IColumn & to) const
 {
     /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
     chassert(has() || value == T{});
@@ -869,9 +869,9 @@ bool SingleValueDataNumeric<T>::has() const
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr & type) const
+void SingleValueDataNumeric<T>::insertResultInto(IColumn & to) const
 {
-    return memory.get().insertResultInto(to, type);
+    return memory.get().insertResultInto(to);
 }
 
 template <typename T>
@@ -1102,7 +1102,7 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
     }
 }
 
-void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
+void SingleValueDataString::insertResultInto(DB::IColumn & to) const
 {
     if (has())
         StringValueCompatibility::insertDataWithTerminatingZero(assert_cast<ColumnString &>(to), getData(), size);
@@ -1246,12 +1246,12 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     return false;
 }
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
+void SingleValueDataGeneric::insertResultInto(IColumn & to) const
 {
     if (has())
         to.insert(value);
     else
-        type->insertDefaultInto(to);
+        to.insertDefault();
 }
 
 void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const
