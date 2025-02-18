@@ -145,7 +145,7 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 
 Result:
 
-```
+```text
 ┌─ciphertexts_equal─┐
 │                 1 │
 └───────────────────┘
@@ -334,7 +334,7 @@ ORDER BY user_id ASC
 
 Result:
 
-```
+```text
 ┌──────────────────dt─┬─user_id─┬─value──┐
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │
