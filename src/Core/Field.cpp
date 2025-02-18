@@ -880,5 +880,8 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-
+/// In Darwin unsigned long does not match any of the UInt* types
+#ifdef OS_DARWIN
+template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
+#endif
 }
