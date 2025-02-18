@@ -13,6 +13,7 @@ insert into tab_r select number, number, number, number from numbers(10);
 --select explain e from (explain actions = 1 )
 --where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' or e like '%Clauses%' or e like '%Sharding%';
 
+set enable_analyzer=1;
 set query_plan_join_swap_table=0;
 set allow_experimental_parallel_reading_from_replicas=0;
 
