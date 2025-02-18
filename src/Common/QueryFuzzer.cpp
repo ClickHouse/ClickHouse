@@ -1428,12 +1428,55 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
         if (AggregateUtils::isAggregateFunction(*fn))
         {
-            if (fn->arguments && !fn->arguments->children.empty())
+            const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
+
+            if (nargs > 0)
             {
-                if (fuzz_rand() % 30 == 0)
+                if (nargs < 3 && fuzz_rand() % 30 == 0)
                 {
                     /// Replace aggregate function
-                    static const Strings common_aggrs = {"count", "min", "max", "sum", "avg", "any"};
+                    static const std::map<size_t, Strings> aggrs
+                        = {{1,
+                            {"any",
+                             "anyHeavy",
+                             "anyLast",
+                             "avg",
+                             "count",
+                             "deltaSum",
+                             "entropy",
+                             "first_value",
+                             "kurtPop",
+                             "kurtSamp",
+                             "last_value",
+                             "max",
+                             "median",
+                             "min",
+                             "rankCorr",
+                             "skewPop",
+                             "skewSamp",
+                             "stddevPop",
+                             "stddevPopStable",
+                             "stddevSamp",
+                             "stddevSampStable",
+                             "sum",
+                             "sumCount",
+                             "sumKahan",
+                             "uniq",
+                             "varPop",
+                             "varSamp"}},
+                           {2,
+                            {"argMax",
+                             "argMin",
+                             "avgWeighted",
+                             "boundingRatio",
+                             "corr",
+                             "covarPop",
+                             "covarPopStable",
+                             "deltaSumTimestamp",
+                             "maxIntersections",
+                             "maxIntersectionsPosition",
+                             "uniq"}}};
+                    const Strings & common_aggrs = aggrs.at(nargs);
 
                     for (const auto & entry : common_aggrs)
                     {
