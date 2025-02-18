@@ -1543,6 +1543,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             static const std::vector<std::unordered_set<String>> & swapFuncs
                 = {{"ilike", "like", "match", "notILike", "notLike"},
                    {"globalIn", "globalNotIn", "in", "notIn"},
+                   {"equals", "isNotDistinctFrom"},
+                   {"isNull", "isNotNull"},
+                   {"notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals"},
                    {"concat", "divide", "minus", "modulo", "multiply", "plus"},
                    {"toDayOfMonth",
                     "toDayOfWeek",
