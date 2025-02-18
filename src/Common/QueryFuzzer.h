@@ -9,6 +9,7 @@
 
 #include <Core/Field.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
@@ -130,6 +131,7 @@ private:
     void fuzzExpressionList(ASTExpressionList & expr_list);
     ASTPtr addJoinClause();
     ASTPtr generatePredicate();
+    void addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);

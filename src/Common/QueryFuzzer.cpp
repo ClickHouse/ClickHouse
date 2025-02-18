@@ -33,7 +33,6 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -1186,7 +1185,36 @@ ASTPtr QueryFuzzer::generatePredicate()
     {
         return getRandomColumnLike();
     }
-    return {};
+    return nullptr;
+}
+
+void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
+{
+    if (fuzz_rand() % 50 == 0)
+    {
+        /// Remove the predicate
+        sel->setExpression(expr, {});
+        return;
+    }
+    auto new_pred = generatePredicate();
+
+    if (new_pred)
+    {
+        if (fuzz_rand() % 3 == 0)
+        {
+            auto old_pred = sel->getExpression(expr, false);
+
+            if (fuzz_rand() % 3 == 0)
+            {
+                /// Swap sides
+                auto exp3 = old_pred;
+                old_pred = new_pred;
+                new_pred = exp3;
+            }
+            new_pred = makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", new_pred, old_pred);
+        }
+        sel->setExpression(expr, std::move(new_pred));
+    }
 }
 
 void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
@@ -1599,12 +1627,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 50 == 0)
                 {
                     select->having()->children.clear();
-                    select->setExpression(ASTSelectQuery::Expression::HAVING, generatePredicate());
+
+                    addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
                 }
             }
             else if (fuzz_rand() % 50 == 0)
             {
-                select->setExpression(ASTSelectQuery::Expression::HAVING, generatePredicate());
+                addOrReplacePredicate(select, ASTSelectQuery::Expression::HAVING);
             }
         }
         else if (fuzz_rand() % 50 == 0)
@@ -1617,7 +1646,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (fuzz_rand() % 50 == 0)
             {
                 select->where()->children.clear();
-                select->setExpression(ASTSelectQuery::Expression::WHERE, generatePredicate());
+                addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
             }
             else if (!select->prewhere().get())
             {
@@ -1635,7 +1664,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            select->setExpression(ASTSelectQuery::Expression::WHERE, generatePredicate());
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::WHERE);
         }
 
         if (select->prewhere().get())
@@ -1643,7 +1672,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (fuzz_rand() % 50 == 0)
             {
                 select->prewhere()->children.clear();
-                select->setExpression(ASTSelectQuery::Expression::PREWHERE, generatePredicate());
+                addOrReplacePredicate(select, ASTSelectQuery::Expression::PREWHERE);
             }
             else if (!select->where().get())
             {
@@ -1661,7 +1690,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            select->setExpression(ASTSelectQuery::Expression::PREWHERE, generatePredicate());
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::PREWHERE);
         }
 
         if (select->qualify().get())
@@ -1669,12 +1698,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (fuzz_rand() % 50 == 0)
             {
                 select->qualify()->children.clear();
-                select->setExpression(ASTSelectQuery::Expression::QUALIFY, generatePredicate());
+                addOrReplacePredicate(select, ASTSelectQuery::Expression::QUALIFY);
             }
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            select->setExpression(ASTSelectQuery::Expression::QUALIFY, generatePredicate());
+            addOrReplacePredicate(select, ASTSelectQuery::Expression::QUALIFY);
         }
 
         fuzzOrderByList(select->orderBy().get());
