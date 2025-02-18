@@ -580,7 +580,7 @@ class Jobs:
                 "./src",
             ],
         ),
-        provides=ArtifactNames.FAST_TEST,
+        provides=[ArtifactNames.FAST_TEST],
     )
 
     build_jobs = Job.Config(
