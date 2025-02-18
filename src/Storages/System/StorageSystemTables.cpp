@@ -258,25 +258,22 @@ protected:
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
     }
 
-    void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index, size_t & src_index)
+    void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
     {
-        if (src_index == 14 && columns_mask[src_index++])
+        if (table)
         {
-            if (table)
-            {
-                StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
 
-                NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
-                if (!query_parameters_array.empty())
-                {
-                    Array changes;
-                    for (const auto & [key, value] : query_parameters_array)
-                        changes.push_back(Tuple{key, value});
-                    columns[res_index++]->insert(changes);
-                }
-                else
-                    columns[res_index++]->insertDefault();
+            NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
+            if (!query_parameters_array.empty())
+            {
+                Array changes;
+                for (const auto & [key, value] : query_parameters_array)
+                    changes.push_back(Tuple{key, value});
+                columns[res_index++]->insert(changes);
             }
+            else
+                columns[res_index++]->insertDefault();
         }
     }
 
@@ -383,11 +380,13 @@ protected:
                         const auto & settings = context->getSettingsRef();
                         while (src_index < columns_mask.size())
                         {
-                            // parametrized view parameters
-                            fillParametralizedViewData(res_columns, table.second, res_index, src_index);
-
                             // total_rows
-                            if (src_index == 20 && columns_mask[src_index])
+                            if (src_index == 14 && columns_mask[src_index])
+                            {
+                                // parametrized view parameters
+                                fillParametralizedViewData(res_columns, table.second, res_index);
+                            }
+                            else if (src_index == 20 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -589,7 +588,8 @@ protected:
                     src_index += 3;
 
                 // parametrized view parameters
-                fillParametralizedViewData(res_columns, table, res_index, src_index);
+                if (columns_mask[src_index++])
+                    fillParametralizedViewData(res_columns, table, res_index);
 
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
