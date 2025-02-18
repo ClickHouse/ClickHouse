@@ -58,6 +58,7 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
+        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash

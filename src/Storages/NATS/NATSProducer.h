@@ -1,7 +1,10 @@
 #pragma once
 
 #include <atomic>
-
+#include <list>
+#include <mutex>
+#include <Columns/IColumn.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/IMessageProducer.h>

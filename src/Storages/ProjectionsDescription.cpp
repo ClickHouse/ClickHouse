@@ -1,7 +1,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -14,7 +13,6 @@
 
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

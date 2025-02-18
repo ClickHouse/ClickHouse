@@ -145,7 +145,10 @@ public:
         addMessage(MessageMasked(message));
     }
 
-    void addMessage(const MessageMasked & msg_masked);
+    void addMessage(const MessageMasked & msg_masked)
+    {
+        extendedMessage(msg_masked.msg);
+    }
 
     /// Used to distinguish local exceptions from the one that was received from remote node.
     void setRemoteException(bool remote_ = true) { remote = remote_; }
@@ -164,9 +167,6 @@ private:
     StackTrace trace;
 #endif
     bool remote = false;
-
-    /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
-    size_t error_index = static_cast<size_t>(-1);
 
     const char * className() const noexcept override { return "DB::Exception"; }
 

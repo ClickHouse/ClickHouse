@@ -280,7 +280,7 @@ $ clickhouse-local --query "
 1	2
 ```
 
-Now let's output memory user for each Unix user:
+Now let’s output memory user for each Unix user:
 
 Query:
 

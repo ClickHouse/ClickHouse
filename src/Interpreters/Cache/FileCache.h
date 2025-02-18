@@ -17,7 +17,7 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/FileCacheSettings.h>
 #include <Interpreters/Cache/UserInfo.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
 
@@ -211,7 +211,7 @@ private:
     ThreadFromGlobalPool load_metadata_main_thread;
     const bool write_cache_per_user_directory;
 
-    BackgroundSchedulePoolTaskHolder keep_up_free_space_ratio_task;
+    BackgroundSchedulePool::TaskHolder keep_up_free_space_ratio_task;
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;

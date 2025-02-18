@@ -167,7 +167,7 @@ def main():
         args.push = False
 
     run_cpp_check = True
-    # run_shell_check = True
+    run_shell_check = True
     run_python_check = True
     if IS_CI and pr_info.number > 0:
         pr_info.fetch_changed_files()
@@ -175,9 +175,9 @@ def main():
             is_style_image(file) or not (is_python(file) or is_shell(file))
             for file in pr_info.changed_files
         )
-        # run_shell_check = any(
-        #     is_style_image(file) or is_shell(file) for file in pr_info.changed_files
-        # )
+        run_shell_check = any(
+            is_style_image(file) or is_shell(file) for file in pr_info.changed_files
+        )
         run_python_check = any(
             is_style_image(file) or is_python(file) for file in pr_info.changed_files
         )
@@ -192,7 +192,7 @@ def main():
     cmd_docs = f"{docker_command} ./check_docs.sh"
     cmd_cpp = f"{docker_command} ./check_cpp.sh"
     cmd_py = f"{docker_command} ./check_py.sh"
-    # cmd_shell = f"{docker_command} ./check_shell.sh"
+    cmd_shell = f"{docker_command} ./check_shell.sh"
 
     with ProcessPoolExecutor(max_workers=2) as executor:
         logging.info("Run docs files check: %s", cmd_docs)
@@ -209,10 +209,10 @@ def main():
             logging.info("Run py files check: %s", cmd_py)
             future = executor.submit(subprocess.run, cmd_py, shell=True)
             _ = future.result()
-        # if run_shell_check:
-        #     logging.info("Run shellcheck check: %s", cmd_shell)
-        #     future = executor.submit(subprocess.run, cmd_shell, shell=True)
-        #     _ = future.result()
+        if run_shell_check:
+            logging.info("Run shellcheck check: %s", cmd_shell)
+            future = executor.submit(subprocess.run, cmd_shell, shell=True)
+            _ = future.result()
 
     subprocess.check_call(
         f"python3 ../../utils/check-style/process_style_check_result.py --in-results-dir {temp_path} "

@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>

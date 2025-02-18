@@ -2,7 +2,6 @@
 
 #include <base/scope_guard.h>
 #include <base/find_symbols.h>
-#include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
 
 

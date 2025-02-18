@@ -180,7 +180,7 @@ left(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -227,7 +227,7 @@ leftUTF8(s, offset)
 **Parameters**
 
 - `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -344,7 +344,7 @@ right(s, offset)
 **Parameters**
 
 - `s` — The string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -391,7 +391,7 @@ rightUTF8(s, offset)
 **Parameters**
 
 - `s` — The UTF-8 encoded string to calculate a substring from. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `offset` — The number of bytes of the offset. [(U)Int*](../data-types/int-uint).
+- `offset` — The number of bytes of the offset. [UInt*](../data-types/int-uint).
 
 **Returned value**
 
@@ -720,7 +720,7 @@ Alias: `REPEAT`
 
 **Returned value**
 
-A string containing string `s` repeated `n` times. If `n` &lt;= 0, the function returns the empty string. [String](../data-types/string.md).
+A string containing string `s` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -754,7 +754,7 @@ Alias: `SPACE`.
 
 **Returned value**
 
-The string containing string ` ` repeated `n` times. If `n` &lt;= 0, the function returns the empty string. [String](../data-types/string.md).
+The string containing string ` ` repeated `n` times. If `n` <= 0, the function returns the empty string. [String](../data-types/string.md).
 
 **Example**
 
@@ -831,10 +831,6 @@ Result:
 │ 42144           │
 └─────────────────┘
 ```
-
-:::note `||` operator
-Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
-:::
 
 ## concatAssumeInjective
 
@@ -1473,7 +1469,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — The characters to trim. [String](../data-types/string.md).
+- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
 - `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
@@ -1501,15 +1497,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimLeft(input_string[, trim_characters])
+trimLeft(input_string)
 ```
 
-Alias: `ltrim`.
+Alias: `ltrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1536,15 +1531,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimRight(input_string[, trim_characters])
+trimRight(input_string)
 ```
 
-Alias: `rtrim`.
+Alias: `rtrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1571,15 +1565,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from both
 **Syntax**
 
 ``` sql
-trimBoth(input_string[, trim_characters])
+trimBoth(input_string)
 ```
 
-Alias: `trim`.
+Alias: `trim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 

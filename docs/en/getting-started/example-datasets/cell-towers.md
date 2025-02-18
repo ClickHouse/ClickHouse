@@ -1,5 +1,4 @@
 ---
-description: "Learn how to load OpenCelliD data into ClickHouse, connect Apache Superset to ClickHouse and build a dashboard based on data"
 slug: /en/getting-started/example-datasets/cell-towers
 sidebar_label: Geo Data
 sidebar_position: 3
@@ -76,7 +75,22 @@ This is the output of `DESCRIBE`.  Down further in this guide the field type cho
 </TabItem>
 <TabItem value="selfmanaged" label="Self-managed">
 
-1. Create a table:
+1. Download the snapshot of the dataset from February 2021: [cell_towers.csv.xz](https://datasets.clickhouse.com/cell_towers.csv.xz) (686 MB).
+
+2. Validate the integrity (optional step):
+```bash
+md5sum cell_towers.csv.xz
+```
+```response
+8a797f7bdb55faba93f6cbc37d47b037  cell_towers.csv.xz
+```
+
+3. Decompress it with the following command:
+```bash
+xz -d cell_towers.csv.xz
+```
+
+4. Create a table:
 
 ```sql
 CREATE TABLE cell_towers
@@ -99,10 +113,9 @@ CREATE TABLE cell_towers
 ENGINE = MergeTree ORDER BY (radio, mcc, net, created);
 ```
 
-2. Import the dataset from a public S3 bucket (686 MB):
-
-```sql
-INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+5. Insert the dataset:
+```bash
+clickhouse-client --query "INSERT INTO cell_towers FORMAT CSVWithNames" < cell_towers.csv
 ```
 
 </TabItem>

@@ -2,9 +2,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -1003,9 +1003,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    const auto & backup_settings = backup_entries_collector.getBackupSettings();
-    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
-    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
+    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
 
     /// *.bin
     for (const auto & data_file : data_files)
@@ -1015,7 +1013,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -1028,7 +1026,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path));
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }
@@ -1156,8 +1154,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true,
-        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .supports_settings = true
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

@@ -2,7 +2,9 @@
 
 #include <type_traits>
 #include <typeinfo>
+#include <typeindex>
 #include <memory>
+#include <string>
 
 #include <Common/Exception.h>
 #include <base/demangle.h>

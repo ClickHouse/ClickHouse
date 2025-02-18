@@ -1,14 +1,16 @@
 #pragma once
 
-#include <Columns/IColumn_fwd.h>
 #include <Processors/Chunk.h>
+#include <Columns/IColumn.h>
+#include <Core/SortCursor.h>
+#include <Common/StackTrace.h>
+#include <Common/logger_useful.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
-namespace DB
+namespace DB::ErrorCodes
 {
-struct SortCursorImpl;
-struct SortCursor;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::detail
@@ -64,15 +66,50 @@ public:
             free_chunks.push_back(i);
     }
 
-    SharedChunkPtr alloc(Chunk & chunk);
+    SharedChunkPtr alloc(Chunk & chunk)
+    {
+        if (free_chunks.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough space in SharedChunkAllocator. Chunks allocated: {}",
+                            chunks.size());
 
-    ~SharedChunkAllocator();
+        auto pos = free_chunks.back();
+        free_chunks.pop_back();
+
+        chunks[pos].swap(chunk);
+        chunks[pos].position = pos;
+        chunks[pos].allocator = this;
+
+        return SharedChunkPtr(&chunks[pos]);
+    }
+
+    ~SharedChunkAllocator()
+    {
+        if (free_chunks.size() != chunks.size())
+        {
+            LOG_ERROR(getLogger("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
+
+            return;
+        }
+    }
 
 private:
     std::vector<SharedChunk> chunks;
     std::vector<size_t> free_chunks;
 
-    void release(SharedChunk * ptr) noexcept;
+    void release(SharedChunk * ptr) noexcept
+    {
+        if (chunks.empty())
+        {
+            /// This may happen if allocator was removed before chunks.
+            /// Log message and exit, because we don't want to throw exception in destructor.
+
+            LOG_ERROR(getLogger("SharedChunkAllocator"), "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: {}", StackTrace().toString());
+
+            return;
+        }
+
+        free_chunks.push_back(ptr->position);
+    }
 
     friend void intrusive_ptr_release(SharedChunk * ptr);
 };
@@ -100,15 +137,26 @@ struct RowRef
     bool empty() const { return sort_columns == nullptr; }
     void reset() { sort_columns = nullptr; }
 
-    void set(SortCursor & cursor);
-
-    static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
-
-    static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row);
-
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
+    void set(SortCursor & cursor)
     {
-        return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
+        sort_columns = cursor.impl->sort_columns.data();
+        num_columns = cursor.impl->sort_columns.size();
+        row_num = cursor.impl->getRow();
+        source_stream_index = cursor.impl->order;
+    }
+
+    static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
+    {
+        for (size_t col_number = 0; col_number < size; ++col_number)
+        {
+            auto & cur_column = lhs[col_number];
+            auto & other_column = rhs[col_number];
+
+            if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
+                return false;
+        }
+
+        return true;
     }
 
     bool hasEqualSortColumnsWith(const RowRef & other) const
@@ -155,12 +203,14 @@ struct RowRefWithOwnedChunk
         source_stream_index = 0;
     }
 
-    void set(SortCursor & cursor, SharedChunkPtr chunk);
-
-
-    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    void set(SortCursor & cursor, SharedChunkPtr chunk)
     {
-        return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
+        owned_chunk = std::move(chunk);
+        row_num = cursor.impl->getRow();
+        all_columns = &owned_chunk->all_columns;
+        sort_columns = &owned_chunk->sort_columns;
+        current_cursor = cursor.impl;
+        source_stream_index = cursor.impl->order;
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const

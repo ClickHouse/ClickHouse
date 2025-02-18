@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionFactory.h>
 #include <Common/ThreadPool.h>
 
 

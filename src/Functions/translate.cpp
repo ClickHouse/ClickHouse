@@ -51,6 +51,13 @@ struct TranslateImpl
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be ASCII strings");
             map[static_cast<unsigned char>(map_from[i])] = ascii_upper_bound + 1;
         }
+
+        // Validate any extra characters in map_to to ensure they are ASCII
+        for (size_t i = min_size; i < map_to.size(); ++i)
+        {
+            if (!isASCII(map_to[i]))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Third argument must be ASCII strings");
+        }
     }
 
     static void vector(
@@ -80,14 +87,12 @@ struct TranslateImpl
             {
                 if (*src <= ascii_upper_bound && map[*src] != ascii_upper_bound + 1)
                 {
-                    *dst = map[*src];
-                    ++dst;
+                    *dst++ = map[*src];
                     ++data_size;
                 }
                 else if (*src > ascii_upper_bound)
                 {
-                    *dst = *src;
-                    ++dst;
+                    *dst++ = *src;
                     ++data_size;
                 }
 
@@ -96,13 +101,9 @@ struct TranslateImpl
 
             /// Technically '\0' can be mapped into other character,
             ///  so we need to process '\0' delimiter separately
-            *dst = 0;
-            ++dst;
-            ++data_size;
-            res_offsets[i] = data_size;
+            *dst++ = 0;
+            res_offsets[i] = ++data_size;
         }
-
-        res_data.resize(data_size);
     }
 
     static void vectorFixed(
@@ -162,8 +163,7 @@ struct TranslateUTF8Impl
         {
             size_t len_from = UTF8::seqLength(*map_from_ptr);
 
-            std::optional<UInt32> res_from;
-            std::optional<UInt32> res_to;
+            std::optional<UInt32> res_from, res_to;
 
             if (map_from_ptr + len_from <= map_from_end)
                 res_from = UTF8::convertUTF8ToCodePoint(map_from_ptr, len_from);
@@ -288,8 +288,7 @@ struct TranslateUTF8Impl
 
             /// Technically '\0' can be mapped into other character,
             ///  so we need to process '\0' delimiter separately
-            *dst = 0;
-            ++dst;
+            *dst++ = 0;
 
             ++data_size;
             res_offsets[i] = data_size;
@@ -344,7 +343,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of third argument of function {}",
                 arguments[2]->getName(), getName());
 
-        return arguments[0];
+        if (isString(arguments[0]))
+            return std::make_shared<DataTypeString>();
+
+        const auto * ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
+        chassert(ptr);
+        return std::make_shared<DataTypeFixedString>(ptr->getN());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -354,7 +358,7 @@ public:
         const ColumnPtr column_map_to = arguments[2].column;
 
         if (!isColumnConst(*column_map_from) || !isColumnConst(*column_map_to))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants", getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "2nd and 3rd arguments of function {} must be constants.", getName());
 
         const IColumn * c1 = arguments[1].column.get();
         const IColumn * c2 = arguments[2].column.get();
@@ -362,21 +366,6 @@ public:
         const ColumnConst * c2_const = typeid_cast<const ColumnConst *>(c2);
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
-
-        size_t map_from_size;
-        size_t map_to_size;
-        if constexpr (std::is_same_v<Impl, TranslateUTF8Impl>)
-        {
-            map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
-            map_to_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_to.data()), map_to.size());
-        }
-        else
-        {
-            map_from_size = map_from.size();
-            map_to_size = map_to.size();
-        }
-        if (map_from_size < map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {

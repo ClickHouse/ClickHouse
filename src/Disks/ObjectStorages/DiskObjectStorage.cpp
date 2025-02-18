@@ -592,11 +592,6 @@ bool DiskObjectStorage::isReadOnly() const
     return object_storage->isReadOnly();
 }
 
-bool DiskObjectStorage::isPlain() const
-{
-    return object_storage->isPlain();
-}
-
 bool DiskObjectStorage::isWriteOnce() const
 {
     return object_storage->isWriteOnce();
@@ -781,11 +776,6 @@ Strings DiskObjectStorage::getBlobPath(const String & path) const
     if (!objects_namespace.empty())
         res.emplace_back(objects_namespace);
     return res;
-}
-
-bool DiskObjectStorage::areBlobPathsRandom() const
-{
-    return object_storage->areObjectKeysRandom();
 }
 
 void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/BlockNameMap.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -43,8 +42,7 @@ protected:
         bool with_types_,
         const FormatSettings & format_settings_,
         std::unique_ptr<FormatReaderImpl> format_reader_,
-        bool try_detect_header_,
-        bool allow_variable_number_of_columns_);
+        bool try_detect_header_ = false);
 
     void resetParser() override;
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
@@ -66,18 +64,15 @@ private:
 
     void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
 
-protected:
+    bool is_binary;
     bool with_names;
     bool with_types;
-
-    std::unique_ptr<FormatReaderImpl> format_reader;
-    BlockNameMap column_indexes_by_names;
-
-private:
-    bool is_binary;
     bool try_detect_header;
-    bool allow_variable_number_of_columns;
     bool is_header_detected = false;
+
+protected:
+    std::unique_ptr<FormatReaderImpl> format_reader;
+    Block::NameMap column_indexes_by_names;
 };
 
 /// Base class for parsing data in input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -139,6 +134,8 @@ public:
 
     /// Check if we are at the end of row, not between fields.
     virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
+
+    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -205,3 +202,4 @@ private:
 };
 
 }
+

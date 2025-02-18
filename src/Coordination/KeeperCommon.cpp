@@ -2,7 +2,6 @@
 
 #include <string>
 #include <filesystem>
-#include <thread>
 
 #include <Common/logger_useful.h>
 #include <Disks/IDisk.h>

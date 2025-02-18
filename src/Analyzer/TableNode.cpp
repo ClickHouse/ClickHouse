@@ -12,7 +12,6 @@
 
 #include <Core/Settings.h>
 #include <Common/SipHash.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
