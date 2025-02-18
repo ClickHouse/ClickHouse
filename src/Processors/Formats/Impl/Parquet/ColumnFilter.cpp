@@ -1,10 +1,10 @@
-#include "ColumnFilter.h"
 #include <format>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Set.h>
+#include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
 #include <Processors/Formats/Impl/Parquet/xsimd_wrapper.h>
 
 namespace DB
@@ -290,7 +290,9 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const T * da
         else
             UNREACHABLE();
     }
-    bool aligned = row_set.getOffset() % increment == 0;
+
+    bool aligned = (reinterpret_cast<long>(data) % batch_type::arch_type::alignment() == 0)
+        && (row_set.getOffset() % increment == 0);
     for (size_t i = 0; i < num_batched; ++i)
     {
         batch_type value;
@@ -411,51 +413,6 @@ ActionsDAG::NodeRawConstPtrs getConstantNode(const ActionsDAG::Node & node)
     }
     return result;
 }
-
-OptionalFilter BigIntRangeFilter::create(const ActionsDAG::Node & node)
-{
-    if (!isCompareColumnWithConst(node))
-        return std::nullopt;
-    const auto * input_node = getInputNode(node);
-    auto name = input_node->result_name;
-    auto input_type = removeNullable(input_node->result_type);
-    if (!isInt64(input_type) && !isInt32(input_type) && !isInt16(input_type))
-        return std::nullopt;
-    auto constant_nodes = getConstantNode(node);
-    auto func_name = node.function_base->getName();
-    ColumnFilterPtr filter = nullptr;
-    if (func_name == "equals")
-    {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        filter = std::make_shared<BigIntRangeFilter>(value, value, false);
-    }
-    else if (func_name == "less")
-    {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
-    }
-    else if (func_name == "greater")
-    {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        filter = std::make_shared<BigIntRangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
-    }
-    else if (func_name == "lessOrEquals")
-    {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value, true);
-    }
-    else if (func_name == "greaterOrEquals")
-    {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        filter = std::make_shared<BigIntRangeFilter>(value, std::numeric_limits<Int64>::max(), true);
-    }
-    if (filter)
-    {
-        return std::make_optional(std::make_pair(name, filter));
-    }
-    return std::nullopt;
-}
-
 
 namespace
 {
@@ -726,7 +683,7 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
         case ColumnFilterKind::BigIntValuesUsingHashTable:
             return other->merge(this);
         case ColumnFilterKind::BigIntMultiRange: {
-            auto otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
+            const auto *otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
             std::vector<std::shared_ptr<BigIntRangeFilter>> newRanges;
             for (const auto & range : otherMultiRange->getRanges())
             {
@@ -887,52 +844,6 @@ ColumnFilterPtr BytesValuesFilter::merge(const ColumnFilter * other) const
             UNREACHABLE();
     }
 }
-OptionalFilter BytesValuesFilter::create(const ActionsDAG::Node & node)
-{
-    if (!isCompareColumnWithConst(node))
-        return std::nullopt;
-    const auto * input_node = getInputNode(node);
-    auto name = input_node->result_name;
-    if (!isString(input_node->result_type))
-        return std::nullopt;
-    auto constant_nodes = getConstantNode(node);
-    auto func_name = node.function_base->getName();
-    ColumnFilterPtr filter = nullptr;
-    if (func_name == "equals")
-    {
-        auto value = constant_nodes.front()->column->getDataAt(0);
-        String str;
-        str.resize(value.size);
-        memcpy(str.data(), value.data, value.size);
-        std::vector<String> values = {str};
-        filter = std::make_shared<BytesValuesFilter>(values, false);
-    }
-    else if (func_name == "in")
-    {
-        const auto * arg = checkAndGetColumn<const ColumnConst>(constant_nodes.front()->column.get());
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&arg->getDataColumn());
-        if (!column_set)
-            throw DB::Exception(
-                ErrorCodes::NOT_IMPLEMENTED, "Only ColumnSet is supported in IN clause, but got {}", arg->getDataColumn().getName());
-        auto set = column_set->getData()->get();
-        auto elements = set->getSetElements().front();
-        std::vector<String> values;
-        for (size_t i = 0; i < elements->size(); ++i)
-        {
-            auto value = elements->getDataAt(i);
-            String str;
-            str.resize(value.size);
-            memcpy(str.data(), value.data, value.size);
-            values.emplace_back(str);
-        }
-        filter = std::make_shared<BytesValuesFilter>(values, false);
-    }
-    if (filter)
-    {
-        return std::make_optional(std::make_pair(name, filter));
-    }
-    return std::nullopt;
-}
 
 namespace
 {
@@ -1017,12 +928,10 @@ ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
     }
 }
 
-template <>
-class FloatRangeFilter<Float32>;
-template <>
-class FloatRangeFilter<Float64>;
+template class FloatRangeFilter<Float32>;
+template class FloatRangeFilter<Float64>;
 
-ColumnFilterPtr NegatedByteValuesFilter::merge(const ColumnFilter * other) const
+ColumnFilterPtr NegatedBytesValuesFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
@@ -1044,28 +953,7 @@ ColumnFilterPtr NegatedBigIntRangeFilter::clone(std::optional<bool> null_allowed
 {
     return std::make_shared<NegatedBigIntRangeFilter>(non_negated->lower, non_negated->upper, null_allowed_.value_or(null_allowed));
 }
-OptionalFilter NegatedBigIntRangeFilter::create(const ActionsDAG::Node & node)
-{
-    if (!isCompareColumnWithConst(node))
-        return std::nullopt;
-    const auto * input_node = getInputNode(node);
-    auto name = input_node->result_name;
-    if (!isInt64(input_node->result_type) && !isInt32(input_node->result_type) && !isInt16(input_node->result_type))
-        return std::nullopt;
-    auto constant_nodes = getConstantNode(node);
-    auto func_name = node.function_base->getName();
-    ColumnFilterPtr filter = nullptr;
-    if (func_name == "notEquals")
-    {
-        Int64 value = constant_nodes.front()->column->getInt(0);
-        filter = std::make_shared<NegatedBigIntRangeFilter>(value, value, false);
-    }
-    if (filter)
-    {
-        return std::make_optional(std::make_pair(name, filter));
-    }
-    return std::nullopt;
-}
+
 ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
@@ -1154,56 +1042,11 @@ ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * other) cons
 }
 NegatedBigIntRangeFilter::~NegatedBigIntRangeFilter() = default;
 
-DB::OptionalFilter DB::NegatedByteValuesFilter::create(const ActionsDAG::Node & node)
-{
-    if (!isCompareColumnWithConst(node))
-        return std::nullopt;
-    const auto * input_node = getInputNode(node);
-    auto name = input_node->result_name;
-    if (!isString(input_node->result_type))
-        return std::nullopt;
-    auto constant_nodes = getConstantNode(node);
-    auto func_name = node.function_base->getName();
-    ColumnFilterPtr filter = nullptr;
-    if (func_name == "notEquals")
-    {
-        auto value = constant_nodes.front()->column->getDataAt(0);
-        String str;
-        str.resize(value.size);
-        memcpy(str.data(), value.data, value.size);
-        std::vector<String> values = {str};
-        filter = std::make_shared<NegatedByteValuesFilter>(values, false);
-    }
-    if (filter)
-    {
-        return std::make_optional(std::make_pair(name, filter));
-    }
-    return std::nullopt;
-}
-ColumnFilterPtr NegatedByteValuesFilter::clone(std::optional<bool>) const
+ColumnFilterPtr NegatedBytesValuesFilter::clone(std::optional<bool>) const
 {
     return nullptr;
 }
-NegatedByteValuesFilter::~NegatedByteValuesFilter() = default;
-
-OptionalFilter createFloatRangeFilter(const ActionsDAG::Node & node)
-{
-    if (!isCompareColumnWithConst(node))
-        return std::nullopt;
-    const auto * input_node = getInputNode(node);
-    if (!isFloat(input_node->result_type))
-        return std::nullopt;
-
-    bool is_float32 = WhichDataType(input_node->result_type).isFloat32();
-    if (is_float32)
-    {
-        return Float32RangeFilter::create(node);
-    }
-    else
-    {
-        return Float64RangeFilter::create(node);
-    }
-}
+NegatedBytesValuesFilter::~NegatedBytesValuesFilter() = default;
 
 bool RowSet::none() const
 {
@@ -1302,18 +1145,6 @@ ColumnFilterPtr IsNullFilter::merge(const ColumnFilter * other) const
     return std::make_shared<IsNullFilter>();
 }
 
-OptionalFilter IsNullFilter::create(const ActionsDAG::Node & node)
-{
-    auto func_name = node.function_base->getName();
-    if (func_name == "isnull")
-    {
-        const auto * input_node = getInputNode(node);
-        auto name = input_node->result_name;
-        return std::make_pair(name, std::make_shared<IsNullFilter>());
-    }
-    return std::nullopt;
-}
-
 ColumnFilterPtr IsNotNullFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
@@ -1327,10 +1158,6 @@ ColumnFilterPtr IsNotNullFilter::merge(const ColumnFilter * other) const
         default:
             return other->merge(this);
     }
-}
-OptionalFilter IsNotNullFilter::create(const ActionsDAG::Node &)
-{
-    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "IsNotNullFilter creator unimplemented");
 }
 
 ColumnFilterPtr BoolValueFilter::merge(const ColumnFilter * other) const
@@ -1690,7 +1517,7 @@ bool NegatedBigIntValuesUsingBitmaskFilter::testInt64Range(Int64 min_, Int64 max
     return true;
 }
 
-bool BytesRangeFilter::testString(const String & value) const
+bool BytesRangeFilter::testString(const std::string_view & value) const
 {
     if (value.empty())
     {
@@ -2004,12 +1831,12 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
             std::vector<Int64> rejects;
             if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingBitmask)
             {
-                auto otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
+                const auto *otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
                 rejects = otherNegated->getValues();
             }
             else
             {
-                auto otherNegated = dynamic_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
+                const auto *otherNegated = dynamic_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
                 rejects = otherNegated->getValues();
             }
 

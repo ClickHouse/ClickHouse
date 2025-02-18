@@ -190,8 +190,6 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                 }
                 else
                 {
-                    // prefetch column data if needed
-                    //                    prefetch->startPrefetch();
                     auto & reader = reader_columns_mapping.at(name);
                     auto column = reader->createColumn();
                     column->reserve(select_result.valid_count);

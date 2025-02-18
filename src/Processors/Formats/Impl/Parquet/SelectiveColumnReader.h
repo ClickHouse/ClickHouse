@@ -11,8 +11,8 @@
 #include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
-#include <Processors/Formats/Impl/Parquet/PageReader.h>
 #include <Processors/Formats/Impl/Parquet/DecoderHelper.h>
+#include <Processors/Formats/Impl/Parquet/PageReader.h>
 #include <arrow/util/bit_stream_utils.h>
 #include <arrow/util/decimal.h>
 #include <arrow/util/rle_encoding.h>
@@ -110,7 +110,6 @@ struct ScanState
 Int32 loadLength(const uint8_t * data);
 
 
-
 template <typename T>
 void computeRowSetPlainSpace(
     const T * start, OptionalRowSet & row_set, const ColumnFilterPtr & filter, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
@@ -172,7 +171,8 @@ class SelectiveColumnReader
 
 public:
     SelectiveColumnReader(PageReaderCreator page_reader_creator_, const ScanSpec & scan_spec_)
-        : page_reader_creator(page_reader_creator_), scan_spec(scan_spec_)
+        : page_reader_creator(page_reader_creator_)
+        , scan_spec(scan_spec_)
     {
     }
     virtual ~SelectiveColumnReader() = default;
@@ -193,7 +193,7 @@ public:
     virtual const std::unordered_set<ColumnFilterKind> & supportedFilterKinds() const = 0;
     /// calculate row mask on decompression buffer
     virtual void computeRowSet(std::optional<RowSet> & row_set, size_t rows_to_read) = 0;
-    /// calculate row mask on decompression buffer with null bitmap
+    /// calculate row mask on decompression buffer with null map
     virtual void computeRowSetSpace(
         OptionalRowSet & /* row_set */, PaddedPODArray<UInt8> & /* null_map */, size_t /* null_count */, size_t /* rows_to_read */)
     {
@@ -278,27 +278,20 @@ public:
         column_chunk_meta = std::move(column_chunk_meta_);
     }
 
-    virtual void setColumnIndex(std::shared_ptr<parquet::ColumnIndex> column_index_)
-    {
-        column_index = std::move(column_index_);
-    }
+    virtual void setColumnIndex(std::shared_ptr<parquet::ColumnIndex> column_index_) { column_index = std::move(column_index_); }
 
-    virtual void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_)
-    {
-        offset_index = std::move(offset_index_);
-    }
+    virtual void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_) { offset_index = std::move(offset_index_); }
 
 protected:
     void decodePage();
     void initDataPageDecoder(parquet::Encoding::type encoding);
     virtual void skipPageIfNeed();
-    void skipPageByOffsetIndexIfNeed();
-    void loadDictPageIfNeeded();
     bool readPage();
     void readDataPageV1(const parquet::DataPageV1 & page);
     void readDataPageV2(const parquet::DataPageV2 & page);
 
     // for dictionary reader
+    void loadDictPageIfNeeded();
     virtual bool needReadDictPage() { return false; }
     virtual void readDictPage(const parquet::DictionaryPage &) { }
     virtual void initIndexDecoderIfNeeded() { }
@@ -394,7 +387,11 @@ public:
                ColumnFilterKind::BigIntRange,
                ColumnFilterKind::NegatedBigIntValuesUsingHashTable,
                ColumnFilterKind::NegatedBigIntValuesUsingBitmask,
-               ColumnFilterKind::NegatedBigIntRange};
+               ColumnFilterKind::NegatedBigIntRange,
+               ColumnFilterKind::AlwaysTrue,
+               ColumnFilterKind::AlwaysFalse,
+               ColumnFilterKind::IsNull,
+               ColumnFilterKind::IsNotNull};
         return kinds;
     }
     DataTypePtr getResultType() override { return datatype; }
@@ -427,7 +424,11 @@ public:
                ColumnFilterKind::BigIntRange,
                ColumnFilterKind::NegatedBigIntValuesUsingHashTable,
                ColumnFilterKind::NegatedBigIntValuesUsingBitmask,
-               ColumnFilterKind::NegatedBigIntRange};
+               ColumnFilterKind::NegatedBigIntRange,
+               ColumnFilterKind::AlwaysTrue,
+               ColumnFilterKind::AlwaysFalse,
+               ColumnFilterKind::IsNull,
+               ColumnFilterKind::IsNotNull};
         return kinds;
     }
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
@@ -532,7 +533,7 @@ private:
     std::unique_ptr<DictDecoder> dict_decoder;
     PaddedPODArray<DictValueType> dict;
     // mark dict page has read
-    bool dict_page_read;
+    bool dict_page_read = false;
 };
 
 void computeRowSetPlainString(const uint8_t * start, OptionalRowSet & row_set, ColumnFilterPtr filter, size_t rows_to_read);
@@ -554,7 +555,11 @@ public:
             = {ColumnFilterKind::BytesValues,
                ColumnFilterKind::BytesRange,
                ColumnFilterKind::NegatedBytesValues,
-               ColumnFilterKind::NegatedBytesRange};
+               ColumnFilterKind::NegatedBytesRange,
+               ColumnFilterKind::AlwaysTrue,
+               ColumnFilterKind::AlwaysFalse,
+               ColumnFilterKind::IsNull,
+               ColumnFilterKind::IsNotNull};
         return kinds;
     }
     void computeRowSet(OptionalRowSet & row_set, size_t rows_to_read) override;
@@ -586,7 +591,11 @@ public:
             = {ColumnFilterKind::BytesValues,
                ColumnFilterKind::BytesRange,
                ColumnFilterKind::NegatedBytesValues,
-               ColumnFilterKind::NegatedBytesRange};
+               ColumnFilterKind::NegatedBytesRange,
+               ColumnFilterKind::AlwaysTrue,
+               ColumnFilterKind::AlwaysFalse,
+               ColumnFilterKind::IsNull,
+               ColumnFilterKind::IsNotNull};
         return kinds;
     }
     DataTypePtr getResultType() override;
@@ -630,7 +639,9 @@ class OptionalColumnReader : public SelectiveColumnReader
 {
 public:
     OptionalColumnReader(const ScanSpec & scanSpec, const SelectiveColumnReaderPtr child_, bool has_null_)
-        : SelectiveColumnReader(nullptr, scanSpec), child(child_), has_null(has_null_)
+        : SelectiveColumnReader(nullptr, scanSpec)
+        , child(child_)
+        , has_null(has_null_)
     {
         def_level = child->maxDefinitionLevel();
         rep_level = child->maxRepetitionLevel();
@@ -658,15 +669,9 @@ public:
         SelectiveColumnReader::setParent(parent_);
         child->setParent(this);
     }
-    void setColumnIndex(std::shared_ptr<parquet::ColumnIndex> column_index_) override
-    {
-        child->setColumnIndex(column_index_);
-    }
+    void setColumnIndex(std::shared_ptr<parquet::ColumnIndex> column_index_) override { child->setColumnIndex(column_index_); }
 
-    void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_) override
-    {
-        child->setOffsetIndex(offset_index_);
-    }
+    void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_) override { child->setOffsetIndex(offset_index_); }
 
 private:
     void applyLazySkip();
@@ -704,7 +709,10 @@ public:
         MutableColumns columns;
     };
     ListColumnReader(int16_t rep_level_, int16_t def_level_, const SelectiveColumnReaderPtr child_)
-        : SelectiveColumnReader(nullptr, ScanSpec{}), children({child_}), def_level(def_level_), rep_level(rep_level_)
+        : SelectiveColumnReader(nullptr, ScanSpec{})
+        , children({child_})
+        , def_level(def_level_)
+        , rep_level(rep_level_)
     {
         for (auto & child : children)
             child->setParent(this);
@@ -713,7 +721,10 @@ public:
 protected:
     // for map reader
     ListColumnReader(int16_t rep_level_, int16_t def_level_, const std::vector<SelectiveColumnReaderPtr> & children_)
-        : SelectiveColumnReader(nullptr, ScanSpec{}), children({children_}), def_level(def_level_), rep_level(rep_level_)
+        : SelectiveColumnReader(nullptr, ScanSpec{})
+        , children({children_})
+        , def_level(def_level_)
+        , rep_level(rep_level_)
     {
         for (auto & child : children)
             child->setParent(this);

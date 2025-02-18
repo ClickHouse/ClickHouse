@@ -164,8 +164,8 @@ void OptionalColumnReader::applyLazySkip()
 }
 void OptionalColumnReader::skipPageIfNeed()
 {
+    child->initPageReaderIfNeed();
     child->state.lazy_skip_rows = state.lazy_skip_rows;
-    child->skipPageByOffsetIndexIfNeed();
     child->skipPageIfNeed();
     state.lazy_skip_rows = child->state.lazy_skip_rows;
     child->state.lazy_skip_rows = 0;

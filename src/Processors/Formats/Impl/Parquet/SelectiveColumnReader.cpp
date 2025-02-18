@@ -1,10 +1,8 @@
 #include "SelectiveColumnReader.h"
 
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
-#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -29,7 +27,6 @@ void SelectiveColumnReader::readPageIfNeeded()
 
 bool SelectiveColumnReader::readPage()
 {
-    skipPageByOffsetIndexIfNeed();
     state.rep_levels.resize(0);
     state.def_levels.resize(0);
     if (!page_reader->hasNext())
@@ -49,7 +46,8 @@ bool SelectiveColumnReader::readPage()
     else if (page_type == parquet::format::PageType::DATA_PAGE || page_type == parquet::format::PageType::DATA_PAGE_V2)
     {
         state.page_position++;
-        auto rows = page_type == parquet::format::PageType::DATA_PAGE ? page_header.data_page_header.num_values : page_header.data_page_header_v2.num_values;
+        auto rows = page_type == parquet::format::PageType::DATA_PAGE ? page_header.data_page_header.num_values
+                                                                      : page_header.data_page_header_v2.num_values;
         state.offsets.reset(rows);
         state.page.reset();
         skipPageIfNeed();
@@ -126,17 +124,15 @@ void SelectiveColumnReader::readDataPageV2(const parquet::DataPageV2 & page)
     if (page.repetition_levels_byte_length() < 0 || page.definition_levels_byte_length() < 0)
     {
         throw Exception(
-            ErrorCodes::PARQUET_EXCEPTION, "Either RL or DL is negative, this should not happen. Most likely corrupt file or parsing issue");
+            ErrorCodes::PARQUET_EXCEPTION,
+            "Either RL or DL is negative, this should not happen. Most likely corrupt file or parsing issue");
     }
 
-    const int32_t total_levels_length =
-        page.repetition_levels_byte_length() +
-        page.definition_levels_byte_length();
+    const int32_t total_levels_length = page.repetition_levels_byte_length() + page.definition_levels_byte_length();
 
     if (total_levels_length > page.size())
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Data page too small for levels (corrupt header?)");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Data page too small for levels (corrupt header?)");
     }
 
     // ARROW-17453: Even if max_rep_level_ is 0, there may still be
@@ -159,8 +155,7 @@ void SelectiveColumnReader::readDataPageV2(const parquet::DataPageV2 & page)
     auto dl_bytes = page.definition_levels_byte_length();
     if (max_def_level > 0)
     {
-        decoder.SetDataV2(
-            dl_bytes, max_def_level, static_cast<int>(state.offsets.remain_rows), state.data.buffer);
+        decoder.SetDataV2(dl_bytes, max_def_level, static_cast<int>(state.offsets.remain_rows), state.data.buffer);
         state.data.buffer += dl_bytes;
         state.def_levels.resize(state.offsets.remain_rows);
         decoder.Decode(static_cast<int>(state.offsets.remain_rows), state.def_levels.data());
@@ -188,7 +183,6 @@ void SelectiveColumnReader::decodePage()
         default:
             throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Unsupported page type {}", magic_enum::enum_name(state.page->type()));
     }
-
 }
 
 void SelectiveColumnReader::skipPageIfNeed()
@@ -199,6 +193,26 @@ void SelectiveColumnReader::skipPageIfNeed()
         state.lazy_skip_rows -= state.offsets.remain_rows;
         page_reader->skipNextPage();
         state.offsets.consume(state.offsets.remain_rows);
+        return;
+    }
+    if (page_reader && !state.offsets.remain_rows && offset_index && static_cast<size_t>(state.page_position) < offset_index->page_locations().size() - 1)
+    {
+        while (state.lazy_skip_rows)
+        {
+            if (offset_index->page_locations().size() == static_cast<size_t>(state.page_position + 1))
+                break;
+            size_t next_page_rows = offset_index->page_locations().at(state.page_position + 1).first_row_index
+                - offset_index->page_locations().at(state.page_position).first_row_index;
+            if (next_page_rows <= state.lazy_skip_rows)
+            {
+                state.page_position++;
+                chassert(page_reader);
+                page_reader->seekFileOffset(offset_index->page_locations().at(state.page_position).offset);
+                state.lazy_skip_rows -= next_page_rows;
+            }
+            else
+                break;
+        }
     }
 }
 
@@ -206,7 +220,7 @@ void SelectiveColumnReader::skip(size_t rows)
 {
     state.lazy_skip_rows += rows;
     state.lazy_skip_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
-//    skipPageIfNeed();
+    skipPageIfNeed();
 }
 
 void SelectiveColumnReader::skipNulls(size_t rows_to_skip)
@@ -220,9 +234,11 @@ void SelectiveColumnReader::skipNulls(size_t rows_to_skip)
 
 void SelectiveColumnReader::loadDictPageIfNeeded()
 {
-    if (!needReadDictPage()) return;
+    if (!needReadDictPage())
+        return;
     chassert(column_chunk_meta);
     initPageReaderIfNeed();
+    auto original_offset = page_reader->getOffsetInFile();
     if (column_chunk_meta->has_dictionary_page())
     {
         page_reader->seekFileOffset(column_chunk_meta->dictionary_page_offset());
@@ -231,33 +247,11 @@ void SelectiveColumnReader::loadDictPageIfNeeded()
     }
     else
     {
+        // first page is dict page
+        page_reader->seekFileOffset(column_chunk_meta->file_offset());
         readPage();
     }
-    // TODO: seek to data page?
-}
-void SelectiveColumnReader::skipPageByOffsetIndexIfNeed()
-{
-    if (!needReadDictPage())
-    {
-        if (offset_index && static_cast<size_t>(state.page_position) < offset_index->page_locations().size() - 1)
-        {
-            while (state.lazy_skip_rows)
-            {
-                if (offset_index->page_locations().size() == static_cast<size_t>(state.page_position + 1)) break;
-                size_t next_page_rows = offset_index->page_locations().at(state.page_position + 1).first_row_index
-                    - offset_index->page_locations().at(state.page_position).first_row_index;
-                if (next_page_rows <= state.lazy_skip_rows)
-                {
-                    state.page_position++;
-                    chassert(page_reader);
-                    page_reader->seekFileOffset(offset_index->page_locations().at(state.page_position).offset);
-                    state.lazy_skip_rows -= next_page_rows;
-                }
-                else
-                    break;
-            }
-        }
-    }
+    page_reader->seekFileOffset(original_offset);
 }
 
 Int32 loadLength(const uint8_t * data)
@@ -282,7 +276,7 @@ void computeRowSetPlainString(const uint8_t * start, OptionalRowSet & row_set, C
         if (len == 0)
             sets.set(i, filter->testString(""));
         else
-            sets.set(i, filter->testString(String(reinterpret_cast<const char *>(start + offset), len)));
+            sets.set(i, filter->testString(std::string_view(reinterpret_cast<const char *>(start + offset), len)));
         offset += len;
     }
 }

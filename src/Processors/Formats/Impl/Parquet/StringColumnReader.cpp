@@ -1,10 +1,8 @@
 #include "SelectiveColumnReader.h"
 
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
-#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
 namespace DB

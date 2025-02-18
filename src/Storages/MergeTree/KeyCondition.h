@@ -151,9 +151,12 @@ public:
         DataTypePtr current_type,
         bool single_point = false);
 
-    ActionsDAG getFilterDagCopy() const
+    std::optional<ActionsDAG> getFilterDagCopy() const
     {
-        return filter_expr.clone();
+        if (filter_expr)
+            return filter_expr->clone();
+        else
+            return std::nullopt;
     }
 
     static ActionsDAG cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context);
@@ -379,7 +382,7 @@ private:
     /// This flag identify whether there are filters.
     bool has_filter;
 
-    ActionsDAG filter_expr;
+    std::shared_ptr<ActionsDAG> filter_expr;
     ColumnIndices key_columns;
     std::vector<size_t> key_indices;
 

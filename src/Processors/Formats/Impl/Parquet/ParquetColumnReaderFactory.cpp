@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -565,8 +566,9 @@ ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::pageR
     return *this;
 }
 
-ParquetColumnReaderFactory::Builder & ParquetColumnReaderFactory::Builder::columnChunkMeta(
-    std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta){
+ParquetColumnReaderFactory::Builder &
+ParquetColumnReaderFactory::Builder::columnChunkMeta(std::unique_ptr<parquet::ColumnChunkMetaData> column_chunk_meta)
+{
     column_chunk_meta_ = std::move(column_chunk_meta);
     return *this;
 }
@@ -927,7 +929,6 @@ ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePt
             auto page_reader = std::make_unique<LazyPageReader>(
                 std::make_unique<ReadBufferFromMemory>(reinterpret_cast<char *>(data.data), data.size),
                 context.parquet_reader->readerProperties(),
-                context.row_group_meta->num_rows(),
                 context.row_group_meta->ColumnChunk(column_idx)->compression(),
                 column_range.offset);
             ProfileEvents::increment(ProfileEvents::ParquetFetchWaitTimeMicroseconds, time.elapsedMicroseconds());

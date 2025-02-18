@@ -5,14 +5,6 @@
 namespace DB
 {
 
-// TODO: support more expressions
-ColumnFilterCreators ColumnFilterHelper::creators
-    = {BigIntRangeFilter::create,
-       NegatedBigIntRangeFilter::create,
-       createFloatRangeFilter,
-       BytesValuesFilter::create,
-       NegatedByteValuesFilter::create};
-
 FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive)
 {
     FilterSplitResultPtr split_result = std::make_shared<FilterSplitResult>();
@@ -23,34 +15,34 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG
     auto conditions = ActionsDAG::extractConjunctionAtoms(filter_node);
     std::vector<ColumnFilterPtr> filters;
     ActionsDAG::NodeRawConstPtrs unsupported_conditions;
+    const auto & factories = ColumnFilterFactory::allFactories();
     for (const auto * condition : conditions)
     {
         // convert expr to column filter, and try to merge with existing filter on same column
         if (std::none_of(
-                creators.begin(),
-                creators.end(),
-                [&](ColumnFilterCreator & creator)
+                factories.begin(),
+                factories.end(),
+                [&](ColumnFilterFactoryPtr factory)
                 {
-                    auto result = creator(*condition);
-                    if (result.has_value())
+                    if (!factory->validate(*condition))
+                        return false;
+                    auto named_filter = factory->create(*condition);
+                    auto col_name = named_filter.first;
+                    if (case_insensitive)
+                        col_name = Poco::toLower(col_name);
+                    if (!split_result->filters.contains(col_name))
+                        split_result->filters.emplace(col_name, named_filter.second);
+                    else
                     {
-                        auto col_name = result.value().first;
-                        if (case_insensitive)
-                            col_name = Poco::toLower(col_name);
-                        if (!split_result->filters.contains(col_name))
-                            split_result->filters.emplace(col_name, result.value().second);
+                        auto merged = split_result->filters[col_name]->merge(named_filter.second.get());
+                        if (merged)
+                            split_result->filters[col_name] = merged;
                         else
-                        {
-                            auto merged = split_result->filters[col_name]->merge(result.value().second.get());
-                            if (merged)
-                                split_result->filters[col_name] = merged;
-                            else
-                                // doesn't support merge, use common expression push down
-                                return false;
-                        }
-                        split_result->fallback_filters[col_name].push_back(condition);
+                            // doesn't support merge, use common expression push down
+                            return false;
                     }
-                    return result.has_value();
+                    split_result->fallback_filters[col_name].push_back(condition);
+                    return true;
                 }))
             unsupported_conditions.push_back(condition);
     }

@@ -230,6 +230,11 @@ const parquet::format::PageHeader & LazyPageReader::peekNextPageHeader()
 
 void LazyPageReader::seekFileOffset(size_t offset)
 {
+    chassert(stream);
     stream->seek(offset - offset_in_file, SEEK_SET);
+}
+size_t LazyPageReader::getOffsetInFile() const
+{
+    return stream->offset() + offset_in_file;
 }
 }

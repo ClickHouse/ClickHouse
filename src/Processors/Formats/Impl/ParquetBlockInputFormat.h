@@ -6,6 +6,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <queue>
 
