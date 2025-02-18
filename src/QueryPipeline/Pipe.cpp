@@ -690,6 +690,9 @@ void Pipe::resize(size_t num_streams, bool force, bool strict)
     if (!force && num_streams == numOutputPorts())
         return;
 
+    if (numOutputPorts() == 1 && num_streams == 1)
+        return;
+
     ProcessorPtr resize;
 
     if (strict)
