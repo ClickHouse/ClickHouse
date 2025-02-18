@@ -1,14 +1,12 @@
 #pragma once
 
-#include <filesystem>
+#include <set>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <functional>
-#include <set>
+#include <filesystem>
 #include <base/defines.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
 
 
 namespace DB
@@ -17,6 +15,7 @@ namespace DB
 class InMemoryDirectoryPathMap
 {
 public:
+    /// Breadth-first order.
     struct PathComparator
     {
         bool operator()(const std::filesystem::path & path1, const std::filesystem::path & path2) const
@@ -30,45 +29,32 @@ public:
     };
 
     using FileNames = std::set<std::string>;
-    using FileNamesIterator = FileNames::iterator;
-    struct FileNameIteratorComparator
-    {
-        bool operator()(const FileNames::iterator & lhs, const FileNames::iterator & rhs) const { return *lhs < *rhs; }
-    };
-    using FileNamesIterators = std::set<FileNamesIterator, FileNameIteratorComparator>;
-
     struct RemotePathInfo
     {
         std::string path;
         time_t last_modified = 0;
-        FileNamesIterators filename_iterators;
+        FileNames files;
     };
 
     size_t directoriesCount() const
     {
-        SharedLockGuard lock(mutex);
+        std::lock_guard lock(mutex);
         return map.size();
-    }
-
-    size_t filesCount() const
-    {
-        SharedLockGuard lock(mutex);
-        return unique_filenames.size();
     }
 
     bool existsRemotePath(const std::string & remote_path) const
     {
-        SharedLockGuard lock(mutex);
+        std::lock_guard lock(mutex);
         return remote_directories.contains(remote_path);
     }
 
     bool existsLocalPath(const std::string & local_path) const
     {
-        SharedLockGuard lock(mutex);
+        std::lock_guard lock(mutex);
         return map.contains(local_path);
     }
 
-    auto addPathIfNotExists(std::string path, RemotePathInfo info, const FileNames & files)
+    auto addPathIfNotExists(std::string path, RemotePathInfo info)
     {
         std::string remote_path = info.path;
         std::lock_guard lock(mutex);
@@ -76,18 +62,28 @@ public:
         auto res = map.emplace(std::move(path), std::move(info));
 
         if (res.second)
-        {
             remote_directories.emplace(remote_path);
 
-            for (const auto & file : files)
-            {
-                auto file_insert_res = unique_filenames.insert(file);
-                if (file_insert_res.second)
-                    res.first->second.filename_iterators.insert(file_insert_res.first);
-            }
-        }
-
         return res;
+    }
+
+    bool addFile(const std::string & local_path)
+    {
+        std::lock_guard lock(mutex);
+        auto it = map.find(std::filesystem::path(local_path).parent_path());
+        if (it == map.end())
+            return false;
+        it->second.files.emplace(local_path);
+        return true;
+    }
+
+    bool removeFile(const std::string & local_path)
+    {
+        std::lock_guard lock(mutex);
+        auto it = map.find(std::filesystem::path(local_path).parent_path());
+        if (it == map.end())
+            return false;
+        return it->second.files.erase(local_path);
     }
 
     std::optional<RemotePathInfo> getRemotePathInfoIfExists(const std::string & path) const
@@ -96,22 +92,20 @@ public:
         if (base_path.ends_with('/'))
             base_path.pop_back();
 
-        SharedLockGuard lock(mutex);
+        std::lock_guard lock(mutex);
         auto it = map.find(base_path);
         if (it == map.end())
             return std::nullopt;
         return it->second;
     }
 
-    bool removePathIfExists(const std::filesystem::path & path)
+    bool removePathIfExists(const std::string & path)
     {
         std::lock_guard lock(mutex);
         auto it = map.find(path);
         if (map.end() == it)
             return false;
 
-        for (auto unique_files_it : it->second.filename_iterators)
-            unique_filenames.erase(unique_files_it);
         remote_directories.erase(it->second.path);
         map.erase(it);
         return true;
@@ -129,8 +123,6 @@ public:
             }
             else
             {
-                for (auto unique_files_it : it->second.filename_iterators)
-                    unique_filenames.erase(unique_files_it);
                 remote_directories.erase(it->second.path);
                 it = map.erase(it);
                 ++num_removed;
@@ -141,18 +133,20 @@ public:
 
     void iterateFiles(const std::string & path, std::function<void(const std::string &)> callback) const
     {
-        std::string parent_path = std::filesystem::path(path).parent_path();
+        auto base_path = path;
+        if (base_path.ends_with('/'))
+            base_path.pop_back();
 
-        SharedLockGuard lock(mutex);
-        auto it = map.find(parent_path);
+        std::lock_guard lock(mutex);
+        auto it = map.find(base_path);
         if (it != map.end())
-            for (const auto & filename_it : it->second.filename_iterators)
-                callback(*filename_it);
+            for (const auto & file : it->second.files)
+                callback(file);
     }
 
     void iterateSubdirectories(const std::string & path, std::function<void(const std::string &)> callback) const
     {
-        SharedLockGuard lock(mutex);
+        std::lock_guard lock(mutex);
         for (auto it = map.lower_bound(path); it != map.end(); ++it)
         {
             const auto & subdirectory = it->first.string();
@@ -180,10 +174,7 @@ public:
     }
 
 private:
-    mutable SharedMutex mutex;
-
-    /// A set of logical paths of all files.
-    FileNames TSA_GUARDED_BY(mutex) unique_filenames;
+    mutable std::mutex mutex;
 
     /// A mapping from logical filesystem path to the storage path.
     using Map = std::map<std::filesystem::path, RemotePathInfo, PathComparator>;

@@ -203,8 +203,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
                 auto added = path_map->addPathIfNotExists(
                     std::filesystem::path(local_path).parent_path(),
-                    InMemoryDirectoryPathMap::RemotePathInfo{remote_path, last_modified.epochTime(), {}},
-                    files);
+                    InMemoryDirectoryPathMap::RemotePathInfo{remote_path, last_modified.epochTime(), files});
 
                 /// This can happen if table replication is enabled, then the same local path is written
                 /// in `prefix.path` of each replica.
@@ -232,13 +231,11 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
     num_dirs_removed = path_map->removeOutdatedPaths(set_of_remote_paths);
 
     size_t num_dirs_in_memory = path_map->directoriesCount();
-    size_t num_files_in_memory = path_map->filesCount();
 
-    LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed) and {} files",
-        num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed, num_files_in_memory);
+    LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed)",
+        num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed);
 
     metric_directorires.changeTo(num_dirs_in_memory);
-    metric_files.changeTo(num_files_in_memory);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh()
@@ -251,7 +248,6 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
     , metric_directorires(object_storage->getMetadataStorageMetrics().directory_map_size)
-    , metric_files(object_storage->getMetadataStorageMetrics().unique_filenames_count)
 {
     if (object_storage->isWriteOnce())
         throw Exception(

@@ -51,15 +51,14 @@ std::tuple<std::string, std::vector<std::string>> CommonPathPrefixKeyGenerator::
     std::deque<std::string> dq;
 
     const auto ptr = path_map.lock();
-    SharedLockGuard lock(ptr->mutex);
 
     while (p != p.root_path())
     {
-        auto it = ptr->map.find(p);
-        if (it != ptr->map.end())
+        auto res = ptr->getRemotePathInfoIfExists(p);
+        if (res)
         {
             std::vector<std::string> vec(std::make_move_iterator(dq.begin()), std::make_move_iterator(dq.end()));
-            return std::make_tuple(it->second.path, std::move(vec));
+            return std::make_tuple(res->path, std::move(vec));
         }
 
         if (!p.filename().empty())

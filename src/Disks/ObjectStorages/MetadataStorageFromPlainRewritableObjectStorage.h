@@ -57,7 +57,6 @@ private:
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
 
     CurrentMetrics::Increment metric_directorires;
-    CurrentMetrics::Increment metric_files;
 
     void load();
 
