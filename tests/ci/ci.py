@@ -6,7 +6,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -18,7 +17,7 @@ import upload_result_helper
 from build_check import get_release_or_pr
 from ci_buddy import CIBuddy
 from ci_cache import CiCache
-from ci_config import CI
+from ci_config import BUILD_NAMES_MAPPING, CI
 from ci_metadata import CiMetadata
 from ci_settings import CiSettings
 from ci_utils import GH, Envs, Utils
@@ -64,7 +63,7 @@ from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import get_version_from_repo
 
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,too-many-branches
 
 
 def get_check_name(check_name: str, batch: int, num_batches: int) -> str:
@@ -673,17 +672,10 @@ def _update_gh_statuses_action(indata: Dict, s3: S3Helper) -> None:
             except Exception as e:
                 raise e
     print("Going to update overall CI report")
-    for retry in range(2):
-        try:
-            set_status_comment(commit, pr_info)
-            break
-        except Exception as e:
-            print(
-                f"WARNING: Failed to update CI Running status, attempt [{retry + 1}], exception [{e}]"
-            )
-            time.sleep(1)
-    else:
-        print("ERROR: All retry attempts failed.")
+    try:
+        set_status_comment(commit, pr_info)
+    except Exception as e:
+        print(f"WARNING: Failed to update CI Running status, ex [{e}]")
     print("... CI report update - done")
 
 
@@ -1413,14 +1405,16 @@ def main() -> int:
             assert False, "BUG! Not supported scenario"
 
     ### RUN action for migration to praktika: start
+    # temporary mode for migration to new ci workflow
     elif args.run_from_praktika:
-        check_name = ""
+        check_name = os.environ["JOB_NAME"]
+        check_name = BUILD_NAMES_MAPPING.get(check_name, check_name)
+        assert check_name
+        os.environ["CHECK_NAME"] = check_name
         start_time = datetime.now(timezone.utc)
         try:
             jr = JobReport.create_dummy(status="error", job_skipped=False)
             jr.dump()
-            check_name = os.environ["JOB_NAME"]
-            os.environ["CHECK_NAME"] = check_name
             exit_code = _run_test(check_name, args.run_command)
             job_report = JobReport.load() if JobReport.exist() else None
             assert (
@@ -1428,40 +1422,13 @@ def main() -> int:
             ), "BUG. There must be job report either real report, or pre-report if job was killed"
             job_report.exit_code = exit_code
             job_report.dump()
-
-            job_report = JobReport.load() if JobReport.exist() else None
-            assert (
-                job_report
-            ), "BUG. There must be job report either real report, or pre-report if job was killed"
         except Exception:
             traceback.print_exc()
             print("Run failed")
 
         # post
         try:
-            job_report = JobReport.load()
-            gh = GitHub(get_best_robot_token(), per_page=100)
-            commit = get_commit(gh, pr_info.sha)
-            if not job_report.dummy:
-                check_url = upload_result_helper.upload_results(
-                    s3,
-                    pr_info.number,
-                    pr_info.sha,
-                    pr_info.head_ref,
-                    job_report.test_results,
-                    job_report.additional_files,
-                    check_name,  # TODO: make with batch
-                )
-                post_commit_status(
-                    commit,
-                    job_report.status,
-                    check_url,
-                    format_description(job_report.description),
-                    check_name,  # TODO: make with batch
-                    pr_info,
-                    dump_to_file=True,
-                )
-            else:
+            if JobReport.load().dummy:
                 print("ERROR: Job was killed - generate evidence")
                 job_report.duration = (
                     start_time - datetime.now(timezone.utc)
@@ -1477,27 +1444,6 @@ def main() -> int:
                 CIBuddy().post_job_error(
                     error_description + f" after {int(job_report.duration)}s",
                     job_name=_get_ext_check_name(args.job_name),
-                )
-
-                check_url = ""
-                if job_report.test_results or job_report.additional_files:
-                    check_url = upload_result_helper.upload_results(
-                        s3,
-                        pr_info.number,
-                        pr_info.sha,
-                        pr_info.head_ref,
-                        job_report.test_results,
-                        job_report.additional_files,
-                        check_name,  # TODO: make with batch,
-                    )
-                post_commit_status(
-                    commit,
-                    ERROR,
-                    check_url,
-                    "Error: " + error_description,
-                    check_name,  # TODO: make with batch
-                    pr_info,
-                    dump_to_file=True,
                 )
         except Exception:
             traceback.print_exc()

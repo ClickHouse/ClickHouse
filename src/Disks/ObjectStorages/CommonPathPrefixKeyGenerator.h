@@ -2,9 +2,8 @@
 
 #include <Common/ObjectStorageKeyGenerator.h>
 
-#include <filesystem>
-#include <map>
 #include <optional>
+#include <vector>
 
 namespace DB
 {
@@ -29,6 +28,8 @@ public:
     explicit CommonPathPrefixKeyGenerator(String key_prefix_, std::weak_ptr<InMemoryDirectoryPathMap> path_map_);
 
     ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const override;
+
+    bool isRandom() const override { return true; }
 
 private:
     /// Longest key prefix and unresolved parts of the source path.

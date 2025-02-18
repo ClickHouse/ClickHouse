@@ -108,11 +108,13 @@ struct JoinCondition
 
 struct JoinExpression
 {
-    /// A single join condition that must be satisfied to join rows
+    /// A join condition that must be satisfied to join rows
     JoinCondition condition;
 
-    /// Disjunctive join conditions represented by alternative conditions connected by the OR operator.
-    /// If any of the conditions is true, corresponding rows from the left and right tables can be joined.
+    /// Alternative join conditions that can also satisfy the join.
+    /// The complete join expression is: `condition OR (alt1 OR alt2 OR ... OR altN)`
+    /// where alt1...altN are stored here.
+    /// If any condition matches, the rows will be joined.
     std::vector<JoinCondition> disjunctive_conditions;
 
     /// Indicates if the join expression is defined with the USING clause

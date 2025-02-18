@@ -69,6 +69,9 @@ public:
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
+    UInt64 getNumberOnFlyDataMutations() const override;
+    UInt64 getNumberOnFlyMetadataMutations() const override;
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /** Perform the next step in combining the parts.
@@ -232,6 +235,10 @@ private:
     UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
 
     size_t clearOldMutations(bool truncate = false);
+
+    /// Delete irrelevant parts from memory and disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
+    size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;

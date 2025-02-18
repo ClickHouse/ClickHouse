@@ -27,7 +27,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"uuid",                                       std::make_shared<DataTypeUUID>(), "The parts UUID."},
         {"part_type",                                  std::make_shared<DataTypeString>(), "The data part storing format. "
             "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem."},
-        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging."},
+        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging."},
         {"marks",                                      std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                       std::make_shared<DataTypeUInt64>(), "The number of rows."},
         {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
@@ -135,11 +135,7 @@ void StorageSystemPartsColumns::processNextStorage(
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-            {
-                WriteBufferFromOwnString out;
-                part->partition.serializeText(*info.data, out, format_settings);
-                columns[res_index++]->insert(out.str());
-            }
+                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);

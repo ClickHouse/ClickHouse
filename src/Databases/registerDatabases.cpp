@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 

@@ -46,13 +46,21 @@ SECRETS = [
     ),
     azure_secret,
     # Secret.Config(
-    #     name="woolenwolf_gh_app.clickhouse-app-id",
+    #     name="clickhouse_github_secret_key.clickhouse-app-id",
     #     type=Secret.Type.AWS_SSM_SECRET,
     # ),
     # Secret.Config(
-    #     name="woolenwolf_gh_app.clickhouse-app-key",
+    #     name="clickhouse_github_secret_key.clickhouse-app-key",
     #     type=Secret.Type.AWS_SSM_SECRET,
     # ),
+    Secret.Config(
+        name="woolenwolf_gh_app.clickhouse-app-id",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ),
+    Secret.Config(
+        name="woolenwolf_gh_app.clickhouse-app-key",
+        type=Secret.Type.AWS_SSM_SECRET,
+    ),
 ]
 
 DOCKERS = [
@@ -285,31 +293,39 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
-    LOONGARCH64 = "loongarch"
+    LOONGARCH64 = "loongarch64"
     FUZZERS = "fuzzers"
 
 
 class JobNames:
+    DOCKER_BUILDS_ARM = "Dockers build (arm)"
+    DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
+    UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
+    BUGFIX_VALIDATION = "Bugfix validation"
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
-    STRESS = "Stress tests"
-    UPGRADE = "Upgrade tests"
-    PERFORMANCE = "Performance comparison"
+    STRESS = "Stress test"
+    UPGRADE = "Upgrade check"
+    PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
     Docs = "Docs check"
     CLICKBENCH = "ClickBench"
-    DOCKER_SERVER = "Docker server"
+    DOCKER_SERVER = "Docker server image"
+    DOCKER_KEEPER = "Docker keeper image"
     SQL_TEST = "SQLTest"
     SQLANCER = "SQLancer"
-    INSTALL_CHECK = "Install check"
-    ASTFUZZER = "AST Fuzzer"
+    INSTALL_TEST = "Install packages"
+    ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"
-
     BUILDOCKER = "BuildDockers"
+    BUGFIX_VALIDATE = "Bugfix validation"
+    JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
+    JEPSEN_SERVER = "ClickHouse Server Jepsen"
+    LIBFUZZER_TEST = "libFuzzer tests"
 
 
 class ToolSet:
@@ -372,6 +388,8 @@ class ArtifactNames:
 
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
+    PERFORMANCE_PACKAGE_AMD = "PERFORMANCE_PACKAGE_AMD"
+    PERFORMANCE_PACKAGE_ARM = "PERFORMANCE_PACKAGE_ARM"
 
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
@@ -388,7 +406,20 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        path=f"{TEMP_DIR}/build/unit_tests_dbms",
+    ).parametrize(
+        names=[
+            ArtifactNames.UNITTEST_AMD_ASAN,
+            ArtifactNames.UNITTEST_AMD_TSAN,
+            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_AMD_UBSAN,
+            ArtifactNames.UNITTEST_AMD_BINARY,
+        ]
+    ),
+    *Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -418,7 +449,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/programs/clickhouse-odbc-bridge",
+        path=f"{TEMP_DIR}/build/clickhouse-odbc-bridge",
     ).parametrize(
         names=[
             ArtifactNames.CH_ODBC_B_AMD_DEBUG,
@@ -434,7 +465,7 @@ ARTIFACTS = [
     *Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_DEBUG,
@@ -461,42 +492,52 @@ ARTIFACTS = [
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_AMD_COV,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.RPM_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.rpm",
+        path=f"{TEMP_DIR}/build/*.rpm",
     ),
     Artifact.Config(
         name=ArtifactNames.TGZ_AMD_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*64.tgz*",
+        path=f"{TEMP_DIR}/build/*64.tgz*",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.PERFORMANCE_PACKAGE_AMD,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/performance.tar.zst",
+    ),
+    Artifact.Config(
+        name=ArtifactNames.PERFORMANCE_PACKAGE_ARM,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/performance.tar.zst",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     Artifact.Config(
         name=ArtifactNames.RPM_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.rpm",
+        path=f"{TEMP_DIR}/build/*.rpm",
     ),
     Artifact.Config(
         name=ArtifactNames.TGZ_ARM_RELEASE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*64.tgz*",
+        path=f"{TEMP_DIR}/build/*64.tgz*",
     ),
     Artifact.Config(
         name=ArtifactNames.DEB_ARM_ASAN,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/*.deb",
+        path=f"{TEMP_DIR}/build/*.deb",
     ),
     *Artifact.Config(
         name="",
@@ -510,11 +551,6 @@ ARTIFACTS = [
             ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
         ]
     ),
-    # Artifact.Config(
-    #     name=ArtifactNames.PERF_REPORTS_ARM,
-    #     type=Artifact.Type.S3,
-    #     path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
-    # ),
 ]
 
 
@@ -606,27 +642,29 @@ class Jobs:
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
                 ArtifactNames.CH_ODBC_B_AMD_ASAN,
-                # ArtifactNames.UNITTEST_AMD_ASAN,
+                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.CH_ODBC_B_AMD_TSAN,
-                # ArtifactNames.UNITTEST_AMD_TSAN,
+                ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
                 ArtifactNames.CH_ODBC_B_AMD_MSAN,
-                # ArtifactNames.UNITTEST_AMD_MSAN,
+                ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
                 ArtifactNames.CH_ODBC_B_AMD_UBSAN,
+                ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
+                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
@@ -1011,7 +1049,7 @@ class Jobs:
     )
     # TODO: add tgz and rpm
     install_check_job = Job.Config(
-        name=JobNames.INSTALL_CHECK,
+        name=JobNames.INSTALL_TEST,
         runs_on=["..."],
         command="python3 ./tests/ci/install_check.py dummy_check_name --no-rpm --no-tgz --no-download",
         digest_config=Job.CacheDigestConfig(
@@ -1045,7 +1083,6 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.ASTFUZZER}",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -1068,7 +1105,6 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.BUZZHOUSE}",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
