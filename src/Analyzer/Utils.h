@@ -54,7 +54,7 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
 
-/* Returns true, if coulmn source is not registered in scopes that appear
+/* Returns true, if column source is not registered in scopes that appear
  * before nearest query scope.
  */
 bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
