@@ -62,6 +62,12 @@ public:
         return remote_directories.contains(remote_path);
     }
 
+    bool existsLocalPath(const std::string & local_path) const
+    {
+        SharedLockGuard lock(mutex);
+        return map.contains(local_path);
+    }
+
     auto addPathIfNotExists(std::string path, RemotePathInfo info, const FileNames & files)
     {
         std::string remote_path = info.path;
@@ -163,6 +169,14 @@ public:
 
             callback(std::string(subdirectory.begin() + path.size(), subdirectory.end()) + "/");
         }
+    }
+
+    void moveDirectory(const std::string & from, const std::string & to)
+    {
+        std::lock_guard lock(mutex);
+        [[maybe_unused]] auto result = map.emplace(to, map.extract(from).mapped());
+        chassert(result.second);
+        result.first->second.last_modified = time(nullptr);
     }
 
 private:

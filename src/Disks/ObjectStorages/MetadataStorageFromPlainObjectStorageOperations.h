@@ -68,7 +68,7 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    std::string key_prefix;
+    InMemoryDirectoryPathMap::RemotePathInfo info;
     bool remove_attempted = false;
 
 public:
