@@ -32,7 +32,9 @@ static void dummyFunctionForInterposing()
     free(nullptr); // NOLINT
     ignore(malloc(0)); // NOLINT
     ignore(calloc(0, 0)); // NOLINT
-    ignore(realloc(nullptr, 0)); // NOLINT
+    void* ptr = realloc(nullptr, 0); // NOLINT
+    free(ptr);
+    ptr = nullptr;
     ignore(posix_memalign(&dummy, 0, 0)); // NOLINT
     ignore(aligned_alloc(1, 0)); // NOLINT
     ignore(valloc(0)); // NOLINT
