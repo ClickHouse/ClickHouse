@@ -535,6 +535,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
+                                 e.code() != ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
         return no_sense_to_retry;
     }
