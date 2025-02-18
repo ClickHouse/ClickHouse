@@ -33,7 +33,7 @@ With `Disk` backup destination, query to create database from backup looks like 
 
 ## Usage Example {#usage-example}
 
-Let’s make an example with a `Disk` backup destination. Let’s first setup backups disk in `storage.xml`:
+Let's make an example with a `Disk` backup destination. Let's first setup backups disk in `storage.xml`:
 
 ``` xml
 <storage_configuration>
@@ -50,7 +50,7 @@ Let’s make an example with a `Disk` backup destination. Let’s first setup ba
 </backups>
 ```
 
-Example of usage. Let’s create test database, tables, insert some data and then create a backup:
+Example of usage. Let's create test database, tables, insert some data and then create a backup:
 
 ``` sql
 CREATE DATABASE test_database;
@@ -67,7 +67,7 @@ INSERT INTO test_database.test_table_3 VALUES (0, 'test_database.test_table_3');
 BACKUP DATABASE test_database TO Disk('backups', 'test_database_backup');
 ```
 
-So now we have `test_database_backup` backup, let’s create database Backup:
+So now we have `test_database_backup` backup, let's create database Backup:
 
 ``` sql
 CREATE DATABASE test_database_backup ENGINE = Backup('test_database', Disk('backups', 'test_database_backup'));
