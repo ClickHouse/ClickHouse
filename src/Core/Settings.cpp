@@ -4278,7 +4278,7 @@ Possible values:
 - 1 - Enabled
 )", 0) \
     DECLARE(Bool, query_cache_for_subqueries, false, R"(
-If turned on, results of `SELECT` subqueries are retrieved from the [query cache](../query-cache.md).
+If turned on, results of sub-queries of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
 
 Possible values:
 

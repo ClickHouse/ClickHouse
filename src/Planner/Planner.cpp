@@ -38,7 +38,7 @@
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromRecursiveCTEStep.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadFromQueryCacheStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/Context.h>
@@ -1230,25 +1230,19 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     query_plan.addStep(std::move(filter_step));
 }
 
-void addReadFromQueryCacheStep(QueryPlan & query_plan,
+void addReadFromQueryCacheStep(
+    QueryPlan & query_plan,
     std::unique_ptr<SourceFromChunks> source,
     std::unique_ptr<SourceFromChunks> source_totals,
-    std::unique_ptr<SourceFromChunks> source_extremes
-)
+    std::unique_ptr<SourceFromChunks> source_extremes)
 {
     auto pipe = Pipe();
     if (source)
-    {
         pipe.addSource(std::shared_ptr<SourceFromChunks>(source.release()));
-    }
     if (source_totals)
-    {
         pipe.addTotalsSource(std::shared_ptr<SourceFromChunks>(source_totals.release()));
-    }
     if (source_extremes)
-    {
         pipe.addExtremesSource(std::shared_ptr<SourceFromChunks>(source_extremes.release()));
-    }
 
     auto read_from_query_cache_step = std::make_unique<ReadFromQueryCacheStep>(std::move(pipe));
     query_plan.addStep(std::move(read_from_query_cache_step));

@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
             {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
             {"optimize_and_compare_chain", true, false, "A new setting"},
+            {"query_cache_for_subqueries", false, true, "A new setting"},
             {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
             {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
