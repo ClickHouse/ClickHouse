@@ -6,6 +6,7 @@ import logging
 import os
 import uuid
 
+import psycopg
 import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
@@ -182,6 +183,38 @@ def test_python_client(started_cluster):
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
     cur.execute("DROP DATABASE x")
+
+
+def test_prepared_statement(started_cluster):
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+    cur.execute("drop table if exists test;")
+
+    cur.execute(
+        """CREATE TABLE test(
+            id INT
+        ) ENGINE = Memory;"""
+    )
+
+    cur.execute("INSERT INTO test (id) VALUES (1), (2), (3);")
+
+    cur.execute("SELECT * FROM test WHERE id > %s;", ('2',), prepare=True)
+    assert cur.fetchall() == [(3,)]
+
+    cur.execute("PREPARE select_test AS SELECT * FROM test WHERE id = $1;")
+    cur.execute("EXECUTE select_test(1);")
+    assert cur.fetchall() == [(1,)]
+
+    cur.execute("DEALLOCATE select_test;")
+    with pytest.raises(Exception) as exc:
+        cur.execute("EXECUTE select_test(1);")
 
 
 def test_java_client(started_cluster):
