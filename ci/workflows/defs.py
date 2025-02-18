@@ -445,22 +445,12 @@ ARTIFACTS = [
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
-            ArtifactNames.FAST_TEST,
         ]
     ),
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/fasttest-output/clickhouse-stripped.zst",
-    ).parametrize(
-        names=[
-            ArtifactNames.FAST_TEST,
-        ]
-    ),
-    *Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/fasttest-output/clickhouse",
+        path=f"{TEMP_DIR}/fasttest-output/build/*",
     ).parametrize(
         names=[
             ArtifactNames.FAST_TEST,
