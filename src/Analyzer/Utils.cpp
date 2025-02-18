@@ -254,7 +254,6 @@ bool checkCorrelatedColumn(
         if (auto query_or_union_node = std::dynamic_pointer_cast<IQueryOrUnionNode>(scope_to_check->scope_node))
         {
             is_correlated = true;
-            LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Add correlated column:\n{}\nTo Scope node:\n{}", column->dumpTree(), scope_to_check->scope_node->formatASTForErrorMessage());
             query_or_union_node->addCorrelatedColumn(column);
         }
         scope_to_check = scope_to_check->parent_scope;
