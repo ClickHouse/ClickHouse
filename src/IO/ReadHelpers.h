@@ -1764,8 +1764,8 @@ inline T parse(const char * data, size_t size)
     return res;
 }
 
-/// This function is used in one place where we need to preserve backward compatibility
-/// and allow
+/// This function is used in one place (parseRemoteDescriptionForExternalDataba)
+/// where we need to preserve backward compatibility.
 template <typename T>
 inline T parseWithoutAssertEOF(const char * data, size_t size)
 {
