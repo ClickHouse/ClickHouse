@@ -1036,7 +1036,7 @@ SELECT substringIndex('www.clickhouse.com', '.', 2)
 ```
 
 Result:
-```
+```sql
 ┌─substringIndex('www.clickhouse.com', '.', 2)─┐
 │ www.clickhouse                               │
 └──────────────────────────────────────────────┘
@@ -1473,7 +1473,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
+- `trim_character` — The characters to trim. [String](../data-types/string.md).
 - `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
@@ -1501,14 +1501,15 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimLeft(input_string)
+trimLeft(input_string[, trim_characters])
 ```
 
-Alias: `ltrim(input_string)`.
+Alias: `ltrim`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../data-types/string.md).
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1535,14 +1536,15 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimRight(input_string)
+trimRight(input_string[, trim_characters])
 ```
 
-Alias: `rtrim(input_string)`.
+Alias: `rtrim`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../data-types/string.md).
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1569,14 +1571,15 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from both
 **Syntax**
 
 ``` sql
-trimBoth(input_string)
+trimBoth(input_string[, trim_characters])
 ```
 
-Alias: `trim(input_string)`.
+Alias: `trim`.
 
 **Arguments**
 
-- `input_string` — string to trim. [String](../data-types/string.md).
+- `input_string` — The string to trim. [String](../data-types/string.md).
+- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
 
 **Returned value**
 
@@ -1613,146 +1616,6 @@ The result type is UInt32.
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
-
-## normalizeQuery
-
-Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with placeholder `?`.
-
-**Syntax**
-
-``` sql
-normalizeQuery(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Sequence of characters with placeholders. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('[1, 2, 3, x]') AS query;
-```
-
-Result:
-
-```result
-┌─query────┐
-│ [?.., x] │
-└──────────┘
-```
-
-## normalizeQueryKeepNames
-
-Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs). This helps better analyze complex query logs.
-
-**Syntax**
-
-``` sql
-normalizeQueryKeepNames(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Sequence of characters with placeholders. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
-```
-
-Result:
-
-```result
-┌─normalizeQuery('SELECT 1 AS aComplexName123')─┬─normalizeQueryKeepNames('SELECT 1 AS aComplexName123')─┐
-│ SELECT ? AS `?`                               │ SELECT ? AS aComplexName123                            │
-└───────────────────────────────────────────────┴────────────────────────────────────────────────────────┘
-```
-
-## normalizedQueryHash
-
-Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query logs.
-
-**Syntax**
-
-``` sql
-normalizedQueryHash(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
-```
-
-Result:
-
-```result
-┌─res─┐
-│   1 │
-└─────┘
-```
-
-## normalizedQueryHashKeepNames
-
-Like [normalizedQueryHash](#normalizedqueryhash) it returns identical 64bit hash values without the values of literals for similar queries but it does not replace complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can be helpful to analyze query logs.
-
-**Syntax**
-
-``` sql
-normalizedQueryHashKeepNames(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
-SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
-```
-
-Result:
-
-```result
-┌─normalizedQueryHash─┐
-│                   0 │
-└─────────────────────┘
-┌─normalizedQueryHashKeepNames─┐
-│                            1 │
-└──────────────────────────────┘
-```
 
 ## normalizeUTF8NFC
 

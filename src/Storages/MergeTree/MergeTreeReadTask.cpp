@@ -54,7 +54,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    auto create_reader = [&](const NamesAndTypesList & columns_to_read)
+    auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
     {
         return read_info->data_part->getReader(
             columns_to_read,
@@ -63,16 +63,17 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
             extras.mark_cache,
+            is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };
 
-    new_readers.main = create_reader(read_info->task_columns.columns);
+    new_readers.main = create_reader(read_info->task_columns.columns, false);
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
-        new_readers.prewhere.push_back(create_reader(pre_columns_per_step));
+        new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
 
     return new_readers;
 }

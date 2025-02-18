@@ -20,6 +20,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -803,11 +804,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        setThreadName("MergeTreeIndex");
-
-                        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                        if (thread_group)
-                            CurrentThread::attachToGroupIfDetached(thread_group);
+                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
 
                         process_part(part_index);
                     },

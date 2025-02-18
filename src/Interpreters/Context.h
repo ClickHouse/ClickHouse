@@ -23,6 +23,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
+#include <Poco/AutoPtr.h>
+
 #include "config.h"
 
 #include <functional>
@@ -693,6 +695,8 @@ public:
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
+    bool getThrowOnUnknownWorkload() const;
+    void setThrowOnUnknownWorkload(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     UInt64 setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores);
@@ -1492,6 +1496,8 @@ public:
 
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;
+
+    void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

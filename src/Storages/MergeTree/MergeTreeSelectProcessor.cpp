@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
