@@ -60,7 +60,7 @@ public:
 
         /// If the key was taken from iterator via next() call,
         /// we might later want to return it back for retrying.
-        void returnForRetry(Source::ObjectInfoPtr object_info);
+        void returnForRetry(Source::ObjectInfoPtr object_info, FileMetadataPtr file_metadata);
 
         /// Release hold buckets.
         /// In fact, they could be released in destructors of BucketHolder,
@@ -102,7 +102,7 @@ public:
 
         struct ListedKeys
         {
-            std::deque<Source::ObjectInfoPtr> keys;
+            std::deque<std::pair<Source::ObjectInfoPtr, FileMetadataPtr>> keys;
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
@@ -115,9 +115,15 @@ public:
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<Source::ObjectInfoPtr> objects_to_retry;
+        std::deque<std::pair<Source::ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
 
-        std::pair<Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
+        struct NextKeyFromBucket
+        {
+            Source::ObjectInfoPtr object_info;
+            FileMetadataPtr file_metadata;
+            ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
+        };
+        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -135,6 +141,8 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
+
+        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
 
