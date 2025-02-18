@@ -289,22 +289,22 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
 
         it = scope.expression_argument_name_to_node.find(identifier_bind_part);
         if (it == scope.expression_argument_name_to_node.end())
-            return {};
+            return IdentifierResolveResult();
     }
 
     auto node_type = it->second->getNodeType();
     if (identifier_lookup.isExpressionLookup() && !isExpressionNodeType(node_type))
-        return {};
+        return IdentifierResolveResult();
     if (identifier_lookup.isTableExpressionLookup() && !isTableExpressionNodeType(node_type))
-        return {};
+        return IdentifierResolveResult();
     if (identifier_lookup.isFunctionLookup() && !isFunctionExpressionNodeType(node_type))
-        return {};
+        return IdentifierResolveResult();
 
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
         if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope))
             return IdentifierResolveResult(resolved_identifier, IdentifierResolvePlace::EXPRESSION_ARGUMENTS);
-        return {};
+        return IdentifierResolveResult();
     }
 
     return IdentifierResolveResult(it->second, IdentifierResolvePlace::EXPRESSION_ARGUMENTS);
@@ -524,7 +524,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             scope,
             can_be_not_found);
         if (can_be_not_found && !result_expression)
-            return {};
+            return IdentifierResolveResult();
         clone_is_needed = false;
     }
 
@@ -582,7 +582,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     if (!result_expression)
     {
         if (can_be_not_found)
-            return {};
+            return IdentifierResolveResult();
         std::unordered_set<Identifier> valid_identifiers;
         TypoCorrection::collectTableExpressionValidIdentifiers(
             identifier,
@@ -693,20 +693,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     }
 
     if (identifier.getPartsSize() == 1)
-        return {};
+        return IdentifierResolveResult();
 
     const auto & table_name = table_expression_data.table_name;
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
         return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
 
     if (identifier.getPartsSize() == 2)
-        return {};
+        return IdentifierResolveResult();
 
     const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return tryResolveIdentifierFromStorage(identifier, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
-    return {};
+    return IdentifierResolveResult();
 }
 
 QueryTreeNodePtr checkIsMissedObjectJSONSubcolumn(const QueryTreeNodePtr & left_resolved_identifier,
@@ -1302,7 +1302,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
     }
 
     if (!resolve_result.resolved_identifier)
-        return {};
+        return IdentifierResolveResult();
 
     auto array_join_resolved_expression = tryResolveExpressionFromArrayJoinExpressions(resolve_result.resolved_identifier, table_expression_node, scope);
     if (array_join_resolved_expression)
@@ -1338,7 +1338,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTreeNode
               * TODO: This can be supported
               */
             if (scope.table_expressions_in_resolve_process.contains(join_tree_node.get()))
-                return {};
+                return IdentifierResolveResult();
 
             return tryResolveIdentifierFromTableExpression(identifier_lookup, join_tree_node, scope);
         }
@@ -1368,7 +1368,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
     IdentifierResolveScope & scope)
 {
     if (identifier_lookup.isFunctionLookup())
-        return {};
+        return IdentifierResolveResult();
 
     /// Try to resolve identifier from table columns
     if (auto resolved_identifier = tryResolveIdentifierFromTableColumns(identifier_lookup, scope))
@@ -1379,7 +1379,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoinTree(con
 
     auto * query_scope_node = scope.scope_node->as<QueryNode>();
     if (!query_scope_node || !query_scope_node->getJoinTree())
-        return {};
+        return IdentifierResolveResult();
 
     const auto & join_tree_node = query_scope_node->getJoinTree();
     return tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
