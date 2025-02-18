@@ -2079,6 +2079,10 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     """
     )
 
+    # we have to wait > kafka_poll_timeout_ms before producing data,
+    #  otherwise it is expected that data might go via the first MV only
+    time.sleep(3)
+
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
