@@ -1,10 +1,12 @@
 #pragma once
 
+#include <optional>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Identifier.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -115,11 +117,34 @@ struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
+    /// Stores the original exception from the DatabaseCatalog::getTableImpl(), i.e.:
+    /// - UNKNOWN_DATABASE
+    /// - UNKNOWN_TABLE
+    std::optional<Exception> resolve_exception;
+
+    IdentifierResolveResult() = default;
+
+    explicit IdentifierResolveResult(std::optional<Exception> resolve_exception_)
+        : resolve_exception(std::move(resolve_exception_)) /// NOLINT(bugprone-throw-keyword-missing)
+    {}
+
+    IdentifierResolveResult(QueryTreeNodePtr resolved_identifier_, IdentifierResolvePlace resolve_place_)
+        : resolved_identifier(std::move(resolved_identifier_))
+        , resolve_place(resolve_place_)
+    {}
 
     explicit operator bool() const
     {
         chassert(check_invariant());
         return resolved_identifier != nullptr;
+    }
+
+    /// Rethrows the resolve exception (if any)
+    void rethrow() const
+    {
+        chassert(check_invariant());
+        if (resolve_exception.has_value())
+            resolve_exception->rethrow();
     }
 
     [[maybe_unused]] bool isResolved() const
