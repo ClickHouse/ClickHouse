@@ -234,13 +234,13 @@ CREATE MATERIALIZED VIEW source REFRESH EVERY 1 DAY AS SELECT * FROM url(...)
 CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY AS SELECT ... FROM source
 ```
 Without `DEPENDS ON`, both views will start a refresh at midnight, and `destination` typically will see yesterday's data in `source`. If we add dependency:
-```
+```sql
 CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY DEPENDS ON source AS SELECT ... FROM source
 ```
 then `destination`'s refresh will start only after `source`'s refresh finished for that day, so `destination` will be based on fresh data.
 
 Alternatively, the same result can be achieved with:
-```
+```sql
 CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS SELECT ... FROM source
 ```
 where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
@@ -275,7 +275,7 @@ Available refresh settings:
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
 To change refresh parameters:
-```
+```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
 
