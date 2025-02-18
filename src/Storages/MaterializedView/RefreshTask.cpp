@@ -666,8 +666,9 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
         else
         {
             /// Failed when creating new table or when swapping tables.
-            logExceptionBeforeStart(query_for_logging, refresh_context, /*ast*/ nullptr, query_span,
-                                    stopwatch.elapsedMilliseconds());
+            UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds());
         }
 
         if (cancelled)
