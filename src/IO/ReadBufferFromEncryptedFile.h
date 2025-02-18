@@ -15,7 +15,6 @@ class ReadBufferFromEncryptedFile : public ReadBufferFromFileBase
 {
 public:
     ReadBufferFromEncryptedFile(
-        const String & file_name_,
         size_t buffer_size_,
         std::unique_ptr<ReadBufferFromFileBase> in_,
         const String & key_,
@@ -25,7 +24,7 @@ public:
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
 
-    std::string getFileName() const override { return file_name; }
+    std::string getFileName() const override { return in->getFileName(); }
 
     void setReadUntilPosition(size_t position) override { in->setReadUntilPosition(position + FileEncryption::Header::kSize); }
 
@@ -36,10 +35,10 @@ public:
 private:
     bool nextImpl() override;
 
-    const String file_name;
     std::unique_ptr<ReadBufferFromFileBase> in;
 
     off_t offset = 0;
+
     bool need_seek = false;
 
     Memory<> encrypted_buffer;

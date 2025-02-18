@@ -15,11 +15,14 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
+
+#if USE_MYSQL
+#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#endif
 
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -424,7 +427,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// Flush should not be done if shouldBeEmptyOnDetach() == false,
         /// since in this case getTablesIterator() may do some additional work,
-        /// see DatabaseMaterialized...SQL::getTablesIterator()
+        /// see DatabaseMaterializedMySQL::getTablesIterator()
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
         /// Do not hold extra shared pointers to tables

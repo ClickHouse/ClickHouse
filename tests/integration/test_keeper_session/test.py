@@ -1,7 +1,9 @@
+import socket
 import struct
 import time
 
 import pytest
+from kazoo.client import KazooClient
 from kazoo.exceptions import NoNodeError
 
 import helpers.keeper_utils as keeper_utils
@@ -58,11 +60,24 @@ def wait_nodes():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+    _fake_zk_instance = KazooClient(
+        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
+    )
+    _fake_zk_instance.start()
+    return _fake_zk_instance
 
 
 def get_keeper_socket(node_name):
-    return keeper_utils.get_keeper_socket(cluster, node_name)
+    hosts = cluster.get_instance_ip(node_name)
+    client = socket.socket()
+    client.settimeout(10)
+    client.connect((hosts, 9181))
+    return client
+
+
+def close_keeper_socket(cli):
+    if cli is not None:
+        cli.close()
 
 
 def write_buffer(bytes):

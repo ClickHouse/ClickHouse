@@ -12,7 +12,7 @@
 #include <Dictionaries/HashedDictionaryCollectionTraits.h>
 #include <Dictionaries/HashedDictionaryParallelLoader.h>
 
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 #include <Core/Defines.h>
 
 #include <Common/ArenaUtils.h>
@@ -25,9 +25,10 @@
 
 #include <DataTypes/DataTypesDecimal.h>
 
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/MaskOperations.h>
+#include <Functions/FunctionHelpers.h>
 
 #include <atomic>
 #include <memory>

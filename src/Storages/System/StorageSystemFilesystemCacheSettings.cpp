@@ -1,9 +1,9 @@
-#include <Storages/System/StorageSystemFilesystemCacheSettings.h>
-
-#include <Columns/IColumn.h>
+#include "StorageSystemFilesystemCacheSettings.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/FileSegment.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>

@@ -1,15 +1,16 @@
 #include "ColumnVector.h"
 
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
@@ -24,6 +25,7 @@
 #include <Common/iota.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
 
 #if defined(__SSE2__)
@@ -1073,8 +1075,7 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 
             __m512i table1 = _mm512_loadu_epi8(data_pos);
             __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
-            __m512i table3;
-            __m512i table4;
+            __m512i table3, table4;
             if (data_size <= 192)
             {
                 /// only 3 tables need to load if size <= 192

@@ -1,8 +1,5 @@
 #include <Processors/Transforms/VirtualRowTransform.h>
-
-#include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
-#include <Processors/Port.h>
 
 namespace DB
 {

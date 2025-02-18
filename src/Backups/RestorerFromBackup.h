@@ -76,7 +76,7 @@ public:
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
 
-protected:
+private:
     const ASTBackupQuery::Elements restore_query_elements;
     const RestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;

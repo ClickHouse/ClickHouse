@@ -48,7 +48,7 @@ Calculates the MD4 from a string and returns the resulting set of bytes as Fixed
 ## MD5
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
-If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128’ function instead.
+If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
 ## RIPEMD160
@@ -706,7 +706,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n &lt;= 32768.
+It is efficient only if n <= 32768.
 
 **Example**
 

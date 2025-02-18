@@ -81,6 +81,7 @@ public:
 
     void removeFile(const String & file_name) override;
     void removeFiles(const Strings & file_names) override;
+    void removeEmptyDirectories() override {}
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;

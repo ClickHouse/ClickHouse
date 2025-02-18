@@ -1,5 +1,7 @@
+#include <limits>
 #include <optional>
 #include <Functions/FunctionFactory.h>
+#include <Common/BitHelpers.h>
 #include "hilbertEncode2DLUT.h"
 
 
@@ -140,7 +142,7 @@ All overflow will be clamped to zero
             {"from_table", "SELECT hilbertEncode(n1, n2) FROM table", ""},
             {"from_table_range", "SELECT hilbertEncode((1,2), n1, n2) FROM table", ""},
         },
-        .category{"Encoding"}
+        .categories {"Hilbert coding", "Hilbert Curve"}
     });
 }
 

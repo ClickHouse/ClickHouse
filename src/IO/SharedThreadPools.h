@@ -72,7 +72,4 @@ StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool();
 /// ThreadPool used for dropping tables.
 StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
 
-/// ThreadPool used for parallel prefixes deserialization of subcolumns in Wide MergeTree parts.
-StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool();
-
 }

@@ -19,7 +19,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int CANNOT_CLOCK_GETTIME;
 }
 
 namespace
@@ -129,17 +128,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
         }
-
-        timespec spec{};
-        if (clock_gettime(CLOCK_REALTIME, &spec))
-            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
-
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
-                spec.tv_sec, DataTypes{arguments.front().type},
+                time(nullptr), DataTypes{arguments.front().type},
                 std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments)));
 
-        return std::make_unique<FunctionBaseNow>(spec.tv_sec, DataTypes(), std::make_shared<DataTypeDateTime>());
+        return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
     }
 private:
     const bool allow_nonconst_timezone_arguments;

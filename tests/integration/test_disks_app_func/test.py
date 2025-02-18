@@ -54,27 +54,6 @@ def write(source, disk, path):
     )
 
 
-def touch(source, disk, path):
-    source.exec_in_container(
-        [
-            "bash",
-            "-c",
-            "echo 'tester' |"
-            + " ".join(
-                [
-                    "/usr/bin/clickhouse",
-                    "disks",
-                    "--save-logs",
-                    "--disk",
-                    f"{disk}",
-                    "--query",
-                    f"'touch {path}'",
-                ]
-            ),
-        ]
-    )
-
-
 def mkdir(source, disk, path):
     source.exec_in_container(
         [
@@ -173,44 +152,14 @@ def test_disks_app_func_ld(started_cluster):
     )
 
     disks = list(
-        map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
+        sorted(
+            map(
+                lambda x: x.split(":")[0], filter(lambda x: len(x) > 1, out.split("\n"))
+            )
+        )
     )
 
-    assert disks == [
-        "Initialized disks:",
-        "default:/",
-        "Uninitialized disks:",
-        "local",
-        "test1",
-        "test2",
-        "test3",
-        "test4",
-    ]
-
-    out = source.exec_in_container(
-        [
-            "/usr/bin/clickhouse",
-            "disks",
-            "--save-logs",
-            "--query",
-            "switch-disk local; list-disks",
-        ]
-    )
-
-    disks = list(
-        map(lambda x: x.strip(), filter(lambda x: len(x) > 1, out.split("\n")))
-    )
-
-    assert disks == [
-        "Initialized disks:",
-        "default:/",
-        "local:/",
-        "Uninitialized disks:",
-        "test1",
-        "test2",
-        "test3",
-        "test4",
-    ]
+    assert disks[:4] == ["default", "local", "test1", "test2"]
 
 
 def test_disks_app_func_ls(started_cluster):
@@ -233,11 +182,7 @@ def test_disks_app_func_ls(started_cluster):
 def test_disks_app_func_cp(started_cluster):
     source = cluster.instances["disks_app_test"]
 
-    touch(source, "test1", "path1")
-
-    out = ls(source, "test1", ".")
-
-    assert "path1" in out
+    write(source, "test1", "path1")
 
     source.exec_in_container(
         [

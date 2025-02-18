@@ -110,7 +110,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     MutableSerializationInfos elems_cloned;
     elems_cloned.reserve(elems.size());
     for (const auto & elem : elems)
-        elems_cloned.push_back(elem ? elem->clone() : nullptr);
+        elems_cloned.push_back(elem->clone());
 
     auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
     ret->data = data;

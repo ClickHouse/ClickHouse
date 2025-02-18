@@ -95,8 +95,8 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## バーチャルカラム
 
-- `_path` — ファイルのパス。タイプ: `LowCardinality(String)`。
-- `_file` — ファイル名。タイプ: `LowCardinality(String)`。
+- `_path` — ファイルのパス。タイプ: `LowCardinalty(String)`。
+- `_file` — ファイル名。タイプ: `LowCardinalty(String)`。
 - `_size` — ファイルのサイズ（バイト単位）。タイプ: `Nullable(UInt64)`。サイズが不明な場合、値は `NULL` です。
 - `_time` — ファイルの最終更新日時。タイプ: `Nullable(DateTime)`。日時が不明な場合、値は `NULL` です。
 

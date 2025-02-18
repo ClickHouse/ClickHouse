@@ -2,11 +2,9 @@
 
 #include <base/types.h>
 
-#include <optional>
 #include <string>
 #include <tuple>
-#include <vector>
-
+#include <optional>
 
 namespace DB
 {
@@ -36,12 +34,45 @@ struct QualifiedTableName
         return {database, table};
     }
 
-    std::string getFullName() const;
+    std::string getFullName() const
+    {
+        if (database.empty())
+            return table;
+        return database + '.' + table;
+    }
 
     /// NOTE: It's different from compound identifier parsing and does not support escaping and dots in name.
     /// Usually it's better to use ParserIdentifier instead,
     /// but we parse DDL dictionary name (and similar things) this way for historical reasons.
-    static std::optional<QualifiedTableName> tryParseFromString(const String & maybe_qualified_name);
+    static std::optional<QualifiedTableName> tryParseFromString(const String & maybe_qualified_name)
+    {
+        if (maybe_qualified_name.empty())
+            return {};
+
+        /// Do not allow dot at the beginning and at the end
+        auto pos = maybe_qualified_name.find('.');
+        if (pos == 0 || pos == (maybe_qualified_name.size() - 1))
+            return {};
+
+        QualifiedTableName name;
+        if (pos == std::string::npos)
+        {
+            name.table = maybe_qualified_name;
+        }
+        else if (maybe_qualified_name.find('.', pos + 1) != std::string::npos)
+        {
+            /// Do not allow multiple dots
+            return {};
+        }
+        else
+        {
+            name.database = maybe_qualified_name.substr(0, pos);
+            name.table = maybe_qualified_name.substr(pos + 1);
+        }
+
+        return name;
+    }
+
     static QualifiedTableName parseFromString(const String & maybe_qualified_name);
 };
 
@@ -60,5 +91,4 @@ template <> struct hash<DB::QualifiedTableName>
         return qualified_table.hash();
     }
 };
-
 }

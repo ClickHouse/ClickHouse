@@ -9,7 +9,6 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteSettings.h>
-#include <IO/StdIStreamFromMemory.h>
 #include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <IO/S3/BlobStorageLogWriter.h>

@@ -2,7 +2,6 @@
 
 #include <Core/Settings.h>
 #include <Functions/IFunctionDateOrDateTime.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {

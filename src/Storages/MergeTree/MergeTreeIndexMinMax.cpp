@@ -1,13 +1,14 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTFunction.h>
 
+#include <Poco/Logger.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/quoteString.h>
-
-#include <Columns/ColumnNullable.h>
 
 namespace DB
 {

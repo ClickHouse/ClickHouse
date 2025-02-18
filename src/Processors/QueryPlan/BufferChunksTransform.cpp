@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/BufferChunksTransform.h>
-
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
-#include <Processors/Port.h>
 
 namespace DB
 {

@@ -4,8 +4,8 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
