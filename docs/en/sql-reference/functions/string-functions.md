@@ -2544,38 +2544,52 @@ Result:
 Compare two strings lexicographically.
 
 **Syntax**
+
 ```sql
-stringComare(str1, str2, str1_off, str2_off, n);
-stringComare(str1, str2)
+stringComare(string1, string2[, str1_off, string2_offset, num_bytes]);
 ```
 
 **Arguments**
-- `str1` — Required, string. One of the strings to be compared.
-- `str2` - Required, string. One of the strings to be compared.
-- `str1_off` — Optional, positive number. The starting position (zero-based index) in `str1` from which the comparison begins.
-- `str2_off` — Optional, positive number. The starting position (zero-based index) in `str2` from which the comparison begins.
-- `n` — The number of bytes to compare in both strings, starting from their respective offsets. `str_off` + `n` could be larger then the length of string, we will align it to the end of the string.
+
+- `string1` — The first string to compare. [String](../data-types/string.md)
+- `string2` - The second string to compare.[String](../data-types/string.md)
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional, positive number.
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional, positive number.
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.
 
 **Returned value**
-- -1 — If `str1`[`str1_off`: `str1_off` + `n`] < `str2`[`str2_off`:`str2_off` + `n`] and `str1_off` < len(`str1`) and `str2_off` < len(`str2`).
-If `str1_off` >= len(`str1`) and `str2_off` < len(`str2`).
-- 0 — If `str1`[`str1_off`: `str1_off` + `n`] = `str2`[`str2_off`:`str2_off` + `n`] and `str1_off` < len(`str1`) and `str2_off` < len(`str2`).
-If `str1_off` >= len(`str1`) and `str2_off` >= len(`str2`).
-- 1 — If `str1`[`str1_off`: `str1_off` + `n`] > `str2`[`str2_off`:`str2_off` + `n`] and `str1_off` < len(`str1`) and `str2_off` < len(`str2`).
-If `str1_off` < len(`str1`) and `str2_off` >= len(`str2`).
 
-
+- -1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+If `string1_offset` >= len(`string1`) and `string2_offset` < len(`string2`).
+- 0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+If `string1_offset` >= len(`string1`) and `string2_offset` >= len(`string2`).
+- 1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
 
 **Example**
+
 ```sql
 SELECT
-    stringCompare('123', '123', 0, 0, 3),
-    stringCompare('124', '123', 0, 0, 3),
-    stringCompare('121', '123', 0, 0, 3)
+    stringCompare('alice', 'bob', 0, 0, 3) as result1,
+    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
+    stringCompare('bob', 'alice', 0, 0, 3) as result3
 ```
 Result:
 ```result
-   ┌─stringCompar⋯', 0, 0, 3)─┬─stringCompar⋯', 0, 0, 3)─┬─stringCompar⋯', 0, 0, 3)─┐
-1. │                        0 │                        1 │                       -1 │
-   └──────────────────────────┴──────────────────────────┴──────────────────────────┘
+   ┌─result1─┬─result2─┬─result3─┐
+1. │      -1 │       0 │       1 │
+   └─────────┴─────────┴─────────┘
+```
+
+```sql
+SELECT
+    stringCompare('alice', 'alicia') as result2,
+    stringCompare('alice', 'alice') as result1,
+    stringCompare('bob', 'alice') as result3
+```
+Result:
+```result
+   ┌─result2─┬─result1─┬─result3─┐
+1. │      -1 │       0 │       1 │
+   └─────────┴─────────┴─────────┘
 ```
