@@ -1753,18 +1753,35 @@ Query:
 ``` sql
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
-
 Result:
 
 ``` text
 [[1,1,2,3],[1,2,3,4]]
 ```
 
-## arrayUnion(arr)
+## arrayUnion
+Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays. The result contains only unique values.
 
-Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
+**Syntax**
 
-Example:
+``` sql
+arrayUnion(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements from the source arrays.
+
+
+**Example**
+
+Query:
 ```sql
 SELECT
     arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
@@ -1772,42 +1789,83 @@ SELECT
     arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 ```
 
+Result:
 ```text
 ┌─num_example─┬─str_example────┬─null_example─┐
 │ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
 └─────────────┴────────────────┴──────────────┘
 ```
 
-## arrayIntersect(arr)
+## arrayIntersect
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays.
+Takes multiple arrays, returns an array with elements that are present in all source arrays. The result contains only unique values.
 
-Example:
+**Syntax**
 
+``` sql
+arrayIntersect(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements represented in all source arrays.
+
+**Example**
+
+Query:
 ``` sql
 SELECT
     arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
     arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 ```
 
+Result:
 ``` text
 ┌─non_empty_intersection─┬─empty_intersection─┐
 │ []                     │ [1]                │
 └────────────────────────┴────────────────────┘
 ```
 
-## arraySymmetricDifference(arr)
+## arraySymmetricDifference
 
-Takes multiple arrays, returns an array with elements which are not present in all source arrays.
+Takes multiple arrays, returns an array with elements which are not present in all source arrays. The result contains only unique values.
 
-Example:
+**Important Note**
 
+With more than two sets, the [classical definition](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference) of symmetric difference states that the operation returns all elements that occur in an odd number of input sets. However, this implementation differs slightly: it removes only those elements that appear in all input arrays, rather than strictly following the odd-count rule.
+
+**Syntax**
+
+``` sql
+arraySymmetricDifference(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements not represented in all source arrays.
+
+**Example**
+
+Query:
 ``` sql
 SELECT
     arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference
     arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference,
 ```
 
+Result:
 ``` text
 ┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
 │ []                         │ [3]                            │
