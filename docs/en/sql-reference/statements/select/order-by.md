@@ -185,7 +185,7 @@ Example with [LowCardinality](../../../sql-reference/data-types/lowcardinality.m
 
 Input table:
 
-```text
+```response
 ┌─x─┬─s───┐
 │ 1 │ Z   │
 │ 2 │ z   │
@@ -205,7 +205,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-```text
+```response
 ┌─x─┬─s───┐
 │ 7 │     │
 │ 3 │ a   │
@@ -219,7 +219,7 @@ Result:
 
 Example with [Tuple](../../../sql-reference/data-types/tuple.md):
 
-```text
+```response
 ┌─x─┬─s───────┐
 │ 1 │ (1,'Z') │
 │ 2 │ (1,'z') │
@@ -239,7 +239,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-```text
+```response
 ┌─x─┬─s───────┐
 │ 3 │ (1,'a') │
 │ 5 │ (1,'A') │
@@ -432,7 +432,7 @@ ORDER BY
 ```
 
 Result:
-```text
+```response
 ┌─────────d1─┬─────────d2─┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-12 │ 1970-01-01 │          │
