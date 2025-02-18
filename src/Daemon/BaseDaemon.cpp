@@ -48,6 +48,7 @@
 #include <Common/Elf.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
@@ -268,16 +269,37 @@ void BaseDaemon::initialize(Application & self)
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
 #if USE_SSL
-    // Decrypt encrypted elements in config
-    /// We don't support codecs with keys loaded from ZK at this stage
-    bool has_encryption_codecs_with_keys_from_zk = std::find_if(loaded_config.nodes_with_from_zk_attribute.begin(), loaded_config.nodes_with_from_zk_attribute.end(),
+    /* Load encryption codecs and decrypt config's encrypted elements, if encryption keys are not stored in ZK, since ZK is not available at this stage
+    Config example we process here:
+    <clickhouse>
+      <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+      </encryption_codecs>
+      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
+    </clickhouse>
+
+    Config example we do not process here (the keys are loaded and elements are decrypted later on in Server::main()):
+    <clickhouse>
+      <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/key128"/>
+        </aes_128_gcm_siv>
+      </encryption_codecs>
+      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
+    </clickhouse>
+    */
+    bool has_encryption_codec_nodes_with_from_zk_attribute = std::ranges::find_if(loaded_config.nodes_with_from_zk_attribute,
         [](const auto& node_name)
         {
             return node_name.find(".encryption_codecs.") != std::string::npos;
         }) != loaded_config.nodes_with_from_zk_attribute.end();
-    bool load_encryption_codecs = !has_encryption_codecs_with_keys_from_zk;
-    bool decrypt_encrypted_values = load_encryption_codecs;
-    ConfigProcessor(config_path).decryptEncryptedElements(loaded_config, load_encryption_codecs, decrypt_encrypted_values);
+    if (!has_encryption_codec_nodes_with_from_zk_attribute)
+    {
+        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+        ConfigProcessor(config_path).decryptEncryptedElements(loaded_config);
+    }
 #endif
 
     /// Write core dump on crash.

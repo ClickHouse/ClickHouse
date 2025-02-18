@@ -896,7 +896,7 @@ void UsersConfigAccessStorage::load(
             parseFromConfig(*new_config);
             access_control.getChangesNotifier().sendNotifications();
         },
-        /* load_encryption_codecs_ */ false);
+        LoadEncryptionCodecs::No);
 }
 
 void UsersConfigAccessStorage::startPeriodicReloading()

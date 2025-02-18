@@ -1295,6 +1295,7 @@ try
             main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, path_str);
 #if USE_SSL
+        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
         config_processor.decryptEncryptedElements(loaded_config);
 #endif
         config().removeConfiguration(old_configuration.get());
@@ -2246,8 +2247,6 @@ try
         global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
         global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta);
     }
-    /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
-    CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared

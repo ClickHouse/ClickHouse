@@ -103,7 +103,7 @@ public:
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
-    void savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir);
+    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
@@ -116,8 +116,8 @@ public:
     static bool isPreprocessedFile(const std::string & config_path);
 
 #if USE_SSL
-    /// Decrypt elements in config with specified encryption attributes
-    void decryptEncryptedElements(LoadedConfig & loaded_config, bool load_encryption_codecs = true, bool decrypt_encrypted_values = true);
+    /// Decrypt elements in config with specified encryption attributes and previously loaded encryption keys
+    void decryptEncryptedElements(LoadedConfig & loaded_config);
 
     /// Encrypt text value
     static std::string encryptValue(const std::string & codec_name, const std::string & value);

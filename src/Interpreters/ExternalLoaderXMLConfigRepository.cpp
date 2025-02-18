@@ -85,13 +85,13 @@ bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_en
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
-    const std::string & config_file)
+    const std::string & config_file_path)
 {
-    ConfigProcessor config_processor{config_file};
+    ConfigProcessor config_processor{config_file_path};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
     config_processor.savePreprocessedConfig(preprocessed, app_path);
 #if USE_SSL
-    config_processor.decryptEncryptedElements(preprocessed, /* load_encryption_codecs */ false, /* decrypt_encrypted_values */ true);
+    config_processor.decryptEncryptedElements(preprocessed);
 #endif
     return preprocessed.configuration;
 }

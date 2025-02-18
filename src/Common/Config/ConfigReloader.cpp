@@ -7,6 +7,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Util/Application.h>
 
 
@@ -28,7 +29,7 @@ ConfigReloader::ConfigReloader(
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_,
-        bool load_encryption_codecs_)
+        LoadEncryptionCodecs load_encryption_codecs_)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
@@ -163,7 +164,11 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 #if USE_SSL
-        config_processor.decryptEncryptedElements(loaded_config, load_encryption_codecs);
+        // load encryption codecs only for config.xml reloader
+        if (load_encryption_codecs == LoadEncryptionCodecs::Yes)
+            CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+        // always decrypt encrypted elements
+        config_processor.decryptEncryptedElements(loaded_config);
 #endif
 
         /** We should remember last modification time if and only if config was successfully loaded

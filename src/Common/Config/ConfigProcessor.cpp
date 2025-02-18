@@ -530,6 +530,7 @@ void ConfigProcessor::doIncludesRecursive(
         process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
     }
 
+    // current path stores full node's path being currently processed
     if (!current_path.empty())
         current_path += ".";
     current_path += node->nodeName();
@@ -860,17 +861,11 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 #if USE_SSL
 
-void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config, bool load_encryption_codecs, bool decrypt_encrypted_values)
+void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
 {
-    if (load_encryption_codecs)
-        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
-
-    if (decrypt_encrypted_values)
-    {
-        Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
-        decryptRecursive(config_root);
-        loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
-    }
+    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+    decryptRecursive(config_root);
+    loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
 }
 
 #endif
@@ -893,7 +888,7 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
     return xml_tree_copy;
 }
 
-void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
+void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
     {
