@@ -134,6 +134,12 @@ Minimum size of blocks of uncompressed data required for compression when writin
 You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
 
+## max_merge_selecting_sleep_ms
+
+Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting will trigger selecting tasks in `background_schedule_pool` frequently which results in a large amount of requests to zookeeper in large-scale clusters.
+
+Default value: `60000`
+
 ## max_suspicious_broken_parts
 
 If the number of broken parts in a single partition exceeds the `max_suspicious_broken_parts` value, automatic deletion is denied.
