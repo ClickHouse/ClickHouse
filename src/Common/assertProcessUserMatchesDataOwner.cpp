@@ -53,8 +53,7 @@ void assertProcessUserMatchesDataOwner(const std::string & path, std::function<v
 
         if (effective_user_id == 0)
         {
-            message_format_string += " Run under 'sudo -u {}'.";
-            message += fmt::format(fmt::runtime(message_format_string), data_owner);
+            message += fmt::format(" Run under 'sudo -u {}'.", data_owner);
             throw Exception(ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA, "{}", message);
         }
 

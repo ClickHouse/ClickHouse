@@ -1248,7 +1248,6 @@ std::unordered_map<Context::WarningType, Context::Warning> Context::getWarnings(
     if (!obsolete_settings.empty())
     {
         bool single_element = obsolete_settings.size() == 1;
-        // String res = single_element ? "Obsolete setting [" : "Obsolete settings [";
         constexpr auto message_format_string
             = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
               "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
