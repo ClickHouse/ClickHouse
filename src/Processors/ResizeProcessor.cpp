@@ -9,13 +9,54 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    template <typename In, typename Out, typename InGetter, typename OutGetter> /// For 1-to-1 case during resize
+    IProcessor::Status fastPathProcess(In & in, Out & out, InGetter getIn, OutGetter getOut)
+    {
+        InputPort * in_port = getIn(in);
+        OutputPort * out_port = getOut(out);
+
+        if (out_port->isFinished())
+        {
+            in_port->close();
+            return IProcessor::Status::Finished;
+        }
+
+        if (!out_port->canPush())
+            return IProcessor::Status::PortFull;
+
+        if (in_port->isFinished())
+        {
+            out_port->finish();
+            return IProcessor::Status::Finished;
+        }
+
+        if (!in_port->hasData())
+        {
+            in_port->setNeeded();
+            return IProcessor::Status::NeedData;
+        }
+
+        out_port->pushData(in_port->pullData(/* set_not_needed = */ true));
+
+        if (in_port->isFinished())
+        {
+            out_port->finish();
+            return IProcessor::Status::Finished;
+        }
+
+        return IProcessor::Status::PortFull;
+    }
+}
+
 /// TODO Check that there is non zero number of inputs and outputs.
 ResizeProcessor::ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs)
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
     , current_input(inputs.begin())
     , current_output(outputs.begin())
-{
-}
+        {
+            }
 
 ResizeProcessor::Status ResizeProcessor::prepare()
 {
@@ -178,7 +219,17 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
+    /// Fast-path for the 1-to-1 case.
+    if (inputs.size() == 1 && outputs.size() == 1)
+    {
+        // Using lambdas that return the address of the port.
+        return fastPathProcess(
+            inputs.front(), outputs.front(),
+            [](auto &port) -> InputPort* { return &port; },
+            [](auto &port) -> OutputPort* { return &port; });
+    }
 
+    /// --- General processing for >1 ports ---
     for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
@@ -289,7 +340,16 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
+    /// --- Fast-path for the 1-to-1 case ---
+    if (inputs.size() == 1 && outputs.size() == 1)
+    {
+        return fastPathProcess(
+            input_ports[0], output_ports[0],
+            [](auto &wrapper) -> InputPort* { return wrapper.port; },
+            [](auto &wrapper) -> OutputPort* { return wrapper.port; });
+    }
 
+    /// --- General processing for >1 ports ---
     for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
