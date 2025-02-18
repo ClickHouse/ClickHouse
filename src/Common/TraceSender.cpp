@@ -1,4 +1,4 @@
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/TraceSender.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
