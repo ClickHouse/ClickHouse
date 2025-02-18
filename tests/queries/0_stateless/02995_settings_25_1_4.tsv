@@ -585,7 +585,7 @@ insert_shard_id	0
 interactive_delay	100000
 intersect_default_mode	ALL
 interval_output_format	numeric
-join_algorithm	default
+join_algorithm	direct,parallel_hash,hash
 join_any_take_last_row	0
 join_default_strictness	ALL
 join_on_disk_max_files_to_merge	64

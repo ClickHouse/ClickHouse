@@ -16,6 +16,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 

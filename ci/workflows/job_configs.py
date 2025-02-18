@@ -793,7 +793,12 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py", "./docker"],
+            include_paths=[
+                "**/*.md",
+                "./docs",
+                "tests/ci/docs_check.py",
+                "./docker/docs",
+            ],
         ),
         requires=[JobNames.STYLE_CHECK],
     )
