@@ -5917,7 +5917,7 @@ When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=val
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
 When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimations of left and right table sizes are available).
-The latter is used when the right table size is above the threshold.
+The former is used when we know that the right table size is below the threshold.
 )", 0) \
     DECLARE(Bool, apply_settings_from_server, true, R"(
 Whether the client should accept settings from server.
