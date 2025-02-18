@@ -583,7 +583,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
 
         bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
-        size_t null_amount = 0;
+        size_t null_count = 0;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
@@ -634,7 +634,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             if (!current_has_nullable)
                 all_has_nullable = false;
             else
-                null_amount++;
+                null_count++;
 
         }
 
@@ -651,7 +651,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 if (pair && pair->getMapped() >= 1)
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
             }
-            if (null_amount > 0 && !null_added)
+            if (null_count > 0 && !null_added)
             {
                 ++result_offset;
                 result_data.insertDefault();
@@ -668,7 +668,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
                 if (pair && pair->getMapped() >= 1 && pair->getMapped() < args)
                     insertElement<Map, ColumnType, is_numeric_column>(pair, result_offset, result_data, null_map, use_null_map);
             }
-            if (null_amount > 0 && null_amount < args && !null_added)
+            if (null_count > 0 && null_count < args && !null_added)
             {
                 ++result_offset;
                 result_data.insertDefault();

@@ -1760,7 +1760,9 @@ Result:
 ```
 
 ## arrayUnion
-Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays. The result contains only unique values.
+
+Takes multiple arrays and returns an array which contains all elements that are present in one of the source arrays.
+The result contains only unique values.
 
 **Syntax**
 
@@ -1782,6 +1784,7 @@ The function can take any number of arrays of different types.
 **Example**
 
 Query:
+
 ```sql
 SELECT
     arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
@@ -1790,6 +1793,7 @@ SELECT
 ```
 
 Result:
+
 ```text
 ┌─num_example─┬─str_example────┬─null_example─┐
 │ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
@@ -1798,7 +1802,8 @@ Result:
 
 ## arrayIntersect
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays. The result contains only unique values.
+Takes multiple arrays and returns an array with elements which are present in all source arrays.
+The result contains only unique values.
 
 **Syntax**
 
@@ -1814,11 +1819,12 @@ The function can take any number of arrays of different types.
 
 **Returned value**
 
-- [Array](../data-types/array.md) with distinct elements represented in all source arrays.
+- [Array](../data-types/array.md) with distinct elements present in all source arrays.
 
 **Example**
 
 Query:
+
 ``` sql
 SELECT
     arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
@@ -1826,6 +1832,7 @@ SELECT
 ```
 
 Result:
+
 ``` text
 ┌─non_empty_intersection─┬─empty_intersection─┐
 │ []                     │ [1]                │
@@ -1834,7 +1841,8 @@ Result:
 
 ## arraySymmetricDifference
 
-Takes multiple arrays, returns an array with elements which are not present in all source arrays. The result contains only unique values.
+Takes multiple arrays and returns an array with elements that are not present in all source arrays.
+The result contains only unique values.
 
 **Important Note**
 
@@ -1854,11 +1862,12 @@ The function can take any number of arrays of different types.
 
 **Returned value**
 
-- [Array](../data-types/array.md) with distinct elements not represented in all source arrays.
+- [Array](../data-types/array.md) with distinct elements not present in all source arrays.
 
 **Example**
 
 Query:
+
 ``` sql
 SELECT
     arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference
@@ -1866,6 +1875,7 @@ SELECT
 ```
 
 Result:
+
 ``` text
 ┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
 │ []                         │ [3]                            │
