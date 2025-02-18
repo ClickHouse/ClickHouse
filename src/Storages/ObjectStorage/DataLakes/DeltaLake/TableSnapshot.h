@@ -61,7 +61,7 @@ private:
     std::optional<DB::Names> partition_columns;
 
     void initSnapshot();
-    /// Both read schema and partiton columns are loaded with the same data scan object,
+    /// Both read schema and partition columns are loaded with the same data scan object,
     /// therefore we load them together.
     void loadReadSchemaAndPartitionColumns();
     ffi::SharedSnapshot * getSnapshot();

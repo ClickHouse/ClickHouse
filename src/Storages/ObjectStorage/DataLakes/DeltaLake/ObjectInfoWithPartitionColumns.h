@@ -6,7 +6,7 @@ namespace DB
 
 /**
  * A class which adds partition values info to the DB::ObjectInfo.
- * As DeltaLake does not store parition columns values in the actual data files,
+ * As DeltaLake does not store partition columns values in the actual data files,
  * but instead in the data files directory names,
  * we need a way to pass the value through to the StorageObjectStorageSource.
  */

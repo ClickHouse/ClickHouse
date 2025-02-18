@@ -19,7 +19,7 @@ namespace DeltaLake
  */
 struct KernelUtils
 {
-    /// Convertions functions to convert DeltaKernel string
+    /// Conversions functions to convert DeltaKernel string
     /// to std::string and vica versa.
     static ffi::KernelStringSlice toDeltaString(const std::string & string);
     static std::string fromDeltaString(ffi::KernelStringSlice slice);

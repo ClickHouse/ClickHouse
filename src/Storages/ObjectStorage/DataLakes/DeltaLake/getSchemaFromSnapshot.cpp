@@ -114,7 +114,7 @@ private:
         size_t precision = 0; /// For Decimal.
         size_t scale = 0; /// For Decimal.
 
-        /// There is no TypeIndex::Bool, so wee need to tell
+        /// There is no TypeIndex::Bool, so we need to tell
         /// when it is int8 and when it is bool.
         bool is_bool = false;
     };
