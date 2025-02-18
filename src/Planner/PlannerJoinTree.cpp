@@ -1421,7 +1421,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         right_header,
         planner_context->getQueryContext(),
         std::move(hash_table_stat_cache_key),
-        /*rhs_estimation=*/{});
+        /*rhs_size_estimation=*/{});
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
