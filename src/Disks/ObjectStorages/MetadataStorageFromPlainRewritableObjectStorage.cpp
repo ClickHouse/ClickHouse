@@ -247,6 +247,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
     , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
+    , path_map(std::make_shared<InMemoryDirectoryPathMap>())
     , metric_directorires(object_storage->getMetadataStorageMetrics().directory_map_size)
 {
     if (object_storage->isWriteOnce())
