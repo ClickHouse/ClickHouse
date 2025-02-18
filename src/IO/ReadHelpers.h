@@ -1015,6 +1015,9 @@ inline T parseFromString(std::string_view str)
 template <typename ReturnType = void, bool dt64_mode = false>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
 
+template <typename ReturnType = void, bool t64_mode = false>
+ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
+
 /** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
@@ -1130,7 +1133,11 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
 
     if (optimistic_path_for_date_time_input)
     {
-        if (s[3] < '0' || s[3] > '9')
+        UInt8 hour = 0;
+        UInt8 minute = 0;
+        UInt8 second = 0;
+
+        if (s[3] < '0' || s[3] > '9') /// for case HHH:MM:SS
         {
             if constexpr (!throw_exception)
             {
@@ -1138,19 +1145,55 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
                     || !isNumericASCII(s[5]) || !isNumericASCII(s[7]) || !isNumericASCII(s[8]))
                     return ReturnType(false);
 
-                if (!isSymbolIn(s[3], allowed_time_delimiters))
+                if (!isSymbolIn(s[3], allowed_time_delimiters) || !isSymbolIn(s[6], allowed_time_delimiters))
                     return ReturnType(false);
             }
 
-            UInt8 hour = 0;
-            UInt8 minute = 0;
-            UInt8 second = 0;
+            hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
+            minute = (s[4] - '0') * 10 + (s[5] - '0');
+            second = (s[7] - '0') * 10 + (s[8] - '0');
 
+            datetime = date_lut.makeTime(hour, minute, second);
+            buf.position() += time_broken_down_length;
+
+            return ReturnType(true);
+        }
+        else if (s[2] < '0' || s[2] > '9') /// for case HH:MM:SS
+        {
+            if constexpr (!throw_exception)
             {
-                hour = (s[0] - '0') * 100 + (s[1] - '0') * 10 + (s[2] - '0');
-                minute = (s[4] - '0') * 10 + (s[5] - '0');
-                second = (s[7] - '0') * 10 + (s[8] - '0');
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[3]) || !isNumericASCII(s[4])
+                    || !isNumericASCII(s[6]) || !isNumericASCII(s[7]))
+                    return ReturnType(false);
+
+                if (!isSymbolIn(s[2], allowed_time_delimiters) || !isSymbolIn(s[5], allowed_time_delimiters))
+                    return ReturnType(false);
             }
+
+            hour = (s[0] - '0') * 10 + (s[1] - '0');
+            minute = (s[3] - '0') * 10 + (s[4] - '0');
+            second = (s[6] - '0') * 10 + (s[7] - '0');
+
+            datetime = date_lut.makeTime(hour, minute, second);
+            buf.position() += time_broken_down_length;
+
+            return ReturnType(true);
+        }
+        else if (s[1] < '0' || s[1] > '9') /// for case H:MM:SS
+        {
+            if constexpr (!throw_exception)
+            {
+                if (!isNumericASCII(s[0]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3]) || !isNumericASCII(s[5])
+                    || !isNumericASCII(s[6]))
+                    return ReturnType(false);
+
+                if (!isSymbolIn(s[1], allowed_time_delimiters) || !isSymbolIn(s[4], allowed_time_delimiters))
+                    return ReturnType(false);
+            }
+
+            hour = (s[0] - '0');
+            minute = (s[2] - '0') * 10 + (s[3] - '0');
+            second = (s[5] - '0') * 10 + (s[6] - '0');
 
             datetime = date_lut.makeTime(hour, minute, second);
             buf.position() += time_broken_down_length;
