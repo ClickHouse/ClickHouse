@@ -338,12 +338,13 @@ def test_host_is_drop_from_cache_after_consecutive_failures(cluster_ready):
         "Cached hosts not found:.*InvalidHostThatDoesNotExist**",
         repetitions=6,
         timeout=60,
-        look_behind_lines=500,
+        # <Test> log level could break it, so we're looking far behind
+        look_behind_lines=15000,
     )
     assert node4.wait_for_log_line(
         "Cached hosts dropped:.*InvalidHostThatDoesNotExist.*",
-        # Again, another fuze for noize in normal log after possible restart
-        look_behind_lines=1000,
+        # Again, another fuze for <Test> noize in normal log after possible restart
+        look_behind_lines=15000,
     )
 
 
