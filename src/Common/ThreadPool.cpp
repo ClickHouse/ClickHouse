@@ -5,6 +5,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
+#include <Common/CurrentThread.h>
 
 #include <type_traits>
 
@@ -105,6 +106,8 @@ public:
     bool enable_job_stack_trace = false;
     Stopwatch job_create_time;
 
+    UInt64 parent_thread_id = 0;
+
     // Deleted copy constructor and copy assignment operator
     JobWithPriority(const JobWithPriority&) = delete;
     JobWithPriority& operator=(const JobWithPriority&) = delete;
@@ -119,7 +122,8 @@ public:
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
-        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
+        thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers),
+        parent_thread_id(DB::CurrentThread::get().thread_id)
     {
         if (!capture_frame_pointers)
             return;
@@ -767,6 +771,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         if (DB::Exception::enable_job_stack_trace)
             DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
 
+        DB::Exception::parent_thread_id.store(job_data->parent_thread_id, std::memory_order_relaxed);
+        std::atomic_signal_fence(std::memory_order_release);
+
         /// Run the job.
         try
         {
@@ -818,6 +825,9 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             /// ensure that the Job destroyed before wait() returns.
             job_data.reset();
         }
+
+        DB::Exception::parent_thread_id.store(0, std::memory_order_relaxed);
+        std::atomic_signal_fence(std::memory_order_release);
 
         DB::Exception::clearThreadFramePointers();
 

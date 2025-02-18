@@ -28,6 +28,7 @@ struct TraceLogElement
     UInt64 timestamp_ns{};
     TraceType trace_type{};
     UInt64 thread_id{};
+    UInt64 parent_thread_id{};
     String query_id{};
     std::vector<UInt64> trace{};
     /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
