@@ -58,6 +58,16 @@ _final_job = Job.Config(
 )
 
 
+def _is_praktika_job(job_name):
+    if job_name in (
+        Settings.CI_CONFIG_JOB_NAME,
+        Settings.DOCKER_BUILD_JOB_NAME,
+        Settings.FINISH_WORKFLOW_JOB_NAME,
+    ):
+        return True
+    return False
+
+
 def _build_dockers(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     dockers = workflow.dockers
@@ -283,13 +293,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         cache_success_base64=[],
         cache_artifacts={},
         cache_jobs={},
+        filtered_jobs={},
         custom_data=custom_data,
     ).dump()
 
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"
 
-    # config:
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
@@ -307,6 +317,34 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(
                 name="Calculate docker digests", status=res, stopwatch=sw_
+            )
+        )
+
+    if workflow.workflow_filter_hooks:
+        sw_ = Utils.Stopwatch()
+        try:
+            for job in workflow.jobs:
+                if _is_praktika_job(job.name):
+                    continue
+                for hook in workflow.workflow_filter_hooks:
+                    should_skip, reason = hook(job.name)
+                    if should_skip:
+                        print(
+                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                        )
+                        workflow_config.set_job_as_filtered(job.name, reason)
+                        continue
+            status = Result.Status.SUCCESS
+            workflow_config.dump()
+            info = ""
+        except Exception as e:
+            status = Result.Status.ERROR
+            print(f"ERROR: Exception in workflow config hook: {e}")
+            traceback.print_exc()
+            info = f"{traceback.print_exc()}"
+        results.append(
+            Result.create_from(
+                name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
 

@@ -62,7 +62,7 @@ Now, read data contents of `test1.csv` and `test2.csv` via `fileCluster` table f
 SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
 ```
 
-```
+```response
 ┌──i─┬─s──────┐
 │  1 │ file1  │
 │ 11 │ file11 │

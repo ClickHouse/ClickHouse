@@ -1,5 +1,6 @@
 from praktika import Workflow
 
+from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, SECRETS, JobNames
 from ci.workflows.job_configs import JobConfigs
@@ -33,10 +34,10 @@ workflow = Workflow.Config(
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         *JobConfigs.stress_test_jobs,
         *JobConfigs.upgrade_test_jobs,
-        *JobConfigs.clickbench_jobs,
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_jobs,
+        *JobConfigs.performance_comparison_amd_jobs,
+        *JobConfigs.performance_comparison_arm_jobs,
     ],
     artifacts=ARTIFACTS,
     # dockers=DOCKERS,
@@ -47,11 +48,12 @@ workflow = Workflow.Config(
     enable_merge_ready_status=True,
     enable_commit_status_on_failure=True,
     pre_hooks=[
-        "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         can_be_trusted,
-        "python3 ./ci/jobs/scripts/workflow_hooks/docker_digests.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
     ],
+    workflow_filter_hooks=[should_skip_job],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
     ],

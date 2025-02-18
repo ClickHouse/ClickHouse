@@ -66,7 +66,7 @@ In case the counter overflows, the timestamp field is incremented by 1 and the c
 
 Function `generateUUIDv7` guarantees that the counter field within a timestamp increments monotonically across all function invocations in concurrently running threads and queries.
 
-```
+```text
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -556,7 +556,7 @@ The generated Snowflake IDs are based on the UNIX epoch 1970-01-01.
 While no standard or recommendation exists for the epoch of Snowflake IDs, implementations in other systems may use a different epoch, e.g. Twitter/X (2010-11-04) or Mastodon (2015-01-01).
 :::
 
-```
+```text
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -613,7 +613,7 @@ SELECT generateSnowflakeID(1), generateSnowflakeID(2);
 
 **Example with expression and a machine ID**
 
-```
+```sql
 SELECT generateSnowflakeID('expr', 1);
 
 ┌─generateSnowflakeID('expr', 1)─┐
@@ -819,7 +819,7 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
 
 Result:
 
-```
+```response
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
@@ -855,7 +855,7 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 
 Result:
 
-```
+```response
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
@@ -890,7 +890,7 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
 
 Result:
 
-```
+```response
 ┌──────────────────dt─┬─────────────────res─┐
 │ 2021-08-15 18:57:56 │ 6832626392367104000 │
 └─────────────────────┴─────────────────────┘
@@ -925,7 +925,7 @@ SELECT toDateTime('2021-08-15 18:57:56.493', 3, 'Asia/Shanghai') AS dt, dateTime
 
 Result:
 
-```
+```yaml
 ┌──────────────────────dt─┬─────────────────res─┐
 │ 2021-08-15 18:57:56.493 │ 6832626394434895872 │
 └─────────────────────────┴─────────────────────┘

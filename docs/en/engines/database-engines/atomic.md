@@ -24,7 +24,7 @@ CREATE DATABASE test [ENGINE = Atomic];
 
 Each table in the `Atomic` database has a persistent [UUID](../../sql-reference/data-types/uuid.md) and stores its data in the following directory:
 
-```
+```text
 /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
 ```
 
