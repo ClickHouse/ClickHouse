@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET parallel_hash_join_threshold = 0;
 
 DROP TABLE IF EXISTS test_table_1;
 CREATE TABLE test_table_1
