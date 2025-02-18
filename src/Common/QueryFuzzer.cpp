@@ -68,10 +68,10 @@ extern const int TOO_DEEP_RECURSION;
 void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 {
 #if USE_BUZZHOUSE
-    if (fuzz_rand() % 4 == 0)
+    if (fuzz_rand() % 2 == 0)
     {
         const uint32_t nsettings
-            = (fuzz_rand() % std::min(static_cast<uint32_t>(BuzzHouse::performanceSettings.size()), UINT32_C(10))) + UINT32_C(1);
+            = (fuzz_rand() % std::min(static_cast<uint32_t>(BuzzHouse::performanceSettings.size()), UINT32_C(20))) + UINT32_C(1);
 
         for (uint32_t i = 0; i < nsettings; i++)
         {
