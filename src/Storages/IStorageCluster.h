@@ -32,6 +32,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    SinkToStoragePtr write(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
     ClusterPtr getCluster(ContextPtr context) const { return getClusterImpl(context, cluster_name); }
     /// Query is needed for pruning by virtual columns (_file, _path)
     virtual RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const = 0;
@@ -51,14 +57,26 @@ protected:
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
 
     virtual void readFallBackToPure(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        const StorageSnapshotPtr & storage_snapshot,
-        SelectQueryInfo & query_info,
-        ContextPtr context,
-        QueryProcessingStage::Enum processed_stage,
-        size_t max_block_size,
-        size_t num_streams);
+        QueryPlan & /* query_plan */,
+        const Names & /* column_names */,
+        const StorageSnapshotPtr & /* storage_snapshot */,
+        SelectQueryInfo & /* query_info */,
+        ContextPtr /* context */,
+        QueryProcessingStage::Enum /* processed_stage */,
+        size_t /* max_block_size */,
+        size_t /* num_streams */)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readFallBackToPure is not supported by storage {}", getName());
+    }
+    
+    virtual SinkToStoragePtr writeFallBackToPure(
+        const ASTPtr & /*query*/,
+        const StorageMetadataPtr & /*metadata_snapshot*/,
+        ContextPtr /*context*/,
+        bool /*async_insert*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method writeFallBackToPure is not supported by storage {}", getName());
+    }
 
 private:
     static ClusterPtr getClusterImpl(ContextPtr context, const String & cluster_name_);

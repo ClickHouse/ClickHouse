@@ -258,16 +258,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
 
-void StorageObjectStorageCluster::readFallBackToPure(
-    QueryPlan & query_plan,
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & query_info,
-    ContextPtr context,
-    QueryProcessingStage::Enum processed_stage,
-    size_t max_block_size,
-    size_t num_streams)
+std::shared_ptr<StorageObjectStorage> StorageObjectStorageCluster::getPureStorage(ContextPtr context)
 {
+    std::lock_guard lock(mutex);
     if (!pure_storage)
         pure_storage = std::make_shared<StorageObjectStorage>(
             configuration,
@@ -282,7 +275,29 @@ void StorageObjectStorageCluster::readFallBackToPure(
             /* distributed_processing */false,
             partition_by);
 
-    pure_storage->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    return pure_storage;
+}
+
+void StorageObjectStorageCluster::readFallBackToPure(
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
+{
+    getPureStorage(context)->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+}
+
+SinkToStoragePtr StorageObjectStorageCluster::writeFallBackToPure(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    bool async_insert)
+{
+    return getPureStorage(context)->write(query, metadata_snapshot, context, async_insert);
 }
 
 String StorageObjectStorageCluster::getClusterName(ContextPtr context) const

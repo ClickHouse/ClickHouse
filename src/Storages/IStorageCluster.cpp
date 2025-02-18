@@ -70,19 +70,6 @@ void ReadFromCluster::createExtension(const ActionsDAG::Node * predicate)
     extension = storage->getTaskIteratorExtension(predicate, context);
 }
 
-void IStorageCluster::readFallBackToPure(
-    QueryPlan & /*query_plan*/,
-    const Names & /*column_names*/,
-    const StorageSnapshotPtr & /*storage_snapshot*/,
-    SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum /*processed_stage*/,
-    size_t /*max_block_size*/,
-    size_t /*num_streams*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readFallBackToPure is not supported by storage {}", getName());
-}
-
 /// The code executes on initiator
 void IStorageCluster::read(
     QueryPlan & query_plan,
@@ -150,6 +137,20 @@ void IStorageCluster::read(
         log);
 
     query_plan.addStep(std::move(reading));
+}
+
+SinkToStoragePtr IStorageCluster::write(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context,
+    bool async_insert)
+{
+    auto cluster_name_ = getClusterName(context);
+
+    if (cluster_name_.empty())
+        return writeFallBackToPure(query, metadata_snapshot, context, async_insert);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
 }
 
 void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

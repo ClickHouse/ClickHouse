@@ -54,6 +54,14 @@ private:
         size_t max_block_size,
         size_t num_streams) override;
 
+    SinkToStoragePtr writeFallBackToPure(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        bool async_insert) override;
+
+    std::shared_ptr<StorageObjectStorage> getPureStorage(ContextPtr context);
+    
     /*
     In case the table was created with `object_storage_cluster` setting,
     modify the AST query object so that it uses the table function implementation
@@ -73,6 +81,7 @@ private:
     const ObjectStoragePtr object_storage;
     bool cluster_name_in_settings;
 
+    std::mutex mutex;
     std::shared_ptr<StorageObjectStorage> pure_storage;
     String comment;
     std::optional<FormatSettings> format_settings;
