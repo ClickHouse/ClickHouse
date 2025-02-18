@@ -9,7 +9,6 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 
-from . import rabbitmq_pb2
 
 DEFAULT_TIMEOUT_SEC = 60
 
