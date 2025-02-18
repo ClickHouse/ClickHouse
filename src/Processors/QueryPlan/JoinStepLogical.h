@@ -74,7 +74,7 @@ public:
         JoinActionRef & right_filter,
         JoinActionRef & post_filter,
         bool is_explain_logical,
-        std::optional<UInt64> rhs_estimation);
+        std::optional<UInt64> rhs_size_estimation);
 
     JoinExpressionActions & getExpressionActions() { return expression_actions; }
 

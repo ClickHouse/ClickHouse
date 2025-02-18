@@ -253,7 +253,7 @@ bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings,
-    std::optional<UInt64> rhs_estimation)
+    std::optional<UInt64> rhs_size_estimation)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -265,7 +265,7 @@ bool convertLogicalJoinToPhysical(
     JoinActionRef left_filter(nullptr);
     JoinActionRef right_filter(nullptr);
     JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(left_filter, right_filter, post_filter, keep_logical, rhs_estimation);
+    auto join_ptr = join_step->convertToPhysical(left_filter, right_filter, post_filter, keep_logical, rhs_size_estimation);
 
     if (join_ptr->isFilled())
     {

@@ -129,7 +129,7 @@ bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,
     const QueryPlanOptimizationSettings & optimization_settings,
-    std::optional<UInt64> rhs_estimation);
+    std::optional<UInt64> rhs_size_estimation);
 
 std::optional<UInt64> optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 

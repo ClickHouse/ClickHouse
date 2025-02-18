@@ -252,7 +252,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const Block & right_table_expression_header,
     ContextPtr query_context,
     IQueryTreeNode::HashState hash_table_key_hash,
-    std::optional<UInt64> rhs_estimation);
+    std::optional<UInt64> rhs_size_estimation);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
