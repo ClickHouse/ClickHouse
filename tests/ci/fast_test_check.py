@@ -94,7 +94,7 @@ def main():
 
     build_output_temp_path = repo_path / "ci" / "tmp"
     build_output_temp_path.mkdir(parents=True, exist_ok=True)
-    build_output_path = temp_path / "build"
+    build_output_path = build_output_temp_path / "build"
     build_output_path.mkdir(parents=True, exist_ok=True)
 
     run_cmd = get_fasttest_cmd(
