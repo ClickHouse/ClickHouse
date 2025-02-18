@@ -48,11 +48,21 @@ function count()
 	echo $COUNT
 }
 
-for i in {1..10}
-do
-	[[ $(count) -gt 0 ]] && break
-	sleep 1
-done
+function wait_for_row_count()
+{
+    local threshold="$1"
+    local timeout=30
+    local start=$EPOCHSECONDS
+    while [[ $(count) -lt threshold ]]; do
+        if ((EPOCHSECONDS - start > timeout)); then
+            echo "Timeout while waiting for the minimum number of rows, expected at least ${threshold} row(s)."
+            exit 1
+        fi
+        sleep 0.5
+    done
+}
+
+wait_for_row_count 1
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM table_to_store_data ORDER BY id;"
 
@@ -61,11 +71,7 @@ do
 	echo $i >> ${logs_dir}/a.txt
 done
 
-for i in {1..10}
-do
-	[[ $(count) -gt 10 ]] && break
-	sleep 1
-done
+wait_for_row_count 11
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM table_to_store_data ORDER BY id;"
 

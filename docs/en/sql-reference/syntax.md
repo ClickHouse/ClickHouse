@@ -345,7 +345,7 @@ Operators are converted to their corresponding functions during query parsing, t
 
 For example, the expression 
 
-```
+```text
 1 + 2 * 3 + 4
 ```
 

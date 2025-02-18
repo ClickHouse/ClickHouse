@@ -6178,7 +6178,7 @@ Result:
 In addition to the UUID functions listed here, there is dedicated [UUID function documentation](../functions/uuid-functions.md).
 :::
 
-Accepts a 16 byte string and returns a UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
+Accepts a 16 byte string and returns a UUID by interpreting each 8-byte half in little-endian byte order. If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
 
 **Syntax**
 
@@ -6262,7 +6262,7 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 Result:
 
-```
+```text
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
@@ -6308,7 +6308,7 @@ SELECT
 
 Result:
 
-```
+```yaml
 ┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
 │              255 │                  1.50 │                  1 │
 └──────────────────┴───────────────────────┴────────────────────┘
@@ -7276,7 +7276,7 @@ FORMAT PrettyCompactMonoBlock;
 
 Result:
 
-```
+```sql
 ┌──────────────────────────a─┬─t──────────────────────────────┐
 │ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
 │ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
