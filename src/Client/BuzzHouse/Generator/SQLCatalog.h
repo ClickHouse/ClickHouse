@@ -117,6 +117,8 @@ public:
     bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
 
     std::optional<String> getCluster() const { return cluster; }
+
+    bool isAttached() const { return attached == DetachStatus::ATTACHED; }
 };
 
 struct SQLBase
@@ -210,6 +212,8 @@ public:
         }
         return cluster;
     }
+
+    bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
 };
 
 struct SQLTable : SQLBase

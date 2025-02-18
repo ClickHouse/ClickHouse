@@ -200,10 +200,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.teng = TableEngineValues::MergeTree;
         }
         const auto & table_to_lambda = [&next](const SQLTable & t)
-        {
-            return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED
-                && t.numberOfInsertableColumns() >= next.ncols && (t.is_deterministic || !next.is_deterministic);
-        };
+        { return t.isAttached() && t.numberOfInsertableColumns() >= next.ncols && (t.is_deterministic || !next.is_deterministic); };
         const bool has_with_cols = collectionHas<SQLTable>(table_to_lambda);
         const bool has_tables = has_with_cols || !tables.empty();
         const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
@@ -404,8 +401,7 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
     }
 }
 
-static const auto optimize_table_lambda = [](const SQLTable & t)
-{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily(); };
+static const auto optimize_table_lambda = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
 
 void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, OptimizeTable * ot)
 {
@@ -779,8 +775,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
 static const auto exchange_table_lambda = [](const SQLTable & t)
 {
     /// I would need to track the table clusters to do this correctly, ie ensure tables to be exchanged are on same cluster
-    return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer()
-        && !t.getCluster();
+    return t.isAttached() && !t.hasDatabasePeer() && !t.getCluster();
 };
 
 void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, ExchangeTables * et)
@@ -814,8 +809,7 @@ void StatementGenerator::generateNextExchangeTables(RandomGenerator & rg, Exchan
     }
 }
 
-static const auto alter_table_lambda = [](const SQLTable & t)
-{ return (t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.isFileEngine(); };
+static const auto alter_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.isFileEngine(); };
 
 void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * at)
 {
@@ -1844,11 +1838,9 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
 }
 
-static const auto has_merge_tree_func = [](const SQLTable & t)
-{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && t.isMergeTreeFamily(); };
+static const auto has_merge_tree_func = [](const SQLTable & t) { return t.isAttached() && t.isMergeTreeFamily(); };
 
-static const auto has_refreshable_view_func = [](const SQLView & v)
-{ return (!v.db || v.db->attached == DetachStatus::ATTACHED) && v.attached == DetachStatus::ATTACHED && v.is_refreshable; };
+static const auto has_refreshable_view_func = [](const SQLView & v) { return v.isAttached() && v.is_refreshable; };
 
 void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, SystemCommand * sc)
 {

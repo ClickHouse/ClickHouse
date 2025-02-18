@@ -294,8 +294,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 {
     const auto has_table_lambda = [&](const SQLTable & tt)
     {
-        return (!tt.db || tt.db->attached == DetachStatus::ATTACHED)
-            && tt.attached == DetachStatus::ATTACHED
+        return tt.isAttached()
             /* When comparing query success results, don't use tables from other RDBMS, SQL is very undefined */
             && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
             /* When a query is going to be compared against another ClickHouse server, make sure all tables exist in that server */
@@ -303,11 +302,8 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
             /* Don't use tables backing not deterministic views in query oracles */
             && (tt.is_deterministic || this->allow_not_deterministic);
     };
-    const auto has_view_lambda = [&](const SQLView & vv)
-    {
-        return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
-            && (vv.is_deterministic || this->allow_not_deterministic);
-    };
+    const auto has_view_lambda
+        = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
 

@@ -1460,11 +1460,9 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::Merge,
        TableEngineValues::Distributed};
 
-static const auto replace_table_lambda = [](const SQLTable & t)
-{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.hasDatabasePeer(); };
+static const auto replace_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
 
-static const auto table_like_lambda = [](const SQLTable & t)
-{ return (!t.db || t.db->attached == DetachStatus::ATTACHED) && t.attached == DetachStatus::ATTACHED && !t.is_temp; };
+static const auto table_like_lambda = [](const SQLTable & t) { return t.isAttached() && !t.is_temp; };
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
