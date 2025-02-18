@@ -292,7 +292,7 @@ public:
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {});
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path);
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
     virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/);
@@ -403,7 +403,7 @@ public:
 
     virtual bool shouldReplicateQuery(const ContextPtr & /*query_context*/, const ASTPtr & /*query_ptr*/) const { return false; }
 
-    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags = {});
+    virtual BlockIO tryEnqueueReplicatedDDL(const ASTPtr & /*query*/, ContextPtr /*query_context*/, [[maybe_unused]] QueryFlags flags);
 
     /// Returns CREATE TABLE queries and corresponding tables prepared for writing to a backup.
     virtual std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & context) const;
