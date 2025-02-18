@@ -3137,7 +3137,7 @@ SELECT changeYear(toDate('1999-01-01'), 2000), changeYear(toDateTime64('1999-01-
 
 Result:
 
-```
+```sql
 ┌─changeYear(toDate('1999-01-01'), 2000)─┬─changeYear(toDateTime64('1999-01-01 00:00:00.000', 3), 2000)─┐
 │                             2000-01-01 │                                      2000-01-01 00:00:00.000 │
 └────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
@@ -3170,7 +3170,7 @@ SELECT changeMonth(toDate('1999-01-01'), 2), changeMonth(toDateTime64('1999-01-0
 
 Result:
 
-```
+```sql
 ┌─changeMonth(toDate('1999-01-01'), 2)─┬─changeMonth(toDateTime64('1999-01-01 00:00:00.000', 3), 2)─┐
 │                           1999-02-01 │                                    1999-02-01 00:00:00.000 │
 └──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
@@ -3203,7 +3203,7 @@ SELECT changeDay(toDate('1999-01-01'), 5), changeDay(toDateTime64('1999-01-01 00
 
 Result:
 
-```
+```sql
 ┌─changeDay(toDate('1999-01-01'), 5)─┬─changeDay(toDateTime64('1999-01-01 00:00:00.000', 3), 5)─┐
 │                         1999-01-05 │                                  1999-01-05 00:00:00.000 │
 └────────────────────────────────────┴──────────────────────────────────────────────────────────┘
@@ -3236,7 +3236,7 @@ SELECT changeHour(toDate('1999-01-01'), 14), changeHour(toDateTime64('1999-01-01
 
 Result:
 
-```
+```sql
 ┌─changeHour(toDate('1999-01-01'), 14)─┬─changeHour(toDateTime64('1999-01-01 00:00:00.000', 3), 14)─┐
 │                  1999-01-01 14:00:00 │                                    1999-01-01 14:00:00.000 │
 └──────────────────────────────────────┴────────────────────────────────────────────────────────────┘
@@ -3269,7 +3269,7 @@ changeMinute(date_or_datetime, value)
 
 Result:
 
-```
+```sql
 ┌─changeMinute(toDate('1999-01-01'), 15)─┬─changeMinute(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
 │                    1999-01-01 00:15:00 │                                      1999-01-01 00:15:00.000 │
 └────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
@@ -3302,7 +3302,7 @@ SELECT changeSecond(toDate('1999-01-01'), 15), changeSecond(toDateTime64('1999-0
 
 Result:
 
-```
+```sql
 ┌─changeSecond(toDate('1999-01-01'), 15)─┬─changeSecond(toDateTime64('1999-01-01 00:00:00.000', 3), 15)─┐
 │                    1999-01-01 00:00:15 │                                      1999-01-01 00:00:15.000 │
 └────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
@@ -4300,8 +4300,8 @@ Result:
 
 For a time interval starting at 'StartTime' and continuing for 'Duration' seconds, it returns an array of moments in time, consisting of points from this interval rounded down to the 'Size' in seconds. 'Size' is an optional parameter set to 1800 (30 minutes) by default.
 This is necessary, for example, when searching for pageviews in the corresponding session.
-Accepts DateTime and DateTime64 as 'StartTime' argument. For DateTime, 'Duration’ and ’Size’ arguments must be `UInt32`. For ’DateTime64’ they must be `Decimal64`.
-Returns an array of DateTime/DateTime64 (return type matches the type of ’StartTime’). For DateTime64, the return value's scale can differ from the scale of ’StartTime’ --- the highest scale among all given arguments is taken.
+Accepts DateTime and DateTime64 as 'StartTime' argument. For DateTime, 'Duration' and 'Size' arguments must be `UInt32`. For 'DateTime64' they must be `Decimal64`.
+Returns an array of DateTime/DateTime64 (return type matches the type of 'StartTime'). For DateTime64, the return value's scale can differ from the scale of 'StartTime' --- the highest scale among all given arguments is taken.
 
 **Syntax**
 
@@ -4377,14 +4377,14 @@ Using replacement fields, you can define a pattern for the resulting string. "Ex
 | %l       | hour in 12h format (01-12), see 'Note 4' below                                                                                                                                                      | 09        |
 | %m       | month as an integer number (01-12)                                                                                                                                                                  | 01        |
 | %M       | full month name (January-December), see 'Note 3' below                                                                                                                                              | January   |
-| %n       | new-line character ('’)                                                                                                                                                                             |           |
+| %n       | new-line character ('')                                                                                                                                                                             |           |
 | %p       | AM or PM designation                                                                                                                                                                                | PM        |
 | %Q       | Quarter (1-4)                                                                                                                                                                                       | 1         |
 | %r       | 12-hour HH:MM AM/PM time, equivalent to %h:%i %p                                                                                                                                                    | 10:30 PM  |
 | %R       | 24-hour HH:MM time, equivalent to %H:%i                                                                                                                                                             | 22:33     |
 | %s       | second (00-59)                                                                                                                                                                                      | 44        |
 | %S       | second (00-59)                                                                                                                                                                                      | 44        |
-| %t       | horizontal-tab character (’)                                                                                                                                                                        |           |
+| %t       | horizontal-tab character (')                                                                                                                                                                        |           |
 | %T       | ISO 8601 time format (HH:MM:SS), equivalent to %H:%i:%S                                                                                                                                             | 22:33:44  |
 | %u       | ISO 8601 weekday as number with Monday as 1 (1-7)                                                                                                                                                   | 2         |
 | %V       | ISO 8601 week number (01-53)                                                                                                                                                                        | 01        |
@@ -4411,7 +4411,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g')
 
 Result:
 
-```
+```text
 ┌─formatDateTime(toDate('2010-01-04'), '%g')─┐
 │ 10                                         │
 └────────────────────────────────────────────┘
@@ -4423,7 +4423,7 @@ SELECT formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')
 
 Result:
 
-```
+```sql
 ┌─formatDateTime(toDateTime64('2010-01-04 12:34:56.123456', 7), '%f')─┐
 │ 1234560                                                             │
 └─────────────────────────────────────────────────────────────────────┘
@@ -4505,7 +4505,7 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 Result:
 
-```
+```java
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
 │ 2010-01-04 12:34:56                                                                     │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
@@ -4639,7 +4639,7 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 
 Result:
 
-```
+```text
 ┌─DateTime────────────┐
 │ 2009-02-11 06:42:23 │
 └─────────────────────┘

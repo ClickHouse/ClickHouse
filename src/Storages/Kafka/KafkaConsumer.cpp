@@ -2,6 +2,7 @@
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
 
+#include <Common/DateLUT.h>
 #include <Common/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
@@ -123,7 +124,7 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         cleanUnprocessed();
 
         stalled_status = REBALANCE_HAPPENED;
-        last_rebalance_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+        last_rebalance_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
         assignment.reset();
         waited_for_assignment = 0;
@@ -259,7 +260,7 @@ void KafkaConsumer::commit()
                 consumer->commit();
                 committed = true;
                 print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
-                last_commit_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+                last_commit_timestamp = timeInSeconds(std::chrono::system_clock::now());
                 num_commits += 1;
             }
             catch (const cppkafka::HandleException & e)
@@ -409,7 +410,7 @@ ReadBufferPtr KafkaConsumer::consume()
         /// Don't drop old messages immediately, since we may need them for virtual columns.
         auto new_messages = consumer->poll_batch(batch_size,
                             std::chrono::milliseconds(actual_poll_timeout_ms));
-        last_poll_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochTime());
+        last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
         num_messages_read += new_messages.size();
 
         resetIfStopped();
@@ -538,7 +539,7 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
     }
 
     std::lock_guard<std::mutex> lock(exception_mutex);
-    exceptions_buffer.push_back({enriched_text, static_cast<UInt64>(Poco::Timestamp().epochTime())});
+    exceptions_buffer.push_back({enriched_text, timeInSeconds(std::chrono::system_clock::now())});
 }
 
 std::string KafkaConsumer::getMemberId() const
@@ -573,11 +574,11 @@ KafkaConsumer::Stat KafkaConsumer::getStat() const
     return {
         .consumer_id = getMemberId(),
         .assignments = std::move(assignments),
-        .last_poll_time = last_poll_timestamp_usec.load(),
+        .last_poll_time = last_poll_timestamp.load(),
         .num_messages_read = num_messages_read.load(),
 
-        .last_commit_timestamp_usec = last_commit_timestamp_usec.load(),
-        .last_rebalance_timestamp_usec = last_rebalance_timestamp_usec.load(),
+        .last_commit_timestamp = last_commit_timestamp.load(),
+        .last_rebalance_timestamp = last_rebalance_timestamp.load(),
         .num_commits = num_commits.load(),
         .num_rebalance_assignments = num_rebalance_assignments.load(),
         .num_rebalance_revocations = num_rebalance_revocations.load(),
