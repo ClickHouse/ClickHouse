@@ -572,7 +572,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
 }
 
 template <typename T>
-String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const char initial)
+String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const String & initial)
 {
     const uint32_t noption = rg.nextSmallNumber();
 
@@ -586,13 +586,22 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const ch
             return initial + std::to_string(d->dname);
         }
     }
-    else
+    else if constexpr (std::is_same_v<T, SQLTable>)
     {
         if (collectionHas<SQLTable>(attached_tables) && noption < 4)
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
 
             return initial + std::to_string(t.tname);
+        }
+    }
+    else
+    {
+        if (collectionHas<SQLView>(attached_views) && noption < 4)
+        {
+            const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views));
+
+            return initial + std::to_string(v.tname);
         }
     }
     if (noption < 7)
@@ -604,7 +613,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const ch
         const uint32_t first = rg.nextSmallNumber() - 1;
         const uint32_t second = std::max(rg.nextSmallNumber() - 1, first);
 
-        return fmt::format("{}[{}-{}].*", initial, std::to_string(first), std::to_string(second));
+        return fmt::format("{}[{}-{}].*", rg.nextBool() ? initial : "", std::to_string(first), std::to_string(second));
     }
     else if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
     {
@@ -612,7 +621,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const ch
     }
     else
     {
-        return "t0";
+        return initial + "0";
     }
 }
 
@@ -890,8 +899,8 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     else if (te->has_engine() && b.isMergeEngine())
     {
-        te->add_params()->set_regexp(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd'));
-        te->add_params()->set_svalue(setMergeTableParameter<SQLTable>(rg, 't'));
+        te->add_params()->set_regexp(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, "d"));
+        te->add_params()->set_svalue(rg.nextBool() ? setMergeTableParameter<SQLTable>(rg, "t") : setMergeTableParameter<SQLView>(rg, "v"));
     }
     else if (te->has_engine() && b.isDistributedEngine())
     {

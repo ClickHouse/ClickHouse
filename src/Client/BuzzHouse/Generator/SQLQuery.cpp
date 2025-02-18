@@ -531,9 +531,9 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 
         if (rg.nextBool())
         {
-            mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd'));
+            mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, "d"));
         }
-        mdf->set_mtable(setMergeTableParameter<SQLTable>(rg, 't'));
+        mdf->set_mtable(rg.nextBool() ? setMergeTableParameter<SQLTable>(rg, "t") : setMergeTableParameter<SQLView>(rg, "v"));
         for (uint32_t i = 0; i < 6; i++)
         {
             rel.cols.emplace_back(SQLRelationCol(name, {"c" + std::to_string(i)}));
