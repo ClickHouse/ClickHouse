@@ -450,7 +450,7 @@ ARTIFACTS = [
     Artifact.Config(
         name=ArtifactNames.FAST_TEST,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/fasttest-output/build/*",
+        path=f"{TEMP_DIR}/build/*",
     ),
     *Artifact.Config(
         name="...",

@@ -233,9 +233,8 @@ function build
         ) | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_result.txt"
 
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            mkdir -p "$FASTTEST_OUTPUT/build"
-            cp programs/clickhouse "$FASTTEST_OUTPUT/build/clickhouse"
-            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/build/clickhouse-stripped.zst"
+            cp programs/clickhouse /build/clickhouse
+            zstd --threads=0 programs/clickhouse-stripped -o /build/clickhouse-stripped.zst
         fi
         ccache_status
         ccache --evict-older-than 1d ||:

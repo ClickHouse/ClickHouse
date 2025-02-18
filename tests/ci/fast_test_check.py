@@ -21,6 +21,7 @@ csv.field_size_limit(sys.maxsize)
 def get_fasttest_cmd(
     workspace: Path,
     output_path: Path,
+    build_output_path: Path,
     repo_path: Path,
     pr_number: int,
     commit_sha: str,
@@ -39,6 +40,7 @@ def get_fasttest_cmd(
         "-e stage=clone_submodules "
         "--tmpfs /tmp/clickhouse "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/repo "
+        f"--volume={build_output_path}:/build "
         f"--volume={output_path}:/test_output {image} /repo/tests/docker_scripts/fasttest_runner.sh"
     )
 
@@ -90,9 +92,15 @@ def main():
 
     repo_path = Path(REPO_COPY)
 
+    build_output_temp_path = repo_path / "ci" / "tmp"
+    build_output_temp_path.mkdir(parents=True, exist_ok=True)
+    build_output_path = temp_path / "build"
+    build_output_path.mkdir(parents=True, exist_ok=True)
+
     run_cmd = get_fasttest_cmd(
         workspace,
         output_path,
+        build_output_path,
         repo_path,
         pr_info.number,
         pr_info.sha,
