@@ -662,7 +662,7 @@ SELECT
 FROM (
     SELECT
         c_custkey,
-        count(o_orderkey) as c_count
+        count(o_orderkey)
     FROM
         customer LEFT OUTER JOIN orders ON
             c_custkey = o_custkey
@@ -678,6 +678,8 @@ ORDER BY
 ```
 
 ::::note
+2024年10月時点では、相関サブクエリのためクエリはそのままでは動作しません。対応する問題: https://github.com/ClickHouse/ClickHouse/issues/6697
+
 この代替のフォームは動作し、参照結果を返すことが確認されています。
 
 ```sql

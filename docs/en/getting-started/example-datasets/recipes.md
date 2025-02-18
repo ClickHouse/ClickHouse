@@ -1,5 +1,4 @@
 ---
-description: "The RecipeNLG dataset, containing 2.2 million recipes"
 slug: /en/getting-started/example-datasets/recipes
 sidebar_label: Recipes Dataset
 title: "Recipes Dataset"
@@ -10,9 +9,9 @@ The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.
 ## Download and Unpack the Dataset
 
 1. Go to the download page [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
-2. Accept Terms and Conditions and download zip file.
-3. Option: Using the `md5sum dataset.zip` to validate the zip file and it should be equal to `3a168dfd0912bb034225619b3586ce76`.
-4. Unpack the zip file with `unzip dataset.zip`. You will get the `full_dataset.csv` file in the `dataset` directory.
+1. Accept Terms and Conditions and download zip file.
+1. Option: Using the `md5sum dataset.zip` to validate the zip file and it should be equal to `3a168dfd0912bb034225619b3586ce76`.
+1. Unpack the zip file with `unzip dataset.zip`. You will get the `full_dataset.csv` file in the `dataset` directory.
 
 ## Create a Table
 

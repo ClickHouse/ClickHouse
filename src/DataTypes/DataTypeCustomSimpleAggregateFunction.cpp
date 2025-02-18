@@ -47,7 +47,6 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "groupArrayArray",
         "groupArrayLastArray",
         "groupUniqArrayArray",
-        "groupUniqArrayArrayMap",
         "sumMappedArrays",
         "minMappedArrays",
         "maxMappedArrays",

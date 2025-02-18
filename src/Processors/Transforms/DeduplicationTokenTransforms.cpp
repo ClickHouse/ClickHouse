@@ -2,8 +2,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Columns/IColumn.h>
-
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
@@ -144,7 +142,7 @@ size_t TokenInfo::getTotalSize() const
     return size + parts.size() - 1;
 }
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
 void CheckTokenTransform::transform(Chunk & chunk)
 {
     auto token_info = chunk.getChunkInfos().get<TokenInfo>();

@@ -4,7 +4,10 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node"
+    "node",
+    main_configs=[
+        "configs/format_alter_operations_with_parentheses.xml",
+    ],
 )
 
 

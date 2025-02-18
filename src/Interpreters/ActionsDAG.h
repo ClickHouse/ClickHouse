@@ -35,9 +35,6 @@ namespace JSONBuilder
 
 class SortDescription;
 
-struct SerializedSetsRegistry;
-struct DeserializedSetsRegistry;
-
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -116,10 +113,13 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getInputs() const { return inputs; }
     const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    /** Output nodes can contain any column returned from DAG.
+      * You may manually change it if needed.
+      */
     NodeRawConstPtrs & getOutputs() { return outputs; }
+
+    const NodeRawConstPtrs & getInputs() const { return inputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;
@@ -129,9 +129,6 @@ public:
     Names getNames() const;
     std::string dumpNames() const;
     std::string dumpDAG() const;
-
-    void serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const;
-    static ActionsDAG deserialize(ReadBuffer & in, DeserializedSetsRegistry & registry, const ContextPtr & context);
 
     const Node & addInput(std::string name, DataTypePtr type);
     const Node & addInput(ColumnWithTypeAndName column);
@@ -301,14 +298,14 @@ public:
     /// It is needed to convert result from different sources to the same structure, e.g. for UNION query.
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
-    /// @param add_cast_columns - Create new columns with converted values instead of replacing original.
-    /// @param new_names - Output parameter for new column names when add_cast_columns is used.
+    /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAG makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
         bool ignore_constant_values = false,
-        bool add_cast_columns = false,
+        bool add_casted_columns = false,
         NameToNameMap * new_names = nullptr);
 
     /// Create expression which add const column and then materialize it.

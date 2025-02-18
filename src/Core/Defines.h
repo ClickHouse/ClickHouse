@@ -95,19 +95,12 @@ static constexpr auto DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_MARK_CACHE_MAX_SIZE = 5_GiB;
 static constexpr auto DEFAULT_MARK_CACHE_SIZE_RATIO = 0.5l;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE = 0;
 static constexpr auto DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_MAX_SIZE = 5_GiB;
 static constexpr auto DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO = 0.3;
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE = 5_GiB;
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO = 0.5;
-static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES = 10'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
@@ -130,7 +123,5 @@ static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 1000000000;
 #else
 static constexpr auto QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS = 0;
 #endif
-
-static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
 }

@@ -1,14 +1,5 @@
 # Setup integration with ccache to speed up builds, see https://ccache.dev/
 
-include(cmake/utils.cmake)
-
-# Defensive programming: early return to avoid configuring any cache after we've set dummy launchers.
-# If something includes this file by mistake after the first setup, it'd override the dummy launchers.
-if(USING_DUMMY_LAUNCHERS)
-    message(STATUS "Skipping cache integration a second time because dummy launchers are in use")
-    return()
-endif()
-
 # Matches both ccache and sccache
 if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MATCHES "ccache")
     # custom compiler launcher already defined, most likely because cmake was invoked with like "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" or
@@ -18,7 +9,7 @@ if (CMAKE_CXX_COMPILER_LAUNCHER MATCHES "ccache" OR CMAKE_C_COMPILER_LAUNCHER MA
     return()
 endif()
 
-set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (sccache, then ccache), 'ccache', 'sccache', 'chcache', or 'disabled'")
+set(COMPILER_CACHE "auto" CACHE STRING "Speedup re-compilations using the caching tools; valid options are 'auto' (sccache, then ccache), 'ccache', 'sccache', or 'disabled'")
 
 if(COMPILER_CACHE STREQUAL "auto")
     find_program (CCACHE_EXECUTABLE NAMES sccache ccache)
@@ -26,13 +17,11 @@ elseif (COMPILER_CACHE STREQUAL "ccache")
     find_program (CCACHE_EXECUTABLE ccache)
 elseif(COMPILER_CACHE STREQUAL "sccache")
     find_program (CCACHE_EXECUTABLE sccache)
-elseif(COMPILER_CACHE STREQUAL "chcache")
-    set(CCACHE_EXECUTABLE ${CMAKE_CURRENT_BINARY_DIR}/rust/chcache/chcache)
 elseif(COMPILER_CACHE STREQUAL "disabled")
     message(STATUS "Using *ccache: no (disabled via configuration)")
     return()
 else()
-    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|sccache|ccache|chcache|disabled), value: '${COMPILER_CACHE}'")
+    message(${RECONFIGURE_MESSAGE_LEVEL} "The COMPILER_CACHE must be one of (auto|sccache|ccache|disabled), value: '${COMPILER_CACHE}'")
 endif()
 
 
@@ -70,9 +59,6 @@ if (CCACHE_EXECUTABLE MATCHES "/ccache$")
     endif()
 elseif(CCACHE_EXECUTABLE MATCHES "/sccache$")
     message(STATUS "Using sccache: ${CCACHE_EXECUTABLE}")
-    set(LAUNCHER ${CCACHE_EXECUTABLE})
-elseif(CCACHE_EXECUTABLE MATCHES "/chcache$")
-    message(STATUS "Using chcache: ${CCACHE_EXECUTABLE}")
     set(LAUNCHER ${CCACHE_EXECUTABLE})
 endif()
 

@@ -4,12 +4,8 @@
 #include <base/types.h>
 #include <boost/container/flat_set.hpp>
 
-
 #if USE_SSL
-namespace Poco::Net
-{
-    class X509Certificate;
-}
+#    include <Poco/Net/X509Certificate.h>
 #endif
 
 namespace DB

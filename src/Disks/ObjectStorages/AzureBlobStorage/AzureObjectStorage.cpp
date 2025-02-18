@@ -13,6 +13,7 @@
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
 
 
 namespace CurrentMetrics
@@ -51,7 +52,7 @@ class AzureIteratorAsync final : public IObjectStorageIteratorAsync
 public:
     AzureIteratorAsync(
         const std::string & path_prefix,
-        std::shared_ptr<const AzureBlobStorage::ContainerClient> client_,
+        std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client_,
         size_t max_list_size)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageAzureThreads,
@@ -68,7 +69,7 @@ private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
-        if (client->IsClientForDisk())
+        if (client->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
         batch.clear();
@@ -96,7 +97,7 @@ private:
         return true;
     }
 
-    std::shared_ptr<const AzureBlobStorage::ContainerClient> client;
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> client;
     Azure::Storage::Blobs::ListBlobsOptions options;
 };
 
@@ -129,7 +130,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     auto client_ptr = client.get();
 
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->IsClientForDisk())
+    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
         ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
 
     try
@@ -158,6 +159,9 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 {
     auto client_ptr = client.get();
 
+    /// NOTE: list doesn't work if endpoint contains non-empty prefix for blobs.
+    /// See AzureBlobStorageEndpoint and processAzureBlobStorageEndpoint for details.
+
     Azure::Storage::Blobs::ListBlobsOptions options;
     options.Prefix = path;
     if (max_keys)
@@ -168,7 +172,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
     {
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
-        if (client_ptr->IsClientForDisk())
+        if (client_ptr->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
         blob_list_response = client_ptr->ListBlobs(options);
@@ -242,13 +246,10 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         std::move(scheduler));
 }
 
-void AzureObjectStorage::removeObjectImpl(
-    const StoredObject & object,
-    const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-    bool if_exists)
+void AzureObjectStorage::removeObjectImpl(const StoredObject & object, const SharedAzureClientPtr & client_ptr, bool if_exists)
 {
     ProfileEvents::increment(ProfileEvents::AzureDeleteObjects);
-    if (client_ptr->IsClientForDisk())
+    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
         ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects);
 
     const auto & path = object.remote_path;
@@ -256,7 +257,7 @@ void AzureObjectStorage::removeObjectImpl(
 
     try
     {
-        auto delete_info = client_ptr->GetBlobClient(path).Delete();
+        auto delete_info = client_ptr->DeleteBlob(path);
         if (!if_exists && !delete_info.Value.Deleted)
             throw Exception(
                 ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file (path: {}) in AzureBlob Storage, reason: {}",
@@ -267,7 +268,7 @@ void AzureObjectStorage::removeObjectImpl(
         if (!if_exists)
             throw;
 
-        /// If object doesn't exist.
+        /// If object doesn't exist...
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return;
 
@@ -297,7 +298,7 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     auto properties = blob_client.GetProperties().Value;
 
     ProfileEvents::increment(ProfileEvents::AzureGetProperties);
-    if (client_ptr->IsClientForDisk())
+    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
         ProfileEvents::increment(ProfileEvents::DiskAzureGetProperties);
 
     ObjectMetadata result;
@@ -331,7 +332,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
     }
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
-    if (client_ptr->IsClientForDisk())
+    if (client_ptr->GetClickhouseOptions().IsClientForDisk)
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
 
     dest_blob_client.CopyFromUri(source_blob_client.GetUrl(), copy_options);
@@ -349,7 +350,7 @@ void AzureObjectStorage::applyNewSettings(
     if (!options.allow_client_change)
         return;
 
-    bool is_client_for_disk = client.get()->IsClientForDisk();
+    bool is_client_for_disk = client.get()->GetClickhouseOptions().IsClientForDisk;
 
     AzureBlobStorage::ConnectionParams params
     {
@@ -370,7 +371,7 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
     ContextPtr context)
 {
     auto new_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context);
-    bool is_client_for_disk = client.get()->IsClientForDisk();
+    bool is_client_for_disk = client.get()->GetClickhouseOptions().IsClientForDisk;
 
     AzureBlobStorage::ConnectionParams params
     {
@@ -380,7 +381,7 @@ std::unique_ptr<IObjectStorage> AzureObjectStorage::cloneObjectStorage(
     };
 
     auto new_client = AzureBlobStorage::getContainerClient(params, /*readonly=*/ true);
-    return std::make_unique<AzureObjectStorage>(name, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getServiceEndpoint());
+    return std::make_unique<AzureObjectStorage>(name, std::move(new_client), std::move(new_settings), new_namespace, params.endpoint.getEndpointWithoutContainer());
 }
 
 }
