@@ -447,14 +447,10 @@ ARTIFACTS = [
             ArtifactNames.CH_LOONGARCH64,
         ]
     ),
-    *Artifact.Config(
-        name="...",
+    Artifact.Config(
+        name=ArtifactNames.FAST_TEST,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/fasttest-output/build/*",
-    ).parametrize(
-        names=[
-            ArtifactNames.FAST_TEST,
-        ]
     ),
     *Artifact.Config(
         name="...",
