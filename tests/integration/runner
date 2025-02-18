@@ -525,4 +525,4 @@ if __name__ == "__main__":
         subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
-    subprocess.check_call(cmd, shell=True)
+    subprocess.check_call(cmd, shell=True, bufsize=0)
