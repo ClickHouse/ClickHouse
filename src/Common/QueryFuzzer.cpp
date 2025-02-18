@@ -1425,6 +1425,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {
         fuzz(tables->children);
+        if (!tables->children.empty() && fuzz_rand() % 20 == 0)
+        {
+            std::shuffle(tables->children.begin(), tables->children.end(), fuzz_rand);
+        }
     }
     else if (auto * tables_element = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
