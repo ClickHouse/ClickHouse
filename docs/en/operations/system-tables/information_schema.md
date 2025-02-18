@@ -343,13 +343,7 @@ FORMAT Vertical;
 
 Result:
 
-```yaml
-
-```
-constraint_catalog:            def
-constraint_schema:             default
-constraint_name:               PRIMARY
-```
+```response
 Row 1:
 ──────
 constraint_catalog:            def
