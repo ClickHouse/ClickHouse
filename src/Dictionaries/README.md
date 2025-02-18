@@ -50,6 +50,6 @@ Template specializations are extensively used to implement specialized dictionar
 
 ## References in other parts of the codebase
 
-Dictionary are reloaded using loader defineds in `Interpreters/ExternalLoader.h` and `/src/Interpreters/ExternalDictionariesLoader.h` registred in the `Context`.
+Dictionary are reloaded using loader defineds in `Interpreters/ExternalLoader.h` and `/src/Interpreters/ExternalDictionariesLoader.h` registered in the `Context`.
 
 The system tables containing information about active dictionaries are defined in `Storages/System/StorageSystemDictionaries.cpp`.
