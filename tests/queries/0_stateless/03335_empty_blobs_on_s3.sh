@@ -25,10 +25,13 @@ $CLICKHOUSE_CLIENT -m -q "
     SELECT part_name FROM system.parts WHERE database = currentDatabase() AND table = 'test_empty_blobs' AND active;
 "
 
-# Find table UUID
-UUID=`$CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND table = 'test_empty_blobs'"`;
+# Find table UUID for non-Ordinary database or use 'database_name/test_empty_blobs'
+UUID=`$CLICKHOUSE_CLIENT -q "
+    SELECT if (uuid != '00000000-0000-0000-0000-000000000000', uuid::String, currentDatabase() || '/test_empty_blobs')
+    FROM system.tables
+    WHERE database = currentDatabase() AND table = 'test_empty_blobs'"`;
 
-# Check that there are no empty blobs where written to S3
+# Check that there were no empty blobs written to S3
 $CLICKHOUSE_CLIENT -q "SELECT 'Empty blobs: ', size, local_path FROM system.remote_data_paths WHERE disk_name = 's3_disk' AND local_path LIKE '%$UUID/all_1_1_0/%' AND size = 0";
 
 # Check logs for skipping empty blob
@@ -40,7 +43,7 @@ $CLICKHOUSE_CLIENT -m -q "
         event_date >= yesterday() AND event_time > now() - interval 10 minute;
 ";
 
-# Check that there several non-empty blobs in part dir
+# Check that there are several non-empty blobs in part dir
 $CLICKHOUSE_CLIENT -q "SELECT if (count() > 4, 'Non-empty blobs present', 'Test error') FROM system.remote_data_paths WHERE disk_name = 's3_disk' AND local_path LIKE '%$UUID/all_1_1_0/%' AND size > 0";
 
 # Insert another row with empty Arrays to create another part with empty file
