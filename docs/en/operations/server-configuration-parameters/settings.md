@@ -3481,6 +3481,26 @@ Type: String
 
 Default: `default`
 
+## throw_on_unknown_workload
+
+Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
+
+- If `true`, RESOURCE_ACCESS_DENIED exception is thrown from a query that is trying to access unknown workload. Useful to enforce resource scheduling for all queries after WORKLOAD hierarchy is established and contains WORKLOAD default.
+- If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+Type: String
+
+Default: false
+
+**Example**
+
+```xml
+<throw_on_unknown_workload>true</throw_on_unknown_workload>
+```
+
 ## workload_path
 
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
