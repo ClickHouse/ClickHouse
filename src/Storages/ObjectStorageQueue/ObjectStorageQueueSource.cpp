@@ -523,7 +523,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 {
                     if (current_bucket_holder->isZooKeeperSessionExpired())
                     {
-                        LOG_TRACE(log, "ZooKeeper session expired, bucket not longer hold");
+                        LOG_TRACE(log, "ZooKeeper session expired, bucket no longer held");
                         current_bucket_holder = {};
                     }
                     else
