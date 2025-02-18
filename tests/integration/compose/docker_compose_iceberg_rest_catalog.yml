@@ -29,9 +29,9 @@ services:
       - CATALOG_S3_ENDPOINT=http://minio:9000
     healthcheck:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8181"]
-      interval: 10s
+      interval: 1s
       timeout: 5s
-      retries: 3
+      retries: 10
       start_period: 30s
   minio:
     image: minio/minio
