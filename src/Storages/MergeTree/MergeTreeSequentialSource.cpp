@@ -100,7 +100,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_task_info(std::move(read_task_info_))
-    , mark_ranges(mark_ranges_.value_or(MarkRanges{MarkRange(0, read_task_info->data_part->getMarksCount())}))
+    , mark_ranges(std::move(mark_ranges_.)value_or(MarkRanges{MarkRange(0, read_task_info->data_part->getMarksCount())}))
     , mark_cache(storage.getContext()->getMarkCache())
     , read_with_direct_io(read_with_direct_io_)
 {
@@ -211,8 +211,8 @@ try
     for (size_t i = 0; i < result_header.columns(); ++i)
     {
         auto pos = reader_header.getPositionByName(result_header.safeGetByPosition(i).name);
-        result_columns.emplace_back(std::move(read_result.columns[pos]));
-        result_columns.back()->assumeMutableRef().shrinkToFit();
+        auto & result_column = result_columns.emplace_back(std::move(read_result.columns[pos]));
+        result_column->assumeMutableRef().shrinkToFit();
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
