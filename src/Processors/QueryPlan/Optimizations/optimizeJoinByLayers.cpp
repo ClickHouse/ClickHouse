@@ -185,6 +185,7 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     };
 
     std::list<JoinAndSharding> joins;
+    std::list<JoinStep *> joins_to_keep_in_order;
     std::list<ReadFromMergeTree *> sources;
     std::list<SortingStep *> sorting_steps;
     size_t common_prefix = std::numeric_limits<size_t>::max();
@@ -258,6 +259,9 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
     for (const auto & sorting_step : data.sorting_steps)
         sorting_step->convertToPartitionedFinishSorting();
+
+    for (const auto & join_step : data.joins_to_keep_in_order)
+        join_step->keepLeftPipelineInOrder();
 }
 
 void optimizeJoinByLayers(QueryPlan::Node & root)
@@ -352,6 +356,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
                 result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
+                result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(frame.results.back()->joins.joins_to_keep_in_order));
 
                 frame.results.back() = std::nullopt;
             }
@@ -359,6 +364,7 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
             {
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
+                result->joins.joins_to_keep_in_order.emplace_back(join_step);
             }
         }
         else if (typeid_cast<DelayedCreatingSetsStep *>(frame.node->step.get()))
