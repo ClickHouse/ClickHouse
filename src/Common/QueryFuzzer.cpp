@@ -1686,8 +1686,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
                 children.erase(children.begin() + (fuzz_rand() % children.size()));
             }
+            if (!sel_tables->children.empty() && fuzz_rand() % 20 == 0)
+            {
+                /// Permute FROM list
+                std::shuffle(sel_tables->children.begin(), sel_tables->children.end(), fuzz_rand);
+            }
         }
-
         if (select->groupBy().get())
         {
             if (fuzz_rand() % 50 == 0)
