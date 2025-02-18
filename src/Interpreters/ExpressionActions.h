@@ -64,7 +64,7 @@ public:
         /// If this action's result is used by another action, called parent, then the position of the parent action in
         /// `ExpressionActions::actions`.
         std::vector<size_t> parents_actions_pos;
-    
+
         /// Keep track of the execution profile of the current round.
         FunctionExecuteProfile current_round_profile;
         /// Keep track of the whole execution profile.
