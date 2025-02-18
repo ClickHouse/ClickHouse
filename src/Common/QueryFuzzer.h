@@ -145,6 +145,24 @@ private:
         std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
         return vals[d(rand)];
     }
+
+    template <typename T>
+    const T & pickRandomlyFromSet(pcg64 & rand, const std::unordered_set<T> & vals)
+    {
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        auto it = vals.begin();
+        std::advance(it, d(rand));
+        return *it;
+    }
+
+    template <typename K, typename V>
+    const K & pickKeyRandomlyFromMap(pcg64 & rand, const std::unordered_map<K, V> & vals)
+    {
+        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
+        auto it = vals.begin();
+        std::advance(it, d(rand));
+        return it->first;
+    }
 };
 
 }

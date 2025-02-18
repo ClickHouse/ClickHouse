@@ -65,24 +65,6 @@ namespace ErrorCodes
 extern const int TOO_DEEP_RECURSION;
 }
 
-#if USE_BUZZHOUSE
-static const String & pickKeyRandomlyFromMap(pcg64 & rand, const std::unordered_map<String, BuzzHouse::CHSetting> & vals)
-{
-    std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-    auto it = vals.begin();
-    std::advance(it, d(rand));
-    return it->first;
-}
-
-static String pickRandomlyFromSet(pcg64 & rand, const std::unordered_set<String> & vals)
-{
-    std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-    auto it = vals.begin();
-    std::advance(it, d(rand));
-    return *it;
-}
-#endif
-
 void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 {
 #if USE_BUZZHOUSE
@@ -1463,7 +1445,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (nargs < 3 && fuzz_rand() % 30 == 0)
                 {
                     /// Replace aggregate function
-                    static const std::map<size_t, Strings> aggrs
+                    static const std::map<size_t, Strings> & aggrs
                         = {{1,
                             {"any",
                              "anyHeavy",
@@ -1504,13 +1486,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                              "maxIntersections",
                              "maxIntersectionsPosition",
                              "uniq"}}};
-                    const Strings & common_aggrs = aggrs.at(nargs);
+                    const Strings & commonAggrs = aggrs.at(nargs);
 
-                    for (const auto & entry : common_aggrs)
+                    for (const auto & entry : commonAggrs)
                     {
                         if (startsWith(fn->name, entry))
                         {
-                            String nfname = pickRandomlyFromVector(fuzz_rand, common_aggrs);
+                            String nfname = pickRandomlyFromVector(fuzz_rand, commonAggrs);
                             /// keep modifiers
                             nfname += fn->name.substr(entry.length(), fn->name.size() - entry.length());
 
@@ -1522,19 +1504,36 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 if (fuzz_rand() % 30 == 0)
                 {
                     /// Add or remove distinct to aggregate
-                    static const String distinct_suffix = "Distinct";
+                    static const String & distinctSuffix = "Distinct";
 
-                    if (endsWith(fn->name, distinct_suffix))
+                    if (endsWith(fn->name, distinctSuffix))
                     {
-                        fn->name = fn->name.substr(0, fn->name.length() - distinct_suffix.size());
+                        fn->name = fn->name.substr(0, fn->name.length() - distinctSuffix.size());
                     }
                     else
                     {
-                        fn->name = fn->name + distinct_suffix;
+                        fn->name = fn->name + distinctSuffix;
                     }
                 }
             }
             fuzzNullsAction(fn->nulls_action);
+        }
+        else if (fuzz_rand() % 30 == 0)
+        {
+            /// Swap function name
+            static const std::vector<std::unordered_set<String>> & swapFuncs
+                = {{"ilike", "like", "match", "notILike", "notLike"},
+                   {"globalIn", "globalNotIn", "in", "notIn"},
+                   {"concat", "divide", "minus", "modulo", "multiply", "plus"}};
+
+            for (const auto & entry : swapFuncs)
+            {
+                if (entry.contains(fn->name))
+                {
+                    fn->name = pickRandomlyFromSet(fuzz_rand, entry);
+                    break;
+                }
+            }
         }
 
         if (fn->is_window_function && fn->window_definition)
