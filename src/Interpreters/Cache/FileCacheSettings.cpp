@@ -76,8 +76,14 @@ void FileCacheSettings::loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetStrin
 
     if (has("cache_policy"))
     {
-        cache_policy = get_string("cache_policy");
-        boost::to_upper(cache_policy);
+        auto policy = get_string("cache_policy");
+        boost::to_upper(policy);
+        if (policy == "LRU")
+            cache_policy = FileCachePolicy::LRU;
+        else if (policy == "SLRU")
+            cache_policy = FileCachePolicy::SLRU;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown cache policy: {}", cache_policy);
     }
 
     if (has("slru_size_ratio"))
