@@ -1378,6 +1378,11 @@ inline void readTime64Text(Time64 & time64, UInt32 scale, ReadBuffer & buf, cons
     readTimeTextImpl<void>(time64, scale, buf, date_lut);
 }
 
+inline bool tryReadTimeText(time_t & time, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+{
+    return readTimeTextImpl<bool>(time, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters);
+}
+
 inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
 {
     return readDateTimeTextImpl<bool>(datetime, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters);

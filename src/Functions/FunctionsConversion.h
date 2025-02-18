@@ -1029,9 +1029,13 @@ inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, Read
 }
 
 template <>
-[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType &, ReadBuffer &, const DateLUTImpl *, bool)
+[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
-    throwTimeIsNotSupported("tryParseImpl");
+    time_t time = 0;
+    if (!tryReadDateTimeText(time, rb, *time_zone)) //
+        return false;
+    convertFromTime<DataTypeTime>(x, time);
+    return true;
 }
 
 template <>

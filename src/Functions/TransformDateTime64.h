@@ -130,12 +130,6 @@ public:
         }
     }
 
-    template <typename ... Args>
-    auto NO_SANITIZE_UNDEFINED executeExtendedResult(const Time64 &, [[maybe_unused]] Args && ... args) const
-    {
-        throwTimeIsNotSupported(name);
-    }
-
     template <typename T, typename ... Args>
     requires (!std::same_as<T, DateTime64>)
     auto executeExtendedResult(const T & t, Args && ... args) const
