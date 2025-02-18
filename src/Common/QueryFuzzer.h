@@ -131,7 +131,7 @@ private:
     void fuzzExpressionList(ASTExpressionList & expr_list);
     ASTPtr addJoinClause();
     ASTPtr generatePredicate();
-    void addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr);
+    void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
     void fuzz(ASTs & asts);
     void fuzz(ASTPtr & ast);
     void collectFuzzInfoMain(ASTPtr ast);
