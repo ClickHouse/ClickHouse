@@ -5911,7 +5911,8 @@ As each series represents a node in Keeper, it is recommended to have no more th
 When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](../../engines/table-engines/special/file.md/#hive-style-partitioning)/[S3](../../engines/table-engines/integrations/s3.md/#hive-style-partitioning)/[URL](../../engines/table-engines/special/url.md/#hive-style-partitioning)/[HDFS](../../engines/table-engines/integrations/hdfs.md/#hive-style-partitioning)/[AzureBlobStorage](../../engines/table-engines/integrations/azureBlobStorage.md/#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
 )", 0) \
     DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold determines if `hash` or `parallel_hash` should be used. The latter is used when the right table size is above the threshold.
+When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimations of left and right table sizes are available).
+The latter is used when the right table size is above the threshold.
 )", 0) \
     \
     /* ####################################################### */ \
