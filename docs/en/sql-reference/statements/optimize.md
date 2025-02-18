@@ -80,7 +80,7 @@ VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 SELECT * FROM example;
 ```
 Result:
-```
+```sql
 
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           0 │             0 │     0 │             0 │
@@ -106,7 +106,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE;
 SELECT * FROM example;
 ```
 Result:
-```
+```text
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -127,7 +127,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 SELECT * FROM example;
 ```
 Result:
-```
+```text
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -149,7 +149,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
 SELECT * FROM example;
 ```
 Result:
-```
+```text
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -169,7 +169,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partitio
 SELECT * FROM example;
 ```
 Result:
-```
+```text
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -189,7 +189,7 @@ OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
 SELECT * FROM example;
 ```
 Result:
-```
+```text
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           0 │             0 │     0 │             0 │
 └─────────────┴───────────────┴───────┴───────────────┘
