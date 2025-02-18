@@ -220,20 +220,22 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
-    auto queue_metadata = std::make_unique<ObjectStorageQueueMetadata>(
+    temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
-    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(queue_metadata));
-
     task = getContext()->getSchedulePool().createTask("ObjectStorageQueueStreamingTask", [this] { threadFunc(); });
 }
 
 void StorageObjectStorageQueue::startup()
 {
+    /// Register the metadata in startup(), unregister in shutdown.
+    /// (If startup is never called, shutdown also won't be called.)
+    files_metadata = ObjectStorageQueueMetadataFactory::instance().getOrCreate(zk_path, std::move(temp_metadata));
+
     if (task)
         task->activateAndSchedule();
 }
