@@ -76,6 +76,8 @@ def kill_rabbitmq(rabbitmq_id, rabbitmq_cookie):
             return p.returncode == 0
         except Exception as e:
             print("Exception stopping rabbit MQ forcefully", e)
+    finally:
+        time.sleep(4)
 
 
 def revive_rabbitmq(rabbitmq_id, cookie):
@@ -180,7 +182,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
-    time.sleep(4)
     revive_rabbitmq(
         rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
     )
@@ -188,9 +189,9 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         result = instance.query("SELECT count(DISTINCT key) FROM test.view")
-        time.sleep(1)
         if int(result) == messages_num:
             break
+        time.sleep(1)
     else:
         pytest.fail(
             f"Time limit of 180 seconds reached. The result did not match the expected value."
@@ -267,7 +268,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
     kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
-    time.sleep(4)
     revive_rabbitmq(
         rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
     )
@@ -276,7 +276,6 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     #    time.sleep(0.1)
 
     # kill_rabbitmq()
-    # time.sleep(2)
     # revive_rabbitmq()
 
     deadline = time.monotonic() + 180
