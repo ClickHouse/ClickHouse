@@ -321,7 +321,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         /// results from previous steps.
         /// Example: step1: sin(a)>b, step2: sin(a)>c
 
-        /// If step actions are empty then step
+        /// If actions are empty then step is a filter step with a plain identifier as a filter column.
         Names required_source_columns;
         if (step.actions)
             required_source_columns = step.actions->getActionsDAG().getRequiredColumnsNames();

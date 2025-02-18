@@ -100,7 +100,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , storage(storage_)
     , storage_snapshot(std::move(storage_snapshot_))
     , read_task_info(std::move(read_task_info_))
-    , mark_ranges(std::move(mark_ranges_.)value_or(MarkRanges{MarkRange(0, read_task_info->data_part->getMarksCount())}))
+    , mark_ranges(std::move(mark_ranges_).value_or(MarkRanges{MarkRange(0, read_task_info->data_part->getMarksCount())}))
     , mark_cache(storage.getContext()->getMarkCache())
     , read_with_direct_io(read_with_direct_io_)
 {
