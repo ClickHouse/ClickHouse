@@ -21,6 +21,17 @@ DeltaLakeMetadata::DeltaLakeMetadata(
 {
 }
 
+bool DeltaLakeMetadata::operator ==(const IDataLakeMetadata & metadata) const
+{
+    const auto & delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata &>(metadata);
+    return table_snapshot->getVersion() == delta_lake_metadata.table_snapshot->getVersion();
+}
+
+bool DeltaLakeMetadata::update(const ContextPtr &)
+{
+    return table_snapshot->update();
+}
+
 Strings DeltaLakeMetadata::getDataFiles() const
 {
     throw Exception(

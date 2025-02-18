@@ -118,6 +118,11 @@ public:
             }
         }
 
+        LOG_TEST(
+            context->log,
+            "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
+            full_path, size, stats->num_records, partitions_info.size());
+
         DB::ObjectInfoPtr object;
         if (partitions_info.empty())
             object = std::make_shared<DB::ObjectInfo>(full_path, size);
@@ -125,11 +130,6 @@ public:
             object = std::make_shared<DB::ObjectInfoWithParitionColumns>(std::move(partitions_info), full_path, size);
 
         context->data_files.push_back(std::move(object));
-
-        LOG_TEST(
-            context->log,
-            "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
-            full_path, size, stats->num_records, partitions_info.size());
     }
 
 private:
@@ -153,11 +153,33 @@ TableSnapshot::TableSnapshot(KernelHelperPtr helper_, LoggerPtr log_)
 {
 }
 
-void TableSnapshot::initSnapshot()
+size_t TableSnapshot::getVersion() const
+{
+    initSnapshot();
+    return snapshot_version;
+}
+
+bool TableSnapshot::update()
+{
+    if (!snapshot.get())
+    {
+        /// Snapshot is not yet created,
+        /// so next attempt to create it would return the latest snapshot.
+        return false;
+    }
+    initSnapshotImpl();
+    return true;
+}
+
+void TableSnapshot::initSnapshot() const
 {
     if (snapshot.get())
         return;
+    initSnapshotImpl();
+}
 
+void TableSnapshot::initSnapshotImpl() const
+{
     auto * engine_builder = helper->createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
     snapshot = KernelUtils::unwrapResult(

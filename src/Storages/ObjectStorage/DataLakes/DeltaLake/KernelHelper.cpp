@@ -48,7 +48,6 @@ public:
         };
 
         /// TODO: support role arn.
-        /// TODO: allow_http and aws_endpoint should not be on by default.
 
         set_option("aws_access_key_id", access_key_id);
         set_option("aws_secret_access_key", secret_access_key);

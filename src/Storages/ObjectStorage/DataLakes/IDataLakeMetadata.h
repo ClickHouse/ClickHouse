@@ -40,9 +40,13 @@ public:
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String &) const { return {}; }
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(const String &) const { return {}; }
 
-    virtual bool supportsExternalMetadataChange() const { return false; }
+    /// Whether metadata is updateable (instead of recreation from scratch)
+    /// to the latest version of table state in data lake.
     virtual bool supportsUpdate() const { return false; }
+    /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
+
+    virtual bool supportsExternalMetadataChange() const { return false; }
 
 private:
     [[noreturn]] void throwNotImplemented(std::string_view method) const

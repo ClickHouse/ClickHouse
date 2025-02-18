@@ -27,20 +27,17 @@ public:
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
+    bool supportsUpdate() const override { return true; }
+
+    bool update(const ContextPtr & context) override;
+
     Strings getDataFiles() const override;
 
     NamesAndTypesList getTableSchema() const override;
 
     NamesAndTypesList getReadSchema() const override;
 
-    bool operator ==(const IDataLakeMetadata &) const override
-    {
-        return false;
-        // const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
-        // return deltalake_metadata
-        //     && !data_files.empty() && !deltalake_metadata->data_files.empty()
-        //     && data_files == deltalake_metadata->data_files;
-    }
+    bool operator ==(const IDataLakeMetadata &) const override;
 
     static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
     {

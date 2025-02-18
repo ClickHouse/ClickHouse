@@ -28,6 +28,12 @@ public:
 
     explicit TableSnapshot(KernelHelperPtr helper_, LoggerPtr log_);
 
+    /// Get snapshot version.
+    size_t getVersion() const;
+
+    /// Update snapshot to latest version.
+    bool update();
+
     /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate();
 
@@ -51,16 +57,17 @@ private:
     const KernelHelperPtr helper;
     const LoggerPtr log;
 
-    KernelExternEngine engine;
-    KernelSnapshot snapshot;
-    KernelScan scan;
-    size_t snapshot_version;
+    mutable KernelExternEngine engine;
+    mutable KernelSnapshot snapshot;
+    mutable KernelScan scan;
+    mutable size_t snapshot_version;
 
     std::optional<DB::NamesAndTypesList> table_schema;
     std::optional<DB::NamesAndTypesList> read_schema;
     std::optional<DB::Names> partition_columns;
 
-    void initSnapshot();
+    void initSnapshot() const;
+    void initSnapshotImpl() const;
     /// Both read schema and partition columns are loaded with the same data scan object,
     /// therefore we load them together.
     void loadReadSchemaAndPartitionColumns();
