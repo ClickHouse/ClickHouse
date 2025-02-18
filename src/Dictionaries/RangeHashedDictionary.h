@@ -19,6 +19,7 @@
 #include <Dictionaries/DictionaryHelpers.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryPipelineExecutor.h>
+#include <Dictionaries/DictionaryBytesUtils.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -601,8 +602,7 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
             using ValueType = DictionaryValueType<AttributeType>;
 
             const auto & container = std::get<AttributeContainerType<ValueType>>(attribute.container);
-
-            bytes_allocated += container.size() * sizeof(ValueType);
+            bytes_allocated += getAllocatedBytesInContainer(container);
 
             if (attribute.is_value_nullable)
                 bytes_allocated += (*attribute.is_value_nullable).size() * sizeof(bool);

@@ -18,6 +18,7 @@
 #include <Dictionaries/DictionaryPipelineExecutor.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <Dictionaries/DictionaryBytesUtils.h>
 
 namespace DB
 {
@@ -537,18 +538,7 @@ void FlatDictionary::calculateBytesAllocated()
             using ValueType = DictionaryValueType<AttributeType>;
 
             const auto & container = std::get<ContainerType<ValueType>>(attribute.container);
-            bytes_allocated += sizeof(ContainerType<ValueType>);
-
-            if constexpr (std::is_same_v<ValueType, Array>)
-            {
-                /// It is not accurate calculations
-                bytes_allocated += sizeof(Array) * container.size();
-            }
-            else
-            {
-                bytes_allocated += container.allocated_bytes();
-            }
-
+            bytes_allocated += getAllocatedBytesInContainer(container);
             bucket_count = container.capacity();
         };
 
