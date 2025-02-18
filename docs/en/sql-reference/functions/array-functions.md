@@ -1844,9 +1844,10 @@ Result:
 Takes multiple arrays and returns an array with elements that are not present in all source arrays.
 The result contains only unique values.
 
-**Important Note**
-
-With more than two sets, the [classical definition](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference) of symmetric difference states that the operation returns all elements that occur in an odd number of input sets. However, this implementation differs slightly: it removes only those elements that appear in all input arrays, rather than strictly following the odd-count rule.
+:::note
+The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference) as the set of all input elements which occur in an odd number of input sets.
+In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
+:::
 
 **Syntax**
 
