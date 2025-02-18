@@ -40,7 +40,7 @@ struct FunctionExecuteProfile
 
     /// The total executed elapsed, including short_circuit_side_elapsed.
     size_t executed_elapsed = 0;
-  
+
     /// For a lazily executed function, we need to filter out the rows that are not executed using a bitmap,
     /// and then expand the result to the original size. `short_circuit_side_elapsed` contains the
     /// execution time of these two steps. It also includes all `short_circuit_side_elapsed` times of its
@@ -193,12 +193,13 @@ public:
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
 
-#if USE_EMBEDDED_COMPILER
-
-    virtual bool isCompilable() const { return false; }
     // Whether `execute` throws exception on invalid input. For example, a%b throws exception when b is zero.
     // But this doesn't include invalid argument types.
     virtual bool isNoExcept() const { return false; }
+
+#if USE_EMBEDDED_COMPILER
+
+    virtual bool isCompilable() const { return false; }
 
     /** Produce LLVM IR code that operates on scalar values. See `toNativeType` in DataTypes/Native.h
       * for supported value types and how they map to LLVM types.
