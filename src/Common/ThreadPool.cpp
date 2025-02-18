@@ -11,7 +11,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
-#include "base/getThreadId.h"
+#include <base/getThreadId.h>
 
 namespace DB
 {
