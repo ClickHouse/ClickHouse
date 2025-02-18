@@ -1178,14 +1178,16 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
         sel->setExpression(expr, {});
         return;
     }
-    auto new_pred = generatePredicate();
+    ASTPtr new_pred = generatePredicate();
 
     if (new_pred)
     {
-        if (fuzz_rand() % 3 == 0)
-        {
-            auto old_pred = sel->getExpression(expr, false);
+        ASTPtr res = new_pred;
+        ASTPtr old_pred = sel->getExpression(expr, false);
 
+        if (old_pred && fuzz_rand() % 3 == 0)
+        {
+            /// Add to existing predicate
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
@@ -1193,9 +1195,9 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
                 old_pred = new_pred;
                 new_pred = exp3;
             }
-            new_pred = makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", new_pred, old_pred);
+            res = makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", new_pred, old_pred);
         }
-        sel->setExpression(expr, std::move(new_pred));
+        sel->setExpression(expr, std::move(res));
     }
 }
 
