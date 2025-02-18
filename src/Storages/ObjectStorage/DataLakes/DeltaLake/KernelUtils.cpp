@@ -16,12 +16,12 @@ ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
     return ffi::KernelStringSlice{ .ptr = string.data(), .len = string.size() };
 }
 
-std::string KernelUtils::fromDeltaString(const struct ffi::KernelStringSlice slice)
+std::string KernelUtils::fromDeltaString(ffi::KernelStringSlice slice)
 {
     return std::string(slice.ptr, slice.len);
 }
 
-void * KernelUtils::allocateString(const struct ffi::KernelStringSlice slice)
+void * KernelUtils::allocateString(ffi::KernelStringSlice slice)
 {
     return new std::string(slice.ptr, slice.len);
 }
@@ -32,13 +32,18 @@ struct KernelError : public ffi::EngineError
 {
     [[noreturn]] void rethrow(const std::string & from)
     {
+        auto error_message_copy = error_message;
+        auto etype_copy = etype;
+        /// This error was created by DeltaKernel by calling KernelUtils::allocateError.
+        /// We are responsible for deallocating it as well.
+        delete this;
+
         throw DB::Exception(
             DB::ErrorCodes::DELTA_KERNEL_ERROR,
-            "Received DeltaLake kernel error: {} (in {})",
-            error_message, from);
+            "Received DeltaLake kernel error {}: {} (in {})",
+            etype_copy, error_message_copy, from);
     }
 
-    // The error message from Kernel
     std::string error_message;
 };
 }

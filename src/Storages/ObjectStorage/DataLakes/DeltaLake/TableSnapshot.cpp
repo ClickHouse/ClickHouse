@@ -44,7 +44,12 @@ public:
     {
     }
 
-    size_t estimatedKeysCount() override { return 0; } /// TODO
+    size_t estimatedKeysCount() override
+    {
+        /// For now do the same as StorageObjectStorageSource::GlobIterator.
+        /// TODO: is it possible to do a precise estimation?
+        return std::numeric_limits<size_t>::max();
+    }
 
     DB::ObjectInfoPtr next(size_t) override
     {
@@ -84,10 +89,18 @@ public:
         auto * context = static_cast<TableSnapshot::Iterator *>(engine_context);
         std::string full_path = fs::path(context->data_prefix) / KernelUtils::fromDeltaString(path);
 
+        /// Collect partition values info.
+        /// DeltaLake does not store partition values in the actual data files,
+        /// but instead in data files paths directory names.
+        /// So we extract these values here and put into `partitions_info`.
         DB::ObjectInfoWithParitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & partition_column : context->partition_columns)
         {
-            auto * raw_value = ffi::get_from_string_map(partition_map, KernelUtils::toDeltaString(partition_column), KernelUtils::allocateString);
+            auto * raw_value = ffi::get_from_string_map(
+                partition_map,
+                KernelUtils::toDeltaString(partition_column),
+                KernelUtils::allocateString);
+
             auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
             if (value)
             {
@@ -99,7 +112,9 @@ public:
                         "Cannot find column `{}` in schema, there are only columns: `{}`",
                         partition_column, fmt::join(context->schema.getNames(), ", "));
                 }
-                partitions_info.emplace_back(name_and_type.value(), DB::parseFieldFromString(*value, name_and_type->type));
+                partitions_info.emplace_back(
+                    name_and_type.value(),
+                    DB::parseFieldFromString(*value, name_and_type->type));
             }
         }
 
@@ -109,7 +124,8 @@ public:
         else
             object = std::make_shared<DB::ObjectInfoWithParitionColumns>(std::move(partitions_info), full_path, size);
 
-        context->data_files.push_back(object);
+        context->data_files.push_back(std::move(object));
+
         LOG_TEST(
             context->log,
             "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
@@ -183,31 +199,26 @@ const DB::NamesAndTypesList & TableSnapshot::getTableSchema()
 const DB::NamesAndTypesList & TableSnapshot::getReadSchema()
 {
     if (!read_schema.has_value())
-    {
-        auto * current_snapshot = getSnapshot();
-        chassert(engine.get());
-        std::tie(read_schema, partition_columns) = getReadSchemaAndPartitionColumnsFromSnapshot(current_snapshot, engine.get());
-
-        LOG_TEST(
-            log, "Fetched read schema: {}, partition columns: {}",
-            read_schema->toString(), fmt::join(partition_columns.value(), ", "));
-    }
+        loadReadSchemaAndPartitionColumns();
     return read_schema.value();
 }
 
 const DB::Names & TableSnapshot::getPartitionColumns()
 {
     if (!partition_columns.has_value())
-    {
-        auto * current_snapshot = getSnapshot();
-        chassert(engine.get());
-        std::tie(read_schema, partition_columns) = getReadSchemaAndPartitionColumnsFromSnapshot(current_snapshot, engine.get());
-
-        LOG_TEST(
-            log, "Fetched read schema: {}, partition columns: {}",
-            read_schema->toString(), fmt::join(partition_columns.value(), ", "));
-    }
+        loadReadSchemaAndPartitionColumns();
     return partition_columns.value();
+}
+
+void TableSnapshot::loadReadSchemaAndPartitionColumns()
+{
+    auto * current_snapshot = getSnapshot();
+    chassert(engine.get());
+    std::tie(read_schema, partition_columns) = getReadSchemaAndPartitionColumnsFromSnapshot(current_snapshot, engine.get());
+
+    LOG_TEST(
+        log, "Fetched read schema: {}, partition columns: {}",
+        read_schema->toString(), fmt::join(partition_columns.value(), ", "));
 }
 
 }

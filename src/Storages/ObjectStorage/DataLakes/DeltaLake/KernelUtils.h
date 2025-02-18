@@ -19,14 +19,19 @@ namespace DeltaLake
  */
 struct KernelUtils
 {
+    /// Convertions functions to convert DeltaKernel string
+    /// to std::string and vica versa.
     static ffi::KernelStringSlice toDeltaString(const std::string & string);
+    static std::string fromDeltaString(ffi::KernelStringSlice slice);
 
-    static std::string fromDeltaString(const struct ffi::KernelStringSlice slice);
-
-    static void * allocateString(const struct ffi::KernelStringSlice slice);
-
+    /// Allocation helpers, passed to DeltaKernel.
+    /// DeltaKernel would use these functions to do the allocations.
+    /// We would be responsible for deallocations as well, not the library.
+    static void * allocateString(ffi::KernelStringSlice slice);
     static ffi::EngineError * allocateError(ffi::KernelError etype, ffi::KernelStringSlice message);
 
+    /// Process DeltaKernel result in cases is is ffi::ExternResult,
+    /// which means that it would either contain the result of type `T` or the error.
     template <class T>
     static T unwrapResult(ffi::ExternResult<T> result, const std::string & from)
     {
@@ -37,8 +42,6 @@ struct KernelUtils
         {
             if (result.err._0)
                 rethrow(result.err._0, from);
-
-            /// TODO: delete error
 
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR,

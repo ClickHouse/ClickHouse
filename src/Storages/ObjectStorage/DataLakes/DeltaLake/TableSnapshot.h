@@ -17,9 +17,10 @@
 namespace DeltaLake
 {
 
-/// TODO;
-/// Enable event tracing.
-
+/**
+ * A class representing DeltaLake table snapshot -
+ * a snapshot of table state, its schema, data files, etc.
+ */
 class TableSnapshot
 {
 public:
@@ -27,12 +28,18 @@ public:
 
     explicit TableSnapshot(KernelHelperPtr helper_, LoggerPtr log_);
 
+    /// Iterate over DeltaLake data files.
     DB::ObjectIterator iterate();
 
+    /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema();
-
+    /// Get read schema derived from data files.
+    /// (In most cases it would be the same as table schema).
     const DB::NamesAndTypesList & getReadSchema();
-
+    /// DeltaLake stores partition columns values not in the data files,
+    /// but in data file path directory names.
+    /// Therefore "table schema" would contain partition columns,
+    /// but "read schema" would not.
     const DB::Names & getPartitionColumns();
 
 private:
@@ -48,13 +55,19 @@ private:
     KernelSnapshot snapshot;
     KernelScan scan;
     size_t snapshot_version;
+
     std::optional<DB::NamesAndTypesList> table_schema;
     std::optional<DB::NamesAndTypesList> read_schema;
     std::optional<DB::Names> partition_columns;
 
     void initSnapshot();
+    /// Both read schema and partiton columns are loaded with the same data scan object,
+    /// therefore we load them together.
+    void loadReadSchemaAndPartitionColumns();
     ffi::SharedSnapshot * getSnapshot();
 };
+
+/// TODO; Enable event tracing in DeltaKernel.
 
 }
 

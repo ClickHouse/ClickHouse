@@ -1,7 +1,6 @@
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
-
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 #include "KernelPointerWrapper.h"
@@ -70,13 +69,27 @@ namespace
 namespace DeltaLake
 {
 
+/**
+ * A helper class for SchemaVisitor.
+ * Holds state for SchemaVisitor methods to collect visitor result.
+ */
 class SchemaVisitorData
 {
     friend class SchemaVisitor;
 
 public:
     DB::NamesAndTypesList getSchemaResult();
-    const DB::Names & getPartitionColumns() { return partition_columns; }
+    const DB::Names & getPartitionColumns() const { return partition_columns; }
+
+    void initScanState(
+        ffi::SharedSnapshot * snapshot,
+        ffi::SharedExternEngine * engine)
+    {
+        if (!scan.get())
+            scan = KernelUtils::unwrapResult(ffi::scan(snapshot, engine, /* predicate */{}), "scan");
+        if (!scan_state.get())
+            scan_state = ffi::get_global_scan_state(scan.get());
+    }
 
 private:
     DB::DataTypes getDataTypesFromTypeList(size_t list_idx);
@@ -101,8 +114,8 @@ private:
         size_t precision = 0; /// For Decimal.
         size_t scale = 0; /// For Decimal.
 
-        /// If type is simple, a flag to distinguish
-        /// between Bool and UInt8 in case of TypeIndex::UInt8.
+        /// There is no TypeIndex::Bool, so wee need to tell
+        /// when it is int8 and when it is bool.
         bool is_bool = false;
     };
     using Fields = std::vector<Field>;
@@ -118,16 +131,25 @@ private:
     DB::Names partition_columns;
 
     const LoggerPtr log = getLogger("SchemaVisitor");
-};
 
-class SchemaVisitor
-{
-public:
     using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
     using KernelGlobalScanState = TemplatedKernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+
+    KernelScan scan;
+    KernelGlobalScanState scan_state;
+};
+
+/**
+ * A schema visitor class.
+ * To get table schema, call visitTableSchema().
+ * To get read schema, call visitReadSchema().
+ * To get partition columns, call visitPartitionColumns().
+ */
+class SchemaVisitor
+{
     using KernelSharedSchema = TemplatedKernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
     using KernelStringSliceIterator = TemplatedKernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
-
+public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {
         auto visitor = createVisitor(data);
@@ -140,15 +162,21 @@ public:
         ffi::SharedExternEngine * engine,
         SchemaVisitorData & data)
     {
-        KernelScan scan = KernelUtils::unwrapResult(ffi::scan(snapshot, engine, /* predicate */{}), "scan");
-        KernelGlobalScanState scan_state = ffi::get_global_scan_state(scan.get());
-        KernelSharedSchema schema = ffi::get_global_read_schema(scan_state.get());
+        data.initScanState(snapshot, engine);
+        KernelSharedSchema schema = ffi::get_global_read_schema(data.scan_state.get());
 
         auto visitor = createVisitor(data);
         size_t result = ffi::visit_schema(schema.get(), &visitor);
         chassert(result == 0, "Unexpected result: " + DB::toString(result));
+    }
 
-        KernelStringSliceIterator partition_columns_iter = ffi::get_partition_columns(scan_state.get());
+    static void visitPartitionColumns(
+        ffi::SharedSnapshot * snapshot,
+        ffi::SharedExternEngine * engine,
+        SchemaVisitorData & data)
+    {
+        data.initScanState(snapshot, engine);
+        KernelStringSliceIterator partition_columns_iter = ffi::get_partition_columns(data.scan_state.get());
         while (ffi::string_slice_next(partition_columns_iter.get(), &data, &visitPartitionColumn)) {}
     }
 
@@ -218,14 +246,13 @@ private:
 
         const std::string column_name(name.ptr, name.len);
 
-        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
-        field.is_bool = is_bool;
-
         LOG_TEST(
             state->log,
             "List id: {}, column name: {}, type: {}, nullable: {}",
             sibling_list_id, column_name, type, nullable);
 
+        SchemaVisitorData::Field field(column_name, std::move(type), nullable);
+        field.is_bool = is_bool;
         it->second->push_back(std::move(field));
     }
 
@@ -258,7 +285,6 @@ private:
         SchemaVisitorData::Field field(column_name, type, nullable);
         field.precision = precision;
         field.scale = scale;
-
         it->second->push_back(std::move(field));
     }
 
@@ -323,7 +349,6 @@ private:
 
         SchemaVisitorData::Field field(column_name, std::move(type), nullable);
         field.child_list_id = child_list_id;
-
         it->second->push_back(field);
     }
 };
@@ -434,6 +459,7 @@ getReadSchemaAndPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot, ffi
 {
     SchemaVisitorData data;
     SchemaVisitor::visitReadSchema(snapshot, engine, data);
+    SchemaVisitor::visitPartitionColumns(snapshot, engine, data);
     return {data.getSchemaResult(), data.getPartitionColumns()};
 }
 
