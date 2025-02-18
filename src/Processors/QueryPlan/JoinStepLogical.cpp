@@ -530,7 +530,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
         swap_inputs = false;
     }
 
-    if (join_expression.is_using)
+    if (join_expression.is_using || join_info.kind == JoinKind::Paste)
         swap_inputs = false;
 
     join_context.is_asof = join_info.strictness == JoinStrictness::Asof;

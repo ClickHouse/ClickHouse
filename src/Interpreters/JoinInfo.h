@@ -149,7 +149,7 @@ struct JoinInfo
 
 
 std::string_view toString(PredicateOperator op);
-String toString(const JoinActionRef & predicate);
+String toString(const JoinActionRef & node);
 String toString(const JoinPredicate & predicate);
 String toString(const JoinCondition & condition);
 
