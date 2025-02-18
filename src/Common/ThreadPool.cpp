@@ -827,7 +827,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         }
 
         DB::Exception::parent_thread_id.store(0, std::memory_order_relaxed);
-        std::atomic_signal_fence(std::memory_order_release);
 
         DB::Exception::clearThreadFramePointers();
 
