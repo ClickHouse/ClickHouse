@@ -819,7 +819,7 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
 
 Result:
 
-```text
+```response
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
@@ -855,7 +855,7 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 
 Result:
 
-```text
+```response
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
@@ -890,7 +890,7 @@ SELECT toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt, dateTimeToSnowf
 
 Result:
 
-```text
+```response
 ┌──────────────────dt─┬─────────────────res─┐
 │ 2021-08-15 18:57:56 │ 6832626392367104000 │
 └─────────────────────┴─────────────────────┘
