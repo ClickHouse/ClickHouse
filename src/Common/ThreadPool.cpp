@@ -5,13 +5,13 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/noexcept_scope.h>
-#include <Common/CurrentThread.h>
 
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
+#include "base/getThreadId.h"
 
 namespace DB
 {
@@ -123,7 +123,7 @@ public:
         : job(job_), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers),
-        parent_thread_id(DB::CurrentThread::get().thread_id)
+        parent_thread_id(getThreadId())
     {
         if (!capture_frame_pointers)
             return;
