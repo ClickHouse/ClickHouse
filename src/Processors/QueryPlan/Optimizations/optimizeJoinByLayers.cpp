@@ -385,8 +385,11 @@ void optimizeJoinByLayers(QueryPlan::Node & root)
             /// but it would be useless because JOIN does not enforce sorting by itself.
 
             // std::cerr << "============ Apply for sorting\n";
-            result = std::move(frame.results[0]);
-            result->joins.sorting_steps.push_back(sorting);
+            if (frame.results.size() == 1 && frame.results[0])
+            {
+                result = std::move(frame.results[0]);
+                result->joins.sorting_steps.push_back(sorting);
+            }
         }
         else if (frame.results.size() == 1 && frame.results[0])
         {
