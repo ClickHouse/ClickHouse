@@ -7,7 +7,7 @@ import pika
 import pytest
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
+from helpers.cluster import ClickHouseCluster
 
 
 DEFAULT_TIMEOUT_SEC = 60
@@ -47,30 +47,16 @@ instance3 = cluster.add_instance(
 # Helpers
 
 
-def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
-    logging.getLogger("pika").propagate = False
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            if check_rabbitmq_is_available(rabbitmq_docker_id, cookie):
-                logging.debug("RabbitMQ is available")
-                return
-            time.sleep(0.5)
-        except Exception as ex:
-            logging.debug("Can't connect to RabbitMQ " + str(ex))
-            time.sleep(0.5)
-
-
-def kill_rabbitmq(rabbitmq_id, rabbitmq_cookie):
+def kill_rabbitmq(rabbitmq_cluster):
     try:
-        p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
+        p = subprocess.Popen(("docker", "stop", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE)
         p.wait(timeout=30)
         return p.returncode == 0
     except Exception as ex:
         print("Exception stopping rabbit MQ, will try forcefully", ex)
         try:
             p = subprocess.Popen(
-                ("docker", "stop", "-s", "9", rabbitmq_id), stdout=subprocess.PIPE
+                ("docker", "stop", "-s", "9", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE
             )
             p.wait(timeout=30)
             return p.returncode == 0
@@ -80,10 +66,10 @@ def kill_rabbitmq(rabbitmq_id, rabbitmq_cookie):
         time.sleep(4)
 
 
-def revive_rabbitmq(rabbitmq_id, cookie):
-    p = subprocess.Popen(("docker", "start", rabbitmq_id), stdout=subprocess.PIPE)
+def revive_rabbitmq(rabbitmq_cluster):
+    p = subprocess.Popen(("docker", "start", rabbitmq_cluster.rabbitmq_docker_id), stdout=subprocess.PIPE)
     p.wait(timeout=60)
-    wait_rabbitmq_to_start(rabbitmq_id, cookie)
+    rabbitmq_cluster.wait_rabbitmq_to_start()
 
 
 # Fixtures
@@ -181,10 +167,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
-    revive_rabbitmq(
-        rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
-    )
+    kill_rabbitmq(rabbitmq_cluster)
+    revive_rabbitmq(rabbitmq_cluster)
 
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
@@ -267,10 +251,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
-    revive_rabbitmq(
-        rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
-    )
+    kill_rabbitmq(rabbitmq_cluster)
+    revive_rabbitmq(rabbitmq_cluster)
 
     # while int(instance.query('SELECT count() FROM test.view')) == 0:
     #    time.sleep(0.1)
