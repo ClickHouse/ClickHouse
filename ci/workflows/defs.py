@@ -367,6 +367,7 @@ class ArtifactNames:
     CH_ODBC_B_ARM_RELEASE = "CH_ODBC_B_ARM_RELEASE"
     CH_ODBC_B_ARM_ASAN = "CH_ODBC_B_ARM_ASAN"
 
+    FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -444,6 +445,25 @@ ARTIFACTS = [
             ArtifactNames.CH_RISCV64,
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
+            ArtifactNames.FAST_TEST,
+        ]
+    ),
+    *Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/fasttest-output/clickhouse-stripped.zst",
+    ).parametrize(
+        names=[
+            ArtifactNames.FAST_TEST,
+        ]
+    ),
+    *Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/fasttest-output/clickhouse",
+    ).parametrize(
+        names=[
+            ArtifactNames.FAST_TEST,
         ]
     ),
     *Artifact.Config(
@@ -574,6 +594,7 @@ class Jobs:
                 "./src",
             ],
         ),
+        provides=ArtifactNames.FAST_TEST,
     )
 
     build_jobs = Job.Config(
