@@ -325,13 +325,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--no-random",
-        action="store",
-        dest="no_random",
-        help="No-op, use --random-order",
-    )
-
-    parser.add_argument(
         "--pre-pull",
         action="store_true",
         default=False,

@@ -13,6 +13,8 @@ def build_docker_deps(image_name: str, imagedir: str) -> None:
         rf"docker run --network=host --rm --entrypoint 'python3' {image_name} -c "
         """'import sys; print([p for p in sys.path if "/usr/local/lib/python" in p][0])'"""
     )
+    # We freeze only python packages installed by pip.
+    # Mixing distributive managed packages into the requirements.txt is disastrous
     dist_dir = str(subprocess.check_output(cmd, shell=True, encoding="utf-8").strip())
     pip_cmd = (
         "pip install pipdeptree 2>/dev/null 1>/dev/null && "
