@@ -1690,6 +1690,9 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     main_priority->modifySizeLimits(
                         new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements],
                         new_settings[FileCacheSetting::slru_size_ratio], cache_lock);
+
+                    actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
+                    actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
                 }
                 else
                 {
@@ -1704,8 +1707,10 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     /// Modify cache size limits.
                     /// From this point cache eviction will follow them.
                     main_priority->modifySizeLimits(
-                        new_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_elements],
-                        new_settings[FileCacheSetting::slru_size_ratio], cache_lock);
+                        new_settings[FileCacheSetting::max_size],
+                        new_settings[FileCacheSetting::max_elements],
+                        new_settings[FileCacheSetting::slru_size_ratio],
+                        cache_lock);
 
                     cache_lock.unlock();
 
@@ -1727,6 +1732,57 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
                     /// Do actual eviction from filesystem.
                     eviction_candidates.evict();
+
+                    auto failed_candidates = eviction_candidates.getFailedCandidates();
+                    if (failed_candidates.total_cache_size)
+                    {
+                        actual_settings[FileCacheSetting::max_size] = std::min<size_t>(
+                            actual_settings[FileCacheSetting::max_size].value,
+                            new_settings[FileCacheSetting::max_size] + failed_candidates.total_cache_size);
+
+                        actual_settings[FileCacheSetting::max_elements] = std::min<size_t>(
+                            actual_settings[FileCacheSetting::max_elements].value,
+                            new_settings[FileCacheSetting::max_elements] + failed_candidates.total_cache_elements);
+
+                        cache_lock.lock();
+
+                        /// Increase the max size and max elements
+                        /// to the size and number of failed candidates.
+                        main_priority->modifySizeLimits(
+                            actual_settings[FileCacheSetting::max_size],
+                            actual_settings[FileCacheSetting::max_elements],
+                            new_settings[FileCacheSetting::slru_size_ratio],
+                            cache_lock);
+
+                        /// Add failed candidates back to queue.
+                        for (const auto & [key_metadata, key_candidates] : failed_candidates.failed_candidates_per_key)
+                        {
+                            auto locked_key = key_metadata->tryLock();
+                            if (!locked_key)
+                                continue; /// Key was removed.
+
+                            for (const auto & candidate : key_candidates)
+                            {
+                                const auto & file_segment = candidate->file_segment;
+
+                                LOG_TRACE(log, "Adding back file segment after failed eviction: {}:{}",
+                                          file_segment->key(), file_segment->offset());
+
+                                main_priority->add(
+                                    key_metadata,
+                                    file_segment->offset(),
+                                    file_segment->getDownloadedSize(),
+                                    getCommonUser(),
+                                    cache_lock,
+                                    false);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
+                        actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
+                    }
                 }
 
                 modified_size_limit = true;
@@ -1739,11 +1795,6 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                     actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
                     actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
 
-            chassert(main_priority->getSizeApprox() <= new_settings[FileCacheSetting::max_size]);
-            chassert(main_priority->getElementsCountApprox() <= new_settings[FileCacheSetting::max_elements]);
-
-            actual_settings[FileCacheSetting::max_size] = new_settings[FileCacheSetting::max_size];
-            actual_settings[FileCacheSetting::max_elements] = new_settings[FileCacheSetting::max_elements];
         }
         else
         {
