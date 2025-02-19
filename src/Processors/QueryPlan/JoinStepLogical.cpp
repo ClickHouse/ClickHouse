@@ -243,12 +243,10 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition, ActionsDAG & actions_dag, 
             rhs_node = &actions_dag.addFunction(concat_function, {condition.getNode(), rhs_node}, {});
             actions_dag.addOrReplaceInOutputs(*rhs_node);
             return JoinActionRef(rhs_node, &actions_dag);
-
         }
     }
     return condition;
 }
-
 
 JoinActionRef concatConditionsWithFunction(
     const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, const FunctionOverloadResolverPtr & concat_function)
@@ -601,7 +599,10 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
     for (auto & join_condition : join_expression.disjunctive_conditions)
     {
         auto & table_join_clause = table_join_clauses.emplace_back();
-        addJoinConditionToTableJoin(join_condition, table_join_clause, expression_actions, join_context);
+        bool has_keys = addJoinConditionToTableJoin(join_condition, table_join_clause, expression_actions, join_context);
+        if (!has_keys)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
+                formatJoinCondition(join_condition));
         if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions))
             table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
         if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions))

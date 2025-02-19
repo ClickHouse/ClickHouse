@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
@@ -156,32 +157,6 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     return true;
 }
 
-
-bool isTrivialProjection(const ActionsDAG & actions_dag)
-{
-    return actions_dag.getOutputs() == actions_dag.getInputs() && actions_dag.trivial();
-}
-
-QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes)
-{
-    const auto & header = node->step->getOutputHeader();
-    if (!header && !actions_dag.getInputs().empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header, dag: {}",
-        actions_dag.dumpDAG());
-
-    if (isTrivialProjection(actions_dag))
-        return node;
-
-    QueryPlanStepPtr step;
-
-    if (filter_column_name.empty())
-        step = std::make_unique<ExpressionStep>(header, std::move(actions_dag));
-    else
-        step = std::make_unique<FilterStep>(header, std::move(actions_dag), filter_column_name, false);
-
-    return &nodes.emplace_back(QueryPlan::Node{std::move(step), {node}});
-}
-
 void addSortingForMergeJoin(
     const FullSortingMergeJoin * join_ptr,
     QueryPlan::Node *& left_node,
@@ -330,7 +305,7 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
         result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
         result_node.children = {&new_join_node};
     }
-    else if (!isTrivialProjection(*join_expression_actions.post_join_actions))
+    else if (!isPassthroughActions(*join_expression_actions.post_join_actions))
     {
         result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions));
         result_node.children = {&new_join_node};
