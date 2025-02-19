@@ -273,7 +273,7 @@ bool ConfigProcessor::hasNodeWithAttribute(Poco::XML::Node * config_root, const 
         if (node->nodeType() != Node::ELEMENT_NODE)
             continue;
 
-        if (dynamic_cast<Element *>(node)->hasAttribute(attribute_name) || hasNodeWithAttribute(node, attribute_name))
+        if (dynamic_cast<Element &>(*node).hasAttribute(attribute_name) || hasNodeWithAttribute(node, attribute_name))
             return true;
     }
     return false;
