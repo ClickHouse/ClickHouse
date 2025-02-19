@@ -130,214 +130,203 @@ Privileges have a hierarchical structure and a set of permitted queries depends 
 
 The hierarchy of privileges in ClickHouse is shown below:
 
-- [`SHOW`](#show)
-    - `SHOW DATABASES`
-    - `SHOW TABLES`
-    - `SHOW COLUMNS`
-    - `SHOW DICTIONARIES`
-    - `SHOW FILESYSTEM CACHES`
-- [`SELECT`](#select)
-- [`INSERT`](#insert)
 - [`ALL`](#all)
-- [`ALTER`](#alter)
-    - `ALTER TABLE`
-        - `ALTER UPDATE`
-        - `ALTER DELETE`
-        - `ALTER COLUMN`
-            - `ALTER ADD COLUMN`
-            - `ALTER DROP COLUMN`
-            - `ALTER MODIFY COLUMN`
-            - `ALTER COMMENT COLUMN`
-            - `ALTER CLEAR COLUMN`
-            - `ALTER RENAME COLUMN`
-            - `ALTER MATERIALIZE COLUMN`
-        - `ALTER INDEX`
-            - `ALTER ORDER BY`
-            - `ALTER SAMPLE BY`
-            - `ALTER ADD INDEX`
-            - `ALTER DROP INDEX`
-            - `ALTER MATERIALIZE INDEX`
-            - `ALTER CLEAR INDEX`
-        - `ALTER CONSTRAINT`
-            - `ALTER ADD CONSTRAINT`
-            - `ALTER DROP CONSTRAINT`
-        - `ALTER MODIFY COMMENT`
-        - `ALTER TTL`
-            - `ALTER MATERIALIZE TTL`
-        - `ALTER SETTINGS`
-        - `ALTER MOVE PARTITION`
-        - `ALTER FETCH PARTITION`
-        - `ALTER FREEZE PARTITION`
-        - `ALTER ADD STATISTICS`
-        - `ALTER DROP STATISTICS`
-        - `ALTER MODIFY STATISTICS`
-        - `ALTER MATERIALIZE STATISTICS`
-        - `ALTER ROW POLICY`
-        - `ALTER QUOTA`
-    - `ALTER VIEW`
-        - `ALTER VIEW REFRESH`
-        - `ALTER VIEW MODIFY QUERY`
-        - `ALTER VIEW MODIFY SQL SECURITY`
-    - `ALTER PROJECTION`
-        - `ALTER ADD PROJECTION`
-        - `ALTER DROP PROJECTION`
-        - `ALTER MATERIALIZE PROJECTION`
-        - `ALTER CLEAR PROJECTION`
-    - `ALTER DATABASE SETTINGS`
-    - `ALTER NAMED COLLECTION`
-    - `ALTER SETTINGS PROFILE`
-- [`CLUSTER`](#cluster)
-- [`CREATE`](#create)
-    - `CREATE DATABASE`
-    - `CREATE TABLE`
-        - `CREATE ARBITRARY TEMPORARY TABLE`
-            - `CREATE TEMPORARY TABLE`
-    - `CREATE VIEW`
-    - `CREATE DICTIONARY`
-    - `CREATE FUNCTION`
-    - `CREATE WORKLOAD`
-    - `CREATE RESOURCE`
-- [`DROP`](#drop)
-    - `DROP DATABASE`
-    - `DROP TABLE`
-    - `DROP VIEW`
-    - `DROP DICTIONARY`
-    - `DROP FUNCTION`
-    - `DROP WORKLOAD`
-    - `DROP RESOURCE`
-    - `DROP NAMED COLLECTION`
-    - `DROP SETTINGS PROFILE`
-- [`UNDROP`](undrop.md)
-- [`TRUNCATE`](#truncate)
-- [`OPTIMIZE`](#optimize)
-- `BACKUP`
-- `KILL`
-    - [`KILL QUERY`](#kill-query)
-    - `KILL TRANSACTION`
-- [`MOVE`](move.md) 
-- [`ACCESS MANAGEMENT`](#access-management)
-    - `CREATE USER`
-    - `ALTER USER`
-    - `DROP USER`
-    - `CREATE ROLE`
-    - `ALTER ROLE`
-    - `DROP ROLE`
-    - `CREATE ROW POLICY`
-    - `ALTER ROW POLICY`
-    - `DROP ROW POLICY`
-    - `CREATE QUOTA`
-    - `ALTER QUOTA`
-    - `DROP QUOTA`
-    - `CREATE SETTINGS PROFILE`
-    - `ALTER SETTINGS PROFILE`
-    - `DROP SETTINGS PROFILE`
-    - `SHOW ACCESS`
-        - `SHOW_USERS`
-        - `SHOW_ROLES`
-        - `SHOW_ROW_POLICIES`
-        - `SHOW_QUOTAS`
-        - `SHOW_SETTINGS_PROFILES`
-    - `ROLE ADMIN`
-- [`SYSTEM`](#system)
-    - `SYSTEM SHUTDOWN`
-    - `SYSTEM CLEANUP`
-    - `SYSTEM DROP CACHE`
-        - `SYSTEM DROP DNS CACHE`
-        - `SYSTEM DROP MARK CACHE`
-        - `SYSTEM DROP UNCOMPRESSED CACHE`
-        - `SYSTEM DROP CONNECTIONS CACHE`
-        - `SYSTEM DROP MMAP CACHE`
-        - `SYSTEM DROP QUERY CACHE`
-        - `SYSTEM DROP PRIMARY INDEX CACHE`
-        - `SYSTEM DROP UNCOMPRESSED CACHE`
-        - `SYSTEM DROP COMPILED EXPRESSION CACHE`
-        - `SYSTEM DROP FILESYSTEM CACHE`
-        - `SYSTEM DROP DISTRIBUTED CACHE`
-        - `SYSTEM DROP PAGE CACHE`
-        - `SYSTEM DROP SCHEMA CACHE`
-        - `SYSTEM DROP FORMAT SCHEMA CACHE`
-        - `SYSTEM DROP S3 CLIENT CACHE`
-    - `SYSTEM RELOAD`
-        - `SYSTEM RELOAD CONFIG`
-        - `SYSTEM RELOAD DICTIONARY`
-            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
-        - `SYSTEM RELOAD FUNCTION`
-        - `SYSTEM RELOAD FUNCTIONS`
-        - `SYSTEM RELOAD USERS`
-        - `SYSTEM RELOAD MODEL`
-        - `SYSTEM RELOAD ASYNCHRONOUS METRICS`
-    - `SYSTEM DROP REPLICA`
-    - `SYSTEM RESTORE REPLICA` 
-    - `SYSTEM MERGES`
-    - `SYSTEM THREAD FUZZER`
-    - `SYSTEM TTL MERGES`
-    - `SYSTEM FETCHES`
-    - `SYSTEM MOVES`
-    - `SYSTEM PULLING REPLICATION LOG`
-    - `SYSTEM PREWARM`
-        - `SYSTEM PREWARM MARK CACHE`
-        - `SYSTEM PREWARM PRIMARY INDEX CACHE`
-    - `SYSTEM RESTART DISK` 
-    - `SYSTEM SENDS`
-        - `SYSTEM DISTRIBUTED SENDS`
-        - `SYSTEM REPLICATED SENDS`
-    - `SYSTEM REPLICATION QUEUES`
-    - `SYSTEM SYNC`
-        - `SYSTEM SYNC REPLICA`
-        - `SYSTEM SYNC DATABASE REPLICA`
-        - `SYSTEM SYNC TRANSACTION LOG`
-        - `SYSTEM SYNC FILE CACHE`
-        - `SYSTEM SYNC FILESYSTEM CACHE`
-    - `SYSTEM REPLICA READINESS`
-    - `SYSTEM REDUCE BLOCKING PARTS`
-    - `SYSTEM RESTART REPLICA`
-    - `SYSTEM SHUTDOWNSYSTEM DROP DNS CACHE`
-    - `SYSTEM FAILPOINT`
-    - `SYSTEM FLUSH`
-        - `SYSTEM FLUSH DISTRIBUTED`
-        - `SYSTEM FLUSH LOGS`
-        - `SYSTEM FLUSH ASYNC INSERT QUEUE`
-    - `SYSTEM JEMALLOC`
-    - `SYSTEM LOAD PRIMARY KEY`
-    - `SYSTEM LISTEN`
-    - `SYSTEM UNLOAD PRIMARY KEY`
-    - `SYSTEM UNFREEZE`
-    - `SYSTEM VIEWS`
-    - `SYSTEM VIRTUAL PARTS UPDATE`
-- [`INTROSPECTION`](#introspection)
-    - `addressToLine`
-    - `addressToLineWithInlines`
-    - `addressToSymbol`
-    - `demangle`
-- [`SOURCES`](#sources)
-    - `AZURE`
-    - `FILE`
-    - `HDFS`
-    - `HIVE`
-    - `JDBC`
-    - `KAFKA`
-    - `MONGO`
-    - `MYSQL`
-    - `NATS`
-    - `ODBC`
-    - `POSTGRES`
-    - `RABBITMQ`
-    - `REDIS`
-    - `REMOTE`
-    - `S3`
-    - `SQLITE`
-    - `URL`
-- [`dictGet`](#dictget)
-- [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+      - [`ACCESS MANAGEMENT`](#access-management)
+            - `ALLOW SQL SECURITY NONE`
+            - `ALTER QUOTA`
+            - `ALTER ROLE`
+            - `ALTER ROW POLICY` 
+            - `ALTER SETTINGS PROFILE`
+            - `ALTER USER`
+            - `CREATE QUOTA`
+            - `CREATE ROLE`
+            - `CREATE ROW POLICY`
+            - `CREATE SETTINGS PROFILE`
+            - `CREATE USER`
+            - `DROP QUOTA`
+            - `DROP ROLE`
+            - `DROP ROW POLICY`
+            - `DROP SETTINGS PROFILE`
+            - `DROP USER`
+            - `ROLE ADMIN`
+            - `SHOW ACCESS`
+                - `SHOW QUOTAS`
+                - `SHOW ROLES`
+                - `SHOW ROW POLICIES`
+                - `SHOW SETTINGS PROFILES`
+                - `SHOW USERS`
+      - [`ALTER`](#alter)
+            - `ALTER DATABASE`
+                - `ALTER DATABASE SETTINGS`
+            - `ALTER TABLE`
+                  - `ALTER COLUMN`
+                      - `ALTER ADD COLUMN`
+                      - `ALTER CLEAR COLUMN`
+                      - `ALTER COMMENT COLUMN`
+                      - `ALTER DROP COLUMN`
+                      - `ALTER MATERIALIZE COLUMN`
+                      - `ALTER MODIFY COLUMN`
+                      - `ALTER RENAME COLUMN` 
+                  - `ALTER CONSTRAINT`
+                      - `ALTER ADD CONSTRAINT`
+                      - `ALTER DROP CONSTRAINT` 
+                  - `ALTER DELETE`
+                  - `ALTER FETCH PARTITION`
+                  - `ALTER FREEZE PARTITION`
+                  - `ALTER INDEX`
+                      - `ALTER ADD INDEX`
+                      - `ALTER CLEAR INDEX`
+                      - `ALTER DROP INDEX`
+                      - `ALTER MATERIALIZE INDEX`
+                      - `ALTER ORDER BY`
+                      - `ALTER SAMPLE BY` 
+                  - `ALTER MATERIALIZE TTL`
+                  - `ALTER MODIFY COMMENT`
+                  - `ALTER MOVE PARTITION`
+                  - `ALTER PROJECTION`
+                  - `ALTER SETTINGS`
+                  - `ALTER STATISTICS`
+                      - `ALTER ADD STATISTICS`
+                      - `ALTER DROP STATISTICS`
+                      - `ALTER MATERIALIZE STATISTICS`
+                      - `ALTER MODIFY STATISTICS` 
+                  - `ALTER TTL`
+                  - `ALTER UPDATE` 
+            - `ALTER VIEW`
+                - `ALTER VIEW MODIFY QUERY`
+                - `ALTER VIEW REFRESH`
+                - `ALTER VIEW MODIFY SQL SECURITY`
+        - `BACKUP`
+        - [`CLUSTER`](#cluster)
+        - [`CREATE`](#create)
+            - `CREATE ARBITRARY TEMPORARY TABLE`
+                - `CREATE TEMPORARY TABLE`
+            - `CREATE DATABASE`
+            - `CREATE DICTIONARY`
+            - `CREATE FUNCTION`
+            - `CREATE RESOURCE`
+            - `CREATE TABLE`
+            - `CREATE VIEW`
+            - `CREATE WORKLOAD`
+        - [`dictGet`](#dictget)
+        - [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+        - [`DROP`](#drop)
+            - `DROP DATABASE`
+            - `DROP DICTIONARY`
+            - `DROP FUNCTION`
+            - `DROP RESOURCE`
+            - `DROP TABLE`
+            - `DROP VIEW` 
+            - `DROP WORKLOAD`
+        - [`INSERT`](#insert)
+        - [`INTROSPECTION`](#introspection)
+            - `addressToLine`
+            - `addressToLineWithInlines`
+            - `addressToSymbol`
+            - `demangle`
+        - `KILL QUERY`
+        - `KILL TRANSACTION`
+        - `MOVE PARTITION BETWEEN SHARDS`
+        - [`NAMED COLLECTION ADMIN`](#named-collection-admin)
+            - `ALTER NAMED COLLECTION`
+            - `CREATE NAMED COLLECTION`
+            - `DROP NAMED COLLECTION`
+            - `NAMED COLLECTION`
+            - `SHOW NAMED COLLECTIONS`
+            - `SHOW NAMED COLLECTIONS SECRETS`
+        - [`OPTIMIZE`](#optimize)
+        - [`SELECT`](#select)
+        - [`SET DEFINER`](/docs/en/sql-reference/statements/create/view#sql_security)
+        - [`SHOW`](#show)
+            - `SHOW COLUMNS` 
+            - `SHOW DATABASES`
+            - `SHOW DICTIONARIES`
+            - `SHOW TABLES`
+        - `SHOW FILESYSTEM CACHES`
+        - [`SOURCES`](#sources)
+            - `AZURE`
+            - `FILE`
+            - `HDFS`
+            - `HIVE`
+            - `JDBC`
+            - `KAFKA`
+            - `MONGO`
+            - `MYSQL`
+            - `NATS`
+            - `ODBC`
+            - `POSTGRES`
+            - `RABBITMQ`
+            - `REDIS`
+            - `REMOTE`
+            - `S3`
+            - `SQLITE`
+            - `URL`
+        - [`SYSTEM`](#system)
+            - `SYSTEM CLEANUP`
+            - `SYSTEM DROP CACHE`
+                - `SYSTEM DROP COMPILED EXPRESSION CACHE`
+                - `SYSTEM DROP CONNECTIONS CACHE`
+                - `SYSTEM DROP DISTRIBUTED CACHE`
+                - `SYSTEM DROP DNS CACHE`
+                - `SYSTEM DROP FILESYSTEM CACHE`
+                - `SYSTEM DROP FORMAT SCHEMA CACHE`
+                - `SYSTEM DROP MARK CACHE`
+                - `SYSTEM DROP MMAP CACHE`
+                - `SYSTEM DROP PAGE CACHE`
+                - `SYSTEM DROP PRIMARY INDEX CACHE`
+                - `SYSTEM DROP QUERY CACHE`
+                - `SYSTEM DROP S3 CLIENT CACHE`
+                - `SYSTEM DROP SCHEMA CACHE`
+                - `SYSTEM DROP UNCOMPRESSED CACHE`
+            - `SYSTEM DROP PRIMARY INDEX CACHE`
+            - `SYSTEM DROP REPLICA`
+            - `SYSTEM FAILPOINT`
+            - `SYSTEM FETCHES`
+            - `SYSTEM FLUSH`
+                - `SYSTEM FLUSH ASYNC INSERT QUEUE`
+                - `SYSTEM FLUSH LOGS`
+            - `SYSTEM JEMALLOC`
+            - `SYSTEM KILL QUERY`
+            - `SYSTEM KILL TRANSACTION`
+            - `SYSTEM LISTEN`
+            - `SYSTEM LOAD PRIMARY KEY`
+            - `SYSTEM MERGES`
+            - `SYSTEM MOVES`
+            - `SYSTEM PULLING REPLICATION LOG`
+            - `SYSTEM REDUCE BLOCKING PARTS`
+            - `SYSTEM REPLICATION QUEUES`
+            - `SYSTEM REPLICA READINESS`
+            - `SYSTEM RESTART DISK`
+            - `SYSTEM RESTART REPLICA`
+            - `SYSTEM RESTORE REPLICA`
+            - `SYSTEM RELOAD`
+                - `SYSTEM RELOAD ASYNCHRONOUS METRICS`
+                - `SYSTEM RELOAD CONFIG`
+                    - `SYSTEM RELOAD DICTIONARY`
+                    - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+                    - `SYSTEM RELOAD FUNCTION`
+                    - `SYSTEM RELOAD MODEL`
+                    - `SYSTEM RELOAD USERS`
+            - `SYSTEM SENDS`
+                - `SYSTEM DISTRIBUTED SENDS`
+                - `SYSTEM REPLICATED SENDS`
+            - `SYSTEM SHUTDOWN`
+            - `SYSTEM SYNC DATABASE REPLICA`
+            - `SYSTEM SYNC FILE CACHE`
+            - `SYSTEM SYNC FILESYSTEM CACHE`
+            - `SYSTEM SYNC REPLICA`
+            - `SYSTEM SYNC TRANSACTION LOG`
+            - `SYSTEM THREAD FUZZER`
+            - `SYSTEM TTL MERGES`
+            - `SYSTEM UNFREEZE`
+            - `SYSTEM UNLOAD PRIMARY KEY`
+            - `SYSTEM VIEWS`
+            - `SYSTEM VIRTUAL PARTS UPDATE`
+            - `SYSTEM WAIT LOADING PARTS`
+        - [`TABLE ENGINE`](#table-engine)
+        - `TRUNCATE`
+        - `UNDROP TABLE` 
 - [`NONE`](#none)
-- [`NAMED COLLECTION ADMIN`](#named-collection-admin)
-    - `CREATE NAMED COLLECTION`
-    - `DROP NAMED COLLECTION`
-    - `ALTER NAMED COLLECTION`
-    - `SHOW NAMED COLLECTIONS`
-    - `SHOW NAMED COLLECTIONS SECRETS`
-    - `NAMED COLLECTION`
-- [`TABLE ENGINE`](#table-engine)
 
 Examples of how this hierarchy is treated:
 
