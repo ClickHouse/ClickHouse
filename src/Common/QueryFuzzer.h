@@ -129,6 +129,7 @@ private:
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
+    ASTPtr tryNegateNextPredicate(const ASTPtr & pred, const int prob);
     ASTPtr addJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
@@ -138,6 +139,10 @@ private:
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+
+    void extractPredicates(const ASTPtr & node, ASTs & predicates);
+    ASTPtr buildBinaryTree(const ASTs & predicates, const std::string & op);
+    ASTPtr permutePredicateClause(const ASTPtr & predicate);
 
     template <typename T>
     const T & pickRandomlyFromVector(pcg64 & rand, const std::vector<T> & vals)

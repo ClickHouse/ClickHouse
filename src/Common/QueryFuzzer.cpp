@@ -1127,6 +1127,11 @@ struct ScopedIncrement
 static const Strings comparison_comparators
     = {"equals", "notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals", "isNotDistinctFrom"};
 
+ASTPtr QueryFuzzer::tryNegateNextPredicate(const ASTPtr & pred, const int prob)
+{
+    return fuzz_rand() % prob == 0 ? makeASTFunction("not", pred) : pred;
+}
+
 ASTPtr QueryFuzzer::generatePredicate()
 {
     const int prob = fuzz_rand() % 3;
@@ -1182,16 +1187,10 @@ ASTPtr QueryFuzzer::generatePredicate()
                         exp1,
                         exp2);
                 }
-                if (fuzz_rand() % 30 == 0)
-                {
-                    next_condition = makeASTFunction("not", next_condition);
-                }
+                next_condition = tryNegateNextPredicate(next_condition, 30);
                 /// Sometimes use multiple conditions
                 predicate = predicate ? makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", predicate, next_condition) : next_condition;
-                if (fuzz_rand() % 50 == 0)
-                {
-                    predicate = makeASTFunction("not", predicate);
-                }
+                predicate = tryNegateNextPredicate(predicate, 50);
             }
             return predicate;
         }
@@ -1201,6 +1200,59 @@ ASTPtr QueryFuzzer::generatePredicate()
         return getRandomColumnLike();
     }
     return nullptr;
+}
+
+/// Helper function to extract all predicates from a binary AND/OR tree
+void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates)
+{
+    if (const auto * func = node->as<ASTFunction>())
+    {
+        if (func->name == "and" || func->name == "or")
+        {
+            /// Recursively extract predicates from the left and right children
+            extractPredicates(func->arguments->children[0], predicates);
+            extractPredicates(func->arguments->children[1], predicates);
+            return;
+        }
+    }
+    /// If it's not an AND/OR function, it's a predicate
+    predicates.push_back(node);
+}
+
+/// Helper function to build a binary AND/OR tree from a list of predicates
+ASTPtr QueryFuzzer::buildBinaryTree(const ASTs & predicates, const std::string & op)
+{
+    if (predicates.empty())
+    {
+        return nullptr;
+    }
+
+    /// Start with the first predicate
+    ASTPtr current = tryNegateNextPredicate(predicates[0], 10);
+    /// Iteratively build the binary tree
+    for (size_t i = 1; i < predicates.size(); i++)
+    {
+        current = makeASTFunction(op, current, tryNegateNextPredicate(predicates[i], 10));
+    }
+    return current;
+}
+
+/// Recursive function to traverse a predicate clause and permute logical groups
+ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate)
+{
+    if (const auto * func = predicate->as<ASTFunction>())
+    {
+        if (func->name == "and" || func->name == "or")
+        {
+            /// Extract all predicates under the current logical operator
+            ASTs predicates;
+            extractPredicates(predicate, predicates);
+            /// Shuffle them
+            std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
+            return buildBinaryTree(predicates, func->name);
+        }
+    }
+    return predicate;
 }
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
@@ -1231,6 +1283,13 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
             res = makeASTFunction((fuzz_rand() % 10) < 3 ? "or" : "and", new_pred, old_pred);
         }
         sel->setExpression(expr, std::move(res));
+    }
+
+    ASTPtr pred_expr = sel->getExpression(expr, false);
+    if (pred_expr && fuzz_rand() % 2 == 0)
+    {
+        /// Permute predicate list
+        sel->setExpression(expr, permutePredicateClause(pred_expr));
     }
 }
 
@@ -1348,17 +1407,12 @@ ASTPtr QueryFuzzer::addJoinClause()
             /// Run mostly equi-joins
             ASTPtr next_condition = makeASTFunction(
                 comparison_comparators[(fuzz_rand() % 10 == 0) ? (fuzz_rand() % comparison_comparators.size()) : 0], exp1, exp2);
-            if (fuzz_rand() % 30 == 0)
-            {
-                next_condition = makeASTFunction("not", next_condition);
-            }
+            next_condition = tryNegateNextPredicate(next_condition, 30);
+
             /// Sometimes use multiple conditions
             join_condition
                 = join_condition ? makeASTFunction((fuzz_rand() % 10) == 0 ? "or" : "and", join_condition, next_condition) : next_condition;
-            if (fuzz_rand() % 50 == 0)
-            {
-                join_condition = makeASTFunction("not", join_condition);
-            }
+            join_condition = tryNegateNextPredicate(join_condition, 50);
         }
         chassert(join_condition);
         table_join->on_expression = join_condition;
