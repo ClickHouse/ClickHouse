@@ -53,7 +53,8 @@ public:
 
     DB::ObjectInfoPtr next(size_t) override
     {
-        if (data_files.empty())
+        std::lock_guard lock(next_mutex);
+        while (data_files.empty())
         {
             auto have_scan_data_res = KernelUtils::unwrapResult(
                 ffi::kernel_scan_data_next(scan_data_iterator.get(), this, visitData),
@@ -64,8 +65,11 @@ public:
         }
 
         chassert(!data_files.empty());
+
         auto object = data_files.front();
         data_files.pop_front();
+
+        chassert(object);
         return object;
     }
 
@@ -125,9 +129,9 @@ public:
 
         DB::ObjectInfoPtr object;
         if (partitions_info.empty())
-            object = std::make_shared<DB::ObjectInfo>(full_path, size);
+            object = std::make_shared<DB::ObjectInfo>(std::move(full_path), size);
         else
-            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), full_path, size);
+            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), std::move(full_path), size);
 
         context->data_files.push_back(std::move(object));
     }
@@ -144,6 +148,7 @@ private:
     const LoggerPtr log;
 
     std::deque<DB::ObjectInfoPtr> data_files;
+    std::mutex next_mutex;
 };
 
 
