@@ -93,24 +93,24 @@ public:
         }
 
         col_result->getData().resize(input_rows_count);
-        auto & result_array = col_result->getData();
+        auto & result = col_result->getData();
 
         if (col_str1 && col_str2)
-            executeStringString(*col_str1, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
+            executeStringString(*col_str1, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && col_str2_const)
-            executeStringConst<false>(*col_str1, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
+            executeStringConst<false>(*col_str1, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1_const && col_str2)
-            executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result_array);
+            executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && fixed_str2_col)
-            executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && fixed_str2_col)
-            executeFixedStringString<true>(*fixed_str2_col, *col_str1, str2_offset, str1_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringString<true>(*fixed_str2_col, *col_str1, str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && col_str2)
-            executeFixedStringString<false>(*fixed_str1_col, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringString<false>(*fixed_str1_col, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && col_str2_const)
-            executeFixedStringConst<false>(*fixed_str1_col, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringConst<false>(*fixed_str1_col, col_str2_const->getDataAt(0).toView(), str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1_const && fixed_str2_col)
-            executeFixedStringConst<true>(*fixed_str2_col, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringConst<true>(*fixed_str2_col, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -165,7 +165,7 @@ private:
 
     template <bool reverse>
     static bool isOverflowComparison(
-        size_t str1_length, size_t str1_offset, size_t str2_length, size_t str2_offset, PaddedPODArray<Int8> & result_array, size_t input_rows_count)
+        size_t str1_length, size_t str1_offset, size_t str2_length, size_t str2_offset, PaddedPODArray<Int8> & result, size_t input_rows_count)
     {
         bool is_overflow = false;
         Int8 res = 0;
@@ -191,7 +191,7 @@ private:
             is_overflow = true;
         }
         for (size_t i = 0; i < input_rows_count; ++i)
-            result_array[i] = res;
+            result[i] = res;
         return is_overflow;
     }
 
@@ -202,7 +202,7 @@ private:
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
-        PaddedPODArray<Int8> & result_array) const
+        PaddedPODArray<Int8> & result) const
     {
         const auto & str1_data = col_str1.getChars();
         const auto & str1_offsets = col_str1.getOffsets();
@@ -217,11 +217,11 @@ private:
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_total_len = str2_offsets[i] - str2_data_offset - 1;
 
-            if (!isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result_array[i]))
+            if (!isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result[i]))
             {
                 auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
                 auto str2_length = std::min(num_bytes, str2_total_len - str2_offset);
-                result_array[i] = normalComparison<false>(str1, str1_length, str2, str2_length);
+                result[i] = normalComparison<false>(str1, str1_length, str2, str2_length);
             }
 
             str1_data_offset = str1_offsets[i];
@@ -237,7 +237,7 @@ private:
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
-        PaddedPODArray<Int8> & result_array) const
+        PaddedPODArray<Int8> & result) const
     {
         const auto & str1_data = col_str1.getChars();
         const auto & str1_offsets = col_str1.getOffsets();
@@ -246,10 +246,10 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t str1_total_len = str1_offsets[i] - str1_data_offset - 1;
-            if (!isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result_array[i]))
+            if (!isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result[i]))
             {
                 const auto * str1 = str1_data.data() + str1_data_offset + str1_offset;
-                result_array[i] = normalComparison<reverse>(
+                result[i] = normalComparison<reverse>(
                     reinterpret_cast<const char *>(str1),
                     std::min(num_bytes, str1_total_len - str1_offset),
                     str2.data() + str2_offset,
@@ -267,11 +267,11 @@ private:
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
-        PaddedPODArray<Int8> & result_array) const
+        PaddedPODArray<Int8> & result) const
     {
         size_t str1_total_len = col_str1.getN();
         size_t str2_total_len = col_str2.getN();
-        if (isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result_array, input_rows_count))
+        if (isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result, input_rows_count))
             return;
 
         const auto & str1_data = col_str1.getChars();
@@ -284,7 +284,7 @@ private:
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset);
-            result_array[i] = normalComparison<false>(str1, str1_length, str2, str2_length);
+            result[i] = normalComparison<false>(str1, str1_length, str2, str2_length);
             str1_data_offset += str1_total_len;
             str2_data_offset += str2_total_len;
         }
@@ -298,7 +298,7 @@ private:
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
-        PaddedPODArray<Int8> & result_array) const
+        PaddedPODArray<Int8> & result) const
     {
         auto str1_total_len = col_str1.getN();
         const auto & str1_data = col_str1.getChars();
@@ -312,10 +312,10 @@ private:
             auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_total_len = str2_offsets[i] - str2_data_offset - 1;
-            if (!isOverflowComparison<reverse>(str1_total_len, str1_offset, str2_total_len, str2_offset, result_array[i]))
+            if (!isOverflowComparison<reverse>(str1_total_len, str1_offset, str2_total_len, str2_offset, result[i]))
             {
                 auto str2_length = str2_offset >= str2_total_len ? 0 : std::min(num_bytes, str2_total_len - str2_offset);
-                result_array[i] = normalComparison<reverse>(str1, str1_length, str2, str2_length);
+                result[i] = normalComparison<reverse>(str1, str1_length, str2, str2_length);
             }
             str1_data_offset += str1_total_len;
             str2_data_offset = str2_offsets[i];
@@ -330,10 +330,10 @@ private:
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
-        PaddedPODArray<Int8> & result_array) const
+        PaddedPODArray<Int8> & result) const
     {
         size_t str1_total_len = col_str1.getN();
-        if (isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result_array, input_rows_count))
+        if (isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result, input_rows_count))
             return;
 
         const auto & str1_data = col_str1.getChars();
@@ -343,7 +343,7 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
-            result_array[i] = normalComparison<reverse>(str1, str1_length, str2.data() + str2_offset, str2_length);
+            result[i] = normalComparison<reverse>(str1, str1_length, str2.data() + str2_offset, str2_length);
             str1_data_offset += str1_total_len;
         }
     }
