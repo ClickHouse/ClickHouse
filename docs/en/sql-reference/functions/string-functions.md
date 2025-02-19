@@ -2406,7 +2406,7 @@ Compare two strings lexicographically.
 **Syntax**
 
 ```sql
-stringCompare(string1, string2[, str1_off, string2_offset, num_bytes]);
+stringCompare(string1, string2[, string1_offset, string2_offset, num_bytes]);
 ```
 
 **Arguments**
