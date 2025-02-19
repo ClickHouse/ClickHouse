@@ -37,6 +37,8 @@ extern const char * GIT_HASH;
 
 using namespace DB;
 
+/// We use static variable here to avoid creating it in a signal handler.
+static std::vector<StackTrace::FramePointers> empty_stack_trace;
 
 void call_default_signal_handler(int sig)
 {
@@ -113,7 +115,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack_trace, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
     out.finalize();
