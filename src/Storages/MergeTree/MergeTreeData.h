@@ -1590,11 +1590,11 @@ protected:
      *  This tree provides the order of loading of parts.
      *
      *  We start to traverse tree from the top level and load parts
-     *  corresposponded to nodes. If part is loaded successfully then
+     *  corresponding to nodes. If part is loaded successfully then
      *  we stop traversal at this node. Otherwise part is broken and we
      *  traverse its children and try to load covered parts which will
      *  replace broken covering part. Unloaded nodes represent outdated parts
-     *  nd they are pushed to background task and loaded asynchronoulsy.
+     *  nd they are pushed to background task and loaded asynchronously.
      */
     class PartLoadingTree
     {
