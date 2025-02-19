@@ -77,6 +77,7 @@ private:
     UInt64 polling_backoff_ms;
     const CommitSettings commit_settings;
 
+    std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     ConfigurationPtr configuration;
     ObjectStoragePtr object_storage;
