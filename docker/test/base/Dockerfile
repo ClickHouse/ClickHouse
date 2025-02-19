@@ -22,7 +22,7 @@ RUN BRIDGE_VERSION='25.1.4.53' \
     && ARCH=$(dpkg --print-architecture) \
     && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
     && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
-    && dpkg -i clickhouse-{odbc,library}-bridge_${BRIDGE_VERSION}_${ARCH}.deb
+    && dpkg -i clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb
 
 # Sanitizer options for services (clickhouse-server)
 # Set resident memory limit for TSAN to 45GiB (46080MiB) to avoid OOMs in Stress tests
