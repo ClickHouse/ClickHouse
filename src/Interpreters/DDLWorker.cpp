@@ -73,6 +73,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
