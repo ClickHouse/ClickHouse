@@ -206,14 +206,18 @@ private:
     {
         const auto & str1_data = col_str1.getChars();
         const auto & str1_offsets = col_str1.getOffsets();
+
         const auto & str2_data = col_str2.getChars();
         const auto & str2_offsets = col_str2.getOffsets();
+
         ColumnString::Offset str1_data_offset = 0;
         ColumnString::Offset str2_data_offset = 0;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
             size_t str1_total_len = str1_offsets[i] - str1_data_offset - 1;
+
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_total_len = str2_offsets[i] - str2_data_offset - 1;
 
@@ -241,8 +245,10 @@ private:
     {
         const auto & str1_data = col_str1.getChars();
         const auto & str1_offsets = col_str1.getOffsets();
+
         size_t str1_data_offset = 0;
         auto str2_length = str2_offset >= str2.size() ? 0 : std::min(num_bytes, str2.size() - str2_offset);
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t str1_total_len = str1_offsets[i] - str1_data_offset - 1;
@@ -271,20 +277,26 @@ private:
     {
         size_t str1_total_len = col_str1.getN();
         size_t str2_total_len = col_str2.getN();
+
         if (isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result, input_rows_count))
             return;
 
         const auto & str1_data = col_str1.getChars();
         const auto & str2_data = col_str2.getChars();
+
         auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
         auto str2_length = std::min(num_bytes, str2_total_len - str2_offset);
+
         size_t str1_data_offset = str1_offset;
         size_t str2_data_offset = str2_offset;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset);
+
             result[i] = normalComparison<false>(str1, str1_length, str2, str2_length);
+
             str1_data_offset += str1_total_len;
             str2_data_offset += str2_total_len;
         }
@@ -301,22 +313,28 @@ private:
         PaddedPODArray<Int8> & result) const
     {
         auto str1_total_len = col_str1.getN();
+
         const auto & str1_data = col_str1.getChars();
         const auto & str2_data = col_str2.getChars();
+
         const auto & str2_offsets = col_str2.getOffsets();
         size_t str1_data_offset = str1_offset;
         size_t str2_data_offset = 0;
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
+
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset + str2_offset);
             size_t str2_total_len = str2_offsets[i] - str2_data_offset - 1;
+
             if (!isOverflowComparison<reverse>(str1_total_len, str1_offset, str2_total_len, str2_offset, result[i]))
             {
                 auto str2_length = str2_offset >= str2_total_len ? 0 : std::min(num_bytes, str2_total_len - str2_offset);
                 result[i] = normalComparison<reverse>(str1, str1_length, str2, str2_length);
             }
+
             str1_data_offset += str1_total_len;
             str2_data_offset = str2_offsets[i];
         }
@@ -338,8 +356,10 @@ private:
 
         const auto & str1_data = col_str1.getChars();
         size_t str1_data_offset = str1_offset;
+
         auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
         auto str2_length = std::min(num_bytes, str2.size() - str2_offset);
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
