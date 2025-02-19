@@ -80,10 +80,12 @@ public:
         auto [col_str1, fixed_str1_col, col_str1_const] = try_cast_column(arguments[0].column);
         auto [col_str2, fixed_str2_col, col_str2_const] = try_cast_column(arguments[1].column);
 
-        auto str1_offset = arguments.size() > 2 ? arguments[2].column->getUInt(0) : 0;
-        auto str2_offset = arguments.size() > 2 ? arguments[3].column->getUInt(0) : 0;
+        bool has_five_args = arguments.size() == 5;
 
-        auto num_bytes = arguments.size() > 2 ? arguments[4].column->getUInt(0) : std::numeric_limits<size_t>::max();
+        auto str1_offset = has_five_args ? arguments[2].column->getUInt(0) : 0;
+        auto str2_offset = has_five_args ? arguments[3].column->getUInt(0) : 0;
+
+        auto num_bytes = has_five_args ? arguments[4].column->getUInt(0) : std::numeric_limits<size_t>::max();
         if (num_bytes == 0)
         {
             col_result->insertMany(0, arguments[0].column->size());
