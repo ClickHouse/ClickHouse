@@ -383,18 +383,8 @@ class ClickhouseIntegrationTestsRunner:
 
         logging.info("All packages installed")
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
-        os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
-        os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
         shutil.copy(
             CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH")  # type: ignore
-        )
-        shutil.copy(
-            CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH,
-            os.getenv("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"),  # type: ignore
-        )
-        shutil.copy(
-            CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH,
-            os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"),  # type: ignore
         )
 
     @staticmethod
