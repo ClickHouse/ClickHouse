@@ -14,8 +14,8 @@ ResizeProcessor::ResizeProcessor(const Block & header, size_t num_inputs, size_t
     : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
     , current_input(inputs.begin())
     , current_output(outputs.begin())
-        {
-            }
+{
+}
 
 ResizeProcessor::Status ResizeProcessor::prepare()
 {
@@ -178,6 +178,7 @@ IProcessor::Status ResizeProcessor::prepare(const PortNumbers & updated_inputs, 
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
+
     for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
@@ -288,6 +289,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
         for (auto & output : outputs)
             output_ports.push_back({.port = &output, .status = OutputStatus::NotActive});
     }
+
     for (const auto & output_number : updated_outputs)
     {
         auto & output = output_ports[output_number];
