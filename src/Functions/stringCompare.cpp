@@ -69,7 +69,7 @@ public:
         if (input_rows_count == 0)
             return std::move(col_result);
 
-        auto prepare_string_args
+        auto try_cast_column
             = [](const ColumnPtr & column) -> std::tuple<const ColumnString *, const ColumnFixedString *, const ColumnConst *>
         {
             return {
@@ -77,8 +77,8 @@ public:
                 checkAndGetColumn<ColumnFixedString>(column.get()),
                 checkAndGetColumn<ColumnConst>(column.get())};
         };
-        auto [col_str1, fixed_str1_col, col_str1_const] = prepare_string_args(arguments[0].column);
-        auto [col_str2, fixed_str2_col, col_str2_const] = prepare_string_args(arguments[1].column);
+        auto [col_str1, fixed_str1_col, col_str1_const] = try_cast_column(arguments[0].column);
+        auto [col_str2, fixed_str2_col, col_str2_const] = try_cast_column(arguments[1].column);
 
         auto str1_offset = arguments.size() > 2 ? arguments[2].column->getUInt(0) : 0;
         auto str2_offset = arguments.size() > 2 ? arguments[3].column->getUInt(0) : 0;
