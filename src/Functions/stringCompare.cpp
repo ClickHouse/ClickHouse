@@ -24,11 +24,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-// usage:
-// stringCompare(s, t)
-//  Compare s with t.
-// stringCompare(s, t, offset_s, offset_t, n)
-//  Compare s from offset_s to offset_s + n with t from offset_t to offset_t + n.
+// Usage:
+// - stringCompare(s, t):
+//     Compare s with t.
+// - stringCompare(s, t[, offset_s, offset_t, n])
+//     Compare s from offset_s to offset_s + n with t from offset_t to offset_t + n.
 class FunctionStringCompare : public IFunction
 {
 public:
@@ -123,7 +123,10 @@ public:
     }
 
 private:
-    static bool isConstColumn(const IColumn & column) { return column.isConst(); }
+    static bool isConstColumn(const IColumn & column)
+    {
+        return column.isConst();
+    }
 
     template <bool reverse>
     static Int8 normalComparison(const char * str1, size_t str1_length, const char * str2, size_t str2_length)
