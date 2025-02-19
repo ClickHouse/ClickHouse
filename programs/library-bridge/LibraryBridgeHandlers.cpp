@@ -91,7 +91,7 @@ ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRe
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
     , log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler"))
-    , libraries_paths(std::move(libraries_paths_)
+    , libraries_paths(std::move(libraries_paths_))
 {
 }
 
