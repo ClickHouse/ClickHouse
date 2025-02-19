@@ -2008,7 +2008,8 @@ void QueryFuzzer::addTableLike(ASTPtr ast)
         table_like.erase(iter);
     }
 
-    const auto name = ast->formatForErrorMessage();
+    const auto & alias = ast->tryGetAlias();
+    const auto & name = alias.empty() ? ast->formatForErrorMessage() : alias;
     if (name.size() < 200)
     {
         const auto res = table_like_map.insert({name, ast});
@@ -2029,7 +2030,8 @@ void QueryFuzzer::addColumnLike(ASTPtr ast)
         column_like.erase(iter);
     }
 
-    const auto name = ast->formatForErrorMessage();
+    const auto & alias = ast->tryGetAlias();
+    const auto & name = alias.empty() ? ast->formatForErrorMessage() : alias;
     if (name == "Null")
     {
         // The `Null` identifier from FORMAT Null clause. We don't quote it
