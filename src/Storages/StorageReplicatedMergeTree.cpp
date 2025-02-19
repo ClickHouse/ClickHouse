@@ -176,7 +176,6 @@ namespace Setting
     extern const SettingsSeconds receive_timeout;
     extern const SettingsInt64 replication_wait_for_inactive_replica_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool parallel_replicas_only_with_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -5784,16 +5783,8 @@ void StorageReplicatedMergeTree::read(
     /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
     {
-        if (settings[Setting::parallel_replicas_only_with_analyzer])
-        {
-            LOG_WARNING(
-                log, "Parallel replicas will not be used due to disable analyzer. See parallel_replicas_only_with_analyzer setting");
-        }
-        else
-        {
-            readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
-            return;
-        }
+        readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
+        return;
     }
 
     if (local_context->canUseParallelReplicasCustomKey() && !settings[Setting::allow_experimental_analyzer]

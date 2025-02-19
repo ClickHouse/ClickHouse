@@ -72,7 +72,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 max_parts_to_move;
-    extern const SettingsBool parallel_replicas_only_with_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -259,22 +258,13 @@ void StorageMergeTree::read(
     size_t num_streams)
 {
     const auto & settings = local_context->getSettingsRef();
-
     /// reading step for parallel replicas with new analyzer is built in Planner, so don't do it here
     if (local_context->canUseParallelReplicasOnInitiator() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
         && !settings[Setting::allow_experimental_analyzer])
     {
-        if (settings[Setting::parallel_replicas_only_with_analyzer])
-        {
-            LOG_WARNING(
-                log, "Parallel replicas will not be used due to disable analyzer. See parallel_replicas_only_with_analyzer setting");
-        }
-        else
-        {
-            ClusterProxy::executeQueryWithParallelReplicas(
-                query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
-            return;
-        }
+        ClusterProxy::executeQueryWithParallelReplicas(
+            query_plan, getStorageID(), processed_stage, query_info.query, local_context, query_info.storage_limits);
+        return;
     }
 
     if (local_context->canUseParallelReplicasCustomKey() && settings[Setting::parallel_replicas_for_non_replicated_merge_tree]
