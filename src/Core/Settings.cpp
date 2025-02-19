@@ -3905,9 +3905,6 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 )", 0) \
-    DECLARE(Bool, allow_attach_broken_part, false, R"(
-If true, it is allowed to attach parts by ALTER TABLE ... ATTACH PART command with custom prefixes (such as 'broken-on-start', 'unexpected', etc.) from 'detached/' directory.
-)", 0) \
     DECLARE(Bool, system_events_show_zero_values, false, R"(
 Allows to select zero-valued events from [`system.events`](../../operations/system-tables/events.md).
 

@@ -154,10 +154,11 @@ struct DetachedPartInfo : public MergeTreePartInfo
 {
     String dir_name;
     String prefix;
+
     DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
-    bool valid_name = false;
+    bool valid_name;
 
     static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
         "broken",
@@ -188,18 +189,15 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "broken-from-backup",
     });
 
-    void assertValidPartName() const;
-
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
     // Detached parts are always parsed regardless of their validity.
     // DetachedPartInfo::valid_name field specifies whether parsing was successful or not.
     static DetachedPartInfo parseDetachedPartName(const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version);
-    static DetachedPartInfo parseDetachedPartName(std::string_view dir_name, MergeTreeDataFormatVersion format_version);
 
 private:
-    void addParsedPartInfo(const MergeTreePartInfo & part);
+    void addParsedPartInfo(const MergeTreePartInfo& part);
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;

@@ -330,16 +330,11 @@ bool MergeTreePartInfo::areAllBlockNumbersCovered(const MergeTreePartInfo & bloc
     return true;
 }
 
-DetachedPartInfo DetachedPartInfo::parseDetachedPartName(const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version)
-{
-    auto res = parseDetachedPartName(dir_name, format_version);
-    res.disk = disk;
-    return res;
-}
-
-DetachedPartInfo DetachedPartInfo::parseDetachedPartName(std::string_view dir_name, MergeTreeDataFormatVersion format_version)
+DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
+    const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version)
 {
     DetachedPartInfo part_info;
+    part_info.disk = disk;
     part_info.dir_name = dir_name;
 
     /// First, try to find known prefix and parse dir_name as <prefix>_<part_name>.
@@ -400,12 +395,6 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(std::string_view dir_na
 
     // TODO what if name contains "_tryN" suffix?
     return part_info;
-}
-
-void DetachedPartInfo::assertValidPartName() const
-{
-    if (!valid_name)
-        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected directory name of detached part: {}", dir_name);
 }
 
 void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo & part)
