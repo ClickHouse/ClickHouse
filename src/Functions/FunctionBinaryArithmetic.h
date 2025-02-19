@@ -1640,7 +1640,6 @@ public:
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
-        LOG_TRACE(getLogger("DEBUGGING TIME!"), "result_type: NOT YET 3");
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
@@ -1736,7 +1735,6 @@ public:
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
-            LOG_TRACE(getLogger("DEBUGGING TIME!"), "result_type: NOT YET 2");
             ColumnsWithTypeAndName new_arguments(2);
 
             for (size_t i = 0; i < 2; ++i)
@@ -1813,7 +1811,6 @@ public:
 
         const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
-            LOG_TRACE(getLogger("DEBUGGING TIME!"), "result_type: NOT YET 1");
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
 
@@ -1880,7 +1877,6 @@ public:
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
-                    LOG_TRACE(getLogger("DEBUGGING TIME!"), "result_type: NOT YET");
                     if constexpr (is_int_div || is_int_div_or_zero)
                         type_res = std::make_shared<ResultDataType>();
                     else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
@@ -1941,7 +1937,6 @@ public:
                         if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
                             tz = &left;
                         type_res = std::make_shared<DataTypeTime>(*tz);
-                        LOG_TRACE(getLogger("DEBUGGING TIME!"), "result_type: TIME");
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();
