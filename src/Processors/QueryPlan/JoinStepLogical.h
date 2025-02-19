@@ -80,10 +80,6 @@ public:
 protected:
     void updateOutputHeader() override;
 
-    ActionsDAG & getLeftExpressionActions() { return *expression_actions.left_pre_join_actions; }
-    ActionsDAG & getRightExpressionActions() { return *expression_actions.right_pre_join_actions; }
-    ActionsDAG & getPostExpressionActions() { return *expression_actions.post_join_actions; }
-
     std::vector<std::pair<String, String>> describeJoinActions() const;
 
     JoinExpressionActions expression_actions;

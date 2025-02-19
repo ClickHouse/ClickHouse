@@ -197,7 +197,7 @@ void JoinStepLogical::updateOutputHeader()
     Header & header = output_header.emplace();
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
 
-    for (const auto * node : getPostExpressionActions().getInputs())
+    for (const auto * node : expression_actions.post_join_actions->getInputs())
     {
         const auto & column_type = node->result_type;
         const auto & column_name = node->result_name;
@@ -207,7 +207,7 @@ void JoinStepLogical::updateOutputHeader()
 
     if (!header)
     {
-        for (const auto * node : getAnyColumn(getPostExpressionActions().getInputs()))
+        for (const auto * node : getAnyColumn(expression_actions.post_join_actions->getInputs()))
         {
             const auto & column_type = node->result_type;
             const auto & column_name = node->result_name;
@@ -659,7 +659,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
         if (is_explain_logical)
         {
             /// Keep post_join_actions for explain
-            dag = getPostExpressionActions().clone();
+            dag = expression_actions.post_join_actions->clone();
         }
         else
         {
