@@ -15,8 +15,8 @@ Example:
 ``` sql
 SELECT *
 FROM system.asynchronous_loader
-FORMAT Vertical
 LIMIT 1
+FORMAT Vertical
 ```
 
 Columns:

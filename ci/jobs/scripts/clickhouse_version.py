@@ -53,13 +53,14 @@ SET(VERSION_STRING {string})
     def get_curent_version_as_dict(cls):
         version = cls.get_release_version_as_dict()
         info = Info()
-        if info.pr_number == 0:
+        try:
             tweak = int(
                 Shell.get_output(
                     f"git rev-list --count {version['githash']}..HEAD", verbose=True
                 )
             )
-        else:
+        except ValueError:
+            # Shallow checkout
             tweak = 1
         version_type = "testing"
         if info.pr_number == 0 and bool(

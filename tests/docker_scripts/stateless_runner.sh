@@ -5,6 +5,8 @@ set -e -x -a
 
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
+# shellcheck disable=SC1091
+source /basic_helpers.sh
 
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
@@ -26,12 +28,12 @@ TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -
 echo "Chosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
-dpkg -i package_folder/clickhouse-library-bridge_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-library-bridge_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
 
 echo "$BUGFIX_VALIDATE_CHECK"
 
@@ -258,10 +260,6 @@ function prepare_stateful_data() {
     clickhouse-client --query "SHOW TABLES FROM test"
     clickhouse-client --query "SELECT count() FROM test.hits"
     clickhouse-client --query "SELECT count() FROM test.visits"
-}
-
-function fn_exists() {
-    declare -F "$1" > /dev/null;
 }
 
 function run_tests()
