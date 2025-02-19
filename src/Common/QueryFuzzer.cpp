@@ -1208,62 +1208,54 @@ ASTPtr QueryFuzzer::generatePredicate()
     return nullptr;
 }
 
-/// Helper function to extract all predicates from a binary AND/OR tree
+/// Recursive function to extract all predicates from a AND/OR/XOR tree
 void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, const int negProb)
 {
     if (const auto * func = node->as<ASTFunction>())
     {
         if (func->name == op)
         {
-            /// Recursively extract predicates from the left and right children
-            extractPredicates(func->arguments->children[0], predicates, op, negProb);
-            extractPredicates(func->arguments->children[1], predicates, op, negProb);
+            /// Recursively extract predicates from children
+            for (const auto & entry : func->arguments->children)
+            {
+                extractPredicates(entry, predicates, op, negProb);
+            }
             return;
         }
-        else if (func->name == "and" || func->name == "or")
+        if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
-            /// Hit another "or" or "and" clause, shuffle it
+            /// Hit another AND/OR/XOR tree, permute it recursively
             predicates.emplace_back(permutePredicateClause(node, negProb));
             return;
         }
     }
-    /// If it's not an AND/OR function, it's a predicate
+    /// It's not a AND/OR/XOR function, add it to the list to be shuffled
     predicates.emplace_back(node);
 }
 
-ASTPtr QueryFuzzer::buildBinaryTree(const ASTs & predicates, const std::string & op, const int negProb)
-{
-    if (predicates.empty())
-    {
-        return nullptr;
-    }
-
-    /// Start with the first predicate
-    ASTPtr current = tryNegateNextPredicate(predicates[0], negProb);
-    /// Iteratively build the binary tree
-    for (size_t i = 1; i < predicates.size(); i++)
-    {
-        current = makeASTFunction(op, current, tryNegateNextPredicate(predicates[i], negProb));
-    }
-    return current;
-}
-
-/// Recursive function to traverse a predicate clause and permute logical groups
+/// Permute a list of conditions under a AND/OR/XOR tree
 ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int negProb)
 {
     if (const auto * func = predicate->as<ASTFunction>())
     {
-        if (func->name == "and" || func->name == "or")
+        if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
-            /// Extract all predicates under the current logical operator
             ASTs predicates;
+
+            /// Extract all predicates under the current logical operator
             extractPredicates(predicate, predicates, func->name, negProb);
+            chassert(!predicates.empty());
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
-            return buildBinaryTree(predicates, func->name, negProb);
+            for (auto & entry : predicates)
+            {
+                /// Try to negate an entry
+                entry = tryNegateNextPredicate(entry, negProb);
+            }
+            return makeASTFunction(func->name, predicates);
         }
     }
-    return predicate;
+    return tryNegateNextPredicate(predicate, negProb);
 }
 
 void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQuery::Expression expr)
