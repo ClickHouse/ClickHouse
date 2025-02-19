@@ -504,6 +504,8 @@ class ClickHouseCluster:
         )
         self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
 
+        self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
+
         self.base_cmd = ["docker", "compose"]
         if custom_dockerd_host:
             self.base_cmd += ["--host", custom_dockerd_host]
@@ -637,7 +639,7 @@ class ClickHouseCluster:
         # available when with_nginx == True
         self.nginx_host = "nginx"
         self.nginx_ip = None
-        self.nginx_port = 80
+        self._nginx_port = None
         self.nginx_id = self.get_instance_docker_id(self.nginx_host)
 
         # available when with_redis == True
@@ -770,6 +772,13 @@ class ClickHouseCluster:
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
+
+    @property
+    def nginx_port(self):
+        if self._nginx_port:
+            return self._nginx_port
+        self._nginx_port = self.port_pool.get_port()
+        return self._nginx_port
 
     @property
     def kafka_port(self):
@@ -1489,6 +1498,7 @@ class ClickHouseCluster:
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_nginx = True
 
+        env_variables["NGINX_EXTERNAL_PORT"] = str(self.nginx_port)
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nginx.yml")]
         )
@@ -2098,7 +2108,9 @@ class ClickHouseCluster:
                 [
                     "bash",
                     "-c",
-                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(dest_path, encodedStr, dest_path),
+                    "mkdir -p $(dirname {}) && echo {} | base64 --decode > {}".format(
+                        dest_path, encodedStr, dest_path
+                    ),
                 ],
             )
 
@@ -3095,7 +3107,7 @@ class ClickHouseCluster:
         os.makedirs(p.dirname(self.docker_logs_path), exist_ok=True)
         # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
         docker_logs_path = open(self.docker_logs_path, "w+", errors="replace")
-        subprocess.Popen(
+        self.docker_logs_proc = subprocess.Popen(
             self.base_cmd + ["logs", "--follow"],
             stdout=docker_logs_path,
             stderr=subprocess.STDOUT,
@@ -3107,12 +3119,6 @@ class ClickHouseCluster:
         fatal_log = None
 
         if self.up_called:
-            with open(self.docker_logs_path, "r") as f:
-                for line in f:
-                    if SANITIZER_SIGN in line:
-                        sanitizer_assert_instance = line.split("|")[0].strip()
-                        break
-
             if kill:
                 try:
                     run_and_check(self.base_cmd + ["stop", "--timeout", "20"])
@@ -3156,6 +3162,19 @@ class ClickHouseCluster:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
                 )
+
+            # Finish `docker compose logs --follow` process, just in case
+            # It should be already finished because of the `docker compose down`
+            if self.docker_logs_proc is not None:
+                self.docker_logs_proc.kill()
+
+            if not sanitizer_assert_instance:
+                # Search for sinitizer signs in docker.log if it's still empty
+                with open(self.docker_logs_path, "r") as f:
+                    for line in f:
+                        if SANITIZER_SIGN in line:
+                            sanitizer_assert_instance = line.split("|")[0].strip()
+                            break
         else:
             logging.warning(
                 "docker compose up was not called. Trying to export docker.log for running containers"
