@@ -42,6 +42,7 @@ def normalize_string(string: str) -> str:
         .replace("(", "")
         .replace(")", "")
         .replace(",", "")
+        .replace(":", "_")
     )
     return normalized_string
 
@@ -88,6 +89,7 @@ def set_job_timeout():
     def timeout_handler(_signum, _frame):
         print("Timeout expired")
         raise TimeoutError("Job's KILL_TIMEOUT expired")
+
 
     kill_timeout = int(os.getenv("KILL_TIMEOUT", "0"))
     assert kill_timeout > 0, "kill timeout must be provided in KILL_TIMEOUT env"
