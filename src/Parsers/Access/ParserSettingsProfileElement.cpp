@@ -319,7 +319,7 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
             }
             else if (ParserKeyword{Keyword::DROP}.ignore(pos, expected))
             {
-                /// `DROP` statements should be at the begining of the query.
+                /// `DROP` statements should be at the beginning of the query.
                 if (!add_settings.empty() || !modify_settings.empty())
                     return false;
                 action = "DROP";
