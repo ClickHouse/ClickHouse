@@ -144,7 +144,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group);
+        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {

@@ -1,6 +1,6 @@
 ---
-title: Core Settings
-sidebar_label: Core Settings
+title: Session Settings
+sidebar_label: Session Settings
 slug: /en/operations/settings/settings
 toc_max_heading_level: 2
 --- 
