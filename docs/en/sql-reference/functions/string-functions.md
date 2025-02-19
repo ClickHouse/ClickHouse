@@ -526,26 +526,30 @@ If `string1_offset` < length(`string1`) and `string2_offset` >= length(`string2`
 
 ```sql
 SELECT
-    stringCompare('alice', 'bob', 0, 0, 3) as result1,
-    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
-    stringCompare('bob', 'alice', 0, 0, 3) as result3
+    stringCompare('alice', 'alicia') as result2,
+    stringCompare('alice', 'alice') as result1,
+    stringCompare('bob', 'alice') as result3
 ```
+
 Result:
+
 ```result
-   ┌─result1─┬─result2─┬─result3─┐
+   ┌─result2─┬─result1─┬─result3─┐
 1. │      -1 │       0 │       1 │
    └─────────┴─────────┴─────────┘
 ```
 
 ```sql
 SELECT
-    stringCompare('alice', 'alicia') as result2,
-    stringCompare('alice', 'alice') as result1,
-    stringCompare('bob', 'alice') as result3
+    stringCompare('alice', 'bob', 0, 0, 3) as result1,
+    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
+    stringCompare('bob', 'alice', 0, 0, 3) as result3
 ```
+
 Result:
+
 ```result
-   ┌─result2─┬─result1─┬─result3─┐
+   ┌─result1─┬─result2─┬─result3─┐
 1. │      -1 │       0 │       1 │
    └─────────┴─────────┴─────────┘
 ```
