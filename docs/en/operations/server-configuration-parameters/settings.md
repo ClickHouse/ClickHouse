@@ -3157,6 +3157,25 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
+## remote_url_allow_hosts
+
+List of hosts which are allowed to be used in URL-related storage engines and table functions.
+
+When adding a host with the `\<host\>` xml tag:
+- it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
+- if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
+- if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
+- if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
+- if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
+
+For example: 
+
+```sql
+<remote_url_allow_hosts>
+    <host>clickhouse.com</host>
+</remote_url_allow_hosts>
+```
+
 ## timezone
 
 The server's time zone.
