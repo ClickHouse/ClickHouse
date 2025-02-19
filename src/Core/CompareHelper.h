@@ -32,7 +32,8 @@ struct CompareHelper
 template <typename T>
 struct FloatCompareHelper
 {
-    static constexpr bool less(T a, T b, int nan_direction_hint)
+    /// NaN semantics follow Apache Spark: https://spark.apache.org/docs/3.5.3/sql-ref-datatypes.html#nan-semantics.
+    static constexpr bool less(T a, T b, int )
     {
         const bool isnan_a = isNaN(a);
         const bool isnan_b = isNaN(b);
@@ -40,14 +41,14 @@ struct FloatCompareHelper
         if (isnan_a && isnan_b)
             return false;
         if (isnan_a)
-            return nan_direction_hint < 0;
+            return false;
         if (isnan_b)
-            return nan_direction_hint > 0;
+            return true;
 
         return a < b;
     }
 
-    static constexpr bool greater(T a, T b, int nan_direction_hint)
+    static constexpr bool greater(T a, T b, int )
     {
         const bool isnan_a = isNaN(a);
         const bool isnan_b = isNaN(b);
@@ -55,16 +56,16 @@ struct FloatCompareHelper
         if (isnan_a && isnan_b)
             return false;
         if (isnan_a)
-            return nan_direction_hint > 0;
+            return true;
         if (isnan_b)
-            return nan_direction_hint < 0;
+            return false;
 
         return a > b;
     }
 
     static constexpr bool equals(T a, T b, int nan_direction_hint) { return compare(a, b, nan_direction_hint) == 0; }
 
-    static constexpr int compare(T a, T b, int nan_direction_hint)
+    static constexpr int compare(T a, T b, int )
     {
         const bool isnan_a = isNaN(a);
         const bool isnan_b = isNaN(b);
@@ -74,7 +75,7 @@ struct FloatCompareHelper
             if (isnan_a && isnan_b)
                 return 0;
 
-            return isnan_a ? nan_direction_hint : -nan_direction_hint;
+            return isnan_a ? 1 : -1;
         }
 
         return (T(0) < (a - b)) - ((a - b) < T(0));

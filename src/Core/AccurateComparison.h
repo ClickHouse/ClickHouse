@@ -21,16 +21,20 @@ using namespace DB;
 template <typename A, typename B>
 bool lessOp(A a, B b)
 {
+    /// Process NaN same with Spark(https://spark.apache.org/docs/3.5.3/sql-ref-datatypes.html#nan-semantics)
+    if constexpr (is_floating_point<A>)
+        if (isNaN(a))
+            return false;
+    if constexpr (is_floating_point<B>)
+        if (isNaN(b))
+            return true;
+
     if constexpr (std::is_same_v<A, B>)
         return a < b;
 
     /// float vs float
     if constexpr (is_floating_point<A> && is_floating_point<B>)
         return a < b;
-
-    /// anything vs NaN
-    if (isNaN(a) || isNaN(b))
-        return false;
 
     /// int vs int
     if constexpr (is_integer<A> && is_integer<B>)
@@ -79,8 +83,13 @@ bool greaterOp(A a, B b)
 template <typename A, typename B>
 bool greaterOrEqualsOp(A a, B b)
 {
-    if (isNaN(a) || isNaN(b))
-        return false;
+    /// Process NaN same with Spark(https://spark.apache.org/docs/3.5.3/sql-ref-datatypes.html#nan-semantics)
+    if constexpr (is_floating_point<A>)
+        if (isNaN(a))
+            return true;
+    if constexpr (is_floating_point<B>)
+        if (isNaN(b))
+            return false;
 
     return !lessOp(a, b);
 }
@@ -88,8 +97,13 @@ bool greaterOrEqualsOp(A a, B b)
 template <typename A, typename B>
 bool lessOrEqualsOp(A a, B b)
 {
-    if (isNaN(a) || isNaN(b))
-        return false;
+    /// Process NaN same with Spark(https://spark.apache.org/docs/3.5.3/sql-ref-datatypes.html#nan-semantics)
+    if constexpr (is_floating_point<B>)
+        if (isNaN(b))
+            return true;
+    if constexpr (is_floating_point<A>)
+        if (isNaN(a))
+            return false;
 
     return !lessOp(b, a);
 }
@@ -97,16 +111,21 @@ bool lessOrEqualsOp(A a, B b)
 template <typename A, typename B>
 bool equalsOp(A a, B b)
 {
+    /// Process NaN same with Spark(https://spark.apache.org/docs/3.5.3/sql-ref-datatypes.html#nan-semantics)
+    if constexpr (is_floating_point<A> || is_floating_point<B>)
+    {
+        const bool a_nan = isNaN(a);
+        const bool b_nan = isNaN(b);
+        if (a_nan || b_nan)
+            return a_nan && b_nan;
+    }
+
     if constexpr (std::is_same_v<A, B>)
         return a == b;
 
     /// float vs float
     if constexpr (is_floating_point<A> && is_floating_point<B>)
         return a == b;
-
-    /// anything vs NaN
-    if (isNaN(a) || isNaN(b))
-        return false;
 
     /// int vs int
     if constexpr (is_integer<A> && is_integer<B>)
