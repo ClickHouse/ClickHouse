@@ -656,6 +656,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"table_disk", false, false, "New setting"},
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
+            {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
