@@ -734,11 +734,11 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 ```
 
 Referring to a nested values by passing multiple indices_or_keys parameters:
-```
+```sql
 SELECT JSONExtract('{"a":{"b":"hello","c":{"d":[1,2,3],"e":[1,3,7]}}}','a','c','Map(String, Array(UInt8))') AS val, toTypeName(val), val['d'];
 ```
 Result:
-```
+```response
 ┌─val───────────────────────┬─toTypeName(val)───────────┬─arrayElement(val, 'd')─┐
 │ {'d':[1,2,3],'e':[1,3,7]} │ Map(String, Array(UInt8)) │ [1,2,3]                │
 └───────────────────────────┴───────────────────────────┴────────────────────────┘
@@ -805,8 +805,7 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
 
 Result:
 
-```
-text
+```response
 ┌─JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}')─┐
 │ ['a','b']                                                  │
 └────────────────────────────────────────────────────────────┘
@@ -844,7 +843,7 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 
 
 ### JSONExtractArrayRaw
 
-Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn’t an array, then an empty array will be returned.
+Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn't an array, then an empty array will be returned.
 
 **Syntax**
 
@@ -1194,7 +1193,7 @@ INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hel
 SELECT json, JSONAllPaths(json) FROM test;
 ```
 
-```text
+```response
 ┌─json─────────────────────────────────┬─JSONAllPaths(json)─┐
 │ {"a":"42"}                           │ ['a']              │
 │ {"b":"Hello"}                        │ ['b']              │
@@ -1228,7 +1227,7 @@ INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hel
 SELECT json, JSONAllPathsWithTypes(json) FROM test;
 ```
 
-```text
+```response
 ┌─json─────────────────────────────────┬─JSONAllPathsWithTypes(json)───────────────┐
 │ {"a":"42"}                           │ {'a':'Int64'}                             │
 │ {"b":"Hello"}                        │ {'b':'String'}                            │
@@ -1262,7 +1261,7 @@ INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hel
 SELECT json, JSONDynamicPaths(json) FROM test;
 ```
 
-```text
+```response
 ┌─json─────────────────────────────────┬─JSONDynamicPaths(json)─┐
 | {"a":"42"}                           │ ['a']                  │
 │ {"b":"Hello"}                        │ []                     │
@@ -1290,13 +1289,13 @@ JSONAllPathsWithTypes(json)
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONDynamicPathsWithTypes(json) FROM test;
 ```
 
-```text
+```response
 ┌─json─────────────────────────────────┬─JSONDynamicPathsWithTypes(json)─┐
 │ {"a":"42"}                           │ {'a':'Int64'}                   │
 │ {"b":"Hello"}                        │ {}                              │
@@ -1310,7 +1309,7 @@ Returns the list of paths that are stored in shared data structure in [JSON](../
 
 **Syntax**
 
-``` sql
+```sql
 JSONSharedDataPaths(json)
 ```
 
@@ -1324,13 +1323,13 @@ JSONSharedDataPaths(json)
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONSharedDataPaths(json) FROM test;
 ```
 
-```text
+```response
 ┌─json─────────────────────────────────┬─JSONSharedDataPaths(json)─┐
 │ {"a":"42"}                           │ []                        │
 │ {"b":"Hello"}                        │ ['b']                     │
@@ -1344,7 +1343,7 @@ Returns the map of paths that are stored in shared data structure and their type
 
 **Syntax**
 
-``` sql
+```sql
 JSONSharedDataPathsWithTypes(json)
 ```
 
@@ -1358,13 +1357,13 @@ JSONSharedDataPathsWithTypes(json)
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE test (json JSON(max_dynamic_paths=1)) ENGINE = Memory;
 INSERT INTO test FORMAT JSONEachRow {"json" : {"a" : 42}}, {"json" : {"b" : "Hello"}}, {"json" : {"a" : [1, 2, 3], "c" : "2020-01-01"}}
 SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 ```
 
-```text
+```response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
 │ {"a":"42"}                           │ {}                                 │
 │ {"b":"Hello"}                        │ {'b':'String'}                     │

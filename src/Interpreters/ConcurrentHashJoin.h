@@ -3,7 +3,6 @@
 #include <memory>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -18,7 +17,7 @@ namespace DB
 struct SelectQueryInfo;
 
 /**
- * The default `HashJoin` is not thread-safe for inserting the right table’s rows; thus, it is done on a single thread.
+ * The default `HashJoin` is not thread-safe for inserting the right table's rows; thus, it is done on a single thread.
  * When the right table is large, the join process is too slow.
  *
  * `ConcurrentHashJoin` can run `addBlockToJoin()` concurrently to speed up the join process. On the test, it scales almost linearly.
@@ -28,7 +27,7 @@ struct SelectQueryInfo;
  * that every `HashJoin` instance is written only from one thread at a time.
  *
  * When matching the left table, the input blocks are also split by hash and routed to corresponding `HashJoin` instances.
- * This introduces some noticeable overhead compared to the `hash` join algorithm that doesn’t have to split. Then,
+ * This introduces some noticeable overhead compared to the `hash` join algorithm that doesn't have to split. Then,
  * we introduced the following optimization. On the probe stage, we want to have the same execution as for the `hash` join algorithm,
  * i.e., we want to have a single shared hash map that we will read from each thread. No splitting of blocks is required.
  * We should somehow divide this shared hash map between threads so that we can still execute the build stage concurrently.
@@ -107,6 +106,4 @@ private:
 
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
-UInt64 calculateCacheKey(
-    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 }

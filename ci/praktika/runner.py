@@ -65,6 +65,7 @@ class Runner:
             cache_success_base64=[],
             cache_artifacts={},
             cache_jobs={},
+            filtered_jobs={},
             custom_data={},
         )
         for docker in workflow.dockers:
@@ -418,7 +419,9 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
-        if workflow.enable_commit_status_on_failure and not result.is_ok():
+        if (
+            workflow.enable_commit_status_on_failure and not result.is_ok()
+        ) or job.enable_commit_status:
             if Settings.USE_CUSTOM_GH_AUTH:
                 from praktika.gh_auth_deprecated import GHAuth
 
