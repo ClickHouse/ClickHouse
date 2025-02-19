@@ -772,7 +772,6 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
 
         DB::Exception::parent_thread_id.store(job_data->parent_thread_id, std::memory_order_relaxed);
-        std::atomic_signal_fence(std::memory_order_release);
 
         /// Run the job.
         try
