@@ -509,9 +509,9 @@ stringCompare(string1, string2[, string1_offset, string2_offset, num_bytes]);
 
 - `string1` — The first string to compare. [String](../data-types/string.md)
 - `string2` - The second string to compare.[String](../data-types/string.md)
-- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional, positive number.
-- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional, positive number.
-- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional. [UInt*](../data-types/int-uint.md).
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional. [UInt*](../data-types/int-uint.md).
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. Optional. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
