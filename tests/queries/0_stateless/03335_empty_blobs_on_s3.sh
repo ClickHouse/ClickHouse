@@ -31,23 +31,25 @@ UUID=`$CLICKHOUSE_CLIENT -q "
     FROM system.tables
     WHERE database = currentDatabase() AND table = 'test_empty_blobs'"`;
 
-# Check that there were no empty blobs written to S3
-$CLICKHOUSE_CLIENT -q "SELECT 'Empty blobs: ', size, local_path FROM system.remote_data_paths WHERE disk_name = 's3_disk' AND local_path LIKE '%$UUID/all_1_1_0/%' AND size = 0";
-
-# Check logs for skipping empty blob
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS;
 
-    SELECT 'Skipped empty blobs after 1 insert:',  count() FROM system.text_log WHERE 
-        message LIKE 'Skipping writing empty blob for path %$UUID/tmp_insert_all_1_1_0/arr.bin%' AND
+    -- Check that there were no empty blobs written to S3
+    SELECT 'Empty blobs: ', local_path FROM system.blob_storage_log
+    WHERE disk_name = 's3_disk' AND local_path LIKE '%$UUID/%all_1_1_0/%' AND
+        data_size = 0 AND event_type = 'Upload' AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
+
+    -- Check logs for skipping empty blob
+    SELECT 'Skipped empty blobs after 1 insert:',  count() FROM system.text_log
+    WHERE message LIKE 'Skipping writing empty blob for path %$UUID/tmp_insert_all_1_1_0/arr.bin%' AND
         event_date >= yesterday() AND event_time > now() - interval 10 minute;
-";
 
-# Check that there are several non-empty blobs in part dir
-$CLICKHOUSE_CLIENT -q "SELECT if (count() > 4, 'Non-empty blobs present', 'Test error') FROM system.remote_data_paths WHERE disk_name = 's3_disk' AND local_path LIKE '%$UUID/all_1_1_0/%' AND size > 0";
+    -- Check that there are several non-empty blobs in part dir
+    SELECT if (count() > 4, 'Non-empty blobs present', 'Test error: no blobs found') FROM system.blob_storage_log
+    WHERE disk_name = 's3_disk' AND local_path LIKE '%$UUID/%all_1_1_0/%' AND
+        data_size > 0 AND event_type = 'Upload' AND event_date >= yesterday() AND event_time > now() - interval 10 minute;
 
-# Insert another row with empty Arrays to create another part with empty file
-$CLICKHOUSE_CLIENT -m -q "
+    -- Insert another row with empty Arrays to create another part with empty file
     INSERT INTO test_empty_blobs SELECT *, [] from numbers(1, 1);
 
     SELECT * FROM test_empty_blobs ORDER BY key;
@@ -77,12 +79,9 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT -m -q "
     -- Read after restore
     SELECT * FROM test_empty_blobs ORDER BY key;
-";
 
-# Check logs for skipping empty blob
-$CLICKHOUSE_CLIENT -m -q "
+    -- Check logs for skipping empty blob
     SYSTEM FLUSH LOGS;
-
     SELECT 'Skipped empty blobs after 2 inserts and merge:',  count() FROM system.text_log WHERE 
         message LIKE 'Skipping writing empty blob for path %$UUID/%/arr.bin%' AND
         event_date >= yesterday() AND event_time > now() - interval 10 minute;
