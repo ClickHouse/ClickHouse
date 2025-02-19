@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
             {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
             {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
+            {"schema_inference_make_columns_nullable", 1, 3, "Take nullability information from Parquet/ORC/Arrow metadata by default, instead of making everything nullable."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
