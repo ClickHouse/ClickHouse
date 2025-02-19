@@ -35,6 +35,8 @@ namespace ErrorCodes
     DECLARE(UInt64, list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, "", 0) \
     DECLARE(Bool, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
+    DECLARE(UInt64, check_objects_after_upload_max_attempts, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD_MAX_ATTEMPTS, "", 0) \
+    DECLARE(UInt64, check_objects_after_upload_initial_backoff_ms, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD_INITIAL_BACKOFF_MS, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \

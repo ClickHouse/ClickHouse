@@ -59,6 +59,7 @@ private:
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
+    void checkObjectStorageAfterUpload();
 
     LoggerPtr log;
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
@@ -90,7 +91,9 @@ private:
     size_t hidden_size = 0;
 
     std::unique_ptr<TaskTracker> task_tracker;
-    bool check_objects_after_upload = false;
+    const bool check_objects_after_upload = false;
+    const size_t check_objects_after_upload_max_attempts;
+    const size_t check_objects_after_upload_initial_backoff_ms;
 
     std::deque<PartData> detached_part_data;
 };

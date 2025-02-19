@@ -74,6 +74,8 @@ WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
               settings_->max_inflight_parts_for_one_file,
               limited_log))
     , check_objects_after_upload(settings_->check_objects_after_upload)
+    , check_objects_after_upload_max_attempts(settings_->check_objects_after_upload_max_attempts)
+    , check_objects_after_upload_initial_backoff_ms(settings_->check_objects_after_upload_initial_backoff_ms)
 {
     allocateBuffer();
 }
@@ -171,6 +173,41 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
     writeMultipartUpload();
 }
 
+void WriteBufferFromAzureBlobStorage::checkObjectStorageAfterUpload()
+{
+    size_t sleep_for_ms = check_objects_after_upload_initial_backoff_ms;
+
+    for (size_t attempt = 1; attempt <= check_objects_after_upload_max_attempts; attempt++)
+    {
+        bool last_attempt = attempt >= check_objects_after_upload_max_attempts;
+
+        try
+        {
+            auto blob_client = blob_container_client->GetBlobClient(blob_path);
+            blob_client.GetProperties();
+            break;
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
+            {
+                if (!last_attempt)
+                {
+                    sleepForMilliseconds(sleep_for_ms);
+                    sleep_for_ms *= 2;
+                    continue;
+                }
+
+                throw Exception(
+                    ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+                    "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
+                    blob_path);
+            }
+            throw;
+        }
+    }
+}
+
 void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     LOG_TRACE(log, "finalizeImpl WriteBufferFromAzureBlobStorage {}", blob_path);
@@ -196,20 +233,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
 
     if (check_objects_after_upload)
     {
-        try
-        {
-            auto blob_client = blob_container_client->GetBlobClient(blob_path);
-            blob_client.GetProperties();
-        }
-        catch (const Azure::Storage::StorageException & e)
-        {
-            if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
-                throw Exception(
-                        ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
-                        "Object {} not uploaded to azure blob storage, it's a bug in Azure Blob Storage or its API.",
-                        blob_path);
-            throw;
-        }
+        checkObjectStorageAfterUpload();
     }
 }
 

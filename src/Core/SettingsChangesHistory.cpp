@@ -69,6 +69,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
+            {"s3_check_objects_after_upload_max_attempts", 0, 3, "Max attempts to check with backoff each uploaded object to s3"},
+            {"s3_check_objects_after_upload_initial_backoff_ms", 0, 100, "Initial backoff timeout for checking uploaded object to s3"},
+            {"azure_check_objects_after_upload_max_attempts", 0, 3, "Max attempts to check with backoff each uploaded object to azure blob storage"},
+            {"azure_check_objects_after_upload_initial_backoff_ms", 0, 100, "Initial backoff timeout for checking uploaded object to azure blob storage"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {

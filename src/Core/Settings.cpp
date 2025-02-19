@@ -455,8 +455,20 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(UInt64, s3_check_objects_after_upload_max_attempts, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD_MAX_ATTEMPTS, R"(
+Max attempts to check with backoff each uploaded object to s3 with head request to be sure that upload was successful
+)", 0) \
+    DECLARE(UInt64, s3_check_objects_after_upload_initial_backoff_ms, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD_INITIAL_BACKOFF_MS, R"(
+Initial backoff timeout for checking uploaded object to s3
+)", 0) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
+)", 0) \
+    DECLARE(UInt64, azure_check_objects_after_upload_max_attempts, 3, R"(
+Max attempts to check with backoff each uploaded object to azure to be sure that upload was successful
+)", 0) \
+    DECLARE(UInt64, azure_check_objects_after_upload_initial_backoff_ms, 100, R"(
+Initial backoff timeout for checking uploaded object to azure
 )", 0) \
     DECLARE(Bool, s3_allow_parallel_part_upload, true, R"(
 Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage

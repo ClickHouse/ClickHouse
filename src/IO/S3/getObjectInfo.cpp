@@ -1,12 +1,20 @@
 #include <IO/S3/getObjectInfo.h>
 
+#include <base/sleep.h>
+
 #if USE_AWS_S3
 
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int S3_ERROR;
 }
 
+namespace DB::S3RequestSetting
+{
+    extern const S3RequestSettingsUInt64 check_objects_after_upload_max_attempts;
+    extern const S3RequestSettingsUInt64 check_objects_after_upload_initial_backoff_ms;
+
+}
 
 namespace ProfileEvents
 {
@@ -134,6 +142,51 @@ void checkObjectExists(
         return;
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",
                         (description.empty() ? "" : (String(description) + ": ")), key, bucket, error.GetMessage());
+}
+
+void checkObjectAfterUpload(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const S3RequestSettings & settings,
+    const LoggerPtr & log,
+    std::optional<size_t> expected_size,
+    const String & version_id)
+{
+    size_t max_attempts = settings[S3RequestSetting::check_objects_after_upload_max_attempts];
+    size_t sleep_for_ms = settings[S3RequestSetting::check_objects_after_upload_initial_backoff_ms];
+
+    for (size_t attempt = 1; attempt <= max_attempts; attempt++)
+    {
+        const bool last_attempt = attempt >= max_attempts;
+
+        auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, /* with_metadata = */ false);
+
+        if (object_info)
+        {
+            if (expected_size && object_info->size != *expected_size)
+            {
+                throw Exception(
+                    ErrorCodes::S3_ERROR,
+                    "Object {} from bucket {} has unexpected size {} after upload, expected size {}, it's a bug in S3 or S3 API.",
+                    key, bucket, object_info->size, *expected_size);
+            }
+            return;
+        }
+
+        LOG_DEBUG(log, "Immediately after upload: Object {} in bucket {} suddenly disappeared. Attempt {}/{}: {}",
+            key, bucket, attempt, max_attempts, error.GetMessage());
+
+        if (last_attempt)
+        {
+            throw S3Exception(
+                error.GetErrorType(),
+                "Immediately after upload: Object {} in bucket {} suddenly disappeared: {}", key, bucket, error.GetMessage());
+        }
+
+        sleepForMilliseconds(sleep_for_ms);
+        sleep_for_ms *= 2;
+    }
 }
 }
 

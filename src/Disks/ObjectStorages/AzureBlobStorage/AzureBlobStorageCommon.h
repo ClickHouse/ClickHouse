@@ -49,6 +49,8 @@ struct RequestSettings
     size_t sdk_retry_max_backoff_ms = 1000;
     bool use_native_copy = false;
     bool check_objects_after_upload = false;
+    bool check_objects_after_upload_max_attempts = 3;
+    bool check_objects_after_upload_initial_backoff_ms = 100;
 
     using CurlOptions = Azure::Core::Http::CurlTransportOptions;
     CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;

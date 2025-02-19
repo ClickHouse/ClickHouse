@@ -43,6 +43,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool s3_check_objects_after_upload;
+    extern const SettingsUInt64 s3_check_objects_after_upload_max_attempts;
+    extern const SettingsUInt64 s3_check_objects_after_upload_initial_backoff_ms;
     extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 s3_max_single_part_upload_size;
     extern const SettingsUInt64 s3_max_upload_part_size;
@@ -436,6 +438,22 @@ struct HeadObjectFailIngection: InjectionModel
     }
 };
 
+struct HeadObjectNoSuchKeyWithRetriesIngection : InjectionModel
+{
+    size_t attempts = 1;
+
+    std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & /*request*/) override
+    {
+        if (attempts > 0)
+        {
+            attempts--;
+            return Aws::Client::AWSError<Aws::S3::S3Errors>(
+                Aws::S3::S3Errors::NO_SUCH_KEY, "FailInjection", "HeadObjectNoSuchKeyIngection", false);
+        }
+        return {};
+    }
+};
+
 struct CreateMPUFailIngection: InjectionModel
 {
     std::optional<Aws::S3::Model::CreateMultipartUploadOutcome> call(const Aws::S3::Model::CreateMultipartUploadRequest & /*request*/) override
@@ -691,6 +709,94 @@ TEST_P(SyncAsync, ExceptionOnHead) {
             throw;
         }
     }, DB::S3Exception);
+}
+
+TEST_P(SyncAsync, TestCheckObjectAfterUploadWithRetries)
+{
+    auto injection = std::make_shared<MockS3::HeadObjectNoSuchKeyWithRetriesIngection>();
+    setInjectionModel(injection);
+
+    auto write_buffer = [&](const String & name)
+    {
+        auto buffer = getWriteBuffer(name);
+        buffer->write('A');
+        buffer->next();
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    };
+
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    getSettings()[Setting::s3_check_objects_after_upload_initial_backoff_ms] = 0;
+
+    {
+        injection->attempts = 1;
+        getSettings()[Setting::s3_check_objects_after_upload_max_attempts] = 1;
+
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1, .writtenSize = 1};
+
+        EXPECT_THROW(
+            {
+                try
+                {
+                    write_buffer("attempt_1_fail");
+                }
+                catch (const DB::Exception & e)
+                {
+                    ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+                    EXPECT_THAT(e.what(), testing::HasSubstr("Immediately after upload:"));
+                    assertCountersEQ(counters);
+                    throw;
+                }
+            },
+            DB::S3Exception);
+    }
+
+    {
+        injection->attempts = 2;
+        getSettings()[Setting::s3_check_objects_after_upload_max_attempts] = 2;
+
+        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1, .writtenSize = 1};
+
+        EXPECT_THROW(
+            {
+                try
+                {
+                    write_buffer("attempt_2_fail");
+                }
+                catch (const DB::Exception & e)
+                {
+                    ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+                    EXPECT_THAT(e.what(), testing::HasSubstr("Immediately after upload:"));
+                    assertCountersEQ(counters);
+                    throw;
+                }
+            },
+            DB::S3Exception);
+    }
+
+
+    {
+        injection->attempts = 1;
+        getSettings()[Setting::s3_check_objects_after_upload_max_attempts] = 2;
+
+        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1, .writtenSize = 1};
+
+        write_buffer("attempt_2_success");
+
+        assertCountersEQ(counters);
+    }
+
+    {
+        injection->attempts = 2;
+        getSettings()[Setting::s3_check_objects_after_upload_max_attempts] = 3;
+
+        MockS3::EventCounts counters = {.headObject = 3, .putObject = 1, .writtenSize = 1};
+
+        write_buffer("attempt_3_success");
+
+        assertCountersEQ(counters);
+    }
 }
 
 TEST_P(SyncAsync, ExceptionOnPut) {
@@ -955,7 +1061,7 @@ TEST_F(WBS3Test, PrefinalizeCalledMultipleTimes) {
 TEST_P(SyncAsync, EmptyFile) {
     getSettings()[Setting::s3_check_objects_after_upload] = true;
 
-    MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
+    MockS3::EventCounts counters = {.headObject = 1, .putObject = 1};
     runSimpleScenario(counters, 0);
 }
 
@@ -963,7 +1069,7 @@ TEST_P(SyncAsync, ManualNextCalls) {
     getSettings()[Setting::s3_check_objects_after_upload] = true;
 
     {
-        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1};
 
         auto buffer = getWriteBuffer("manual_next_calls_1");
         buffer->next();
@@ -975,7 +1081,7 @@ TEST_P(SyncAsync, ManualNextCalls) {
     }
 
     {
-        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1};
 
         auto buffer = getWriteBuffer("manual_next_calls_2");
         buffer->next();
@@ -988,7 +1094,7 @@ TEST_P(SyncAsync, ManualNextCalls) {
     }
 
     {
-        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1, .writtenSize = 1};
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1, .writtenSize = 1};
 
         auto buffer = getWriteBuffer("manual_next_calls_3");
         buffer->next();
@@ -1002,7 +1108,7 @@ TEST_P(SyncAsync, ManualNextCalls) {
     }
 
     {
-        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1, .writtenSize = 2};
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1, .writtenSize = 2};
 
         auto buffer = getWriteBuffer("manual_next_calls_4");
         buffer->write('A');
@@ -1025,7 +1131,7 @@ TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
         getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
         getSettings()[Setting::s3_min_upload_part_size] = 10;
 
-        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1};
 
         runSimpleScenario(counters, 1);
         runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size] - 1);
@@ -1037,7 +1143,7 @@ TEST_P(SyncAsync, SmallFileIsOnePutRequest) {
         getSettings()[Setting::s3_max_single_part_upload_size] = 10;
         getSettings()[Setting::s3_min_upload_part_size] = 1000;
 
-        MockS3::EventCounts counters = {.headObject = 2, .putObject = 1};
+        MockS3::EventCounts counters = {.headObject = 1, .putObject = 1};
 
         runSimpleScenario(counters, 1);
         runSimpleScenario(counters, getSettings()[Setting::s3_max_single_part_upload_size] - 1);
@@ -1053,7 +1159,7 @@ TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
         getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
         getSettings()[Setting::s3_min_upload_part_size] = 10;
 
-        MockS3::EventCounts counters = {.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
+        MockS3::EventCounts counters = {.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 1);
 
         counters.uploadParts = 101;
@@ -1064,7 +1170,7 @@ TEST_P(SyncAsync, LittleBiggerFileIsMultiPartUpload) {
         getSettings()[Setting::s3_max_single_part_upload_size] = 10;
         getSettings()[Setting::s3_min_upload_part_size] = 1000;
 
-        MockS3::EventCounts counters = {.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 1};
+        MockS3::EventCounts counters = {.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 1};
 
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + 1);
         runSimpleScenario(counters, 2 * settings[Setting::s3_max_single_part_upload_size]);
@@ -1080,7 +1186,7 @@ TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
         getSettings()[Setting::s3_max_single_part_upload_size] = 1000;
         getSettings()[Setting::s3_min_upload_part_size] = 10;
 
-        auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
+        auto counters = MockS3::EventCounts{.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size]);
 
         counters.uploadParts = 3;
@@ -1095,7 +1201,7 @@ TEST_P(SyncAsync, BiggerFileIsMultiPartUpload) {
         getSettings()[Setting::s3_max_single_part_upload_size] = 10;
         getSettings()[Setting::s3_min_upload_part_size] = 1000;
 
-        auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
+        auto counters = MockS3::EventCounts{.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 2};
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size]);
         runSimpleScenario(counters, settings[Setting::s3_max_single_part_upload_size] + settings[Setting::s3_min_upload_part_size] + 1);
         runSimpleScenario(counters, 2 * settings[Setting::s3_min_upload_part_size] - 1);
@@ -1116,7 +1222,7 @@ TEST_P(SyncAsync, IncreaseUploadBuffer) {
         // parts: 10 20 40 80  160
         // size:  10 30 70 150 310
 
-        auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};
+        auto counters = MockS3::EventCounts{.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};
         runSimpleScenario(counters, 350);
 
         auto actual_parts_sizes = MockS3::BucketMemStore::GetPartSizes(getCompletedPartUploads().back().second);
@@ -1131,7 +1237,7 @@ TEST_P(SyncAsync, IncreaseUploadBuffer) {
         // parts: 10 10 30 30 90
         // size:  10 20 50 80 170
 
-        auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};
+        auto counters = MockS3::EventCounts{.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 6};
         runSimpleScenario(counters, 190);
 
         auto actual_parts_sizes = MockS3::BucketMemStore::GetPartSizes(getCompletedPartUploads().back().second);
@@ -1150,7 +1256,7 @@ TEST_P(SyncAsync, IncreaseLimited) {
         // parts: 10 20 40 45  45  45
         // size:  10 30 70 115 160 205
 
-        auto counters = MockS3::EventCounts{.headObject = 2, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 7};
+        auto counters = MockS3::EventCounts{.headObject = 1, .multiUploadCreate = 1, .multiUploadComplete = 1, .uploadParts = 7};
         runSimpleScenario(counters, 220);
 
         auto actual_parts_sizes = MockS3::BucketMemStore::GetPartSizes(getCompletedPartUploads().back().second);

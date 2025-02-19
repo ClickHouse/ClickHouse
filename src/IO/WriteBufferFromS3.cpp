@@ -229,14 +229,7 @@ void WriteBufferFromS3::finalizeImpl()
 
     if (request_settings[S3RequestSetting::check_objects_after_upload])
     {
-        S3::checkObjectExists(*client_ptr, bucket, key, {}, "Immediately after upload");
-
-        size_t actual_size = S3::getObjectSize(*client_ptr, bucket, key, {});
-        if (actual_size != total_size)
-            throw Exception(
-                    ErrorCodes::S3_ERROR,
-                    "Object {} from bucket {} has unexpected size {} after upload, expected size {}, it's a bug in S3 or S3 API.",
-                    key, bucket, actual_size, total_size);
+        S3::checkObjectAfterUpload(*client_ptr, bucket, key, request_settings, log, total_size);
     }
 }
 
