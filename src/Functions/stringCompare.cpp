@@ -95,21 +95,21 @@ public:
         col_result->getData().resize(input_rows_count);
         auto & result_array = col_result->getData();
 
-        if (col_str1 && col_str2_const)
+        if (col_str1 && col_str2)
+            executeStringString(*col_str1, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
+        else if (col_str1 && col_str2_const)
             executeStringConst<false>(*col_str1, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1_const && col_str2)
             executeStringConst<true>(*col_str2, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, input_rows_count, result_array);
-        else if (col_str1 && col_str2)
-            executeStringString(*col_str1, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && fixed_str2_col)
             executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, input_rows_count, result_array);
-        else if (fixed_str1_col && col_str2)
-            executeFixedStringString<false>(*fixed_str1_col, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1 && fixed_str2_col)
             executeFixedStringString<true>(*fixed_str2_col, str2_offset, *col_str1, str1_offset, num_bytes, input_rows_count, result_array);
+        else if (fixed_str1_col && col_str2)
+            executeFixedStringString<false>(*fixed_str1_col, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && col_str2_const)
             executeFixedStringConst<false>(*fixed_str1_col, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, input_rows_count, result_array);
-        else if (fixed_str2_col && col_str1_const)
+        else if (col_str1_const && fixed_str2_col)
             executeFixedStringConst<true>(*fixed_str2_col, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, input_rows_count, result_array);
         else
             throw Exception(
