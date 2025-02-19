@@ -1486,7 +1486,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         bool cleanup = false;
         if (
-            (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
+            merge_entry->future_part->final
+            && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
             && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
             && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
             && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only]

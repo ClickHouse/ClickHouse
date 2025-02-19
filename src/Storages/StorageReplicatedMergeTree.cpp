@@ -4088,7 +4088,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 local_merge_pred,
                 MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
 
-            std::expected<MergeSelectorChoice, SelectMergeFailure> select_merge_result = std::unexpected(SelectMergeFailure{});
+            std::expected<MergeSelectorChoice, SelectMergeFailure> select_merge_result =
+                std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = PreformattedMessage::create("No parts to merge"),
+                });
             String final_partition;
             if (!partitions_to_merge_in.empty())
             {
@@ -4118,13 +4122,6 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                         /*final=*/true,
                         /*optimize_skip_merged_partitions=*/true);
                 }
-                else
-                {
-                    select_merge_result = std::unexpected(SelectMergeFailure{
-                        .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = PreformattedMessage::create("No partition to merge"),
-                    });
-                }
             }
 
             if (select_merge_result.has_value())
@@ -4140,7 +4137,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 }
 
                 bool cleanup = false;
-                if (!final_partition.empty()
+                if (select_merge_result.value().final
                     && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
                     && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
                     && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
