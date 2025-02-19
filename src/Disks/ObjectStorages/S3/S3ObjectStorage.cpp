@@ -170,8 +170,6 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     std::optional<size_t>,
     std::optional<size_t>) const
 {
-    LOG_TRACE(log, "Reading object {}", object.remote_path);
-
     auto settings_ptr = s3_settings.get();
     return std::make_unique<ReadBufferFromS3>(
         client.get(),
