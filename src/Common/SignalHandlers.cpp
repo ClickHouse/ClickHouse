@@ -677,6 +677,8 @@ void HandledSignals::setupTerminateHandler()
 
 void HandledSignals::setupCommonDeadlySignalHandlers()
 {
+    /// Touch a variable to explicitly initialize it here.
+    empty_stack_trace.shrink_to_fit();
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
     /// NOTE: that it is also used by clickhouse-test wrapper
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
