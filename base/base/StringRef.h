@@ -1,14 +1,19 @@
 #pragma once
 
 #include <cassert>
-
+#include <stdexcept> // for std::logic_error
 #include <string>
+#include <type_traits>
 #include <vector>
+#include <functional>
+#include <iosfwd>
 
 #include <base/defines.h>
-#include <base/simd.h>
 #include <base/types.h>
 #include <base/unaligned.h>
+#include <base/simd.h>
+#include <fmt/core.h>
+#include <fmt/ostream.h>
 
 #include <city.h>
 
@@ -35,10 +40,6 @@
 #if defined(__s390x__)
     #include <base/crc32c_s390x.h>
     #define CRC_INT s390x_crc32c
-#endif
-
-#if !defined(CRC_INT)
-#include <stdexcept> // for std::logic_error
 #endif
 
 /**
@@ -85,7 +86,7 @@ using StringRefs = std::vector<StringRef>;
   * For more information, see hash_map_string_2.cpp
   */
 
-inline bool compare16(const char * p1, const char * p2)
+inline bool compare8(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p1)),
@@ -114,7 +115,7 @@ inline bool compare64(const char * p1, const char * p2)
 
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
-inline bool compare16(const char * p1, const char * p2)
+inline bool compare8(const char * p1, const char * p2)
 {
     uint64_t mask = getNibbleMask(vceqq_u8(
             vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))));
@@ -150,19 +151,19 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
             return unalignedLoad<uint64_t>(p1) == unalignedLoad<uint64_t>(p2)
                 && unalignedLoad<uint64_t>(p1 + size - 8) == unalignedLoad<uint64_t>(p2 + size - 8);
         }
-        if (size >= 4)
+        else if (size >= 4)
         {
             /// Chunks of 4..7 bytes.
             return unalignedLoad<uint32_t>(p1) == unalignedLoad<uint32_t>(p2)
                 && unalignedLoad<uint32_t>(p1 + size - 4) == unalignedLoad<uint32_t>(p2 + size - 4);
         }
-        if (size >= 2)
+        else if (size >= 2)
         {
             /// Chunks of 2..3 bytes.
             return unalignedLoad<uint16_t>(p1) == unalignedLoad<uint16_t>(p2)
                 && unalignedLoad<uint16_t>(p1 + size - 2) == unalignedLoad<uint16_t>(p2 + size - 2);
         }
-        if (size >= 1)
+        else if (size >= 1)
         {
             /// A single byte.
             return *p1 == *p2;
@@ -184,22 +185,13 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
     switch (size / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
-        case 3:
-            if (!compare16(p1 + 32, p2 + 32))
-                return false;
-            [[fallthrough]];
-        case 2:
-            if (!compare16(p1 + 16, p2 + 16))
-                return false;
-            [[fallthrough]];
-        case 1:
-            if (!compare16(p1, p2))
-                return false;
-            [[fallthrough]];
+        case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
+        case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];
+        case 1: if (!compare8(p1, p2)) return false; [[fallthrough]];
         default: ;
     }
 
-    return compare16(p1 + size - 16, p2 + size - 16);
+    return compare8(p1 + size - 16, p2 + size - 16);
 }
 
 #endif
@@ -390,3 +382,5 @@ namespace PackedZeroTraits
 
 
 std::ostream & operator<<(std::ostream & os, const StringRef & str);
+
+template<> struct fmt::formatter<StringRef> : fmt::ostream_formatter {};

@@ -2,7 +2,6 @@
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -10,7 +9,6 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -31,9 +29,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
-#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Storages/IStorage.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>
@@ -45,7 +41,6 @@
 #include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 
 
@@ -76,13 +71,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool insert_allow_materialized_columns;
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 readonly;
-}
 
 namespace ErrorCodes
 {
@@ -263,7 +251,7 @@ void StorageBuffer::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    bool allow_experimental_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+    bool allow_experimental_analyzer = local_context->getSettingsRef().allow_experimental_analyzer;
 
     if (allow_experimental_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
     {
@@ -290,8 +278,7 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        auto destination_lock
-            = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        auto destination_lock = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr();
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
@@ -385,24 +372,24 @@ void StorageBuffer::read(
                       * Instead, we rely on the converting actions at the end of this function.
                       */
                     auto actions = addMissingDefaults(
-                            query_plan.getCurrentHeader(),
+                            query_plan.getCurrentDataStream().header,
                             header_after_adding_defaults.getNamesAndTypesList(),
                             metadata_snapshot->getColumns(),
                             local_context);
 
                     auto adding_missed = std::make_unique<ExpressionStep>(
-                            query_plan.getCurrentHeader(),
+                            query_plan.getCurrentDataStream(),
                             std::move(actions));
 
                     adding_missed->setStepDescription("Add columns missing in destination table");
                     query_plan.addStep(std::move(adding_missed));
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
-                            query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
+                            query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name);
 
-                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
+                    auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(actions_dag));
 
                     converting->setStepDescription("Convert destination table columns to Buffer table structure");
                     query_plan.addStep(std::move(converting));
@@ -473,7 +460,7 @@ void StorageBuffer::read(
     {
         if (query_info.prewhere_info)
         {
-            ExpressionActionsSettings actions_settings(local_context);
+            auto actions_settings = ExpressionActionsSettings::fromContext(local_context);
 
             if (query_info.prewhere_info->row_level_filter)
             {
@@ -513,30 +500,30 @@ void StorageBuffer::read(
         return;
     }
 
-    auto result_header = buffers_plan.getCurrentHeader();
+    auto result_header = buffers_plan.getCurrentDataStream().header;
 
     /// Convert structure from table to structure from buffer.
-    if (!blocksHaveEqualStructure(query_plan.getCurrentHeader(), result_header))
+    if (!blocksHaveEqualStructure(query_plan.getCurrentDataStream().header, result_header))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
-                query_plan.getCurrentHeader().getColumnsWithTypeAndName(),
+                query_plan.getCurrentDataStream().header.getColumnsWithTypeAndName(),
                 result_header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
 
-        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
+        auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));
     }
 
-    Headers input_headers;
-    input_headers.emplace_back(query_plan.getCurrentHeader());
-    input_headers.emplace_back(buffers_plan.getCurrentHeader());
+    DataStreams input_streams;
+    input_streams.emplace_back(query_plan.getCurrentDataStream());
+    input_streams.emplace_back(buffers_plan.getCurrentDataStream());
 
     std::vector<std::unique_ptr<QueryPlan>> plans;
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(query_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(buffers_plan)));
     query_plan = QueryPlan();
 
-    auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+    auto union_step = std::make_unique<UnionStep>(std::move(input_streams));
     union_step->setStepDescription("Unite sources from Buffer table");
     query_plan.unitePlans(std::move(union_step), std::move(plans));
 }
@@ -774,7 +761,7 @@ SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMet
 
 void StorageBuffer::startup()
 {
-    if (getContext()->getSettingsRef()[Setting::readonly])
+    if (getContext()->getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
     }
@@ -1038,7 +1025,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     Block block_to_write;
     for (size_t i : collections::range(0, structure_of_destination_table.columns()))
     {
-        const auto & dst_col = structure_of_destination_table.getByPosition(i);
+        auto dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
         {
             auto column = block.getByName(dst_col.name);
@@ -1277,7 +1264,7 @@ void registerStorageBuffer(StorageFactory & factory)
             max,
             flush,
             destination_id,
-            static_cast<bool>(args.getLocalContext()->getSettingsRef()[Setting::insert_allow_materialized_columns]));
+            static_cast<bool>(args.getLocalContext()->getSettingsRef().insert_allow_materialized_columns));
     },
     {
         .supports_parallel_insert = true,

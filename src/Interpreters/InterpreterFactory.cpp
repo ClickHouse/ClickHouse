@@ -3,18 +3,13 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTCreateWorkloadQuery.h>
-#include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropFunctionQuery.h>
-#include <Parsers/ASTDropWorkloadQuery.h>
-#include <Parsers/ASTDropResourceQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTUndropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -45,7 +40,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
-#include <Parsers/Access/ASTCheckGrantQuery.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
@@ -81,12 +75,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool insert_allow_materialized_columns;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
@@ -130,7 +118,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         /// This is internal part of ASTSelectWithUnionQuery.
         /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
@@ -141,7 +129,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
 
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        if (context->getSettingsRef().allow_experimental_analyzer)
             interpreter_name = "InterpreterSelectQueryAnalyzer";
         else
             interpreter_name = "InterpreterSelectWithUnionQuery";
@@ -153,7 +141,7 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        bool allow_materialized = static_cast<bool>(context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
+        bool allow_materialized = static_cast<bool>(context->getSettingsRef().insert_allow_materialized_columns);
         arguments.allow_materialized = allow_materialized;
         interpreter_name = "InterpreterInsertQuery";
     }
@@ -310,10 +298,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterShowGrantsQuery";
     }
-    else if (query->as<ASTCheckGrantQuery>())
-    {
-        interpreter_name = "InterpreterCheckGrantQuery";
-    }
     else if (query->as<ASTShowAccessEntitiesQuery>())
     {
         interpreter_name = "InterpreterShowAccessEntitiesQuery";
@@ -342,22 +326,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterDropFunctionQuery";
     }
-    else if (query->as<ASTCreateWorkloadQuery>())
-    {
-        interpreter_name = "InterpreterCreateWorkloadQuery";
-    }
-    else if (query->as<ASTDropWorkloadQuery>())
-    {
-        interpreter_name = "InterpreterDropWorkloadQuery";
-    }
-    else if (query->as<ASTCreateResourceQuery>())
-    {
-        interpreter_name = "InterpreterCreateResourceQuery";
-    }
-    else if (query->as<ASTDropResourceQuery>())
-    {
-        interpreter_name = "InterpreterDropResourceQuery";
-    }
     else if (query->as<ASTCreateIndexQuery>())
     {
         interpreter_name = "InterpreterCreateIndexQuery";
@@ -377,10 +345,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     else if (query->as<ASTDeleteQuery>())
     {
         interpreter_name = "InterpreterDeleteQuery";
-    }
-    else if (query->as<ASTParallelWithQuery>())
-    {
-        interpreter_name = "InterpreterParallelWithQuery";
     }
 
     if (!interpreters.contains(interpreter_name))

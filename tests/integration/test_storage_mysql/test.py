@@ -1,25 +1,18 @@
-import threading
-import time
 from contextlib import contextmanager
 
 ## sudo -H pip install PyMySQL
 import pymysql.cursors
 import pytest
-
-from helpers.client import QueryRuntimeException
+import time
+import threading
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=[
-        "configs/remote_servers.xml",
-        "configs/named_collections.xml",
-        "certs/ca.pem",
-        "certs/client-key.pem",
-        "certs/client-cert.pem",
-    ],
+    main_configs=["configs/remote_servers.xml", "configs/named_collections.xml"],
     user_configs=["configs/users.xml"],
     with_mysql8=True,
 )
@@ -392,6 +385,100 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, source Enum8('
     conn.close()
 
 
+def test_mysql_distributed(started_cluster):
+    table_name = "test_replicas"
+
+    conn1 = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    conn2 = get_mysql_conn(started_cluster, started_cluster.mysql2_ip)
+    conn3 = get_mysql_conn(started_cluster, started_cluster.mysql3_ip)
+    conn4 = get_mysql_conn(started_cluster, started_cluster.mysql4_ip)
+
+    create_mysql_db(conn1, "clickhouse")
+    create_mysql_db(conn2, "clickhouse")
+    create_mysql_db(conn3, "clickhouse")
+    create_mysql_db(conn4, "clickhouse")
+
+    create_mysql_table(conn1, table_name)
+    create_mysql_table(conn2, table_name)
+    create_mysql_table(conn3, table_name)
+    create_mysql_table(conn4, table_name)
+
+    node2.query("DROP TABLE IF EXISTS test_replicas")
+
+    # Storage with with 3 replicas
+    node2.query(
+        """
+        CREATE TABLE test_replicas
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = MySQL('mysql{2|3|4}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
+    )
+
+    # Fill remote tables with different data to be able to check
+    nodes = [node1, node2, node2, node2]
+    for i in range(1, 5):
+        nodes[i - 1].query("DROP TABLE IF EXISTS test_replica{}".format(i))
+        nodes[i - 1].query(
+            """
+            CREATE TABLE test_replica{}
+            (id UInt32, name String, age UInt32, money UInt32)
+            ENGINE = MySQL('mysql{}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse');""".format(
+                i, 80 if i == 1 else i
+            )
+        )
+        nodes[i - 1].query(
+            "INSERT INTO test_replica{} (id, name) SELECT number, 'host{}' from numbers(10) ".format(
+                i, i
+            )
+        )
+
+    # test multiple ports parsing
+    result = node2.query(
+        """SELECT DISTINCT(name) FROM mysql('mysql{80|2|3}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
+    )
+    assert result == "host1\n" or result == "host2\n" or result == "host3\n"
+    result = node2.query(
+        """SELECT DISTINCT(name) FROM mysql('mysql80:3306|mysql2:3306|mysql3:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
+    )
+    assert result == "host1\n" or result == "host2\n" or result == "host3\n"
+
+    # check all replicas are traversed
+    query = "SELECT * FROM ("
+    for i in range(3):
+        query += "SELECT name FROM test_replicas UNION DISTINCT "
+    query += "SELECT name FROM test_replicas)"
+
+    result = node2.query(query)
+    assert result == "host2\nhost3\nhost4\n"
+
+    # Storage with with two shards, each has 2 replicas
+    node2.query("DROP TABLE IF EXISTS test_shards")
+
+    node2.query(
+        """
+        CREATE TABLE test_shards
+        (id UInt32, name String, age UInt32, money UInt32)
+        ENGINE = ExternalDistributed('MySQL', 'mysql{80|2}:3306,mysql{3|4}:3306', 'clickhouse', 'test_replicas', 'root', 'clickhouse'); """
+    )
+
+    # Check only one replica in each shard is used
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    assert result == "host1\nhost3\n"
+
+    # check all replicas are traversed
+    query = "SELECT name FROM ("
+    for i in range(3):
+        query += "SELECT name FROM test_shards UNION DISTINCT "
+    query += "SELECT name FROM test_shards) ORDER BY name"
+    result = node2.query(query)
+    assert result == "host1\nhost2\nhost3\nhost4\n"
+
+    # disconnect mysql
+    started_cluster.pause_container("mysql80")
+    result = node2.query("SELECT DISTINCT(name) FROM test_shards ORDER BY name")
+    started_cluster.unpause_container("mysql80")
+    assert result == "host2\nhost4\n" or result == "host3\nhost4\n"
+
+
 def test_external_settings(started_cluster):
     table_name = "test_external_settings"
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
@@ -740,9 +827,6 @@ def test_settings(started_cluster):
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
 
-    node1.query("DROP DATABASE IF EXISTS m")
-    node1.query("DROP DATABASE IF EXISTS mm")
-
     rw_timeout = 40123001
     connect_timeout = 40123002
     node1.query(
@@ -770,9 +854,6 @@ def test_settings(started_cluster):
     assert node1.contains_in_log(
         f"with settings: connect_timeout={connect_timeout}, read_write_timeout={rw_timeout}"
     )
-
-    node1.query("DROP DATABASE m")
-    node1.query("DROP DATABASE mm")
 
     drop_mysql_table(conn, table_name)
     conn.close()
@@ -849,9 +930,6 @@ def test_joins(started_cluster):
 
     conn.commit()
 
-    node1.query("DROP TABLE IF EXISTS test_joins_table_users")
-    node1.query("DROP TABLE IF EXISTS test_joins_table_tickets")
-
     node1.query(
         """
         CREATE TABLE test_joins_table_users
@@ -885,55 +963,6 @@ def test_joins(started_cluster):
         WHERE test_joins_table_tickets.Created = '2024-06-25 12:09:41'
         """
     ) == "281607\tFeedback\t2024-06-25 12:09:41\tuser@example.com\n"
-
-    node1.query("DROP TABLE test_joins_table_users")
-    node1.query("DROP TABLE test_joins_table_tickets")
-
-
-def test_mysql_ssl_auth(started_cluster):
-    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
-    table_name = "test_table"
-    drop_mysql_table(conn, table_name)
-    create_mysql_table(conn, table_name)
-
-    with conn.cursor() as cursor:
-        cursor.execute(
-            """
-            CREATE USER 'ssl_user'@'{}' REQUIRE X509;
-            """.format(
-                node1.ip_address
-            )
-        )
-        cursor.execute(
-            """
-            GRANT ALL PRIVILEGES ON *.* TO 'ssl_user'@'{}' WITH GRANT OPTION;
-            """.format(
-                node1.ip_address
-            )
-        )
-
-    node1.query(
-        """
-        DROP TABLE IF EXISTS test_table;
-        CREATE TABLE test_table (id UInt32, name String, age UInt32, money UInt32) ENGINE MySQL(mysql_with_ssl);
-        SELECT * FROM test_table;
-        DROP TABLE test_table;
-        """
-    )
-
-    with conn.cursor() as cursor:
-        cursor.execute(
-            """
-            DROP USER 'ssl_user'@'{}';
-            """.format(
-                node1.ip_address
-            )
-        )
-        cursor.execute(
-            """
-            FLUSH PRIVILEGES;
-            """
-        )
 
 
 if __name__ == "__main__":

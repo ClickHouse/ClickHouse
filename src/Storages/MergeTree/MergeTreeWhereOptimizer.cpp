@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -19,14 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_statistics_optimize;
-    extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsBool move_all_conditions_to_prewhere;
-    extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
-    extern const SettingsBool allow_reorder_prewhere_conditions;
-}
 
 /// Conditions like "x = N" are considered good if abs(N) > threshold.
 /// This is used to assume that condition is likely to have good selectivity.
@@ -99,12 +90,10 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = determineArrayJoinedNames(select);
-    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
-    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
-        = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
-    where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
+    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = select.final();
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context, std::move(block_with_constants), {} /*prepared_sets*/);
     RPNBuilderTreeNode node(select.where().get(), tree_context);
@@ -120,10 +109,8 @@ void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, cons
     select.setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter_ast));
     select.setExpression(ASTSelectQuery::Expression::PREWHERE, std::move(prewhere_filter_ast));
 
-    LOG_DEBUG(
-        log,
-        "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE",
-        select.prewhere()->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]));
+    UInt64 log_queries_cut_to_length = context->getSettingsRef().log_queries_cut_to_length;
+    LOG_DEBUG(log, "MergeTreeWhereOptimizer: condition \"{}\" moved to PREWHERE", select.prewhere()->formatForLogging(log_queries_cut_to_length));
 }
 
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
@@ -134,12 +121,10 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = {};
-    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef()[Setting::move_all_conditions_to_prewhere];
-    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere
-        = context->getSettingsRef()[Setting::move_primary_key_columns_to_end_of_prewhere];
-    where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
+    where_optimizer_context.move_all_conditions_to_prewhere = context->getSettingsRef().move_all_conditions_to_prewhere;
+    where_optimizer_context.move_primary_key_columns_to_end_of_prewhere = context->getSettingsRef().move_primary_key_columns_to_end_of_prewhere;
     where_optimizer_context.is_final = is_final;
-    where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::allow_statistics_optimize];
+    where_optimizer_context.use_statistics = context->getSettingsRef().allow_statistics_optimize;
 
     RPNBuilderTreeContext tree_context(context);
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), tree_context);
@@ -186,12 +171,6 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
 
     auto function_node = node.toFunctionNode();
     size_t arguments_size = function_node.getArgumentsSize();
-
-    /// Do not account arguments of function "indexHint"
-    /// because they won't be read from table.
-    if (function_node.getFunctionName() == "indexHint")
-        return;
-
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
@@ -246,12 +225,12 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
         const auto value = output_value.safeGet<UInt64>();
         return value > threshold;
     }
-    if (type == Field::Types::Int64)
+    else if (type == Field::Types::Int64)
     {
         const auto value = output_value.safeGet<Int64>();
         return value < -threshold || threshold < value;
     }
-    if (type == Field::Types::Float64)
+    else if (type == Field::Types::Float64)
     {
         const auto value = output_value.safeGet<Float64>();
         return value < -threshold || threshold < value;
@@ -389,30 +368,16 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     for (const auto & condition : where_conditions)
         condition_positions[&condition] = position++;
 
-    size_t moved_conditions_count = 0;
-    auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
-    {
-        moved_conditions_count++;
-        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
-        if (where_optimizer_context.allow_reorder_prewhere_conditions)
-        {
-            prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
-        }
-        else
-        {
-            /// Keep the original order of conditions in prewhere_conditions.
-            position = condition_positions[&(*cond_it)];
-            auto prewhere_it = prewhere_conditions.begin();
-            while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
-                ++prewhere_it;
-            prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
-        }
-    };
-
     /// Move condition and all other conditions depend on the same set of columns.
     auto move_condition = [&](Conditions::iterator cond_it)
     {
-        move_to_prewhere_conditions(cond_it);
+        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
+        /// Keep the original order of conditions in prewhere_conditions.
+        position = condition_positions[&(*cond_it)];
+        auto prewhere_it = prewhere_conditions.begin();
+        while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+            ++prewhere_it;
+        prewhere_conditions.splice(prewhere_it, where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
         total_number_of_moved_columns += cond_it->table_columns.size();
 
@@ -421,7 +386,13 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
         {
             if (jt->viable && jt->columns_size == cond_it->columns_size && jt->table_columns == cond_it->table_columns)
             {
-                move_to_prewhere_conditions(jt++);
+                LOG_TRACE(log, "Condition {} moved to PREWHERE", jt->node.getColumnName());
+                /// Keep the original order of conditions in prewhere_conditions.
+                position = condition_positions[&(*jt)];
+                prewhere_it = prewhere_conditions.begin();
+                while (condition_positions[&(*prewhere_it)] < position && prewhere_it != prewhere_conditions.end())
+                    ++prewhere_it;
+                prewhere_conditions.splice(prewhere_it, where_conditions, jt++);
             }
             else
             {
@@ -467,7 +438,6 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Nothing was moved.
     if (prewhere_conditions.empty())
         return {};
-    LOG_TRACE(log, "Moved {} conditions to PREWHERE", moved_conditions_count);
 
     OptimizeResult result = {std::move(where_conditions), std::move(prewhere_conditions)};
     return result;
@@ -550,6 +520,10 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         /// disallow GLOBAL IN, GLOBAL NOT IN
         /// TODO why?
         if (function_name == "globalIn" || function_name == "globalNotIn")
+            return true;
+
+        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+        if (function_name == "indexHint")
             return true;
 
         size_t arguments_size = function_node.getArgumentsSize();

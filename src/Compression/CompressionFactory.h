@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Compression/CompressionInfo.h>
+#include <Compression/ICompressionCodec.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/IFactoryWithAliases.h>
 
@@ -8,16 +11,12 @@
 #include <optional>
 #include <unordered_map>
 
-#include <boost/noncopyable.hpp>
-
 namespace DB
 {
 
 static constexpr auto DEFAULT_CODEC_NAME = "Default";
 
 class ICompressionCodec;
-class IDataType;
-using DataTypePtr = std::shared_ptr<const IDataType>;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 

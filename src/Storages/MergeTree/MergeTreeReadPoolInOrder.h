@@ -11,7 +11,6 @@ public:
         bool has_limit_below_one_block_,
         MergeTreeReadType read_type_,
         RangesInDataParts parts_,
-        MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -19,7 +18,6 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
-        const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_);
 
     String getName() const override { return "ReadPoolInOrder"; }

@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, shard
+-- Tags: no-replicated-database
 -- Closes: https://github.com/ClickHouse/ClickHouse/issues/6571
 
 SET enable_analyzer=1;

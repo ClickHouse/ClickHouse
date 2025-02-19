@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryCache.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
@@ -34,10 +33,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool rows_before_aggregation;
-}
 
 namespace ErrorCodes
 {
@@ -552,7 +547,7 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     initRowsBeforeLimit(format.get());
     for (const auto & context : resources.interpreter_context)
     {
-        if (context->getSettingsRef()[Setting::rows_before_aggregation])
+        if (context->getSettingsRef().rows_before_aggregation)
         {
             initRowsBeforeAggregation(processors, format.get());
             break;
@@ -567,9 +562,12 @@ Block QueryPipeline::getHeader() const
 {
     if (input)
         return input->getHeader();
-    if (output)
+    else if (output)
         return output->getHeader();
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
+    else
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Header is available only for pushing or pulling QueryPipeline");
 }
 
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
@@ -619,7 +617,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     return true;
 }
 
-void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> query_cache_writer)
+void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer)
 {
     assert(pulling());
 
@@ -628,7 +626,7 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> 
     /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the
     /// expensive stuff like cloning chunks happens outside lock scopes).
 
-    auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCacheWriter::ChunkType chunk_type)
+    auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCache::Writer::ChunkType chunk_type)
     {
         if (!out_port)
             return;
@@ -639,7 +637,7 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> 
         processors->emplace_back(std::move(transform));
     };
 
-    using enum QueryCacheWriter::ChunkType;
+    using enum QueryCache::Writer::ChunkType;
 
     add_stream_in_query_cache_transform(output, Result);
     add_stream_in_query_cache_transform(totals, Totals);
@@ -698,16 +696,6 @@ void QueryPipeline::reset()
     QueryPipeline to_remove = std::move(*this);
     *this = QueryPipeline();
 }
-
-void QueryPipeline::cancel() noexcept
-{
-    if (processors)
-    {
-        for (auto & processor : *processors)
-            processor->cancel();
-    }
-}
-
 
 static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Processors & processors)
 {

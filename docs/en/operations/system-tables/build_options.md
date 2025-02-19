@@ -1,9 +1,7 @@
 ---
-description: "System table containing information about ClickHouse server's build options."
 slug: /en/operations/system-tables/build_options
-title: "build_options"
-keywords: ["system table", "build_options"]
 ---
+# build_options
 
 Contains information about the ClickHouse server's build options.
 

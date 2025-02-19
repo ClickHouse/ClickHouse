@@ -1,13 +1,7 @@
 ---
-description: "System table containing logging entries."
 slug: /en/operations/system-tables/text_log
-title: "text_log"
-keywords: ["system table", "text_log"]
 ---
-
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# text_log
 
 Contains logging entries. The logging level which goes to this table can be limited to the `text_log.level` server setting.
 

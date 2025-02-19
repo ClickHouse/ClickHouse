@@ -56,10 +56,7 @@ bool isParseError(int code)
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)
-    : IInputFormat(std::move(header), &in_)
-    , serializations(getPort().getHeader().getSerializations())
-    , params(params_)
-    , block_missing_values(getPort().getHeader().columns())
+    : IInputFormat(std::move(header), &in_), serializations(getPort().getHeader().getSerializations()), params(params_)
 {
 }
 
@@ -104,12 +101,9 @@ Chunk IRowInputFormat::read()
     }
 
     const Block & header = getPort().getHeader();
-    size_t num_columns = header.columns();
-    MutableColumns columns = header.cloneEmptyColumns(serializations);
 
-    ColumnCheckpoints checkpoints(columns.size());
-    for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-        checkpoints[column_idx] = columns[column_idx]->getCheckpoint();
+    size_t num_columns = header.columns();
+    MutableColumns columns = header.cloneEmptyColumns();
 
     block_missing_values.clear();
 
@@ -136,9 +130,6 @@ Chunk IRowInputFormat::read()
         {
             try
             {
-                for (size_t column_idx = 0; column_idx < columns.size(); ++column_idx)
-                    columns[column_idx]->updateCheckpoint(*checkpoints[column_idx]);
-
                 info.read_columns.clear();
                 continue_reading = readRow(columns, info);
 
@@ -202,9 +193,14 @@ Chunk IRowInputFormat::read()
 
                 syncAfterError();
 
-                /// Rollback all columns in block to initial size (remove values, that was appended to only part of columns).
+                /// Truncate all columns in block to initial size (remove values, that was appended to only part of columns).
+
                 for (size_t column_idx = 0; column_idx < num_columns; ++column_idx)
-                    columns[column_idx]->rollback(*checkpoints[column_idx]);
+                {
+                    auto & column = columns[column_idx];
+                    if (column->size() > num_rows)
+                        column->popBack(column->size() - num_rows);
+                }
             }
         }
     }
@@ -268,12 +264,6 @@ void IRowInputFormat::resetParser()
 size_t IRowInputFormat::countRows(size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method countRows is not implemented for input format {}", getName());
-}
-
-void IRowInputFormat::setSerializationHints(const SerializationInfoByName & hints)
-{
-    if (supportsCustomSerializations())
-        serializations = getPort().getHeader().getSerializations(hints);
 }
 
 

@@ -20,7 +20,6 @@ class StorageAzureConfiguration : public StorageObjectStorage::Configuration
 public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-    static constexpr auto type = ObjectStorageType::Azure;
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
     /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
@@ -50,7 +49,6 @@ public:
     StorageAzureConfiguration() = default;
     StorageAzureConfiguration(const StorageAzureConfiguration & other);
 
-    ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 

@@ -137,8 +137,9 @@ private:
 
     Parquet::WriteOptions options;
     Parquet::SchemaElements schema;
-    Parquet::FileWriteState file_state;
-    size_t base_offset = 0; // initial out.count(), just for assert
+    std::vector<parquet::format::RowGroup> row_groups_complete;
+    size_t base_offset = 0;
+
 
     std::mutex mutex;
     std::condition_variable condvar; // wakes up consume()

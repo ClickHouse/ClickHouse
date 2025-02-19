@@ -1,17 +1,14 @@
 ---
-description: "System table containing information about clusters available in the config file and the servers defined in them."
 slug: /en/operations/system-tables/clusters
-title: "clusters"
-keywords: ["system table", "clusters"]
 ---
+# clusters
 
 Contains information about clusters available in the config file and the servers in them.
 
 Columns:
 
 - `cluster` ([String](../../sql-reference/data-types/string.md)) — The cluster name.
-- `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1. May change due to cluster modification.
-- `shard_name` ([String](../../sql-reference/data-types/string.md)) — The name of the shard in the cluster.
+- `shard_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The shard number in the cluster, starting from 1.
 - `shard_weight` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The relative weight of the shard when writing data.
 - `replica_num` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The replica number in the shard, starting from 1.
 - `host_name` ([String](../../sql-reference/data-types/string.md)) — The host name, as specified in the config.
@@ -43,7 +40,6 @@ Row 1:
 ──────
 cluster:                 test_cluster_two_shards
 shard_num:               1
-shard_name:              shard_01
 shard_weight:            1
 replica_num:             1
 host_name:               127.0.0.1
@@ -63,7 +59,6 @@ Row 2:
 ──────
 cluster:                 test_cluster_two_shards
 shard_num:               2
-shard_name:              shard_02
 shard_weight:            1
 replica_num:             1
 host_name:               127.0.0.2

@@ -44,7 +44,7 @@ std::pair<String, String> RowInputFormatWithDiagnosticInfo::getDiagnosticAndRawD
             "Buffer has gone, cannot extract information about what has been parsed.");
 
     const auto & header = getPort().getHeader();
-    MutableColumns columns = header.cloneEmptyColumns(serializations);
+    MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
     size_t bytes_read_at_start_of_buffer = in->count() - in->offset();

@@ -23,14 +23,10 @@ public:
         SUSPEND,
         DROP_DNS_CACHE,
         DROP_CONNECTIONS_CACHE,
-        PREWARM_MARK_CACHE,
-        PREWARM_PRIMARY_INDEX_CACHE,
         DROP_MARK_CACHE,
-        DROP_PRIMARY_INDEX_CACHE,
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
-        DROP_SKIPPING_INDEX_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
@@ -99,14 +95,12 @@ public:
         START_CLEANUP,
         RESET_COVERAGE,
         REFRESH_VIEW,
-        WAIT_VIEW,
         START_VIEW,
         START_VIEWS,
         STOP_VIEW,
         STOP_VIEWS,
         CANCEL_VIEW,
         TEST_VIEW,
-        LOAD_PRIMARY_KEY,
         UNLOAD_PRIMARY_KEY,
         END
     };
@@ -154,8 +148,6 @@ public:
 
     std::vector<String> src_replicas;
 
-    Strings logs;
-
     ServerType server_type;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
@@ -184,7 +176,8 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 

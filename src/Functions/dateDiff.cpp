@@ -357,11 +357,6 @@ public:
         return std::make_shared<DataTypeInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeInt64>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_unit = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
@@ -439,11 +434,6 @@ public:
         return std::make_shared<DataTypeInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeInt64>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn & col_x = *arguments[0].column;
@@ -482,7 +472,7 @@ Example:
 )",
     .examples{
         {"typical", "SELECT timeDiff(UTCTimestamp(), now());", ""}},
-    .category{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
+    .categories{"Dates and Times"}}, FunctionFactory::Case::Insensitive);
 }
 
 REGISTER_FUNCTION(Age)

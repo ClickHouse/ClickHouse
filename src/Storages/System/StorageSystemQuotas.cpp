@@ -41,7 +41,7 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "Quota name."},
         {"id", std::make_shared<DataTypeUUID>(), "Quota ID."},
-        {"storage", std::make_shared<DataTypeString>(), "Storage of quotas. Possible value: 'users.xml' if a quota configured in the users.xml file, 'disk' if a quota configured by an SQL-query."},
+        {"storage", std::make_shared<DataTypeString>(), "Storage of quotas. Possible value: “users.xml” if a quota configured in the users.xml file, “disk” if a quota configured by an SQL-query."},
         {"keys", std::make_shared<DataTypeArray>(std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues())),
             "Key specifies how the quota should be shared. If two connections use the same quota and key, they share the same amounts of resources. Values: "
             "[] — All users share the same quota, "
@@ -52,7 +52,7 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
             "or use the quota_key parameter in the client configuration file. "
             "When using HTTP interface, use the X-ClickHouse-Quota header, "
             "['user_name', 'client_key'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`, "
-            "['client_key', 'ip_address'] — Connections with the same client_key share the same quota. If a key isn't provided by a client, the quota is tracked for ip_address."
+            "['client_key', 'ip_address'] — Connections with the same client_key share the same quota. If a key isn’t provided by a client, the quota is tracked for ip_address."
         },
         {"durations", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "Time interval lengths in seconds."},
         {"apply_to_all", std::make_shared<DataTypeUInt8>(),
@@ -150,10 +150,10 @@ void StorageSystemQuotas::backupData(
 }
 
 void StorageSystemQuotas::restoreDataFromBackup(
-    RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /* partitions */)
+    RestorerFromBackup & restorer, const String & /* data_path_in_backup */, const std::optional<ASTs> & /* partitions */)
 {
     auto & access_control = restorer.getContext()->getAccessControl();
-    access_control.restoreFromBackup(restorer, data_path_in_backup);
+    access_control.restoreFromBackup(restorer);
 }
 
 }

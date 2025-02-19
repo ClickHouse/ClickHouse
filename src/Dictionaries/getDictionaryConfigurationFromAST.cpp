@@ -5,7 +5,6 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
@@ -499,7 +498,7 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// We assume that function will not take arguments and will return constant value like tcpPort or hostName
             /// Such functions will return column with size equal to input_rows_count.
             size_t input_rows_count = 1;
-            auto result = function->execute({}, function->getResultType(), input_rows_count, /* dry_run = */ false);
+            auto result = function->execute({}, function->getResultType(), input_rows_count);
 
             Field value;
             result->get(0, value);

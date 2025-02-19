@@ -1,8 +1,8 @@
-import multiprocessing
-import os
 import pty
+import os
 import shlex
 import time
+import multiprocessing
 
 COMPLETION_TIMEOUT_SECONDS = 30
 DEBUG_LOG = os.path.join(

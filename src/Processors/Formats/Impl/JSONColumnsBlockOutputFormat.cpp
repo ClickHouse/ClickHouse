@@ -3,7 +3,6 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
-#include <Processors/Port.h>
 
 namespace DB
 {

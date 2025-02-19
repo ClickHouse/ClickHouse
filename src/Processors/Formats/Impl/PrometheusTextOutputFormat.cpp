@@ -27,8 +27,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
-#include <Processors/Port.h>
-
 
 namespace DB
 {
@@ -130,11 +128,11 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
-            if (lhs_labels_contain_count && rhs_labels_contain_sum)
+            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
+            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
+            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);

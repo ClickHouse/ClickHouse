@@ -48,42 +48,8 @@ Calculates the MD4 from a string and returns the resulting set of bytes as Fixed
 ## MD5
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
-If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128' function instead.
+If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the ‘sipHash128’ function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
-
-## RIPEMD160
-
-Produces [RIPEMD-160](https://en.wikipedia.org/wiki/RIPEMD) hash value.
-
-**Syntax**
-
-```sql
-RIPEMD160(input)
-```
-
-**Parameters**
-
-- `input`: Input string. [String](../data-types/string.md)
-
-**Returned value**
-
-- A 160-bit `RIPEMD-160` hash value of type [FixedString(20)](../data-types/fixedstring.md).
-
-**Example**
-
-Use the [hex](../functions/encoding-functions.md/#hex) function to represent the result as a hex-encoded string.
-
-Query:
-
-```sql
-SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));
-```
-
-```response
-┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
-└───────────────────────────────────────────────────────────────┘
-```
 
 ## sipHash64
 
@@ -381,7 +347,7 @@ Result:
 ## intHash64
 
 Calculates a 64-bit hash code from any type of integer.
-This is a relatively fast non-cryptographic hash function of average quality for numbers.
+This is a relatively fast non-cryptographic hash function of average quality for numbers. 
 It works faster than [intHash32](#inthash32).
 
 **Syntax**
@@ -427,7 +393,7 @@ SHA512('s')
 ```
 
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
-We recommend using this function only in cases when you need a specific hash function and you can't select it.
+We recommend using this function only in cases when you need a specific hash function and you can’t select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in `SELECT` queries.
 
 **Arguments**
@@ -685,7 +651,7 @@ For more information, see the link: [JumpConsistentHash](https://arxiv.org/pdf/1
 
 ## kostikConsistentHash
 
-An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`.
+An O(1) time and space consistent hash algorithm by Konstantin 'kostik' Oblakov. Previously `yandexConsistentHash`. 
 
 **Syntax**
 
@@ -706,7 +672,7 @@ Alias: `yandexConsistentHash` (left for backwards compatibility sake).
 
 **Implementation details**
 
-It is efficient only if n &lt;= 32768.
+It is efficient only if n <= 32768. 
 
 **Example**
 
@@ -937,7 +903,7 @@ SELECT xxHash64('')
 
 **Returned value**
 
-- Hash value. [UInt32/64](../data-types/int-uint.md).
+- Hash value. [UInt32/64](../data-types/int-uint.md).  
 
 :::note
 The return type will be `UInt32` for `xxHash32` and `UInt64` for `xxHash64`.

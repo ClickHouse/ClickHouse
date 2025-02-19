@@ -1,18 +1,13 @@
 ---
-description: "System table containing information about async inserts. Each entry represents an insert query buffered into an async insert query."
 slug: /en/operations/system-tables/asynchronous_insert_log
-title: "asynchronous_insert_log"
-keywords: ["system table", "asynchronous_insert_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# asynchronous_insert_log
 
 Contains information about async inserts. Each entry represents an insert query buffered into an async insert query.
 
-To start logging configure parameters in the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) section.
+To start logging configure parameters in the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-asynchronous_insert_log) section.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
