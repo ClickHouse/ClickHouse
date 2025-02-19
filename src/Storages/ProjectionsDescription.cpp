@@ -222,18 +222,19 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
 
-    auto fill_common_data = [&result, &partition_columns, &primary_key_asts, &minmax_columns]
+    auto fill_common_data = [&result, &primary_key_asts, &minmax_columns]
     (
         bool has_aggregation,
         std::ranges::range auto & aggregation_keys
     )
     {
-        std::map<String, size_t> partition_column_name_to_value_index;
-        if (partition_columns)
+        std::set<size_t> constant_positions;
+        for (size_t i = 0; i < result.sample_block.columns(); ++i)
         {
-            for (auto i : collections::range(partition_columns->children.size()))
-                partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
+            if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
+                constant_positions.insert(i);
         }
+        result.sample_block.erase(constant_positions);
 
         if (has_aggregation)
         {
@@ -302,14 +303,6 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
         fill_common_data(analysis_result.need_aggregate, select.getQueryAnalyzer()->aggregationKeys());
     }
-
-    std::set<size_t> constant_positions;
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
-    {
-        if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
-            constant_positions.insert(i);
-    }
-    result.sample_block.erase(constant_positions);
 
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
