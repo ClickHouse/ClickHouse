@@ -389,8 +389,7 @@ REGISTER_FUNCTION(StringCompare)
                 This function compares parts of two strings directly, without the need to copy the parts of the string into new columns.
                 )",
         .syntax = R"(
-        stringCompare(str1, str2)
-        stringCompare(str1, str2, str1_off, str2_off, num_bytes)
+        stringCompare(str1, str2[, str1_off, str2_off, num_bytes])
         )",
         .arguments
         = {{"string1", "Required. The string to compare."},
