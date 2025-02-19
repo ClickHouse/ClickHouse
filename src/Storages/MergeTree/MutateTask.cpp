@@ -57,7 +57,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
 namespace Setting
 {
     extern const SettingsUInt64 min_insert_block_size_bytes;
@@ -84,13 +83,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
-
-enum class ExecuteTTLType : uint8_t
-{
-    NONE = 0,
-    NORMAL = 1,
-    RECALCULATE= 2,
-};
 
 namespace MutationHelpers
 {
@@ -199,8 +191,12 @@ static void splitAndModifyMutationCommands(
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
                         dropped_columns.emplace(command.column_name);
                 }
+                else if (command.type == MutationCommand::READ_COLUMN)
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
             }
-
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -1225,6 +1221,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     do
     {
         Block cur_block;
+        Block projection_header;
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {
@@ -1406,7 +1403,8 @@ private:
 
     void prepare()
     {
-        ctx->new_data_part->getDataPartStorage().createDirectories();
+        if (ctx->new_data_part->isStoredOnDisk())
+            ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -2133,7 +2131,8 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
 
-    if (!isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
+        ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2296,9 +2295,7 @@ bool MutateTask::prepare()
     /// TODO We can materialize compact part without copying data
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
-    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
-        || !isWidePart(ctx->source_part)
-        || !isFullPartStorage(ctx->source_part->getDataPartStorage())
+    if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part) || !isWidePart(ctx->source_part) || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
     {
         /// In case of replicated merge tree with zero copy replication

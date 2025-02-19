@@ -24,7 +24,7 @@ ASTPtr ASTNameTypePair::clone() const
 void ASTNameTypePair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << backQuoteIfNeed(name) << ' ';
-    type->format(ostr, settings, state, frame);
+    type->formatImpl(ostr, settings, state, frame);
 }
 
 }

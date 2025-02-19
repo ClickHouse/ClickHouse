@@ -335,6 +335,11 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     return dynamic_cast<const MergeTreeData *>(storage.get());
 }
 
+MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
+{
+    return part;
+}
+
 bool MutationsInterpreter::Source::supportsLightweightDelete() const
 {
     if (part)
@@ -791,13 +796,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
-            // Can't materialize a column in the sort key
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
-            {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
-            }
-
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
@@ -935,6 +933,25 @@ void MutationsInterpreter::prepare(bool dry_run)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
             read_columns.emplace_back(command.column_name);
+            /// Check if the type of this column is changed and there are projections that
+            /// have this column in the primary key. We should rebuild such projections.
+            if (const auto & merge_tree_data_part = source.getMergeTreeDataPart())
+            {
+                const auto & column = merge_tree_data_part->tryGetColumn(command.column_name);
+                if (column && command.data_type && !column->type->equals(*command.data_type))
+                {
+                    for (const auto & projection : metadata_snapshot->getProjections())
+                    {
+                        const auto & pk_columns = projection.metadata->getPrimaryKeyColumns();
+                        if (std::ranges::find(pk_columns, command.column_name) != pk_columns.end())
+                        {
+                            for (const auto & col : projection.required_columns)
+                                dependencies.emplace(col, ColumnDependency::PROJECTION);
+                            materialized_projections.insert(projection.name);
+                        }
+                    }
+                }
+            }
         }
         else
             throw Exception(ErrorCodes::UNKNOWN_MUTATION_COMMAND, "Unknown mutation command type: {}", DB::toString<int>(command.type));
@@ -1101,8 +1118,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// and so it is not in the list of AllPhysical columns.
             for (const auto & [column_name, _] : prepared_stages[i].column_to_updated)
             {
-                /// If we rewrite the whole part in ALTER DELETE and mask is not updated
-                /// do not write mask because it will be applied during execution of mutation.
                 if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
                     continue;
 
@@ -1354,10 +1369,12 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
-    QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
-    do_not_optimize_plan_settings.optimize_plan = false;
+    QueryPlanOptimizationSettings do_not_optimize_plan;
+    do_not_optimize_plan.optimize_plan = false;
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(
+        do_not_optimize_plan,
+        BuildQueryPipelineSettings::fromContext(context)));
 
     pipeline.addSimpleTransform([&](const Block & header)
     {

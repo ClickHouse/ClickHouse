@@ -33,10 +33,6 @@
   *
   * Allow to search for the last matching character in a string.
   * If no such characters, returns nullptr.
-  *
-  * count_symbols<c1, c2, ...>(begin, end):
-  *
-  * Count the number of symbols of the set in a string.
   */
 
 struct SearchSymbols
@@ -443,15 +439,6 @@ template <char... symbols>
 inline char * find_last_not_symbols_or_null(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_last_symbols_sse2<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
-}
-
-template <char... symbols>
-inline size_t count_symbols(const char * begin, const char * end)
-{
-    size_t res = 0;
-    for (const auto * ptr = begin; ptr < end; ++ptr)
-        res += detail::is_in<symbols...>(*ptr);
-    return res;
 }
 
 

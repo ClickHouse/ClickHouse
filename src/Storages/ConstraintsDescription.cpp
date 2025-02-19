@@ -286,8 +286,6 @@ ConstraintsDescription::ConstraintsDescription(const ConstraintsDescription & ot
 
 ConstraintsDescription & ConstraintsDescription::operator=(const ConstraintsDescription & other)
 {
-    if (&other == this)
-        return *this;
     constraints.resize(other.constraints.size());
     for (size_t i = 0; i < constraints.size(); ++i)
         constraints[i] = other.constraints[i]->clone();

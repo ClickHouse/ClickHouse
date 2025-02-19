@@ -8,6 +8,7 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <Formats/FormatSettings.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/WeakHash.h>
 
@@ -106,7 +107,6 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
@@ -145,12 +145,11 @@ public:
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
 
-    /// Values of ColumnObject are not comparable for less and greater functions.
-    /// But we still support equal comparison.
+    /// Values of ColumnObject are not comparable.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
+    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
+    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 #endif
     void getExtremes(Field & min, Field & max) const override;
 
@@ -232,8 +231,8 @@ public:
     void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
-    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
-    static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
+    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
+    void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const;
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
     static size_t findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end);

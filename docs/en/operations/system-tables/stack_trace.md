@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/stack_trace
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # stack_trace
-
-<SystemTableCloud/>
 
 Contains stack traces of all server threads. Allows developers to introspect the server state.
 

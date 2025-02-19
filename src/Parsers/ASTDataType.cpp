@@ -49,13 +49,13 @@ void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
                 if (i != 0)
                     ostr << ',';
                 ostr << indent_str;
-                arguments->children[i]->format(ostr, settings, state, frame);
+                arguments->children[i]->formatImpl(ostr, settings, state, frame);
             }
         }
         else
         {
             frame.expression_list_prepend_whitespace = false;
-            arguments->format(ostr, settings, state, frame);
+            arguments->formatImpl(ostr, settings, state, frame);
         }
 
         ostr << (settings.hilite ? hilite_function : "") << ')';

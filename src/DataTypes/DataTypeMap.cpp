@@ -40,17 +40,6 @@ DataTypeMap::DataTypeMap(const DataTypePtr & nested_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected Array(Tuple(key, value)) type, got {}", nested->getName());
 
-    if (type_tuple->haveExplicitNames())
-    {
-        const auto & names = type_tuple->getElementNames();
-        if (names[0] != "keys" || names[1] != "values")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Expected Tuple(key, value) with explicit names 'keys', 'values', got explicit names '{}', '{}'", names[0], names[1]);
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Expected Tuple(key, value) with explicit names 'keys', 'values', got without explicit names");
-
     key_type = type_tuple->getElement(0);
     value_type = type_tuple->getElement(1);
     assertKeyType();

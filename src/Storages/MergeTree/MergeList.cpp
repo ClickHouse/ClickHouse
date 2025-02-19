@@ -8,11 +8,6 @@
 
 #include <Common/logger_useful.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric MergeParts;
-}
-
 namespace DB
 {
 
@@ -33,7 +28,6 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
-    , num_parts_metric_increment(CurrentMetrics::MergeParts, num_parts)
 {
     auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (result_part_name != result_part_info.getPartNameV1())
@@ -112,6 +106,11 @@ MergeInfo MergeListElement::getInfo() const
         res.source_part_paths.emplace_back(source_part_path);
 
     return res;
+}
+
+const MemoryTracker & MergeListElement::getMemoryTracker() const
+{
+    return thread_group->memory_tracker;
 }
 
 MergeListElement::~MergeListElement()

@@ -104,7 +104,7 @@ SELECT variantType(v) FROM test;)",
 │ Array(UInt64)  │
 └────────────────┘
 )"}}},
-        .category{"Variants"},
+        .categories{"Variant"},
     });
 }
 

@@ -30,10 +30,8 @@ sidebar_position: 76
     -   [Как импортировать JSON в ClickHouse?](integration/json-import.md)
     -   [Что делать, если у меня проблема с кодировками при использовании Oracle через ODBC?](integration/oracle-odbc.md)
 
-## TODO
-
+{## TODO
 Question candidates:
-
 - How to choose a primary key?
 - How to add a column in ClickHouse?
 - Too many parts
@@ -44,3 +42,4 @@ Question candidates:
 - How to remove the default ClickHouse user through users.d?
 - Importing MySQL dump to ClickHouse
 - Window function workarounds (row\_number, lag/lead, running diff/sum/average)
+##}

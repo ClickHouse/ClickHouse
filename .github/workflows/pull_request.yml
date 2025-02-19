@@ -81,7 +81,7 @@ jobs:
     secrets:
       robot_git_token: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
   FastTest:
-    needs: [RunConfig, BuildDockers]
+    needs: [RunConfig, BuildDockers, StyleCheck]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).jobs_data.jobs_to_do, 'Fast test') }}
     uses: ./.github/workflows/reusable_test.yml
     with:
@@ -90,16 +90,10 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       run_command: |
           python3 fast_test_check.py
+
   ################################# Main stages #################################
   # for main CI chain
   #
-  Builds_0:
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_0') }}
-    uses: ./.github/workflows/reusable_build_stage.yml
-    with:
-      stage: Builds_0
-      data: ${{ needs.RunConfig.outputs.data }}
   Builds_1:
     needs: [RunConfig, StyleCheck, FastTest]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_1') }}
@@ -108,26 +102,19 @@ jobs:
     with:
       stage: Builds_1
       data: ${{ needs.RunConfig.outputs.data }}
+  Tests_1:
+    needs: [RunConfig, Builds_1]
+    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_1') }}
+    uses: ./.github/workflows/reusable_test_stage.yml
+    with:
+      stage: Tests_1
+      data: ${{ needs.RunConfig.outputs.data }}
   Builds_2:
-    needs: [RunConfig, Builds_1, Builds_0]
+    needs: [RunConfig, Builds_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Builds_2') }}
     uses: ./.github/workflows/reusable_build_stage.yml
     with:
       stage: Builds_2
-      data: ${{ needs.RunConfig.outputs.data }}
-  Tests_0:
-    needs: [RunConfig, Builds_0]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_0') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_0
-      data: ${{ needs.RunConfig.outputs.data }}
-  Tests_1:
-    needs: [RunConfig, Builds_1]
-    if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_0') }}
-    uses: ./.github/workflows/reusable_test_stage.yml
-    with:
-      stage: Tests_1
       data: ${{ needs.RunConfig.outputs.data }}
   # stage for running non-required checks without being blocked by required checks (Test_1) if corresponding settings is selected
   Tests_2_ww:
@@ -138,7 +125,7 @@ jobs:
       stage: Tests_2_ww
       data: ${{ needs.RunConfig.outputs.data }}
   Tests_2:
-    needs: [RunConfig, Builds_1, Tests_1, Builds_0, Tests_0]
+    needs: [RunConfig, Builds_1, Tests_1]
     if: ${{ !failure() && !cancelled() && contains(fromJson(needs.RunConfig.outputs.data).stages_data.stages_to_do, 'Tests_2') }}
     uses: ./.github/workflows/reusable_test_stage.yml
     with:
@@ -166,7 +153,7 @@ jobs:
     if: ${{ !cancelled() }}
     # Test_2 or Test_3 do not have the jobs required for Mergeable check,
     #  however, set them as "needs" to get all checks results before the automatic merge occurs.
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2, Builds_0, Tests_0]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code
@@ -191,7 +178,7 @@ jobs:
   #
   FinishCheck:
     if: ${{ !failure() && !cancelled() }}
-    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2, Builds_0]
+    needs: [RunConfig, BuildDockers, StyleCheck, FastTest, Builds_1, Builds_2, Builds_Report, Tests_1, Tests_2_ww, Tests_2]
     runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Check out repository code

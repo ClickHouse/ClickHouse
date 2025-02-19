@@ -111,7 +111,6 @@ def get_run_command(
     envs = [
         # a static link, don't use S3_URL or S3_DOWNLOAD
         '-e S3_URL="https://s3.amazonaws.com/clickhouse-datasets"',
-        f"-e CHECK_NAME='{check_name}'",
     ]
 
     if flaky_check:
@@ -133,7 +132,6 @@ def get_run_command(
         # For dmesg and sysctl
         "--privileged "
         f"{ci_logs_args} "
-        "--tmpfs /tmp/clickhouse "
         f"--volume={repo_path}:/repo "
         f"--volume={result_path}:/test_output "
         f"--volume={server_log_path}:/var/log/clickhouse-server "
