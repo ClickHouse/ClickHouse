@@ -125,6 +125,11 @@ private:
     ContextPtr context;
 
 
+    Int64 prev_cpu_wait_microseconds = 0;
+    Int64 prev_cpu_virtual_time_microseconds = 0;
+
+    double getCPUOverloadMetric();
+
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> loadavg TSA_GUARDED_BY(data_mutex);
