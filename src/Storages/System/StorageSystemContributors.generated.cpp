@@ -951,6 +951,7 @@ const char * auto_contributors[] {
     "Samuel Chou",
     "Samuel Colvin",
     "San",
+    "San Tran",
     "Sanjam Panda",
     "Saulius Valatka",
     "Sean Haynes",
