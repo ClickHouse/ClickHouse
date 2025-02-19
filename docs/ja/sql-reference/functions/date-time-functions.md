@@ -1108,6 +1108,7 @@ toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1): 2023-04-17
 toStartOfWeek(toDate('2023-04-24')):                 2023-04-23
 toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
 ```
+```
 
 **引数**
 
@@ -2240,6 +2241,8 @@ age('unit', startdate, enddate, [timezone])
 
 - `enddate` — 引き算の2番目の時間値（減数）。[Date](../data-types/date.md)、[Date32](../data-types/date32.md)、[DateTime](../data-types/datetime.md) または [DateTime64](../data-types/datetime64.md)。
 
+```
+```html
 - `timezone` — [タイムゾーン名](../../operations/server-configuration-parameters/settings.md#timezone) (オプション)。指定された場合、`startdate` と `enddate` の両方に適用されます。指定されていない場合は、`startdate` と `enddate` のタイムゾーンが使用されます。それらが異なる場合、結果は未定義となります。[文字列](../data-types/string.md)。
 
 **戻り値**
@@ -3312,7 +3315,8 @@ addYears(date, num)
 - `num`: 追加する年の数。[(U)Int*](../data-types/int-uint.md)、[Float*](../data-types/float.md)。
 
 **戻り値**
-
+```
+```html
 - `date` に `num` 年を加えます。 [Date](../data-types/date.md)/[Date32](../data-types/date32.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md)。
 
 **例**

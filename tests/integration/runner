@@ -11,12 +11,11 @@ import signal
 import string
 import subprocess
 import sys
-from typing import Any
 
 from integration_test_images import get_docker_env
 
 
-def random_str(length: int = 6) -> str:
+def random_str(length=6):
     alphabet = string.ascii_lowercase + string.digits
     return "".join(random.SystemRandom().choice(alphabet) for _ in range(length))
 
@@ -34,16 +33,7 @@ UTILS_DIR_IN_REPO = "utils"
 DIND_INTEGRATION_TESTS_IMAGE_NAME = "clickhouse/integration-tests-runner"
 
 
-def physical_memory() -> int:
-    try:
-        # for linux
-        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except ValueError:
-        # for MacOS
-        return int(subprocess.check_output(["sysctl", "-n", "hw.memsize"]).strip())
-
-
-def check_args_and_update_paths(args: argparse.Namespace) -> None:
+def check_args_and_update_paths(args):
     if args.clickhouse_root:
         if not os.path.isabs(args.clickhouse_root):
             CLICKHOUSE_ROOT = os.path.abspath(args.clickhouse_root)
@@ -146,7 +136,7 @@ def check_args_and_update_paths(args: argparse.Namespace) -> None:
         )
 
 
-def check_iptables_legacy() -> None:
+def check_iptables_legacy():
     iptables_path = shutil.which("iptables")
     ip6tables_path = shutil.which("ip6tables")
 
@@ -193,7 +183,7 @@ def check_iptables_legacy() -> None:
         sys.exit(1)
 
 
-def docker_kill_handler_handler(signum: Any, frame: Any) -> None:
+def docker_kill_handler_handler(signum, frame):
     _, _ = signum, frame
     subprocess.check_call(
         f"docker ps --all --quiet --filter name={CONTAINER_NAME}",
@@ -222,10 +212,7 @@ if __name__ == "__main__":
         format="%(asctime)s [ %(process)d ] %(levelname)s : %(message)s (%(filename)s:%(lineno)s, %(funcName)s)",
     )
 
-    parser = argparse.ArgumentParser(
-        description="ClickHouse integration tests runner",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+    parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
 
     parser.add_argument(
         "--binary",
@@ -290,14 +277,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--memory",
-        # Default is host memory - 2GiB
-        default=physical_memory() - 2 * 1024**3,
-        help="Set the memory limit for the docker container, "
-        "accepts the same argument as `docker run --memory`",
-    )
-
-    parser.add_argument(
         "--docker-image-version",
         default="latest",
         help="Version of docker image which runner will use to run tests",
@@ -318,10 +297,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--random-order",
-        action="store_true",
-        dest="random_order",
-        help="Run tests in random order using pytest-random-order",
+        "--no-random",
+        action="store",
+        dest="no_random",
+        help="Disable tests order randomization",
     )
 
     parser.add_argument(
@@ -408,7 +387,9 @@ if __name__ == "__main__":
         f" --count {args.count}" if args.count is not None and args.count > 0 else ""
     )
 
-    rand_args = "--random-order" if args.random_order else ""
+    rand_args = ""
+    # if not args.no_random:
+    #     rand_args += f"--random-seed={os.getpid()}"
 
     net = ""
     if args.network:
@@ -488,7 +469,6 @@ if __name__ == "__main__":
     cmd_base = (
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
         "--privileged --dns-search='.' "  # since recent dns search leaks from host
-        f"--memory={args.memory} "
         f"--volume={args.odbc_bridge_binary}:/clickhouse-odbc-bridge "
         f"--volume={args.binary}:/clickhouse "
         f"--volume={args.library_bridge_binary}:/clickhouse-library-bridge "
@@ -523,4 +503,4 @@ if __name__ == "__main__":
         subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
-    subprocess.check_call(cmd, shell=True, bufsize=0)
+    subprocess.check_call(cmd, shell=True)

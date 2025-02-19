@@ -30,8 +30,6 @@ constexpr bool isInnerOrRight(JoinKind kind) { return kind == JoinKind::Inner ||
 constexpr bool isInnerOrLeft(JoinKind kind)  { return kind == JoinKind::Inner || kind == JoinKind::Left; }
 constexpr bool isPaste(JoinKind kind)        { return kind == JoinKind::Paste; }
 
-JoinKind reverseJoinKind(JoinKind kind);
-
 /// Allows more optimal JOIN for typical cases.
 enum class JoinStrictness : uint8_t
 {
@@ -100,7 +98,7 @@ constexpr ASOFJoinInequality reverseASOFJoinInequality(ASOFJoinInequality inequa
 
 enum class JoinAlgorithm : uint8_t
 {
-    DEFAULT = 0, /// deprecated, equivalent to "direct,hash"
+    DEFAULT = 0,
     AUTO,
     HASH,
     PARTIAL_MERGE,

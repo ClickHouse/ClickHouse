@@ -2,9 +2,7 @@
 #include <base/defines.h>
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils.h>
-#include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
-
 
 namespace DB
 {
@@ -520,12 +518,7 @@ Token Lexer::nextTokenImpl()
             pos = skipWhitespacesUTF8(pos, end);
             if (pos > token_begin)
                 return Token(TokenType::Whitespace, token_begin, pos);
-
-            ++pos;
-            while (pos < end && UTF8::isContinuationOctet(*pos))
-                ++pos;
-
-            return Token(TokenType::Error, token_begin, pos);
+            return Token(TokenType::Error, token_begin, ++pos);
     }
 }
 
@@ -563,7 +556,7 @@ const char * getErrorTokenDescription(TokenType type)
         case TokenType::ErrorWrongNumber:
             return "Wrong number";
         case TokenType::ErrorMaxQuerySizeExceeded:
-            return "Max query size exceeded (can be increased with the `max_query_size` setting)";
+            return "Max query size exceeded";
         default:
             return "Not an error";
     }

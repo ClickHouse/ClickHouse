@@ -1,5 +1,4 @@
 #include <optional>
-#include <shared_mutex>
 
 #include <Core/Field.h>
 
@@ -20,7 +19,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <DataTypes/NullableUtils.h>
+#include <Interpreters/NullableUtils.h>
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -441,7 +440,7 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         }
 
         // If the original column is DateTime64, check for sub-second precision
-        if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
+        if (isDateTime64(column_to_cast.column->getDataType()))
         {
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }

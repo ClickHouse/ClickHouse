@@ -2,7 +2,6 @@
 #include <Formats/FormatFactory.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 

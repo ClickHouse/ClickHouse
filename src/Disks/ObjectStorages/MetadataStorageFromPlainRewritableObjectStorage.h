@@ -4,7 +4,6 @@
 
 #include <memory>
 #include <unordered_set>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -12,6 +11,10 @@ namespace DB
 
 class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataStorageFromPlainObjectStorage
 {
+private:
+    const std::string metadata_key_prefix;
+    std::shared_ptr<InMemoryDirectoryPathMap> path_map;
+
 public:
     MetadataStorageFromPlainRewritableObjectStorage(
         ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size);
@@ -29,14 +32,12 @@ public:
 
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
-private:
-    const std::string metadata_key_prefix;
-    std::shared_ptr<InMemoryDirectoryPathMap> path_map;
-
+protected:
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
     std::unordered_set<std::string> getDirectChildrenOnDisk(const std::filesystem::path & local_path) const;
 
+private:
     bool useSeparateLayoutForMetadata() const;
 };
 

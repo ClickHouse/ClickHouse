@@ -6,13 +6,12 @@
 #if USE_PARQUET
 
 #include <Common/logger_useful.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -210,7 +209,7 @@ struct DeltaLakeMetadataImpl
             if (!object)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             object->stringify(oss);
             LOG_TEST(log, "Metadata: {}", oss.str());

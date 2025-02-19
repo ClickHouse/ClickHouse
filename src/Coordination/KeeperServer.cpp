@@ -8,7 +8,6 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
-#include <Coordination/KeeperStorage.h>
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Disks/DiskLocal.h>
@@ -542,12 +541,12 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     nuraft::ptr<nuraft::delayed_task_scheduler> scheduler = asio_service;
     nuraft::ptr<nuraft::rpc_client_factory> rpc_cli_factory = asio_service;
 
-    nuraft::ptr<nuraft::state_mgr> cast_state_manager = state_manager;
-    nuraft::ptr<nuraft::state_machine> cast_state_machine = state_machine;
+    nuraft::ptr<nuraft::state_mgr> casted_state_manager = state_manager;
+    nuraft::ptr<nuraft::state_machine> casted_state_machine = state_machine;
 
     /// raft_server creates unique_ptr from it
     nuraft::context * ctx
-        = new nuraft::context(cast_state_manager, cast_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
+        = new nuraft::context(casted_state_manager, casted_state_machine, asio_listeners, logger, rpc_cli_factory, scheduler, params);
 
     raft_instance = nuraft::cs_new<KeeperRaftServer>(ctx, init_options);
 
@@ -563,11 +562,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
 
-    nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
+    nuraft::ptr<nuraft::raft_server> casted_raft_server = raft_instance;
 
     for (const auto & asio_listener : asio_listeners)
     {
-        asio_listener->listen(cast_raft_server);
+        asio_listener->listen(casted_raft_server);
     }
 }
 
@@ -653,7 +652,7 @@ namespace
 
 }
 
-void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
+void KeeperServer::putLocalReadRequest(const KeeperStorageBase::RequestForSession & request_for_session)
 {
     if (!request_for_session.request->isReadRequest())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot process non-read request locally");
@@ -661,7 +660,7 @@ void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_f
     state_machine->processReadRequest(request_for_session);
 }
 
-RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions & requests_for_sessions)
+RaftAppendResult KeeperServer::putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests_for_sessions)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> entries;
     entries.reserve(requests_for_sessions.size());
@@ -945,8 +944,8 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                     writeIntBinary(request_for_session->time, write_buf);
 
                 writeIntBinary(request_for_session->zxid, write_buf);
-                writeIntBinary(static_cast<uint8_t>(request_for_session->digest->version), write_buf);
-                if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST)
+                writeIntBinary(request_for_session->digest->version, write_buf);
+                if (request_for_session->digest->version != KeeperStorageBase::NO_DIGEST)
                     writeIntBinary(request_for_session->digest->value, write_buf);
 
                 write_buf.finalize();

@@ -8,11 +8,6 @@
 
 #include <Common/logger_useful.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric MergeParts;
-}
-
 namespace DB
 {
 
@@ -33,7 +28,6 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
     , thread_id{getThreadId()}
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
-    , num_parts_metric_increment(CurrentMetrics::MergeParts, num_parts)
 {
     auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (result_part_name != result_part_info.getPartNameV1())
@@ -66,8 +60,9 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
+        WriteBufferFromString out(partition);
         const auto & part = future_part->parts[0];
-        partition = part->partition.serializeToString(part->getMetadataSnapshot());
+        part->partition.serializeText(part->storage, out, {});
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
@@ -111,11 +106,6 @@ MergeInfo MergeListElement::getInfo() const
         res.source_part_paths.emplace_back(source_part_path);
 
     return res;
-}
-
-const MemoryTracker & MergeListElement::getMemoryTracker() const
-{
-    return thread_group->memory_tracker;
 }
 
 MergeListElement::~MergeListElement()

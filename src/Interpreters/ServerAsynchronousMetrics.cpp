@@ -10,20 +10,13 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #include <Common/PageCache.h>
-#include <Common/quoteString.h>
 
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
 
-#include "config.h"
-#if USE_AWS_S3
-#include <IO/S3/Client.h>
-#endif
-
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MarkCache.h>
@@ -88,12 +81,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     {
         new_values["MarkCacheBytes"] = { mark_cache->sizeInBytes(), "Total size of mark cache in bytes" };
         new_values["MarkCacheFiles"] = { mark_cache->count(), "Total number of mark files cached in the mark cache" };
-    }
-
-    if (auto primary_index_cache = getContext()->getPrimaryIndexCache())
-    {
-        new_values["PrimaryIndexCacheBytes"] = { primary_index_cache->sizeInBytes(), "Total size of primary index cache in bytes" };
-        new_values["PrimaryIndexCacheFiles"] = { primary_index_cache->count(), "Total number of index files cached in the primary index cache" };
     }
 
     if (auto page_cache = getContext()->getPageCache())

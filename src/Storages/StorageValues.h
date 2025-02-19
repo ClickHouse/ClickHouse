@@ -1,12 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
 {
-
 /* One block storage used for values table function
  * It's structure is similar to IStorageSystemOneBlock
  */
@@ -42,9 +40,6 @@ public:
 
     /// FIXME probably it should return false, but StorageValues is used in ExecutingInnerQueryFromViewTransform (whatever it is)
     bool supportsTransactions() const override { return true; }
-
-    bool supportsSubcolumns() const override { return true; }
-    bool supportsDynamicSubcolumns() const override { return true; }
 
     bool parallelizeOutputAfterReading(ContextPtr) const override { return false; }
 

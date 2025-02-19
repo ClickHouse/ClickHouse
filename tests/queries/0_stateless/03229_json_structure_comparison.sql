@@ -11,10 +11,12 @@ INSERT INTO test_new_json_type format JSONEachRow
 ;
 
 SELECT
-    a.data,
-    b.data
-FROM test_new_json_type AS a
-INNER JOIN test_new_json_type AS b ON a.id = b.id
-ORDER BY id;
+    a.data
+    , b.data
+FROM
+    test_new_json_type a
+    JOIN test_new_json_type b
+        ON a.id = b.id;
 
 DROP TABLE test_new_json_type;
+

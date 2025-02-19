@@ -1,6 +1,5 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
-#include <IO/WriteSettings.h>
 
 #include <filesystem>
 #include <mutex>
@@ -75,14 +74,12 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
         metadata_object_key.serialize());
 
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key.serialize(), /*local_path*/ path / PREFIX_PATH_FILE_NAME);
-
-    size_t buf_size = std::bit_ceil(path.string().size()) << 1;
     auto buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ std::clamp(buf_size, 32lu, size_t(DBMS_DEFAULT_BUFFER_SIZE)),
-        /*settings*/ getWriteSettings());
+        /* object_attributes */ std::nullopt,
+        /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
+        /* settings */ {});
 
     writeString(path.string(), *buf);
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
@@ -105,7 +102,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Undoing '{}' directory creation", path);
     const auto base_path = path.parent_path();
     if (path_map.removePathIfExists(base_path))
     {
@@ -163,11 +160,7 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
         std::string data;
-        auto read_settings = getReadSettings();
-        read_settings.remote_fs_method = RemoteFSReadMethod::read;
-        read_settings.remote_fs_buffer_size = 1024;
-
-        auto read_buf = object_storage->readObject(metadata_object, read_settings);
+        auto read_buf = object_storage->readObject(metadata_object, ReadSettings{});
         readStringUntilEOF(data, *read_buf);
         if (data != path_from)
             throw Exception(
@@ -178,13 +171,12 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
                 data);
     }
 
-    size_t buf_size = std::bit_ceil(new_path.string().size()) << 1;
     auto write_buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ std::clamp(buf_size, 32lu, size_t(DBMS_DEFAULT_BUFFER_SIZE)),
-        /*settings*/ getWriteSettings());
+        /* object_attributes */ std::nullopt,
+        /*buf_size*/ DBMS_DEFAULT_BUFFER_SIZE,
+        /*settings*/ {});
 
     return write_buf;
 }
@@ -228,7 +220,6 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo(std::uniq
 {
     if (write_finalized)
     {
-        LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory move from '{}' to '{}'", path_from, path_to);
         {
             std::lock_guard lock(path_map.mutex);
             auto & map = path_map.map;
@@ -287,7 +278,6 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
     if (!remove_attempted)
         return;
 
-    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
     {
         std::lock_guard lock(path_map.mutex);
         auto & map = path_map.map;
@@ -298,14 +288,12 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
 
     auto metadata_object_key = createMetadataObjectKey(key_prefix, metadata_key_prefix);
     auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
-
-    size_t buf_size = std::bit_ceil(path.string().size()) << 1;
     auto buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ std::clamp(buf_size, 32lu, size_t(DBMS_DEFAULT_BUFFER_SIZE)),
-        /*settings*/ DB::getWriteSettings());
+        /* object_attributes */ std::nullopt,
+        /* buf_size */ DBMS_DEFAULT_BUFFER_SIZE,
+        /* settings */ {});
     writeString(path.string(), *buf);
     buf->finalize();
 }

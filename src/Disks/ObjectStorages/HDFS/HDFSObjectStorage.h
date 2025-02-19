@@ -7,7 +7,6 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
-#include <Storages/ObjectStorage/HDFS/HDFSErrorWrapper.h>
 #include <Core/UUID.h>
 #include <memory>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -27,7 +26,7 @@ struct HDFSObjectStorageSettings
 };
 
 
-class HDFSObjectStorage : public IObjectStorage, public HDFSErrorWrapper
+class HDFSObjectStorage : public IObjectStorage
 {
 public:
 
@@ -38,8 +37,7 @@ public:
         SettingsPtr settings_,
         const Poco::Util::AbstractConfiguration & config_,
         bool lazy_initialize)
-        : HDFSErrorWrapper(hdfs_root_path_, config_)
-        , config(config_)
+        : config(config_)
         , settings(std::move(settings_))
         , log(getLogger("HDFSObjectStorage(" + hdfs_root_path_ + ")"))
     {
@@ -92,6 +90,7 @@ public:
         const WriteSettings & write_settings,
         std::optional<ObjectAttributes> object_to_attributes = {}) override;
 
+    HDFSFileInfo hdfsListDirectoryWrapper(const std::string & path) const;
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     String getObjectsNamespace() const override { return ""; }
@@ -103,8 +102,6 @@ public:
         ContextPtr context) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override { return true; }
 
     bool isRemote() const override { return true; }
 
@@ -123,6 +120,7 @@ private:
 
     const Poco::Util::AbstractConfiguration & config;
 
+    mutable HDFSBuilderWrapper hdfs_builder;
     mutable HDFSFSPtr hdfs_fs;
 
     mutable std::mutex init_mutex;

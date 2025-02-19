@@ -15,8 +15,6 @@
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
-#include <shared_mutex>
-
 namespace DB
 {
 
@@ -34,8 +32,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
         if (!request.hasCredentials())
             return server_credentials->isValidUser("", "");
 
-        String scheme;
-        String info;
+        String scheme, info;
         request.getCredentials(scheme, info);
 
         if (scheme != "Basic")

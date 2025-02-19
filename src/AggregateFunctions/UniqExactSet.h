@@ -65,7 +65,14 @@ public:
                 auto data_vec_atomic_index = std::make_shared<std::atomic_uint32_t>(0);
                 auto thread_func = [data_vec, data_vec_atomic_index, &is_cancelled, thread_group = CurrentThread::getGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "UniqExaConvert");
+                    SCOPE_EXIT_SAFE(
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    );
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+
+                    setThreadName("UniqExaConvert");
 
                     while (true)
                     {
@@ -128,7 +135,13 @@ public:
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
+                        SCOPE_EXIT_SAFE(
+                            if (thread_group)
+                                CurrentThread::detachFromGroupIfNotDetached();
+                        );
+                        if (thread_group)
+                            CurrentThread::attachToGroupIfDetached(thread_group);
+                        setThreadName("UniqExactMerger");
 
                         while (true)
                         {

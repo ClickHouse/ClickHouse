@@ -15,11 +15,6 @@ namespace DB
 class ISchedulerNode;
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
 
-struct ClassifierSettings
-{
-    bool throw_on_unknown_workload = false;
-};
-
 /*
  * Instance of derived class holds everything required for resource consumption,
  * including resources currently registered at `SchedulerRoot`. This is required to avoid
@@ -59,12 +54,7 @@ public:
 
     /// Obtain a classifier instance required to get access to resources.
     /// Note that it holds resource configuration, so should be destructed when query is done.
-    virtual ClassifierPtr acquire(const String & classifier_name, const ClassifierSettings & settings) = 0;
-
-    ClassifierPtr acquire(const String & classifier_name)
-    {
-        return acquire(classifier_name, {});
-    }
+    virtual ClassifierPtr acquire(const String & classifier_name) = 0;
 
     /// For introspection, see `system.scheduler` table
     using VisitorFunc = std::function<void(const String & resource, const String & path, ISchedulerNode * node)>;

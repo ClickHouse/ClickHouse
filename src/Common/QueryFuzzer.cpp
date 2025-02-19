@@ -45,7 +45,6 @@
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/SipHash.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 

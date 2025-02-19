@@ -120,7 +120,7 @@ Result:
 
 ## bitSlice(s, offset, length)
 
-Returns a substring starting with the bit from the 'offset' index that is 'length' bits long. bits indexing starts from
+Returns a substring starting with the bit from the ‘offset’ index that is ‘length’ bits long. bits indexing starts from
 1
 
 **Syntax**

@@ -600,7 +600,6 @@ void mergeBlockWithPipe(
     while (executor.pull(block))
     {
         convertToFullIfSparse(block);
-        block.checkNumberOfRows();
 
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);

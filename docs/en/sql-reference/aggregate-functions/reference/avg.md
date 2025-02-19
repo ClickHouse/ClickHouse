@@ -52,7 +52,7 @@ Get the arithmetic mean:
 
 Query:
 
-```sql
+```
 SELECT avg(t) FROM test;
 ```
 

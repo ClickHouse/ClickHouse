@@ -1,9 +1,7 @@
 ---
-description: "Contains queries used by `/dashboard` page accessible though the HTTP interface. useful for monitoring and troubleshooting."
 slug: /en/operations/system-tables/dashboards
-title: "dashboards"
-keywords: ["system table", "dashboards", "monitoring", "troubleshooting"]
 ---
+# dashboards
 
 Contains queries used by `/dashboard` page accessible though [HTTP interface](/docs/en/interfaces/http.md).
 This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.
