@@ -18,7 +18,7 @@ namespace DB
 class ExternalDictionaryLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_);
+    ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_, std::vector<std::string> libraries_paths_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -27,6 +27,7 @@ private:
 
     const size_t keep_alive_timeout;
     LoggerPtr log;
+    std::vector<std::string> libraries_paths;
 };
 
 
@@ -63,13 +64,14 @@ private:
 class CatBoostLibraryBridgeRequestHandler : public HTTPRequestHandler, WithContext
 {
 public:
-    CatBoostLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_);
+    CatBoostLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_, std::vector<std::string> libraries_paths_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
 private:
     const size_t keep_alive_timeout;
     LoggerPtr log;
+    std::vector<std::string> libraries_paths;
 };
 
 

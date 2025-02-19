@@ -14,7 +14,8 @@ public:
     LibraryBridgeHandlerFactory(
         const std::string & name_,
         size_t keep_alive_timeout_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::vector<std::string> libraries_paths_);
 
     std::unique_ptr<HTTPRequestHandler> createRequestHandler(const HTTPServerRequest & request) override;
 
@@ -22,6 +23,7 @@ private:
     LoggerPtr log;
     const std::string name;
     const size_t keep_alive_timeout;
+    const std::vector<std::string> libraries_paths;
 };
 
 }

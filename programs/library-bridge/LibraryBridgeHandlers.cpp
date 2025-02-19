@@ -2,13 +2,13 @@
 
 #include "CatBoostLibraryHandlerFactory.h"
 #include "Common/ProfileEvents.h"
-#include "ExternalDictionaryLibraryHandler.h"
 #include "ExternalDictionaryLibraryHandlerFactory.h"
 
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Common/BridgeProtocolVersion.h>
+#include <Common/filesystemHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
@@ -24,7 +24,8 @@
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
+#include <filesystem>
+#include <boost/algorithm/string/join.hpp>
 
 
 namespace DB
@@ -86,11 +87,23 @@ static void writeData(Block data, OutputFormatPtr format)
 }
 
 
-ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_)
+ExternalDictionaryLibraryBridgeRequestHandler::ExternalDictionaryLibraryBridgeRequestHandler(size_t keep_alive_timeout_, ContextPtr context_, std::vector<std::string> libraries_paths_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
     , log(getLogger("ExternalDictionaryLibraryBridgeRequestHandler"))
+    , libraries_paths(std::move(libraries_paths_))
 {
+}
+
+
+static bool checkLibraryPath(const std::string & path, const std::vector<std::string> & allowed_prefixes, HTTPServerResponse & response)
+{
+    for (const auto & prefix : allowed_prefixes)
+        if (fileOrSymlinkPathStartsWith(path, prefix))
+            return true;
+    processError(response, fmt::format("The provided library path {} is not inside any of the allowed prefixes {} ('libraries-path') from the configuration.",
+        path, boost::join(allowed_prefixes, ", ")));
+    return false;
 }
 
 
@@ -172,11 +185,14 @@ void ExternalDictionaryLibraryBridgeRequestHandler::handleRequest(HTTPServerRequ
 
             if (!params.has("library_path"))
             {
-                processError(response, "No 'library_path' in request URL");
+                processError(response, "No 'library_path' in the request URL");
                 return;
             }
 
             const String & library_path = params.get("library_path");
+
+            if (!checkLibraryPath(library_path, libraries_paths, response))
+                return;
 
             if (!params.has("library_settings"))
             {
@@ -413,10 +429,11 @@ void ExternalDictionaryLibraryBridgeExistsHandler::handleRequest(HTTPServerReque
 
 
 CatBoostLibraryBridgeRequestHandler::CatBoostLibraryBridgeRequestHandler(
-    size_t keep_alive_timeout_, ContextPtr context_)
+    size_t keep_alive_timeout_, ContextPtr context_, std::vector<std::string> libraries_paths_)
     : WithContext(context_)
     , keep_alive_timeout(keep_alive_timeout_)
     , log(getLogger("CatBoostLibraryBridgeRequestHandler"))
+    , libraries_paths(std::move(libraries_paths_))
 {
 }
 
@@ -521,6 +538,9 @@ void CatBoostLibraryBridgeRequestHandler::handleRequest(HTTPServerRequest & requ
             }
 
             const String & library_path = params.get("library_path");
+
+            if (!checkLibraryPath(library_path, libraries_paths, response))
+                return;
 
             if (!params.has("model_path"))
             {
