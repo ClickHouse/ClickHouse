@@ -246,6 +246,8 @@
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
+    M(KeeperStorageLockHeldExclusiveMicroseconds) \
+    M(KeeperStorageLockHeldSharedMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
