@@ -1830,7 +1830,7 @@ double AsynchronousMetrics::getCPUOverloadMetric()
     prev_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds;
 
     /// If we used less than one CPU core, we cannot detect overload.
-    if (os_cpu_virtual_time_microseconds < 1.0 || os_cpu_wait_microseconds <= 0)
+    if (os_cpu_virtual_time_microseconds < 1'000'000.0 || os_cpu_wait_microseconds <= 0)
         return 0;
 
     return os_cpu_wait_microseconds / os_cpu_virtual_time_microseconds;
