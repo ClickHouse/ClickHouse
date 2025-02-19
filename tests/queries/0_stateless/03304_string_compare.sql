@@ -1,3 +1,15 @@
+select stringCompare(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select stringCompare('abc'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select stringCompare('abc', 'abc', 'abc'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+select stringCompare(0, 'abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 'abc', 'abc', 0, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 'abc', 0, 'abc', 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 'abc', 0, 0, 'abc'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 'abc', -1, 0, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 'abc', 0, -1, 0); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select stringCompare('abc', 'abc', 0, 0, -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- {echoOn }
 
 select stringCompare('abc', 'abc');
@@ -61,18 +73,5 @@ select s1, s2, stringCompare(s1, s2, 0, 0, 4) from (select cast(s2 as FixedStrin
 select s1, s2, stringCompare(s1, s2, 3, 0, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
 select s1, s2, stringCompare(s1, s2, 0, 3, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
 select s1, s2, stringCompare(s1, s2, 4, 4, 4) from (select cast(s2 as FixedString(3)) as s2, cast(s1 as FixedString(3)) as s1 from (select concat('ab', number % 3) as s1, concat('ab', number % 4) as s2 from numbers(6)));
+
 -- {echoOff }
-
-select stringCompare('abc'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abc', 0, 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abc', 0, 1, 3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abd', 'abc', 0); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abd', 'abc', 0, 0); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abd', 'abc', -1);  -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abd', 'abc', 0, -1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
-select stringCompare('abd', 'abc', 0, 0, -2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select stringCompare('abd', 'abc', -1, 0, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select stringCompare('abd', 'abc', 0, -1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-select stringCompare('abd', 0, 'abc', 0, 2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-
-
