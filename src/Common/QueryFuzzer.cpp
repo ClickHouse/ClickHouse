@@ -1203,23 +1203,28 @@ ASTPtr QueryFuzzer::generatePredicate()
 }
 
 /// Helper function to extract all predicates from a binary AND/OR tree
-void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates)
+void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op)
 {
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (func->name == "and" || func->name == "or")
+        if (func->name == op)
         {
             /// Recursively extract predicates from the left and right children
-            extractPredicates(func->arguments->children[0], predicates);
-            extractPredicates(func->arguments->children[1], predicates);
+            extractPredicates(func->arguments->children[0], predicates, op);
+            extractPredicates(func->arguments->children[1], predicates, op);
+            return;
+        }
+        else if (func->name == "and" || func->name == "or")
+        {
+            /// Hit another "or" or "and" clause, shuffle it
+            predicates.emplace_back(permutePredicateClause(node));
             return;
         }
     }
     /// If it's not an AND/OR function, it's a predicate
-    predicates.push_back(node);
+    predicates.emplace_back(node);
 }
 
-/// Helper function to build a binary AND/OR tree from a list of predicates
 ASTPtr QueryFuzzer::buildBinaryTree(const ASTs & predicates, const std::string & op)
 {
     if (predicates.empty())
@@ -1246,7 +1251,7 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate)
         {
             /// Extract all predicates under the current logical operator
             ASTs predicates;
-            extractPredicates(predicate, predicates);
+            extractPredicates(predicate, predicates, func->name);
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
             return buildBinaryTree(predicates, func->name);
