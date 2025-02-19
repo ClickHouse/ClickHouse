@@ -245,6 +245,8 @@ add_contrib (libssh-cmake libssh)
 
 add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobufs-gogo)
 
+add_contrib (sz3-cmake sz3)
+
 add_contrib (numactl-cmake numactl)
 
 add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
