@@ -262,6 +262,7 @@ std::shared_ptr<StorageObjectStorage> StorageObjectStorageCluster::getPureStorag
 {
     std::lock_guard lock(mutex);
     if (!pure_storage)
+    {
         pure_storage = std::make_shared<StorageObjectStorage>(
             configuration,
             object_storage,
@@ -274,6 +275,13 @@ std::shared_ptr<StorageObjectStorage> StorageObjectStorageCluster::getPureStorag
             mode,
             /* distributed_processing */false,
             partition_by);
+
+        auto virtuals_ = getVirtualsPtr();
+        if (virtuals_)
+            pure_storage->setVirtuals(*virtuals_);
+
+        pure_storage->setInMemoryMetadata(getInMemoryMetadata());
+    }
 
     return pure_storage;
 }
@@ -306,6 +314,17 @@ String StorageObjectStorageCluster::getClusterName(ContextPtr context) const
     if (cluster_name_.empty())
         cluster_name_ = getOriginalClusterName();
     return cluster_name_;
+}
+
+QueryProcessingStage::Enum StorageObjectStorageCluster::getQueryProcessingStage(
+    ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const
+{
+    /// Full query if fall back to pure storage.
+    if (getClusterName(context).empty())
+        return QueryProcessingStage::Enum::FetchColumns;
+
+    /// Distributed storage.
+    return IStorageCluster::getQueryProcessingStage(context, to_stage, storage_snapshot, query_info);
 }
 
 }

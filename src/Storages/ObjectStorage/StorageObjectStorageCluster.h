@@ -38,6 +38,22 @@ public:
 
     String getClusterName(ContextPtr context) const override;
 
+    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_) override
+    {
+        if (pure_storage)
+            pure_storage->setInMemoryMetadata(metadata_);
+        IStorageCluster::setInMemoryMetadata(metadata_);
+    }
+
+    void setVirtuals(VirtualColumnsDescription virtuals_) override
+    {
+        if (pure_storage)
+            pure_storage->setVirtuals(virtuals_);
+        IStorageCluster::setVirtuals(virtuals_);
+    }
+
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,

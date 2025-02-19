@@ -216,12 +216,12 @@ public:
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.
-    void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
+    virtual void setInMemoryMetadata(const StorageInMemoryMetadata & metadata_)
     {
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
-    void setVirtuals(VirtualColumnsDescription virtuals_)
+    virtual void setVirtuals(VirtualColumnsDescription virtuals_)
     {
         virtuals.set(std::make_unique<VirtualColumnsDescription>(std::move(virtuals_)));
     }
