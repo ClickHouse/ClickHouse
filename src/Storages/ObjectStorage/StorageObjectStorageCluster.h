@@ -54,6 +54,14 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context,
+        TableExclusiveLockHolder &) override;
+
+    void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
+
 private:
     void updateQueryToSendIfNeeded(
         ASTPtr & query,

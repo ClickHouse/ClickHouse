@@ -327,4 +327,18 @@ QueryProcessingStage::Enum StorageObjectStorageCluster::getQueryProcessingStage(
     return IStorageCluster::getQueryProcessingStage(context, to_stage, storage_snapshot, query_info);
 }
 
+void StorageObjectStorageCluster::truncate(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr local_context,
+    TableExclusiveLockHolder & lock_holder)
+{
+    return getPureStorage(local_context)->truncate(query, metadata_snapshot, local_context, lock_holder);
+}
+
+void StorageObjectStorageCluster::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
+{
+    configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+}
+
 }
