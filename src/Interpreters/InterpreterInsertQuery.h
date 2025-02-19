@@ -7,6 +7,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
 
+#include <Processors/Sinks/SinkToStorage.h>
+
 namespace DB
 {
 
@@ -50,7 +52,8 @@ public:
         const Names & columns,
         ThreadStatusesHolderPtr thread_status_holder = {},
         std::atomic_uint64_t * elapsed_counter_ms = nullptr,
-        bool check_access = false);
+        bool check_access = false,
+        SinkToStorage::ChainGenerator generator = {});
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -99,7 +102,8 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         ThreadStatusesHolderPtr thread_status_holder,
         ThreadGroupPtr running_group,
-        std::atomic_uint64_t * elapsed_counter_ms);
+        std::atomic_uint64_t * elapsed_counter_ms,
+        SinkToStorage::ChainGenerator generator = {});
 
     Chain buildPreSinkChain(
         const Block & subsequent_header,

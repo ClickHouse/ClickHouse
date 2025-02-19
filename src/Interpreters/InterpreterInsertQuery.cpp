@@ -48,6 +48,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include "Processors/Sinks/SinkToStorage.h"
 #include "base/defines.h"
 
 
@@ -318,7 +319,9 @@ Chain InterpreterInsertQuery::buildChain(
     const Names & columns,
     ThreadStatusesHolderPtr thread_status_holder,
     std::atomic_uint64_t * elapsed_counter_ms,
-    bool check_access)
+    bool check_access,
+    SinkToStorage::ChainGenerator generator
+    )
 {
     IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
@@ -335,7 +338,7 @@ Chain InterpreterInsertQuery::buildChain(
     if (check_access)
         getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
 
-    Chain sink = buildSink(table, view_level, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
+    Chain sink = buildSink(table, view_level, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms, std::move(generator));
     Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample);
 
     chain.appendChain(std::move(sink));
@@ -348,7 +351,9 @@ Chain InterpreterInsertQuery::buildSink(
     const StorageMetadataPtr & metadata_snapshot,
     ThreadStatusesHolderPtr thread_status_holder,
     ThreadGroupPtr running_group,
-    std::atomic_uint64_t * elapsed_counter_ms)
+    std::atomic_uint64_t * elapsed_counter_ms,
+    SinkToStorage::ChainGenerator generator
+)
 {
     ThreadStatus * thread_status = current_thread;
 
@@ -368,13 +373,15 @@ Chain InterpreterInsertQuery::buildSink(
     {
         auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        sink->setDeduplicationRetryGenerator(std::move(generator));
         out.addSource(std::move(sink));
     }
     else
     {
         out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
             query_ptr, view_level, no_destination,
-            thread_status_holder, running_group, elapsed_counter_ms, async_insert);
+            thread_status_holder, running_group, elapsed_counter_ms, async_insert, {},
+            std::move(generator));
     }
 
     return out;

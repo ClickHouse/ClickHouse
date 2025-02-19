@@ -36,6 +36,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <exception>
 #include <memory>
 
@@ -234,7 +235,8 @@ std::optional<Chain> generateViewChain(
     ThreadStatusesHolderPtr thread_status_holder,
     bool async_insert,
     const Block & storage_header,
-    bool disable_deduplication_for_children)
+    bool disable_deduplication_for_children,
+    SinkToStorage::ChainGenerator generator)
 {
     auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
     if (view == nullptr)
@@ -268,7 +270,6 @@ std::optional<Chain> generateViewChain(
         insert_context->setSetting(
             "min_insert_block_size_bytes", insert_settings[Setting::min_insert_block_size_bytes_for_materialized_views].value);
 
-    ASTPtr query;
     Chain out;
 
     /// We are creating a ThreadStatus per view to store its metrics individually
@@ -286,15 +287,19 @@ std::optional<Chain> generateViewChain(
     auto * view_thread_status = view_thread_status_ptr.get();
     views_data->thread_status_holder->thread_statuses.push_front(std::move(view_thread_status_ptr));
 
-    auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
-    runtime_stats->target_name = view_id.getFullTableName();
-    runtime_stats->thread_status = view_thread_status;
-    runtime_stats->event_time = std::chrono::system_clock::now();
-    runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
+    views_data->views.push_back(ViewRuntimeData{
+        .query=nullptr,
+        .sample_block=out.getInputHeader(),
+        .table_id=view_id,
+        .exception=nullptr,
+        .runtime_stats=QueryViewsLogElement::ViewRuntimeStats(view_id.getFullTableName(), view_thread_status), // .event_time=std::chrono::system_clock::now(), .event_status=QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START},
+        .context=insert_context});
 
-    auto & type = runtime_stats->type;
-    auto & target_name = runtime_stats->target_name;
-    auto * view_counter_ms = &runtime_stats->elapsed_ms;
+    ASTPtr & query = views_data->views.back().query;
+    auto & runtime_stats = views_data->views.back().runtime_stats;
+    auto & type = runtime_stats.type;
+    auto & target_name = runtime_stats.target_name;
+    auto * view_counter_ms = &runtime_stats.elapsed_ms;
 
     if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get()))
     {
@@ -373,7 +378,7 @@ std::optional<Chain> generateViewChain(
 
         /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
-        out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
+        out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access, std::move(generator));
 
         if (interpreter.shouldAddSquashingForStorage(inner_table))
         {
@@ -397,44 +402,7 @@ std::optional<Chain> generateViewChain(
 
         out.addStorageHolder(view);
         out.addStorageHolder(inner_table);
-    }
-    else if (auto * live_view = dynamic_cast<StorageLiveView *>(view.get()))
-    {
-        runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
-        query = live_view->getInnerQuery();
-        out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, insert_context, ASTPtr(),
-            view_level + 1,
-            /* no_destination= */ true,
-            thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
-    }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
-    {
-        runtime_stats->type = QueryViewsLogElement::ViewType::WINDOW;
-        query = window_view->getMergeableQuery();
-        out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, insert_context, ASTPtr(),
-            view_level + 1,
-            /* no_destination= */ true,
-            thread_status_holder, running_group, view_counter_ms, async_insert);
-    }
-    else
-        out = buildPushingToViewsChain(
-            view, view_metadata_snapshot, insert_context, ASTPtr(),
-            view_level + 1,
-            /* no_destination= */ false,
-            thread_status_holder, running_group, view_counter_ms, async_insert);
 
-    views_data->views.emplace_back(ViewRuntimeData{
-        std::move(query),
-        out.getInputHeader(),
-        view_id,
-        nullptr,
-        std::move(runtime_stats),
-        insert_context});
-
-    if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
-    {
 #ifdef DEBUG_OR_SANITIZER_BUILD
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right after Inner query", out.getInputHeader()));
 #endif
@@ -462,7 +430,38 @@ std::optional<Chain> generateViewChain(
         out.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", out.getInputHeader()));
 #endif
     }
-
+    else if (auto * live_view = dynamic_cast<StorageLiveView *>(view.get()))
+    {
+        type = QueryViewsLogElement::ViewType::LIVE;
+        query = live_view->getInnerQuery();
+        out = buildPushingToViewsChain(
+            view, view_metadata_snapshot, insert_context, ASTPtr(),
+            view_level + 1,
+            /* no_destination= */ true,
+            thread_status_holder, running_group, view_counter_ms, async_insert, storage_header,
+            std::move(generator));
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
+    {
+        type = QueryViewsLogElement::ViewType::WINDOW;
+        query = window_view->getMergeableQuery();
+        out = buildPushingToViewsChain(
+            view, view_metadata_snapshot, insert_context, ASTPtr(),
+            view_level + 1,
+            /* no_destination= */ true,
+            thread_status_holder, running_group, view_counter_ms, async_insert, {},
+            std::move(generator));
+    }
+    else
+    {
+        type = QueryViewsLogElement::ViewType::DEFAULT;
+        out = buildPushingToViewsChain(
+            view, view_metadata_snapshot, insert_context, ASTPtr(),
+            view_level + 1,
+            /* no_destination= */ false,
+            thread_status_holder, running_group, view_counter_ms, async_insert, {},
+            std::move(generator));
+    }
 
     return out;
 }
@@ -479,7 +478,8 @@ Chain buildPushingToViewsChain(
     ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
-    const Block & live_view_header
+    const Block & live_view_header,
+    SinkToStorage::ChainGenerator generator
 )
 {
     checkStackSize();
@@ -529,7 +529,8 @@ Chain buildPushingToViewsChain(
         {
             auto out = generateViewChain(
                 context, view_level, view_id, running_group, result_chain,
-                views_data, thread_status_holder, async_insert, storage_header, disable_deduplication_for_children);
+                views_data, thread_status_holder, async_insert, storage_header, disable_deduplication_for_children,
+                std::move(generator));
 
             if (!out.has_value())
                 continue;
@@ -542,7 +543,7 @@ Chain buildPushingToViewsChain(
             {
                 context->getQueryContext()->addQueryAccessInfo(
                     backQuoteIfNeed(view_id.getDatabaseName()),
-                    views_data->views.back().runtime_stats->target_name,
+                    views_data->views.back().runtime_stats.target_name,
                     /*column_names=*/ {});
 
                 context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
@@ -599,6 +600,7 @@ Chain buildPushingToViewsChain(
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        sink->setDeduplicationRetryGenerator(std::move(generator));
         result_chain.addSource(std::move(sink));
 
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
@@ -607,6 +609,7 @@ Chain buildPushingToViewsChain(
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        sink->setDeduplicationRetryGenerator(std::move(generator));
         result_chain.addSource(std::move(sink));
 
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
@@ -616,6 +619,7 @@ Chain buildPushingToViewsChain(
         auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        sink->setDeduplicationRetryGenerator(std::move(generator));
         result_chain.addSource(std::move(sink));
 
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
@@ -626,6 +630,7 @@ Chain buildPushingToViewsChain(
         auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
+        sink->setDeduplicationRetryGenerator(std::move(generator));
 
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
 
@@ -723,7 +728,7 @@ static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context
 
     for (auto & view : views)
     {
-        const auto & stats = *view.runtime_stats;
+        const auto & stats = view.runtime_stats;
         if ((min_query_duration && stats.elapsed_ms <= min_query_duration) || (stats.event_status < min_status))
             continue;
 
@@ -1007,7 +1012,7 @@ void FinalizingViewsTransform::work()
         }
         else
         {
-            view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
+            view.runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
 
             LOG_TRACE(
                 getLogger("PushingToViews"),

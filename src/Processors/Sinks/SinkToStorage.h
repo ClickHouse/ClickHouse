@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/TableLockHolder.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <QueryPipeline/Chain.h>
 
 namespace DB
 {
@@ -16,9 +17,14 @@ friend class PartitionedSink;
 public:
     explicit SinkToStorage(const Block & header);
 
+    using ChainGenerator = std::function<Chain()>;
+    ChainGenerator generator;
+
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { interpreter_context.emplace_back(std::move(context)); }
+
+    void setDeduplicationRetryGenerator(ChainGenerator gen_) { generator = std::move(gen_); }
 
 protected:
     virtual void consume(Chunk & chunk) = 0;
