@@ -1,7 +1,9 @@
 ---
+description: "System database providing an almost standardized DBMS-agnostic view on metadata of database objects."
 slug: /en/operations/system-tables/information_schema
+title: "INFORMATION_SCHEMA"
+keywords: ["system database", "information_schema"]
 ---
-# INFORMATION_SCHEMA
 
 `INFORMATION_SCHEMA` (or: `information_schema`) is a system database which provides a (somewhat) standardized, [DBMS-agnostic view](https://en.wikipedia.org/wiki/Information_schema) on metadata of database objects. The views in `INFORMATION_SCHEMA` are generally inferior to normal system tables but tools can use them to obtain basic information in a cross-DBMS manner. The structure and content of views in `INFORMATION_SCHEMA` is supposed to evolves in a backwards-compatible way, i.e. only new functionality is added but existing functionality is not changed or removed. In terms of internal implementation, views in `INFORMATION_SCHEMA` usually map to to normal system tables like [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md).
 
@@ -341,7 +343,7 @@ FORMAT Vertical;
 
 Result:
 
-```
+```response
 Row 1:
 ──────
 constraint_catalog:            def

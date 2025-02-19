@@ -21,6 +21,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -50,6 +51,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PartLog.h>
@@ -149,8 +151,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
 }
 
 
@@ -244,6 +244,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
+    extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
 }
 
 namespace ServerSetting
@@ -2072,7 +2073,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-    calculateColumnAndSecondaryIndexSizesImpl();
+    are_columns_and_secondary_inices_sizes_calculated = false;
+    if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -3237,19 +3240,34 @@ void MergeTreeData::dropAllData()
     /// MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(),
     /// however removing part requires moveDirectory() as well.
     if (isStaticStorage())
+    {
+        LOG_INFO(log, "dropAllData: Skip cleanup due to all disks are either read-only or write-once");
         return;
+    }
 
     LOG_TRACE(log, "dropAllData: waiting for locks.");
     auto settings_ptr = getSettings();
 
     auto lock = lockParts();
 
+    size_t skipped_parts = 0;
     DataPartsVector all_parts;
     for (auto it = data_parts_by_info.begin(); it != data_parts_by_info.end(); ++it)
     {
+        /// NOTE: this includes write-once disks as well, but this should be
+        /// OK, since removing parts requires hardlinks, plus there is a check
+        /// that assumes the same at the beginning - isStaticStorage()
+        if ((*it)->isStoredOnReadonlyDisk())
+        {
+            LOG_TRACE(log, "dropAllData: Skip removing part {}, it is located on read-only disk", (*it)->name);
+            ++skipped_parts;
+            continue;
+        }
         modifyPartState(it, DataPartState::Deleting);
         all_parts.push_back(*it);
     }
+    if (skipped_parts > 0)
+        LOG_WARNING(log, "dropAllData: {} parts had been skipped", skipped_parts);
 
     /// Tables in atomic databases have UUID and stored in persistent locations.
     /// No need to clear caches (that are keyed by filesystem path) because collision is not possible.
@@ -3285,7 +3303,7 @@ void MergeTreeData::dropAllData()
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    column_sizes.clear();
+    resetColumnSizes();
 
     auto detached_parts = getDetachedParts();
     for (const auto & part : detached_parts)
@@ -3295,7 +3313,7 @@ void MergeTreeData::dropAllData()
         try
         {
             bool keep_shared = removeDetachedPart(part.disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / part.dir_name / "", part.dir_name);
-            LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
+            LOG_DEBUG(log, "dropAllData: Dropped detached part {}, keep shared data: {}", part.dir_name, keep_shared);
         }
         catch (...)
         {
@@ -3309,7 +3327,15 @@ void MergeTreeData::dropAllData()
     for (const auto & disk : getDisks())
     {
         if (disk->isBroken())
+        {
+            LOG_TRACE(log, "dropAllData: Skip cleanup on broken disk {}", disk->getName());
             continue;
+        }
+        if (disk->isReadOnly())
+        {
+            LOG_TRACE(log, "dropAllData: Skip cleanup on read-only disk {}", disk->getName());
+            continue;
+        }
 
         /// It can naturally happen if we cannot drop table from the first time
         /// i.e. get exceptions after remove recursive
@@ -5240,17 +5266,33 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
     part->removeVersionMetadata();
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
 {
+    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
+    if (are_columns_and_secondary_inices_sizes_calculated)
+        return;
+
     column_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
     for (const auto & part : committed_parts_range)
-        addPartContributionToColumnAndSecondaryIndexSizes(part);
+        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+
+    are_columns_and_secondary_inices_sizes_calculated = true;
 }
 
-void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
+void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
+{
+    /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
+    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
+    if (!are_columns_and_secondary_inices_sizes_calculated)
+        return;
+
+    addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+}
+
+void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
 {
     for (const auto & column : part->getColumns())
     {
@@ -5269,8 +5311,13 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     }
 }
 
-void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
+void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
+    /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
+    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
+    if (!are_columns_and_secondary_inices_sizes_calculated)
+        return;
+
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
@@ -7731,7 +7778,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
     auto temporary_directory_lock = getTemporaryPartDirectoryHolder(tmp_dst_part_name);
 
-    auto reservation = src_part->getDataPartStorage().reserve(src_part->getBytesOnDisk());
     auto src_part_storage = src_part->getDataPartStoragePtr();
 
     scope_guard src_flushed_tmp_dir_lock;
@@ -8009,6 +8055,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     size_t parts_processed = 0;
     for (const auto & part : data_parts)
     {
+        if (local_context->isCurrentQueryKilled())
+            return result;
         if (!matcher(part->info.partition_id))
             continue;
 
@@ -9218,8 +9266,6 @@ static void updateMutationsCounters(
 
             if (num_data_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly data mutations counter is negative ({})", num_data_mutations_to_apply);
-
-            CurrentMetrics::add(CurrentMetrics::ActiveDataMutations, increment);
         }
 
         if (!has_metadata_mutation && AlterConversions::isSupportedMetadataMutation(command.type))
@@ -9229,8 +9275,6 @@ static void updateMutationsCounters(
 
             if (num_metadata_mutations_to_apply < 0)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "On-fly metadata mutations counter is negative ({})", num_metadata_mutations_to_apply);
-
-            CurrentMetrics::add(CurrentMetrics::ActiveMetadataMutations, increment);
         }
     }
 }
