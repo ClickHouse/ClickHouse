@@ -30,13 +30,21 @@ public:
         const VirtualFields & virtual_fields,
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
-        DeserializationPrefixesCache * deserialization_prefixes_cache,
         const AlterConversionsPtr & alter_conversions,
         const MergeTreeReaderSettings & reader_settings_,
         const ValueSizeMap & avg_value_size_hints,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
-    bool isStoredOnReadonlyDisk() const override;
+    MergeTreeWriterPtr getWriter(
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const Statistics & stats_to_recalc_,
+        const CompressionCodecPtr & default_codec_,
+        const MergeTreeWriterSettings & writer_settings,
+        const MergeTreeIndexGranularity & computed_index_granularity) override;
+
+    bool isStoredOnDisk() const override { return true; }
 
     bool isStoredOnRemoteDisk() const override;
 
@@ -50,16 +58,10 @@ public:
 
     std::optional<time_t> getColumnModificationTime(const String & column_name) const override;
 
-    void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
-    void removeMarksFromCache(MarkCache * mark_cache) const override;
-
 protected:
     static void loadIndexGranularityImpl(
-        MergeTreeIndexGranularityPtr & index_granularity_ptr,
-        MergeTreeIndexGranularityInfo & index_granularity_info_,
-        const IDataPartStorage & data_part_storage_,
-        const std::string & any_column_file_name,
-        const MergeTreeSettings & storage_settings);
+        MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const IDataPartStorage & data_part_storage_, const std::string & any_column_file_name);
 
     void doCheckConsistency(bool require_part_metadata) const override;
 
@@ -67,9 +69,9 @@ private:
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
 
-    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const;
+    ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
 
-    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const override;
+    void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
 };
 

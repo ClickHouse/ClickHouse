@@ -1,12 +1,13 @@
 #pragma once
 
-#include <memory>
-
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Common/SettingsChanges.h>
+#include <Common/ZooKeeper/Common.h>
 #include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
+
+#include <memory>
 
 
 namespace Poco
@@ -19,14 +20,6 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
-}
-
-namespace zkutil
-{
-    class ZooKeeper;
-
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-    using GetZooKeeper = std::function<ZooKeeperPtr()>;
 }
 
 namespace DB
@@ -64,7 +57,7 @@ public:
     void shutdown() override;
 
     /// Initializes access storage (user directories).
-    void setupFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
+    void setUpFromMainConfig(const Poco::Util::AbstractConfiguration & config_, const String & config_path_,
                              const zkutil::GetZooKeeper & get_zookeeper_function_);
 
     /// Parses access entities from a configuration loaded from users.xml.
@@ -131,7 +124,7 @@ public:
     AuthResult authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const String & forwarded_address) const;
 
     /// Makes a backup of access entities.
-    void restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup) override;
+    void restoreFromBackup(RestorerFromBackup & restorer) override;
 
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
@@ -192,9 +185,6 @@ public:
     void setSettingsConstraintsReplacePrevious(bool enable) { settings_constraints_replace_previous = enable; }
     bool doesSettingsConstraintsReplacePrevious() const { return settings_constraints_replace_previous; }
 
-    void setTableEnginesRequireGrant(bool enable) { table_engines_require_grant = enable; }
-    bool doesTableEnginesRequireGrant() const { return table_engines_require_grant; }
-
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -215,7 +205,7 @@ public:
         const UUID & user_id,
         const String & user_name,
         const boost::container::flat_set<UUID> & enabled_roles,
-        const std::shared_ptr<Poco::Net::IPAddress> & address,
+        const Poco::Net::IPAddress & address,
         const String & forwarded_address,
         const String & custom_quota_key) const;
 
@@ -245,20 +235,12 @@ public:
     /// Gets manager of notifications.
     AccessChangesNotifier & getChangesNotifier();
 
-    /// Allow all setting names - this can be used in clients to pass-through unknown settings to the server.
-    void allowAllSettings();
-
-    void setAllowTierSettings(UInt32 value);
-    UInt32 getAllowTierSettings() const;
-    bool getAllowExperimentalTierSettings() const;
-    bool getAllowBetaTierSettings() const;
-
 private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
 
-    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
+    bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
@@ -279,11 +261,8 @@ private:
     std::atomic_bool select_from_system_db_requires_grant = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
-    std::atomic_bool table_engines_require_grant = false;
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
-    std::atomic_bool allow_experimental_tier_settings = true;
-    std::atomic_bool allow_beta_tier_settings = true;
 };
 
 }

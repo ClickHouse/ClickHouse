@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
-#include <Functions/URL/protocol.h>
+#include "protocol.h"
 #include <base/find_symbols.h>
 
 

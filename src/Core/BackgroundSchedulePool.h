@@ -1,20 +1,22 @@
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <map>
-#include <mutex>
-#include <vector>
-#include <base/defines.h>
-#include <boost/noncopyable.hpp>
 #include <Poco/Notification.h>
 #include <Poco/NotificationQueue.h>
 #include <Poco/Timestamp.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/ThreadPool_fwd.h>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+#include <map>
+#include <functional>
+#include <boost/noncopyable.hpp>
 #include <Common/ZooKeeper/Types.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadPool_fwd.h>
+#include <base/scope_guard.h>
+
 
 namespace DB
 {
@@ -63,20 +65,20 @@ private:
     void threadFunction();
     void delayExecutionThreadFunction();
 
-    void scheduleTask(TaskInfo & task_info);
+    void scheduleTask(TaskInfoPtr task_info);
 
     /// Schedule task for execution after specified delay from now.
-    void scheduleDelayedTask(TaskInfo & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
+    void scheduleDelayedTask(const TaskInfoPtr & task_info, size_t ms, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     /// Remove task, that was scheduled with delay, from schedule.
-    void cancelDelayedTask(TaskInfo & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
+    void cancelDelayedTask(const TaskInfoPtr & task_info, std::lock_guard<std::mutex> & task_schedule_mutex_lock);
 
     std::atomic<bool> shutdown {false};
 
     /// Tasks.
     std::condition_variable tasks_cond_var;
     std::mutex tasks_mutex;
-    std::deque<TaskInfoPtr> tasks TSA_GUARDED_BY(tasks_mutex);
+    std::deque<TaskInfoPtr> tasks;
     Threads threads;
 
     /// Delayed tasks.
@@ -86,7 +88,7 @@ private:
     /// Thread waiting for next delayed task.
     std::unique_ptr<ThreadFromGlobalPoolNoTracingContextPropagation> delayed_thread;
     /// Tasks ordered by scheduled time.
-    DelayedTasks delayed_tasks TSA_GUARDED_BY(delayed_tasks_mutex);
+    DelayedTasks delayed_tasks;
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
@@ -130,7 +132,7 @@ private:
 
     void execute();
 
-    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock) TSA_REQUIRES(schedule_mutex);
+    void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
 
     BackgroundSchedulePool & pool;
     std::string log_name;
@@ -142,15 +144,41 @@ private:
     /// Invariants:
     /// * If deactivated is true then scheduled, delayed and executing are all false.
     /// * scheduled and delayed cannot be true at the same time.
-    bool deactivated TSA_GUARDED_BY(schedule_mutex) = false;
-    bool scheduled TSA_GUARDED_BY(schedule_mutex) = false;
-    bool delayed TSA_GUARDED_BY(schedule_mutex) = false;
-    bool executing TSA_GUARDED_BY(schedule_mutex) = false;
+    bool deactivated = false;
+    bool scheduled = false;
+    bool delayed = false;
+    bool executing = false;
 
     /// If the task is scheduled with delay, points to element of delayed_tasks.
     BackgroundSchedulePool::DelayedTasks::iterator iterator;
 };
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
+
+
+class BackgroundSchedulePoolTaskHolder
+{
+public:
+    BackgroundSchedulePoolTaskHolder() = default;
+    explicit BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskInfoPtr & task_info_) : task_info(task_info_) {}
+    BackgroundSchedulePoolTaskHolder(const BackgroundSchedulePoolTaskHolder & other) = delete;
+    BackgroundSchedulePoolTaskHolder(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
+    BackgroundSchedulePoolTaskHolder & operator=(const BackgroundSchedulePoolTaskHolder & other) noexcept = delete;
+    BackgroundSchedulePoolTaskHolder & operator=(BackgroundSchedulePoolTaskHolder && other) noexcept = default;
+
+    ~BackgroundSchedulePoolTaskHolder()
+    {
+        if (task_info)
+            task_info->deactivate();
+    }
+
+    explicit operator bool() const { return task_info != nullptr; }
+
+    BackgroundSchedulePoolTaskInfo * operator->() { return task_info.get(); }
+    const BackgroundSchedulePoolTaskInfo * operator->() const { return task_info.get(); }
+
+private:
+    BackgroundSchedulePoolTaskInfoPtr task_info;
+};
 
 }

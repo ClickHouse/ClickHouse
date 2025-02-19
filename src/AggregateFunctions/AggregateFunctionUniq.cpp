@@ -15,10 +15,7 @@
 namespace DB
 {
 
-namespace Setting
-{
-    extern const SettingsMaxThreads max_threads;
-}
+struct Settings;
 
 namespace ErrorCodes
 {
@@ -54,32 +51,34 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
         WhichDataType which(argument_type);
         if (res)
             return res;
-        if (which.isDate())
+        else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data>>(argument_types);
-        if (which.isDate32())
+        else if (which.isDate32())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data>>(argument_types);
-        if (which.isDateTime())
+        else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>(argument_types);
-        if (which.isStringOrFixedString())
+        else if (which.isStringOrFixedString())
             return std::make_shared<AggregateFunctionUniq<String, Data>>(argument_types);
-        if (which.isUUID())
+        else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>(argument_types);
-        if (which.isIPv4())
+        else if (which.isIPv4())
             return std::make_shared<AggregateFunctionUniq<DataTypeIPv4::FieldType, Data>>(argument_types);
-        if (which.isIPv6())
+        else if (which.isIPv6())
             return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data>>(argument_types);
-        if (which.isTuple())
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
                 return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true>>>(argument_types);
-            return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true>>>(argument_types);
+            else
+                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true>>>(argument_types);
         }
     }
 
     /// "Variadic" method also works as a fallback generic case for single argument.
     if (use_exact_hash_function)
         return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, false>>>(argument_types);
-    return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, false>>>(argument_types);
+    else
+        return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, false>>>(argument_types);
 }
 
 template <bool is_exact, template <typename, bool> typename Data, template <bool, bool, bool> typename DataForVariadic, bool is_able_to_parallelize_merge>
@@ -105,46 +104,34 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
         WhichDataType which(argument_type);
         if (res)
             return res;
-        if (which.isDate())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isDate32())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isDateTime())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isStringOrFixedString())
+        else if (which.isDate())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isDate32())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDate32::FieldType, Data<DataTypeDate32::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isDateTime())
+            return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isStringOrFixedString())
             return std::make_shared<AggregateFunctionUniq<String, Data<String, is_able_to_parallelize_merge>>>(argument_types);
-        if (which.isUUID())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isIPv4())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeIPv4::FieldType, Data<DataTypeIPv4::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isIPv6())
-            return std::make_shared<
-                AggregateFunctionUniq<DataTypeIPv6::FieldType, Data<DataTypeIPv6::FieldType, is_able_to_parallelize_merge>>>(
-                argument_types);
-        if (which.isTuple())
+        else if (which.isUUID())
+            return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isIPv4())
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv4::FieldType, Data<DataTypeIPv4::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isIPv6())
+            return std::make_shared<AggregateFunctionUniq<DataTypeIPv6::FieldType, Data<DataTypeIPv6::FieldType, is_able_to_parallelize_merge>>>(argument_types);
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
-                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true, is_able_to_parallelize_merge>>>(
-                    argument_types);
-            return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true, is_able_to_parallelize_merge>>>(
-                argument_types);
+                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, true, is_able_to_parallelize_merge>>>(argument_types);
+            else
+                return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, true, is_able_to_parallelize_merge>>>(argument_types);
         }
     }
 
     /// "Variadic" method also works as a fallback generic case for single argument.
     if (use_exact_hash_function)
         return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<true, false, is_able_to_parallelize_merge>>>(argument_types);
-    return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, false, is_able_to_parallelize_merge>>>(argument_types);
+    else
+        return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, false, is_able_to_parallelize_merge>>>(argument_types);
 }
 
 }
@@ -162,14 +149,12 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory & factory)
     auto assign_bool_param = [](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
     {
         /// Using two level hash set if we wouldn't be able to merge in parallel can cause ~10% slowdown.
-        if (settings && (*settings)[Setting::max_threads] > 1)
+        if (settings && settings->max_threads > 1)
             return createAggregateFunctionUniq<
                 true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactDataForVariadic, true /* is_able_to_parallelize_merge */>(name, argument_types, params, settings);
-        return createAggregateFunctionUniq<
-            true,
-            AggregateFunctionUniqExactData,
-            AggregateFunctionUniqExactDataForVariadic,
-            false /* is_able_to_parallelize_merge */>(name, argument_types, params, settings);
+        else
+            return createAggregateFunctionUniq<
+                true, AggregateFunctionUniqExactData, AggregateFunctionUniqExactDataForVariadic, false /* is_able_to_parallelize_merge */>(name, argument_types, params, settings);
     };
     factory.registerFunction("uniqExact", {assign_bool_param, properties});
 

@@ -7,25 +7,23 @@ namespace DB
 {
 namespace
 {
+    struct DegreesName
+    {
+        static constexpr auto name = "degrees";
+    };
 
-struct DegreesName
-{
-    static constexpr auto name = "degrees";
-};
+    Float64 degrees(Float64 r)
+    {
+        Float64 degrees = r * (180 / M_PI);
+        return degrees;
+    }
 
-Float64 degrees(Float64 r)
-{
-    Float64 degrees = r * (180 / M_PI);
-    return degrees;
-}
-
-using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
-
+    using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
 }
 
 REGISTER_FUNCTION(Degrees)
 {
-    factory.registerFunction<FunctionDegrees>({}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionDegrees>({}, FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -46,7 +46,7 @@ public:
 
     NullsAction nulls_action = NullsAction::EMPTY;
 
-    /// do not print empty parentheses if there are no args - compatibility with engine names.
+    /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
     bool no_empty_args = false;
 
     /// Specifies where this function-like expression is used.
@@ -58,8 +58,6 @@ public:
         TABLE_ENGINE,
         DATABASE_ENGINE,
         BACKUP_NAME,
-        CODEC,
-        STATISTICS,
     };
     Kind kind = Kind::ORDINARY_FUNCTION;
 
@@ -82,10 +80,10 @@ public:
     bool hasSecretParts() const override;
 
 protected:
-    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 private:
-    void finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 

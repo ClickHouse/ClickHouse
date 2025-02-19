@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -83,7 +84,7 @@ public:
 
     void readPrefix();
     void skipField(EscapingRule escaping_rule);
-    void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
     template <typename ReturnType = void>
     ReturnType tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end);

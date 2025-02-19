@@ -4,11 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/PrettyFormatHelpers.h>
 #include <Common/UTF8Helpers.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Processors/Port.h>
 
 
 namespace DB
@@ -18,8 +14,6 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
-    color = format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal);
-
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
@@ -27,32 +21,31 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     Widths name_widths(columns);
     size_t max_name_width = 0;
 
-    names_and_paddings.resize(columns);
-    is_number.resize(columns);
+    String serialized_value;
 
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        auto [name_cut, width] = truncateName(name,
-          format_settings.pretty.max_column_name_width_cut_to,
-          format_settings.pretty.max_column_name_width_min_chars_to_cut,
-          format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8);
+        name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
-        name_widths[i] = width;
-        max_name_width = std::max(width, max_name_width);
-        if (color)
-            names_and_paddings[i] = "\033[1m" + name_cut + ":\033[0m ";
-        else
-            names_and_paddings[i] = name_cut + ": ";
+        if (name_widths[i] > max_name_width)
+            max_name_width = name_widths[i];
+    }
+
+    names_and_paddings.resize(columns);
+    for (size_t i = 0; i < columns; ++i)
+    {
+        WriteBufferFromString buf(names_and_paddings[i]);
+        writeString(sample.getByPosition(i).name, buf);
+        writeCString(": ", buf);
     }
 
     for (size_t i = 0; i < columns; ++i)
     {
         size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
         names_and_paddings[i].resize(new_size, ' ');
-        is_number[i] = isNumber(removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type)));
     }
 }
 
@@ -72,35 +65,7 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 
 void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
 {
-    /// If we need highlighting.
-    if (color
-        && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
-            || format_settings.pretty.highlight_trailing_spaces))
-    {
-        String serialized_value;
-        {
-            WriteBufferFromString buf(serialized_value);
-            serialization.serializeText(column, row_num, buf, format_settings);
-        }
-
-        /// Highlight groups of thousands.
-        if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
-            serialized_value = highlightDigitGroups(serialized_value);
-
-        /// Highlight trailing spaces.
-        if (format_settings.pretty.highlight_trailing_spaces)
-            serialized_value = highlightTrailingSpaces(serialized_value);
-
-        out.write(serialized_value.data(), serialized_value.size());
-    }
-    else
-    {
-        serialization.serializeText(column, row_num, out, format_settings);
-    }
-
-    /// Write a tip.
-    if (is_number[field_number])
-        writeReadableNumberTip(out, column, row_num, format_settings, color);
+    serialization.serializeText(column, row_num, out, format_settings);
 }
 
 

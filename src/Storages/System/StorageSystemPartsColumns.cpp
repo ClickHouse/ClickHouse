@@ -27,7 +27,7 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"uuid",                                       std::make_shared<DataTypeUUID>(), "The parts UUID."},
         {"part_type",                                  std::make_shared<DataTypeString>(), "The data part storing format. "
             "Possible values: Wide — Each column is stored in a separate file in a filesystem, Compact — All columns are stored in one file in a filesystem."},
-        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging."},
+        {"active",                                     std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging."},
         {"marks",                                      std::make_shared<DataTypeUInt64>(), "The number of marks. To get the approximate number of rows in a data part, multiply marks by the index granularity (usually 8192) (this hint does not work for adaptive granularity)."},
         {"rows",                                       std::make_shared<DataTypeUInt64>(), "The number of rows."},
         {"bytes_on_disk",                              std::make_shared<DataTypeUInt64>(), "Total size of all the data part files in bytes."},
@@ -65,8 +65,6 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the marks for column, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
-        {"column_ttl_min",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
-        {"column_ttl_max",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
 
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
@@ -131,11 +129,14 @@ void StorageSystemPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t src_index = 0;
-            size_t res_index = 0;
+            size_t src_index = 0, res_index = 0;
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
+            {
+                WriteBufferFromOwnString out;
+                part->partition.serializeText(*info.data, out, format_settings);
+                columns[res_index++]->insert(out.str());
+            }
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
@@ -200,9 +201,12 @@ void StorageSystemPartsColumns::processNextStorage(
                 columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
             if (columns_mask[src_index++])
             {
-                /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
-                if (part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
+                /// The full path changes at clean up thread, so do not read it if parts can be deleted, avoid the race.
+                if (part->isStoredOnDisk()
+                    && part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary)
+                {
                     columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
+                }
                 else
                     columns[res_index++]->insertDefault();
             }
@@ -243,21 +247,6 @@ void StorageSystemPartsColumns::processNextStorage(
             {
                 if (auto column_modification_time = part->getColumnModificationTime(column.name))
                     columns[res_index++]->insert(UInt64(column_modification_time.value()));
-                else
-                    columns[res_index++]->insertDefault();
-            }
-            bool column_has_ttl = part->ttl_infos.columns_ttl.contains(column.name);
-            if (columns_mask[src_index++])
-            {
-                if (column_has_ttl)
-                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].min));
-                else
-                    columns[res_index++]->insertDefault();
-            }
-            if (columns_mask[src_index++])
-            {
-                if (column_has_ttl)
-                    columns[res_index++]->insert(static_cast<UInt32>(part->ttl_infos.columns_ttl[column.name].max));
                 else
                     columns[res_index++]->insertDefault();
             }

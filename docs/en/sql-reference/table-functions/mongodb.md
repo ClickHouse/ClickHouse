@@ -33,23 +33,11 @@ mongodb(host:port, database, collection, user, password, structure [, options])
 :::tip
 If you are using the MongoDB Atlas cloud offering please add these options:
 
-```ini
+```
 'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
 
 :::
-
-Also, you can connect by URI:
-``` sql
-mongodb(uri, collection, structure)
-```
-**Arguments**
-
-- `uri` — Connection string.
-
-- `collection` — Remote collection name.
-
-- `structure` — The schema for the ClickHouse table returned from this function.
 
 **Returned Value**
 
@@ -85,16 +73,6 @@ SELECT * FROM mongodb(
     'password',
     'log_type String, host String, command String',
     'connectTimeoutMS=10000'
-)
-```
-
-or:
-
-```sql
-SELECT * FROM mongodb(
-    'mongodb://test_user:password@127.0.0.1:27017/test?connectionTimeoutMS=10000',
-    'my_collection',
-    'log_type String, host String, command String'
 )
 ```
 

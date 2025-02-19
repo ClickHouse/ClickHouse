@@ -35,7 +35,7 @@ struct PrewhereExprStep
     bool remove_filter_column = false;
     bool need_filter = false;
 
-    /// Some PREWHERE steps should be executed without conversions (e.g. early mutation steps)
+    /// Some PREWHERE steps should be executed without conversions.
     /// A step without alter conversion cannot be executed after step with alter conversions.
     bool perform_alter_conversions = false;
 };
@@ -50,31 +50,6 @@ struct PrewhereExprInfo
 
     std::string dump() const;
     std::string dumpConditions() const;
-};
-
-struct ReadStepPerformanceCounters
-{
-    std::atomic<UInt64> rows_read = 0;
-};
-
-using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
-
-class ReadStepsPerformanceCounters final
-{
-public:
-    ReadStepPerformanceCountersPtr getCountersForStep(size_t step)
-    {
-        if (step >= performance_counters.size())
-            performance_counters.resize(step + 1);
-        if (!performance_counters[step])
-            performance_counters[step] = std::make_shared<ReadStepPerformanceCounters>();
-        return performance_counters[step];
-    }
-
-    const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
-
-private:
-    std::vector<ReadStepPerformanceCountersPtr> performance_counters;
 };
 
 class FilterWithCachedCount
@@ -126,9 +101,7 @@ public:
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
-        bool last_reader_in_chain_,
-        bool main_reader_,
-        ReadStepPerformanceCountersPtr performance_counters_);
+        bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;
 
@@ -141,9 +114,6 @@ public:
 
     bool isCurrentRangeFinished() const;
     bool isInitialized() const { return is_initialized; }
-
-    /// Names of virtual columns that are filled in RangeReader.
-    static const NameSet virtuals_to_fill;
 
 private:
     /// Accumulates sequential read() requests to perform a large read instead of multiple small reads
@@ -338,11 +308,7 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
-
-    void fillVirtualColumns(Columns & columns, const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-    ColumnPtr createPartOffsetColumn(const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-
-    void updatePerformanceCounters(size_t num_rows_read);
+    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -355,10 +321,7 @@ private:
     Block result_sample_block;  /// Block with columns that are returned by this step.
 
     bool last_reader_in_chain = false;
-    bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool is_initialized = false;
-
-    ReadStepPerformanceCountersPtr performance_counters;
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

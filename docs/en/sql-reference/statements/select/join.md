@@ -5,7 +5,7 @@ sidebar_label: Joining Tables
 
 # JOIN Clause
 
-Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as "self-join".
+Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as “self-join”.
 
 **Syntax**
 
@@ -16,7 +16,7 @@ FROM <left_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-Expressions from `ON` clause and columns from `USING` clause are called "join keys". Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching "join keys", which might produce results with much more rows than the source tables.
+Expressions from `ON` clause and columns from `USING` clause are called “join keys”. Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching “join keys”, which might produce results with much more rows than the source tables.
 
 ## Related Content
 
@@ -33,14 +33,14 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 - `LEFT OUTER JOIN`, non-matching rows from left table are returned in addition to matching rows.
 - `RIGHT OUTER JOIN`, non-matching rows from right table are returned in addition to matching rows.
 - `FULL OUTER JOIN`, non-matching rows from both tables are returned in addition to matching rows.
-- `CROSS JOIN`, produces cartesian product of whole tables, "join keys" are **not** specified.
+- `CROSS JOIN`, produces cartesian product of whole tables, “join keys” are **not** specified.
 
 `JOIN` without specified type implies `INNER`. Keyword `OUTER` can be safely omitted. Alternative syntax for `CROSS JOIN` is specifying multiple tables in [FROM clause](../../../sql-reference/statements/select/from.md) separated by commas.
 
 Additional join types available in ClickHouse:
 
-- `LEFT SEMI JOIN` and `RIGHT SEMI JOIN`, a whitelist on "join keys", without producing a cartesian product.
-- `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on "join keys", without producing a cartesian product.
+- `LEFT SEMI JOIN` and `RIGHT SEMI JOIN`, a whitelist on “join keys”, without producing a cartesian product.
+- `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on “join keys”, without producing a cartesian product.
 - `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 - `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 - `PASTE JOIN`, performs a horizontal concatenation of two tables.
@@ -84,7 +84,7 @@ If a condition refers columns from different tables, then only the equality oper
 
 Consider `table_1` and `table_2`:
 
-```response
+```
 ┌─Id─┬─name─┐     ┌─Id─┬─text───────────┬─scores─┐
 │  1 │ A    │     │  1 │ Text A         │     10 │
 │  2 │ B    │     │  1 │ Another text A │     12 │
@@ -101,7 +101,7 @@ SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
 
 Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
 
-```response
+```
 ┌─name─┬─text───┐
 │ A    │ Text A │
 │ B    │ Text B │
@@ -118,7 +118,7 @@ SELECT name, text, scores FROM table_1 INNER JOIN table_2
 
 Result:
 
-```sql
+```
 ┌─name─┬─text───┬─scores─┐
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
@@ -139,7 +139,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
 
 Result:
 
-```response
+```
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 1 │ -1 │   1 │
@@ -151,78 +151,19 @@ Result:
 
 Query with `INNER` type of a join and conditions with `OR` and `AND`:
 
-:::note
-
-By default, non-equal conditions are supported as long as they use columns from the same table.
-For example, `t1.a = t2.key AND t1.b > 0 AND t2.b > t2.c`, because `t1.b > 0` uses columns only from `t1` and `t2.b > t2.c` uses columns only from `t2`.
-However, you can try experimental support for conditions like `t1.a = t2.key AND t1.b > t2.key`, check out section below for more details.
-
-:::
-
 ``` sql
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
 ```
 
 Result:
 
-```response
+```
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 2 │ -2 │   2 │
 │ 4 │ -4 │   4 │
 └───┴────┴─────┘
 ```
-
-## Join with inequality conditions for columns from different tables
-
-Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
-
-**Example**
-
-Table `t1`:
-
-```response
-┌─key──┬─attr─┬─a─┬─b─┬─c─┐
-│ key1 │ a    │ 1 │ 1 │ 2 │
-│ key1 │ b    │ 2 │ 3 │ 2 │
-│ key1 │ c    │ 3 │ 2 │ 1 │
-│ key1 │ d    │ 4 │ 7 │ 2 │
-│ key1 │ e    │ 5 │ 5 │ 5 │
-│ key2 │ a2   │ 1 │ 1 │ 1 │
-│ key4 │ f    │ 2 │ 3 │ 4 │
-└──────┴──────┴───┴───┴───┘
-```
-
-Table `t2`
-
-```response
-┌─key──┬─attr─┬─a─┬─b─┬─c─┐
-│ key1 │ A    │ 1 │ 2 │ 1 │
-│ key1 │ B    │ 2 │ 1 │ 2 │
-│ key1 │ C    │ 3 │ 4 │ 5 │
-│ key1 │ D    │ 4 │ 1 │ 6 │
-│ key3 │ a3   │ 1 │ 1 │ 1 │
-│ key4 │ F    │ 1 │ 1 │ 1 │
-└──────┴──────┴───┴───┴───┘
-```
-
-```sql
-SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
-```
-
-```response
-key1	a	1	1	2	key1	B	2	1	2
-key1	a	1	1	2	key1	C	3	4	5
-key1	a	1	1	2	key1	D	4	1	6
-key1	b	2	3	2	key1	C	3	4	5
-key1	b	2	3	2	key1	D	4	1	6
-key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
-```
-
 
 ## NULL values in JOIN keys
 
@@ -232,7 +173,7 @@ The NULL is not equal to any value, including itself. It means that if a JOIN ke
 
 Table `A`:
 
-```response
+```
 ┌───id─┬─name────┐
 │    1 │ Alice   │
 │    2 │ Bob     │
@@ -242,7 +183,7 @@ Table `A`:
 
 Table `B`:
 
-```response
+```
 ┌───id─┬─score─┐
 │    1 │    90 │
 │    3 │    85 │
@@ -254,7 +195,7 @@ Table `B`:
 SELECT A.name, B.score FROM A LEFT JOIN B ON A.id = B.id
 ```
 
-```response
+```
 ┌─name────┬─score─┐
 │ Alice   │    90 │
 │ Bob     │     0 │
@@ -270,7 +211,7 @@ In case you want to match NULL values, use the `isNotDistinctFrom` function to c
 SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 ```
 
-```markdown
+```
 ┌─name────┬─score─┐
 │ Alice   │    90 │
 │ Bob     │     0 │
@@ -286,7 +227,7 @@ Algorithm requires the special column in tables. This column:
 
 - Must contain an ordered sequence.
 - Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
-- For `hash` join algorithm it can't be the only column in the `JOIN` clause.
+- Can’t be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
 
@@ -323,21 +264,20 @@ For example, consider the following tables:
     event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
                   ...                               ...
 
-`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
+`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can’t be joined.
 
 :::note
-`ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
-It's **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
+`ASOF` join is **not** supported in the [Join](../../../engines/table-engines/special/join.md) table engine.
 :::
 
 ## PASTE JOIN Usage
 
 The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.
-The rows are matched based on their positions in the original tables (the order of rows should be defined).
+The rows are matched based on their positions in the original tables (the order of rows should be defined). 
 If the subqueries return a different number of rows, extra rows will be cut.
 
 Example:
-```sql
+```SQL
 SELECT *
 FROM
 (
@@ -357,7 +297,7 @@ PASTE JOIN
 └───┴──────┘
 ```
 Note: In this case result can be nondeterministic if the reading is parallel. Example:
-```sql
+```SQL
 SELECT *
 FROM
 (
@@ -401,14 +341,14 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 **Example**
 
 Consider the table `t_1`:
-```response
+```text
 ┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
 │ 1 │ 1 │ UInt16        │ UInt8         │
 │ 2 │ 2 │ UInt16        │ UInt8         │
 └───┴───┴───────────────┴───────────────┘
 ```
 and the table `t_2`:
-```response
+```text
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │ -1 │    1 │ Int16         │ Nullable(Int64) │
 │  1 │   -1 │ Int16         │ Nullable(Int64) │
@@ -421,7 +361,7 @@ The query
 SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 ```
 returns the set:
-```response
+```text
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │  1 │    1 │ Int32         │ Nullable(Int64) │
 │  2 │    2 │ Int32         │ Nullable(Int64) │
@@ -464,7 +404,7 @@ Each time a query is run with the same `JOIN`, the subquery is run again because
 
 In some cases, it is more efficient to use [IN](../../../sql-reference/operators/in.md) instead of `JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a “dictionaries” feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
 
 ### Memory Limitations
 

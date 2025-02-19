@@ -1,4 +1,3 @@
-SET output_format_pretty_display_footer_column_names=0;
 SELECT 'parseDateTime64BestEffortUS';
 
 SELECT

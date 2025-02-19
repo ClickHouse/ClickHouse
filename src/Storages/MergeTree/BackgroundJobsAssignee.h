@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Interpreters/Context_fwd.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
-
+#include <Core/BackgroundSchedulePool.h>
 #include <pcg_random.hpp>
 
 
@@ -38,7 +36,7 @@ public:
     /// e.g. merges, mutations and fetches. The same will be for Plain MergeTree except there is no
     /// replication queue, so we will just scan parts and decide what to do.
     /// Moving operations are the same for all types of MergeTree and also have their own timetable.
-    enum class Type : uint8_t
+    enum class Type
     {
         DataProcessing,
         Moving
@@ -74,7 +72,7 @@ private:
     size_t no_work_done_count = 0;
 
     /// Scheduling task which assign jobs in background pool
-    BackgroundSchedulePoolTaskHolder holder;
+    BackgroundSchedulePool::TaskHolder holder;
     /// Mutex for thread safety
     std::mutex holder_mutex;
 

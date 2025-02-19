@@ -1,7 +1,5 @@
 #pragma once
-
-#include <stack>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
@@ -19,7 +17,7 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 
 /// Reading step from remote servers.
 /// Unite query results from several shards.
-class ReadFromRemote final : public SourceStepWithFilterBase
+class ReadFromRemote final : public ISourceStep
 {
 public:
     /// @param main_table_ if Shards contains main_table then this parameter will be ignored
@@ -42,9 +40,7 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
-
-    void enableMemoryBoundMerging();
+    void enforceSorting(SortDescription output_sort_description);
     void enforceAggregationInOrder();
 
 private:
@@ -62,9 +58,8 @@ private:
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
-    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
 };
 
 
@@ -74,7 +69,6 @@ public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
         ClusterPtr cluster_,
-        const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
         Block header_,
         QueryProcessingStage::Enum stage_,
@@ -83,27 +77,20 @@ public:
         Scalars scalars_,
         Tables external_tables_,
         LoggerPtr log_,
-        std::shared_ptr<const StorageLimitsList> storage_limits_,
-        std::vector<ConnectionPoolPtr> pools_to_use,
-        std::optional<size_t> exclude_pool_index_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        std::shared_ptr<const StorageLimitsList> storage_limits_);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
-
-    void enableMemoryBoundMerging();
+    void enforceSorting(SortDescription output_sort_description);
     void enforceAggregationInOrder();
 
 private:
-    Pipes addPipes(ASTPtr ast, const Header & out_header);
-    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
-    StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
     ContextMutablePtr context;
@@ -112,9 +99,6 @@ private:
     Tables external_tables;
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
-    std::vector<ConnectionPoolPtr> pools_to_use;
-    std::optional<size_t> exclude_pool_index;
-    ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 };
 
 }

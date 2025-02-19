@@ -8,7 +8,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
 #include <DataTypes/IDataType.h>
-#include <Core/Block_fwd.h>
+#include <Core/Block.h>
 
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
@@ -166,8 +166,11 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    void getItemsShortCircuitImpl(
-        const Attribute & attribute, const PaddedPODArray<UInt64> & keys, ValueSetter && set_value, IColumn::Filter & default_mask) const;
+    size_t getItemsShortCircuitImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<UInt64> & keys,
+        ValueSetter && set_value,
+        IColumn::Filter & default_mask) const;
 
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);

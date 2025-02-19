@@ -4,7 +4,6 @@ import string
 import time
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
@@ -213,7 +212,7 @@ def test_drop_table(cluster):
 
     # Wait for drop to actually finish
     node.wait_for_log_line(
-        "Removing metadata metadata_dropped/default.test_drop_table",
+        "Removing metadata /var/lib/clickhouse/metadata_dropped/default.test_drop_table",
         timeout=60,
         look_behind_lines=1000000,
     )

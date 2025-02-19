@@ -39,7 +39,7 @@ bool MergePlainMergeTreeTask::executeStep()
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
     {
-        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_list_entry)->thread_group);
     }
 
     switch (state)
@@ -62,7 +62,6 @@ bool MergePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__, "Exception is in merge_task.");
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
                 throw;
             }
@@ -93,13 +92,10 @@ void MergePlainMergeTreeTask::prepare()
         future_part,
         task_context);
 
-    storage.writePartLog(
-        PartLogElement::MERGE_PARTS_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {});
-
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
         auto profile_counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(profile_counters.getPartiallyAtomicSnapshot());
+        merge_task.reset();
         storage.writePartLog(
             PartLogElement::MERGE_PARTS,
             execution_status,
@@ -125,19 +121,19 @@ void MergePlainMergeTreeTask::prepare()
     };
 
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
-        future_part,
-        metadata_snapshot,
-        merge_list_entry.get(),
-        {} /* projection_merge_list_element */,
-        table_lock_holder,
-        time(nullptr),
-        task_context,
-        merge_mutate_entry->tagger->reserved_space,
-        deduplicate,
-        deduplicate_by_columns,
-        cleanup,
-        storage.merging_params,
-        txn);
+            future_part,
+            metadata_snapshot,
+            merge_list_entry.get(),
+            {} /* projection_merge_list_element */,
+            table_lock_holder,
+            time(nullptr),
+            task_context,
+            merge_mutate_entry->tagger->reserved_space,
+            deduplicate,
+            deduplicate_by_columns,
+            cleanup,
+            storage.merging_params,
+            txn);
 }
 
 
@@ -152,24 +148,8 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
-    size_t bytes_uncompressed = new_part->getBytesUncompressedOnDisk();
-
-    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
-    {
-        auto marks = merge_task->releaseCachedMarks();
-        addMarksToCache(*new_part, marks, mark_cache.get());
-    }
-
-    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-    {
-        /// Move index to cache and reset it here because we need
-        /// a correct part name after rename for a key of cache entry.
-        new_part->moveIndexToCache(*index_cache);
-    }
-
     write_part_log({});
-
-    StorageMergeTree::incrementMergedPartsProfileEvent(new_part->getType());
+    storage.incrementMergedPartsProfileEvent(new_part->getType());
     transfer_profile_counters_to_initial_query();
 
     if (auto txn_ = txn_holder.getTransaction())
@@ -179,21 +159,15 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
-}
 
-void MergePlainMergeTreeTask::cancel() noexcept
-{
-    if (merge_task)
-        merge_task->cancel();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
     auto context = Context::createCopy(storage.getContext());
-    context->makeQueryContextForMerge(*storage.getSettings());
-    auto query_id = getQueryId();
-    context->setCurrentQueryId(query_id);
-    context->setBackgroundOperationTypeForContext(ClientInfo::BackgroundOperationType::MERGE);
+    context->makeQueryContext();
+    auto queryId = getQueryId();
+    context->setCurrentQueryId(queryId);
     return context;
 }
 

@@ -1,6 +1,6 @@
 import difflib
-import logging
 import time
+import logging
 from io import IOBase
 
 
@@ -139,21 +139,15 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
 
 
 def exec_query_with_retry(
-    instance,
-    query,
-    retry_count=40,
-    sleep_time=0.5,
-    silent=False,
-    settings={},
-    timeout=30,
+    instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}
 ):
     exception = None
     for cnt in range(retry_count):
         try:
-            res = instance.query(query, timeout=timeout, settings=settings)
+            res = instance.query(query, timeout=30, settings=settings)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
-            return res
+            break
         except Exception as ex:
             exception = ex
             if not silent:
@@ -182,19 +176,3 @@ def csv_compare(result, expected):
             mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
 
     return "\n".join(mismatch)
-
-
-def wait_condition(func, condition, max_attempts=10, delay=0.1):
-    attempts = 0
-    result = None
-    while attempts < max_attempts:
-        result = func()
-        if condition(result):
-            return result
-        attempts += 1
-        if attempts < max_attempts:
-            time.sleep(delay)
-
-    raise Exception(
-        f"Function did not satisfy condition after {max_attempts} attempts. Last result:\n{result}"
-    )

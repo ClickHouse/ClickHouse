@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+-- Tags: no-parallel, no-fasttest, no-s3-storage, no-random-settings
 
 -- { echo }
 
@@ -18,6 +18,7 @@ SETTINGS min_bytes_for_wide_part = 10485760,
             path = 'filesystem_cache_bypass_cache_threshold/',
             enable_bypass_cache_with_threshold = 1,
             bypass_cache_threshold = 100,
+            delayed_cleanup_interval_ms = 100,
             disk = 's3_disk');
 
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);

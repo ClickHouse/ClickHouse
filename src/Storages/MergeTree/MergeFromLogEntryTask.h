@@ -26,12 +26,6 @@ public:
 
     Priority getPriority() const override { return priority; }
 
-    void cancel() noexcept override
-    {
-        if (merge_task)
-            merge_task->cancel();
-    }
-
 protected:
     /// Both return false if we can't execute merge.
     ReplicatedMergeMutateTaskBase::PrepareResult prepare() override;

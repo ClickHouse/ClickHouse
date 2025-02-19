@@ -1,12 +1,10 @@
 #pragma once
 
-#include <ctime>
-#include <memory>
-#include <optional>
-
 #include <Core/Types.h>
 #include <Disks/WriteMode.h>
 #include <IO/WriteSettings.h>
+#include <memory>
+#include <optional>
 
 
 namespace DB
@@ -30,11 +28,10 @@ public:
     //virtual const String & getName() const = 0;
     virtual const String & getNameForLogging() const = 0;
 
-    enum class OpenMode : uint8_t
+    enum class OpenMode
     {
         READ,
         WRITE,
-        UNLOCK, /// unlock a lightweight backup
     };
 
     /// Returns whether the backup was opened for reading or writing.
@@ -124,13 +121,8 @@ public:
     /// Finalizes writing the backup, should be called after all entries have been successfully written.
     virtual void finalizeWriting() = 0;
 
-    /// Sets that a non-retriable error happened while the backup was being written which means that
-    /// the backup is most likely corrupted and it can't be finalized.
-    /// This function is called while handling an exception or if the backup was cancelled.
-    virtual bool setIsCorrupted() noexcept = 0;
-
-    /// Try to remove all files copied to the backup. Could be used after setIsCorrupted().
-    virtual bool tryRemoveAllFiles() noexcept = 0;
+    /// Try to remove all files copied to the backup. Used after an exception or it the backup was cancelled.
+    virtual void tryRemoveAllFiles() = 0;
 };
 
 using BackupPtr = std::shared_ptr<const IBackup>;

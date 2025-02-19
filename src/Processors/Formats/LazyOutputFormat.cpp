@@ -1,18 +1,11 @@
-#include <IO/NullWriteBuffer.h>
 #include <Processors/Formats/LazyOutputFormat.h>
-#include <Processors/Port.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 
 namespace DB
 {
 
-NullWriteBuffer LazyOutputFormat::out;
-
-LazyOutputFormat::LazyOutputFormat(const Block & header)
-: IOutputFormat(header, out), queue(2)
-{
-}
+WriteBufferFromPointer LazyOutputFormat::out(nullptr, 0);
 
 Chunk LazyOutputFormat::getChunk(UInt64 milliseconds)
 {
@@ -50,11 +43,6 @@ Chunk LazyOutputFormat::getExtremes()
 void LazyOutputFormat::setRowsBeforeLimit(size_t rows_before_limit)
 {
     info.setRowsBeforeLimit(rows_before_limit);
-}
-
-void LazyOutputFormat::setRowsBeforeAggregation(size_t rows_before_aggregation)
-{
-    info.setRowsBeforeAggregation(rows_before_aggregation);
 }
 
 }

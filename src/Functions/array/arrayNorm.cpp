@@ -25,19 +25,19 @@ struct L1Norm
     struct ConstParams {};
 
     template <typename ResultType>
-    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return result + fabs(value);
     }
 
     template <typename ResultType>
-    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    static ResultType finalize(ResultType result, const ConstParams &)
+    inline static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -50,19 +50,19 @@ struct L2Norm
     struct ConstParams {};
 
     template <typename ResultType>
-    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return result + value * value;
     }
 
     template <typename ResultType>
-    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    static ResultType finalize(ResultType result, const ConstParams &)
+    inline static ResultType finalize(ResultType result, const ConstParams &)
     {
         return sqrt(result);
     }
@@ -73,7 +73,7 @@ struct L2SquaredNorm : L2Norm
     static constexpr auto name = "L2Squared";
 
     template <typename ResultType>
-    static ResultType finalize(ResultType result, const ConstParams &)
+    inline static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -91,19 +91,19 @@ struct LpNorm
     };
 
     template <typename ResultType>
-    static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
+    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
     {
         return result + static_cast<ResultType>(std::pow(fabs(value), params.power));
     }
 
     template <typename ResultType>
-    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return result + other_result;
     }
 
     template <typename ResultType>
-    static ResultType finalize(ResultType result, const ConstParams & params)
+    inline static ResultType finalize(ResultType result, const ConstParams & params)
     {
         return static_cast<ResultType>(std::pow(result, params.inverted_power));
     }
@@ -116,19 +116,19 @@ struct LinfNorm
     struct ConstParams {};
 
     template <typename ResultType>
-    static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
+    inline static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
         return fmax(result, fabs(value));
     }
 
     template <typename ResultType>
-    static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
+    inline static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
         return fmax(result, other_result);
     }
 
     template <typename ResultType>
-    static ResultType finalize(ResultType result, const ConstParams &)
+    inline static ResultType finalize(ResultType result, const ConstParams &)
     {
         return result;
     }
@@ -154,26 +154,24 @@ public:
 
         switch (array_type->getNestedType()->getTypeId())
         {
-            case TypeIndex::BFloat16:
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt8:
             case TypeIndex::UInt16:
             case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
+            case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
+            case TypeIndex::Float32:
+                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
-                    getName(),
-                    array_type->getNestedType()->getName());
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(), array_type->getNestedType()->getName());
         }
     }
 
@@ -207,7 +205,6 @@ private:
     action(Int16)   \
     action(Int32)   \
     action(Int64)   \
-    action(BFloat16) \
     action(Float32) \
     action(Float64)
 
@@ -228,8 +225,8 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} have nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(), nested_type->getName());
         }
     }

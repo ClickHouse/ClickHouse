@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Core/Defines.h>
 #include <Core/Names.h>
+#include <Core/Defines.h>
 #include <base/types.h>
 #include <base/unit.h>
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -21,17 +22,19 @@ namespace DB
   */
 struct FormatSettings
 {
+    /// Format will be used for streaming. Not every formats support it
+    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
+    bool enable_streaming = false;
+
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
-    bool force_null_for_omitted_fields = false;
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
-    bool try_infer_variant = false;
 
     bool seekable_read = true;
     UInt64 max_rows_to_read_for_schema_inference = 25000;
@@ -40,13 +43,12 @@ struct FormatSettings
     String column_names_for_schema_inference{};
     String schema_inference_hints{};
 
-    bool try_infer_integers = true;
-    bool try_infer_dates = true;
-    bool try_infer_datetimes = true;
-    bool try_infer_datetimes_only_datetime64 = false;
+    bool try_infer_integers = false;
+    bool try_infer_dates = false;
+    bool try_infer_datetimes = false;
     bool try_infer_exponent_floats = false;
 
-    enum class DateTimeInputFormat : uint8_t
+    enum class DateTimeInputFormat
     {
         Basic,        /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
         BestEffort,   /// Use sophisticated rules to parse whatever possible.
@@ -55,14 +57,14 @@ struct FormatSettings
 
     DateTimeInputFormat date_time_input_format = DateTimeInputFormat::Basic;
 
-    enum class DateTimeOutputFormat : uint8_t
+    enum class DateTimeOutputFormat
     {
         Simple,
         ISO,
         UnixTimestamp
     };
 
-    enum class EscapingRule : uint8_t
+    enum class EscapingRule
     {
         None,
         Escaped,
@@ -73,12 +75,11 @@ struct FormatSettings
         Raw
     };
 
-    UInt64 schema_inference_make_columns_nullable = 1;
-    bool schema_inference_make_json_columns_nullable = false;
+    bool schema_inference_make_columns_nullable = true;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
-    enum class IntervalOutputFormat : uint8_t
+    enum class IntervalOutputFormat
     {
         Kusto,
         Numeric
@@ -89,14 +90,12 @@ struct FormatSettings
         IntervalOutputFormat output_format = IntervalOutputFormat::Numeric;
     } interval{};
 
-    enum class DateTimeOverflowBehavior : uint8_t
+    enum class DateTimeOverflowBehavior
     {
         Ignore,
         Throw,
         Saturate
     };
-
-    bool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands = false;
 
     DateTimeOverflowBehavior date_time_overflow_behavior = DateTimeOverflowBehavior::Ignore;
 
@@ -106,28 +105,20 @@ struct FormatSettings
     UInt64 input_allow_errors_num = 0;
     Float32 input_allow_errors_ratio = 0;
 
+    UInt64 max_binary_string_size = 1_GiB;
+    UInt64 max_binary_array_size = 1_GiB;
     UInt64 client_protocol_version = 0;
 
     UInt64 max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
 
     size_t max_threads = 1;
 
-    enum class ArrowCompression : uint8_t
+    enum class ArrowCompression
     {
         NONE,
         LZ4_FRAME,
         ZSTD
     };
-
-    struct
-    {
-        UInt64 max_binary_string_size = 1_GiB;
-        UInt64 max_binary_array_size = 1_GiB;
-        bool encode_types_in_binary_format = false;
-        bool decode_types_in_binary_format = false;
-        bool read_json_as_string = false;
-        bool write_json_as_string = false;
-    } binary{};
 
     struct
     {
@@ -188,7 +179,6 @@ struct FormatSettings
         char fields_delimiter = '\x01';
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
-        bool allow_variable_number_of_columns = true;
         Names input_field_names;
     } hive_text{};
 
@@ -206,9 +196,8 @@ struct FormatSettings
         bool allow_variable_number_of_columns = false;
     } custom{};
 
-    struct JSON
+    struct
     {
-        size_t max_depth = 1000;
         bool array_of_rows = false;
         bool quote_64bit_integers = true;
         bool quote_64bit_floats = false;
@@ -217,7 +206,7 @@ struct FormatSettings
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
-        bool write_named_tuples_as_objects = true;
+        bool write_named_tuples_as_objects = false;
         bool skip_null_value_in_named_tuples = false;
         bool defaults_for_missing_elements_in_named_tuple = false;
         bool ignore_unknown_keys_in_named_tuple = false;
@@ -230,19 +219,12 @@ struct FormatSettings
         bool try_infer_numbers_from_strings = false;
         bool validate_types_from_metadata = true;
         bool validate_utf8 = false;
-        bool allow_deprecated_object_type = false;
-        bool allow_json_type = false;
+        bool allow_object_type = false;
         bool valid_output_on_exception = false;
         bool compact_allow_variable_number_of_columns = false;
         bool try_infer_objects_as_tuples = false;
         bool infer_incomplete_types_as_strings = true;
-        bool throw_on_bad_escape_sequence = true;
-        bool ignore_unnecessary_fields = true;
-        bool empty_as_default = false;
-        bool type_json_skip_duplicated_paths = false;
-        bool pretty_print = true;
-        char pretty_print_indent = ' ';
-        size_t pretty_print_indent_multiplier = 4;
+
     } json{};
 
     struct
@@ -250,7 +232,7 @@ struct FormatSettings
         String column_for_object_name{};
     } json_object_each_row{};
 
-    enum class ParquetVersion : uint8_t
+    enum class ParquetVersion
     {
         V1_0,
         V2_4,
@@ -258,7 +240,7 @@ struct FormatSettings
         V2_LATEST,
     };
 
-    enum class ParquetCompression : uint8_t
+    enum class ParquetCompression
     {
         NONE,
         SNAPPY,
@@ -276,59 +258,34 @@ struct FormatSettings
         bool skip_columns_with_unsupported_types_in_schema_inference = false;
         bool case_insensitive_column_matching = false;
         bool filter_push_down = true;
-        bool bloom_filter_push_down = true;
-        bool use_native_reader = false;
+        std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
-        bool output_datetime_as_uint32 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
-        bool output_compliant_nested_types = true;
-        bool write_page_index = false;
-        bool write_bloom_filter = false;
-        bool enable_row_group_prefetch = true;
-        std::unordered_set<int> skip_row_groups = {};
-        UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
-        size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
+        UInt64 max_block_size = 8192;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
-        uint64_t output_compression_level;
+        bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
         size_t local_read_min_bytes_for_seek = 8192;
-        double bloom_filter_bits_per_value = 10.5;
-        size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
     } parquet{};
 
     struct Pretty
     {
         UInt64 max_rows = 10000;
         UInt64 max_column_pad_width = 250;
-        UInt64 max_column_name_width_cut_to = 24;
-        UInt64 max_column_name_width_min_chars_to_cut = 4;
         UInt64 max_value_width = 10000;
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
-        bool highlight_trailing_spaces = true;
-        bool multiline_fields = true;
-        /// Set to 2 for auto
-        UInt64 color = 2;
+        SettingFieldUInt64Auto color{"auto"};
 
-        bool row_numbers = false;
-        UInt64 single_large_number_tip_threshold = 1'000'000;
-        UInt64 display_footer_column_names = 1;
-        UInt64 display_footer_column_names_min_rows = 50;
+        bool output_format_pretty_row_numbers = false;
+        UInt64 output_format_pretty_single_large_number_tip_threshold = 1'000'000;
 
-        UInt64 squash_consecutive_ms = 50;
-        UInt64 squash_max_wait_ms = 1000;
-
-        bool fallback_to_vertical = true;
-        UInt64 fallback_to_vertical_max_rows_per_chunk = 100;
-        UInt64 fallback_to_vertical_min_columns = 5;
-        UInt64 fallback_to_vertical_min_table_width = 250;
-
-        enum class Charset : uint8_t
+        enum class Charset
         {
             UTF8,
             ASCII,
@@ -404,7 +361,6 @@ struct FormatSettings
         bool try_detect_header = true;
         bool skip_trailing_empty_lines = false;
         bool allow_variable_number_of_columns = false;
-        bool crlf_end_of_line_input = false;
     } tsv{};
 
     struct
@@ -416,7 +372,7 @@ struct FormatSettings
         bool escape_quote_with_quote = false;
     } values{};
 
-    enum class ORCCompression : uint8_t
+    enum class ORCCompression
     {
         NONE,
         LZ4,
@@ -437,15 +393,11 @@ struct FormatSettings
         bool use_fast_decoder = true;
         bool filter_push_down = true;
         UInt64 output_row_index_stride = 10'000;
-        String reader_time_zone_name = "GMT";
-        bool dictionary_as_low_cardinality = true;
-        String writer_time_zone_name = "GMT";
-        double output_dictionary_key_size_threshold = 0.0;
     } orc{};
 
     /// For capnProto format we should determine how to
     /// compare ClickHouse Enum and Enum from schema.
-    enum class CapnProtoEnumComparingMode : uint8_t
+    enum class CapnProtoEnumComparingMode
     {
         BY_NAMES, // Names in enums should be the same, values can be different.
         BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
@@ -459,7 +411,7 @@ struct FormatSettings
         bool use_autogenerated_schema = true;
     } capn_proto{};
 
-    enum class MsgPackUUIDRepresentation : uint8_t
+    enum class MsgPackUUIDRepresentation
     {
         STR, // Output UUID as a string of 36 characters.
         BIN, // Output UUID as 16-bytes binary.
@@ -496,9 +448,6 @@ struct FormatSettings
     struct
     {
         bool allow_types_conversion = true;
-        bool encode_types_in_binary_format = false;
-        bool decode_types_in_binary_format = false;
-        bool write_json_as_string = false;
     } native{};
 
     struct

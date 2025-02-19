@@ -7,8 +7,8 @@ CREATE TABLE t_remove_sample_by(id UInt64) ENGINE = MergeTree ORDER BY id SAMPLE
 ALTER TABLE t_remove_sample_by REMOVE SAMPLE BY;
 SHOW CREATE TABLE t_remove_sample_by;
 
-ALTER TABLE t_remove_sample_by REMOVE SAMPLE BY; -- { serverError BAD_ARGUMENTS }
-SELECT * FROM t_remove_sample_by SAMPLE 1 / 10; -- { serverError SAMPLING_NOT_SUPPORTED }
+ALTER TABLE t_remove_sample_by REMOVE SAMPLE BY; -- { serverError 36 }
+SELECT * FROM t_remove_sample_by SAMPLE 1 / 10; -- { serverError 141 }
 
 DROP TABLE t_remove_sample_by;
 
@@ -22,7 +22,7 @@ SHOW CREATE TABLE t_remove_sample_by;
 DROP TABLE t_remove_sample_by;
 
 CREATE TABLE t_remove_sample_by(id UInt64) ENGINE = Memory;
-ALTER TABLE t_remove_sample_by REMOVE SAMPLE BY; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_remove_sample_by REMOVE SAMPLE BY; -- { serverError 36 }
 
 DROP TABLE t_remove_sample_by;
 
@@ -36,7 +36,7 @@ DETACH TABLE t_remove_sample_by;
 ATTACH TABLE t_remove_sample_by;
 
 INSERT INTO t_remove_sample_by VALUES (1);
-SELECT * FROM t_remove_sample_by SAMPLE 1 / 10; -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }
+SELECT * FROM t_remove_sample_by SAMPLE 1 / 10; -- { serverError 59 }
 
 ALTER TABLE t_remove_sample_by REMOVE SAMPLE BY;
 SHOW CREATE TABLE t_remove_sample_by;

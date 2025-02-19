@@ -1,31 +1,28 @@
 #pragma once
 
-#include <Common/MemorySpillScheduler.h>
+#include <memory>
+#include <Processors/Port.h>
 #include <Common/Stopwatch.h>
 
-#include <list>
-#include <memory>
-#include <vector>
-#include <fmt/format.h>
 
 class EventCounter;
 
 
 namespace DB
 {
-
-class InputPort;
-class OutputPort;
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
 
 class IQueryPlanStep;
 
 struct StorageLimits;
 using StorageLimitsList = std::list<StorageLimits>;
 
-class RowsBeforeStepCounter;
-using RowsBeforeStepCounterPtr = std::shared_ptr<RowsBeforeStepCounter>;
+class RowsBeforeLimitCounter;
+using RowsBeforeLimitCounterPtr = std::shared_ptr<RowsBeforeLimitCounter>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -69,6 +66,7 @@ using Processors = std::vector<ProcessorPtr>;
   *
   * Simple transformation. Has single input and single output port. Pulls data, transforms it and pushes to output port.
   * Example: expression calculator.
+  * TODO Better to make each function a separate processor. It's better for pipeline analysis. Also keep in mind 'sleep' and 'rand' functions.
   *
   * Squashing or filtering transformation. Pulls data, possibly accumulates it, and sometimes pushes it to output port.
   * Examples: DISTINCT, WHERE, squashing of blocks for INSERT SELECT.
@@ -123,15 +121,20 @@ protected:
     OutputPorts outputs;
 
 public:
-    IProcessor();
+    IProcessor() = default;
 
-    IProcessor(InputPorts inputs_, OutputPorts outputs_);
+    IProcessor(InputPorts inputs_, OutputPorts outputs_)
+        : inputs(std::move(inputs_)), outputs(std::move(outputs_))
+    {
+        for (auto & port : inputs)
+            port.processor = this;
+        for (auto & port : outputs)
+            port.processor = this;
+    }
 
     virtual String getName() const = 0;
 
-    String getUniqID() const { return fmt::format("{}_{}", getName(), processor_index); }
-
-    enum class Status : uint8_t
+    enum class Status
     {
         /// Processor needs some data at its inputs to proceed.
         /// You need to run another processor to generate required input and then call 'prepare' again.
@@ -150,7 +153,7 @@ public:
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
-        /// You may call 'schedule' method and processor will return a descriptor.
+        /// You may call 'schedule' method and processor will return descriptor.
         /// You need to poll this descriptor and call work() afterwards.
         Async,
 
@@ -159,7 +162,7 @@ public:
         ExpandPipeline,
     };
 
-    static std::string statusToName(std::optional<Status> status);
+    static std::string statusToName(Status status);
 
     /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
@@ -179,7 +182,10 @@ public:
       * - method 'prepare' cannot be executed in parallel even for different objects,
       *   if they are connected (including indirectly) to each other by their ports;
       */
-    virtual Status prepare();
+    virtual Status prepare()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'prepare' is not implemented for {} processor", getName());
+    }
 
     using PortNumbers = std::vector<UInt64>;
 
@@ -191,7 +197,10 @@ public:
       *
       * Method work can be executed in parallel for different processors.
       */
-    virtual void work();
+    virtual void work()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'work' is not implemented for {} processor", getName());
+    }
 
     /** Executor must call this method when 'prepare' returned Async.
       * This method cannot access any ports. It should use only data that was prepared by 'prepare' method.
@@ -207,24 +216,10 @@ public:
       * It is expected that executor epoll using level-triggered notifications.
       * Read all available data from descriptor before returning ASYNC.
       */
-    virtual int schedule();
-
-    /* The method is called right after asynchronous job is done
-     * i.e. when file descriptor returned by schedule() is readable.
-     * The sequence of method calls:
-     * ... prepare() -> schedule() -> onAsyncJobReady() -> work() ...
-     * See also comment to schedule() method
-     *
-     * It allows doing some preprocessing immediately after asynchronous job is done.
-     * The implementation should return control quickly, to avoid blocking another asynchronous completed jobs
-     * created by the same pipeline.
-     *
-     * Example, scheduling tasks for remote workers (file descriptor in this case is a socket)
-     * When the remote worker asks for the next task, doing it in onAsyncJobReady() we can provide it immediately.
-     * Otherwise, the returning of the next task for the remote worker can be delayed by current work done in the pipeline
-     * (by other processors), which will create unnecessary latency in query processing by remote workers
-     */
-    virtual void onAsyncJobReady() {}
+    virtual int schedule()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
+    }
 
     /** You must call this method if 'prepare' returned ExpandPipeline.
       * This method cannot access any port, but it can create new ports for current processor.
@@ -235,12 +230,20 @@ public:
       * Method can't remove or reconnect existing ports, move data from/to port or perform calculations.
       * 'prepare' should be called again after expanding pipeline.
       */
-    virtual Processors expandPipeline();
+    virtual Processors expandPipeline()
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
+    }
 
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
-    void cancel() noexcept;
+    void cancel()
+    {
+        bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
+        if (!already_cancelled)
+            onCancel();
+    }
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
@@ -251,15 +254,38 @@ public:
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }
 
-    UInt64 getInputPortNumber(const InputPort * input_port) const;
+    UInt64 getInputPortNumber(const InputPort * input_port) const
+    {
+        UInt64 number = 0;
+        for (const auto & port : inputs)
+        {
+            if (&port == input_port)
+                return number;
 
-    UInt64 getOutputPortNumber(const OutputPort * output_port) const;
+            ++number;
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find input port for {} processor", getName());
+    }
+
+    UInt64 getOutputPortNumber(const OutputPort * output_port) const
+    {
+        UInt64 number = 0;
+        for (const auto & port : outputs)
+        {
+            if (&port == output_port)
+                return number;
+
+            ++number;
+        }
+
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't find output port for {} processor", getName());
+    }
 
     const auto & getInputs() const { return inputs; }
     const auto & getOutputs() const { return outputs; }
 
     /// Debug output.
-    String debug() const;
     void dump() const;
 
     /// Used to print pipeline.
@@ -272,17 +298,18 @@ public:
     constexpr static size_t NO_STREAM = std::numeric_limits<size_t>::max();
 
     /// Step of QueryPlan from which processor was created.
-    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0);
+    void setQueryPlanStep(IQueryPlanStep * step, size_t group = 0)
+    {
+        query_plan_step = step;
+        query_plan_step_group = group;
+    }
 
     IQueryPlanStep * getQueryPlanStep() const { return query_plan_step; }
-    const String & getStepUniqID() const { return step_uniq_id; }
     size_t getQueryPlanStepGroup() const { return query_plan_step_group; }
-    const String & getPlanStepName() const { return plan_step_name; }
-    const String & getPlanStepDescription() const { return plan_step_description; }
 
-    uint64_t getElapsedNs() const { return elapsed_ns; }
-    uint64_t getInputWaitElapsedNs() const { return input_wait_elapsed_ns; }
-    uint64_t getOutputWaitElapsedNs() const { return output_wait_elapsed_ns; }
+    uint64_t getElapsedUs() const { return elapsed_us; }
+    uint64_t getInputWaitElapsedUs() const { return input_wait_elapsed_us; }
+    uint64_t getOutputWaitElapsedUs() const { return output_wait_elapsed_us; }
 
     struct ProcessorDataStats
     {
@@ -292,7 +319,24 @@ public:
         size_t output_bytes = 0;
     };
 
-    ProcessorDataStats getProcessorDataStats() const;
+    ProcessorDataStats getProcessorDataStats() const
+    {
+        ProcessorDataStats stats;
+
+        for (const auto & input : inputs)
+        {
+            stats.input_rows += input.rows;
+            stats.input_bytes += input.bytes;
+        }
+
+        for (const auto & output : outputs)
+        {
+            stats.output_rows += output.rows;
+            stats.output_bytes += output.bytes;
+        }
+
+        return stats;
+    }
 
     struct ReadProgressCounters
     {
@@ -310,69 +354,45 @@ public:
 
     /// Set limits for current storage.
     /// Different limits may be applied to different storages, we need to keep it per processor.
-    /// This method needs to be overridden only for sources.
+    /// This method is need to be override only for sources.
     virtual void setStorageLimits(const std::shared_ptr<const StorageLimitsList> & /*storage_limits*/) {}
 
     /// This method is called for every processor without input ports.
-    /// Processor can return new progress for the last read operation.
+    /// Processor can return a new progress for the last read operation.
     /// You should zero internal counters in the call, in order to make in idempotent.
     virtual std::optional<ReadProgress> getReadProgress() { return std::nullopt; }
 
     /// Set rows_before_limit counter for current processor.
     /// This counter is used to calculate the number of rows right before any filtration of LimitTransform.
-    virtual void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr /* counter */) { }
-
-    /// Set rows_before_aggregation counter for current processor.
-    /// This counter is used to calculate the number of rows right before AggregatingTransform.
-    virtual void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr /* counter */) { }
-
-    /// Returns true if processor can spill memory to disk.
-    /// Aggregate, join and sort processors can be spillable.
-    /// For unspillable processors, the memory usage is not tracked.
-    inline bool isSpillable() const { return spillable; }
-
-    virtual ProcessorMemoryStats getMemoryStats()
-    {
-        return {};
-    }
-
-    // If the in-memory data's size is not larger then bytes, it doesn't spill
-    virtual bool spillOnSize(size_t /*bytes*/) { return false; }
+    virtual void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr /* counter */) {}
 
 protected:
-    virtual void onCancel() noexcept {}
-
-    std::atomic<bool> is_cancelled{false};
-    bool spillable = false;
+    virtual void onCancel() {}
 
 private:
     /// For:
-    /// - elapsed_ns
+    /// - elapsed_us
     friend class ExecutionThreadContext;
     /// For
-    /// - input_wait_elapsed_ns
-    /// - output_wait_elapsed_ns
+    /// - input_wait_elapsed_us
+    /// - output_wait_elapsed_us
     friend class ExecutingGraph;
+
+    std::atomic<bool> is_cancelled{false};
 
     std::string processor_description;
 
     /// For processors_profile_log
-    uint64_t elapsed_ns = 0;
+    uint64_t elapsed_us = 0;
     Stopwatch input_wait_watch;
-    uint64_t input_wait_elapsed_ns = 0;
+    uint64_t input_wait_elapsed_us = 0;
     Stopwatch output_wait_watch;
-    uint64_t output_wait_elapsed_ns = 0;
+    uint64_t output_wait_elapsed_us = 0;
 
     size_t stream_number = NO_STREAM;
 
     IQueryPlanStep * query_plan_step = nullptr;
-    String step_uniq_id;
     size_t query_plan_step_group = 0;
-
-    size_t processor_index = 0;
-    String plan_step_name;
-    String plan_step_description;
-
 };
 
 

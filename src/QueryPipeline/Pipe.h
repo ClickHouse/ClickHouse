@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/IProcessor.h>
-#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/SizeLimits.h>
+
 
 namespace DB
 {
@@ -73,7 +74,7 @@ public:
         InputPort * totals_in, InputPort * extremes_in,
         OutputPort * totals_out, OutputPort * extremes_out);
 
-    enum class StreamType : uint8_t
+    enum class StreamType
     {
         Main = 0, /// Stream for query data. There may be several streams of this type.
         Totals,  /// Stream for totals. No more than one.
