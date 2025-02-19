@@ -106,6 +106,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_pretty_max_rows;
     extern const SettingsUInt64 output_format_pretty_max_value_width;
+    extern const SettingsUInt64 output_format_pretty_max_column_pad_width;
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
@@ -771,6 +772,16 @@ void ClientBase::adjustSettings()
         {
             settings[Setting::output_format_pretty_max_value_width] = std::numeric_limits<UInt64>::max();
             settings[Setting::output_format_pretty_max_value_width].changed = false;
+        }
+    }
+    else
+    {
+        size_t extra_width_for_pretty_format = strlen("1234. |  |");
+        if (!global_context->getSettingsRef()[Setting::output_format_pretty_max_column_pad_width].changed
+            && terminal_width >= extra_width_for_pretty_format * 2)
+        {
+            settings[Setting::output_format_pretty_max_column_pad_width] = terminal_width - extra_width_for_pretty_format;
+            settings[Setting::output_format_pretty_max_column_pad_width].changed = false;
         }
     }
 
