@@ -1,4 +1,5 @@
 #include "QueryFuzzer.h"
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -8,22 +9,14 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
+
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromOStream.h>
+
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/IAST_fwd.h>
-#include <Parsers/ParserDataType.h>
-#include <Parsers/ParserInsertQuery.h>
-
-#include <unordered_set>
-
-#include <Core/Types.h>
-#include <IO/Operators.h>
-#include <IO/UseSSL.h>
-#include <IO/WriteBufferFromOStream.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -38,10 +31,13 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ParserDataType.h>
+#include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+
 #include <pcg_random.hpp>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -979,14 +975,34 @@ void QueryFuzzer::notifyQueryFailed(ASTPtr ast)
 
 ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
-    auto * l = child->as<ASTLiteral>();
+    const auto * l = child->as<ASTLiteral>();
     chassert(l);
-    auto type = l->value.getType();
-    if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
+
+    if (fuzz_rand() % 200 == 0)
     {
-        String value = l->value.safeGet<String>();
-        child = makeASTFunction(
-            "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
+        /// Return a NULL literal
+        return std::make_shared<ASTLiteral>(Field());
+    }
+    if (fuzz_rand() % 200 == 0)
+    {
+        /// Return a * literal
+        return std::make_shared<ASTAsterisk>();
+    }
+
+    const auto type = l->value.getType();
+    if (type == Field::Types::Which::String)
+    {
+        if (fuzz_rand() % 7 == 0)
+        {
+            const String value = l->value.safeGet<String>();
+            child = makeASTFunction(
+                "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
+        }
+        else if (fuzz_rand() % 200 == 0)
+        {
+            /// Return an empty string
+            child = std::make_shared<ASTLiteral>(Field(""));
+        }
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
@@ -998,7 +1014,7 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
     }
     else if (type == Field::Types::Which::Float64 && fuzz_rand() % 7 == 0)
     {
-        int decimal = fuzz_rand() % 4;
+        const int decimal = fuzz_rand() % 4;
         if (decimal == 0)
             child = makeASTFunction(
                 "toDecimal32",
@@ -1039,7 +1055,7 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
 {
     if (auto * function = child.get()->as<ASTFunction>())
     {
-        const std::unordered_set<String> can_be_reverted{
+        static const std::unordered_set<String> can_be_reverted{
             "materialize",
             "toDecimal32", /// Keeping the first parameter only should be ok (valid query most of the time)
             "toDecimal64",
@@ -1548,9 +1564,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 = {{"ilike", "like", "match", "notILike", "notLike"},
                    {"globalIn", "globalNotIn", "in", "notIn"},
                    {"equals", "isNotDistinctFrom"},
-                   {"isNull", "isNotNull"},
-                   {"notEquals", "greater", "greaterOrEquals", "less", "lessOrEquals"},
-                   {"concat", "divide", "minus", "modulo", "multiply", "plus"},
+                   {"assumeNotNull", "isNotNull", "isNull", "isNullable", "isZeroOrNull", "toNullable"},
+                   {"clamp", "coalesce", "greatest", "least"},
+                   {"greater", "greaterOrEquals", "less", "lessOrEquals", "notEquals"},
+                   {"concat", "divide", "intDiv", "minus", "modulo", "multiply", "plus"},
                    {"toDayOfMonth",
                     "toDayOfWeek",
                     "toDayOfYear",
