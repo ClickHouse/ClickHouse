@@ -292,6 +292,7 @@ void BaseDaemon::initialize(Application & self)
 #else // !USE_SSL
     ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 #endif
+
     /// Write core dump on crash.
     {
         struct rlimit rlim;

@@ -956,14 +956,12 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
         LOG_WARNING(log, "Couldn't save preprocessed config to {}: {}", preprocessed_path, e.displayText());
     }
 
-#ifdef USE_SSL
-
+#if USE_SSL
     if (decrypt_values)
     {
         CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
         decryptEncryptedElements(loaded_config);
     }
-
 #endif
 }
 
