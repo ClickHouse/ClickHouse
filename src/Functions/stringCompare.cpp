@@ -51,9 +51,9 @@ public:
             {"string2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
         };
         FunctionArgumentDescriptors optional_args{
-            {"string1_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&FunctionStringCompare::isConstColumn), "const UInt*"},
-            {"string2_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&FunctionStringCompare::isConstColumn), "const UInt*"},
-            {"num_bytes", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), static_cast<FunctionArgumentDescriptor::ColumnValidator>(&FunctionStringCompare::isConstColumn), "const UInt*"},
+            {"string1_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
+            {"string2_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
+            {"num_bytes", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
@@ -122,11 +122,6 @@ public:
     }
 
 private:
-    static bool isConstColumn(const IColumn & column)
-    {
-        return column.isConst();
-    }
-
     template <bool reverse>
     static Int8 normalComparison(const char * str1, size_t str1_length, const char * str2, size_t str2_length)
     {
@@ -136,8 +131,12 @@ private:
             return static_cast<Int8>(memcmpSmallLikeZeroPaddedAllowOverflow15(str1, str1_length, str2, str2_length));
     }
 
+    /// If offset is beyond end of input string(s), compute result and return true, else return false.
     template <bool reverse>
-    static bool isOverflowComparison(size_t str1_length, size_t str1_offset, size_t str2_length, size_t str2_offset, Int8 & result)
+    static bool isOverflowComparison(
+        size_t str1_length, size_t str1_offset,
+        size_t str2_length, size_t str2_offset,
+        Int8 & result)
     {
         if (str1_offset >= str1_length && str2_offset >= str2_length)
         {
@@ -163,9 +162,13 @@ private:
         return false;
     }
 
+    /// If offset is beyond end of input string(s), compute result and return true, else return false.
     template <bool reverse>
     static bool isOverflowComparison(
-        size_t str1_length, size_t str1_offset, size_t str2_length, size_t str2_offset, PaddedPODArray<Int8> & result, size_t input_rows_count)
+        size_t str1_length, size_t str1_offset,
+        size_t str2_length, size_t str2_offset,
+        size_t input_rows_count,
+        PaddedPODArray<Int8> & result)
     {
         bool is_overflow = false;
         Int8 res = 0;
@@ -223,8 +226,8 @@ private:
 
             if (!isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
-                auto str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
-                auto str2_adjusted_length = std::min(num_bytes, str2_length - str2_offset);
+                size_t str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
+                size_t str2_adjusted_length = std::min(num_bytes, str2_length - str2_offset);
                 result[i] = normalComparison<false>(str1, str1_adjusted_length, str2, str2_adjusted_length);
             }
 
@@ -278,7 +281,7 @@ private:
         size_t str1_length = col_str1.getN();
         size_t str2_length = col_str2.getN();
 
-        if (isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, result, input_rows_count))
+        if (isOverflowComparison<false>(str1_length, str1_offset, str2_length, str2_offset, input_rows_count, result))
             return;
 
         const auto & str1_data = col_str1.getChars();
@@ -351,7 +354,7 @@ private:
         PaddedPODArray<Int8> & result) const
     {
         size_t str1_length = col_str1.getN();
-        if (isOverflowComparison<reverse>(str1_length, str1_offset, str2.size(), str2_offset, result, input_rows_count))
+        if (isOverflowComparison<reverse>(str1_length, str1_offset, str2.size(), str2_offset, input_rows_count, result))
             return;
 
         const auto & str1_data = col_str1.getChars();
