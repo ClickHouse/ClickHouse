@@ -10,7 +10,7 @@ namespace DB
  * but instead in the data files directory names,
  * we need a way to pass the value through to the StorageObjectStorageSource.
  */
-struct ObjectInfoWithParitionColumns : public DB::ObjectInfo
+struct ObjectInfoWithPartitionColumns : public DB::ObjectInfo
 {
     struct PartitionColumnInfo
     {
@@ -22,10 +22,12 @@ struct ObjectInfoWithParitionColumns : public DB::ObjectInfo
     using PartitionColumnsInfo = std::vector<PartitionColumnInfo>;
 
     template <typename... Args>
-    explicit ObjectInfoWithParitionColumns(
+    explicit ObjectInfoWithPartitionColumns(
         PartitionColumnsInfo && partitions_info_, Args &&... args)
         : DB::ObjectInfo(std::forward<Args>(args)...)
         , partitions_info(partitions_info_) {}
+
+    ~ObjectInfoWithPartitionColumns() override = default;
 
     PartitionColumnsInfo partitions_info;
 };

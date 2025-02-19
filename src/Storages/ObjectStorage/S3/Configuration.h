@@ -70,7 +70,6 @@ public:
     S3::URI getURL() const { return url; }
     const S3::S3AuthSettings & getAuthSettings() const { return auth_settings; }
 
-    std::string getEndpoint() const override { return url.endpoint; }
     Path getPath() const override { return url.key; }
     void setPath(const Path & path) override { url.key = path; }
 

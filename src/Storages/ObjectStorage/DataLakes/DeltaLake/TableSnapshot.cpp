@@ -93,7 +93,7 @@ public:
         /// DeltaLake does not store partition values in the actual data files,
         /// but instead in data files paths directory names.
         /// So we extract these values here and put into `partitions_info`.
-        DB::ObjectInfoWithParitionColumns::PartitionColumnsInfo partitions_info;
+        DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & partition_column : context->partition_columns)
         {
             auto * raw_value = ffi::get_from_string_map(
@@ -127,7 +127,7 @@ public:
         if (partitions_info.empty())
             object = std::make_shared<DB::ObjectInfo>(full_path, size);
         else
-            object = std::make_shared<DB::ObjectInfoWithParitionColumns>(std::move(partitions_info), full_path, size);
+            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), full_path, size);
 
         context->data_files.push_back(std::move(object));
     }
