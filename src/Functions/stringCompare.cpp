@@ -38,6 +38,7 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -111,15 +112,6 @@ public:
             executeFixedStringConst<false>(*fixed_str1_col, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, result_array);
         else if (fixed_str2_col && col_str1_const)
             executeFixedStringConst<true>(*fixed_str2_col, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, result_array);
-        else if (col_str1_const && col_str2_const)
-            executeConstConst(
-                String(col_str1_const->getDataAt(0)),
-                str1_offset,
-                String(col_str2_const->getDataAt(0)),
-                str2_offset,
-                num_bytes,
-                arguments[0].column->size(),
-                result_array);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -349,40 +341,6 @@ private:
             str1_data_offset += str1_total_len;
             str2_data_offset += str2_total_len;
         }
-    }
-
-    void executeConstConst(
-        const String & str1,
-        size_t str1_offset,
-        const String & str2,
-        size_t str2_offset,
-        size_t num_bytes,
-        size_t rows,
-        PaddedPODArray<Int8> & result_array) const
-    {
-        size_t str1_total_len = str1.size();
-        size_t str2_total_len = str2.size();
-        Int32 res = 0;
-        if (str1_offset >= str1_total_len && str2_offset >= str2_total_len) [[unlikely]]
-        {
-            res = 0;
-        }
-        else if (str1_offset >= str1_total_len) [[unlikely]]
-        {
-            res = -1;
-        }
-        else if (str2_offset >= str2_total_len) [[unlikely]]
-        {
-            res = 1;
-        }
-        else
-        {
-            auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
-            auto str2_length = std::min(num_bytes, str2_total_len - str2_offset);
-            res = memcmpSmallLikeZeroPaddedAllowOverflow15(str1.data() + str1_offset, str1_length, str2.data() + str2_offset, str2_length);
-        }
-        for (size_t i = 0; i < rows; ++i)
-            result_array[i] = res;
     }
 };
 
