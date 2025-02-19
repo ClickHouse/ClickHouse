@@ -6,7 +6,9 @@ include(ExternalProject)
 
 set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR NO_ARMV81_OR_HIGHER OR NOT ENABLE_RUST)
+# TODO: Improve this
+# MSAN: ld.lld: error: undefined symbol: ring_core_0_17_9__bn_mul_mont_nohw / ld.lld: error: undefined symbol: ring_core_0_17_9__chacha20_poly1305_seal_avx2 ...
+if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER OR NOT ENABLE_RUST)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
