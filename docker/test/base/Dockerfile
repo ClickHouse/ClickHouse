@@ -18,7 +18,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Install ODBC Bridge and Library Bridge, which are separately built components.
-RUN BRIDGE_VERSION='25.1.4.53' \
+RUN BRIDGE_VERSION='25.1.5.31' \
     && ARCH=$(dpkg --print-architecture) \
     && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
     && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
