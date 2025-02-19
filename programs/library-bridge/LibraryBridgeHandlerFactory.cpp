@@ -10,7 +10,8 @@ namespace DB
 LibraryBridgeHandlerFactory::LibraryBridgeHandlerFactory(
     const std::string & name_,
     size_t keep_alive_timeout_,
-    ContextPtr context_)
+    ContextPtr context_,
+    std::vector<std::string> libraries_paths_)
     : WithContext(context_)
     , log(getLogger(name_))
     , name(name_)
@@ -27,17 +28,17 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
     {
         if (uri.getPath() == "/extdict_ping")
-            return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(keep_alive_timeout, getContext(), libraries_paths);
         else if (uri.getPath() == "/catboost_ping")
-            return std::make_unique<CatBoostLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
+            return std::make_unique<CatBoostLibraryBridgeExistsHandler>(keep_alive_timeout, getContext(), libraries_paths);
     }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
         if (uri.getPath() == "/extdict_request")
-            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(getContext(), libraries_paths);
+            return std::make_unique<ExternalDictionaryLibraryBridgeRequestHandler>(keep_alive_timeout, getContext(), libraries_paths);
         else if (uri.getPath() == "/catboost_request")
-            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(getContext(), libraries_paths);
+            return std::make_unique<CatBoostLibraryBridgeRequestHandler>(keep_alive_timeout, getContext(), libraries_paths);
     }
 
     return nullptr;
