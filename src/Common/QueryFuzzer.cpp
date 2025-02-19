@@ -1746,15 +1746,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
-        IAST * sel_tables = select->tables().get();
-
         fuzzColumnLikeExpressionList(select->select().get());
 
         if (fuzz_rand() % 50 == 0)
         {
             select->distinct = !select->distinct;
         }
-        if (sel_tables)
+        if (select->tables().get())
         {
             ASTPtr new_join;
             const int next_action = fuzz_rand() % 50;
@@ -1766,14 +1764,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (next_action == 1 && select->refTables()->children.size() > 1)
             {
-                ASTs children = select->refTables()->children;
+                auto & children = select->refTables()->children;
 
                 children.erase(children.begin() + (fuzz_rand() % children.size()));
             }
-            if (!sel_tables->children.empty() && fuzz_rand() % 20 == 0)
+            if (!select->tables().get()->children.empty() && fuzz_rand() % 20 == 0)
             {
                 /// Permute FROM list
-                std::shuffle(sel_tables->children.begin(), sel_tables->children.end(), fuzz_rand);
+                auto & children = select->refTables()->children;
+
+                std::shuffle(children.begin(), children.end(), fuzz_rand);
             }
         }
         if (select->groupBy().get())
