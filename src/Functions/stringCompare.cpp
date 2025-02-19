@@ -102,7 +102,7 @@ public:
         else if (col_str1_const && col_str2)
             executeStringConst<true>(*col_str2, col_str1_const->getDataAt(0).toView(), str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && fixed_str2_col)
-            executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, input_rows_count, result);
+            executeFixedStringFixedString(*fixed_str1_col, *fixed_str2_col, str1_offset, str2_offset, num_bytes, input_rows_count, result);
         else if (col_str1 && fixed_str2_col)
             executeFixedStringString<true>(*fixed_str2_col, *col_str1, str2_offset, str1_offset, num_bytes, input_rows_count, result);
         else if (fixed_str1_col && col_str2)
@@ -228,7 +228,9 @@ private:
             {
                 size_t str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
                 size_t str2_adjusted_length = std::min(num_bytes, str2_length - str2_offset);
-                result[i] = normalComparison<false>(str1, str1_adjusted_length, str2, str2_adjusted_length);
+                result[i] = normalComparison<false>(
+                    str1, str1_adjusted_length,
+                    str2, str2_adjusted_length);
             }
 
             str1_data_offset = str1_offsets[i];
@@ -249,20 +251,20 @@ private:
         const auto & str1_data = col_str1.getChars();
         const auto & str1_offsets = col_str1.getOffsets();
 
-        size_t str1_data_offset = 0;
-        auto str2_adjusted_length = str2_offset >= str2.size() ? 0 : std::min(num_bytes, str2.size() - str2_offset);
+        ColumnString::Offset str1_data_offset = 0;
+
+        size_t str2_adjusted_length = str2_offset >= str2.size() ? 0 : std::min(num_bytes, str2.size() - str2_offset);
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t str1_length = str1_offsets[i] - str1_data_offset - 1;
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2.size(), str2_offset, result[i]))
             {
-                const auto * str1 = str1_data.data() + str1_data_offset + str1_offset;
+                const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
+                size_t str1_adjusted_length = std::min(num_bytes, str1_length - str1_offset);
                 result[i] = normalComparison<reverse>(
-                    reinterpret_cast<const char *>(str1),
-                    std::min(num_bytes, str1_length - str1_offset),
-                    str2.data() + str2_offset,
-                    str2_adjusted_length);
+                    str1, str1_adjusted_length,
+                    str2.data() + str2_offset, str2_adjusted_length);
             }
 
             str1_data_offset = str1_offsets[i];
@@ -271,8 +273,8 @@ private:
 
     void executeFixedStringFixedString(
         const ColumnFixedString & col_str1,
-        size_t str1_offset,
         const ColumnFixedString & col_str2,
+        size_t str1_offset,
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
@@ -298,7 +300,9 @@ private:
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset);
 
-            result[i] = normalComparison<false>(str1, str1_adjusted_length, str2, str2_adjusted_length);
+            result[i] = normalComparison<false>(
+                str1, str1_adjusted_length,
+                str2, str2_adjusted_length);
 
             str1_data_offset += str1_length;
             str2_data_offset += str2_length;
@@ -321,6 +325,7 @@ private:
         const auto & str2_data = col_str2.getChars();
 
         const auto & str2_offsets = col_str2.getOffsets();
+
         size_t str1_data_offset = str1_offset;
         size_t str2_data_offset = 0;
 
@@ -335,7 +340,9 @@ private:
             if (!isOverflowComparison<reverse>(str1_length, str1_offset, str2_length, str2_offset, result[i]))
             {
                 auto str2_adjusted_length = str2_offset >= str2_length ? 0 : std::min(num_bytes, str2_length - str2_offset);
-                result[i] = normalComparison<reverse>(str1, str1_adjusted_length, str2, str2_adjusted_length);
+                result[i] = normalComparison<reverse>(
+                    str1, str1_adjusted_length,
+                    str2, str2_adjusted_length);
             }
 
             str1_data_offset += str1_length;
@@ -366,7 +373,10 @@ private:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
-            result[i] = normalComparison<reverse>(str1, str1_adjusted_length, str2.data() + str2_offset, str2_adjusted_length);
+            result[i] = normalComparison<reverse>(
+                str1, str1_adjusted_length,
+                str2.data() + str2_offset, str2_adjusted_length);
+
             str1_data_offset += str1_length;
         }
     }
