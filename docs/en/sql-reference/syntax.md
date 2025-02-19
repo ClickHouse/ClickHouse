@@ -3,6 +3,7 @@ slug: /en/sql-reference/syntax
 sidebar_position: 2
 sidebar_label: Syntax
 title: Syntax
+displayed_sidebar: sqlreference
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -331,8 +332,8 @@ Some aggregate functions can contain two lists of arguments in brackets. For exa
 quantile (0.9)(x) 
 ```
 
-These aggregate functions are called “parametric” functions, 
-and the arguments in the first list are called “parameters”.
+These aggregate functions are called "parametric" functions, 
+and the arguments in the first list are called "parameters".
 
 :::note
 The syntax of aggregate functions without parameters is the same as for regular functions.
@@ -344,7 +345,7 @@ Operators are converted to their corresponding functions during query parsing, t
 
 For example, the expression 
 
-```
+```text
 1 + 2 * 3 + 4
 ```
 
@@ -416,7 +417,7 @@ SELECT (1 AS n) + 2, n`.
 SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 ```
 
-- Be careful with aliases that are the same as column or table names. Let’s consider the following example:
+- Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
 ``` sql
 CREATE TABLE t

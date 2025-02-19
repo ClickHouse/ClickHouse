@@ -1,7 +1,7 @@
-#include "config.h"
-
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/SipHash.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -25,6 +25,11 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event ObjectStorageQueueLockLocalFileStatusesMicroseconds;
+};
+
+namespace CurrentMetrics
+{
+    extern const Metric ObjectStorageQueueRegisteredServers;
 };
 
 namespace DB
@@ -179,6 +184,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
     const std::string & path,
     ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info)
 {
+    chassert(metadata_ref_count);
     auto file_status = local_file_statuses->get(path, /* create */true);
     switch (mode)
     {
@@ -190,6 +196,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 bucket_info,
                 buckets_num,
                 table_metadata.loading_retries,
+                *metadata_ref_count,
                 log);
         case ObjectStorageQueueMode::UNORDERED:
             return std::make_shared<ObjectStorageQueueUnorderedFileMetadata>(
@@ -197,6 +204,7 @@ ObjectStorageQueueMetadata::FileMetadataPtr ObjectStorageQueueMetadata::getFileM
                 path,
                 file_status,
                 table_metadata.loading_retries,
+                *metadata_ref_count,
                 log);
     }
 }
@@ -444,6 +452,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
 
         if (!table_metadata.last_processed_path.empty())
         {
+            std::atomic<size_t> noop = 0;
             ObjectStorageQueueOrderedFileMetadata(
                 zookeeper_path,
                 table_metadata.last_processed_path,
@@ -451,6 +460,7 @@ ObjectStorageQueueTableMetadata ObjectStorageQueueMetadata::syncWithKeeper(
                 /* bucket_info */nullptr,
                 buckets_num,
                 table_metadata.loading_retries,
+                noop,
                 log).prepareProcessedAtStartRequests(requests, zookeeper);
         }
 
@@ -844,7 +854,12 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
         return;
 
     std::unique_lock lock(active_servers_mutex);
+
+    CurrentMetrics::sub(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
+
     active_servers = registered_set;
+
+    CurrentMetrics::add(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
 
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.

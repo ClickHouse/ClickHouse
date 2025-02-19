@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -13,8 +12,9 @@
 namespace DB
 {
 
+class Block;
+class Chunk;
 class NamesAndTypesList;
-
 
 namespace VirtualColumnUtils
 {

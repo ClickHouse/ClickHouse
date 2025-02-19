@@ -230,7 +230,6 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -967,6 +966,7 @@ SaaS
 Sanjeev
 Sankey
 Scalable
+ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -1032,6 +1032,7 @@ SupersetDocker
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
+SystemLogParameters
 TABLUM
 TAVG
 TCPConnection
@@ -1338,6 +1339,7 @@ atan
 atanh
 atomicity
 auth
+authType
 authenticator
 authenticators
 autocompletion
@@ -1535,6 +1537,7 @@ corrmatrix
 corrstable
 cors
 cosineDistance
+cooldown
 countDigits
 countEqual
 countIf
@@ -1999,6 +2002,7 @@ infty
 initcap
 initcapUTF
 initialQueryID
+initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -2458,6 +2462,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+preflight
 preimage
 preloaded
 prem
@@ -2493,6 +2498,7 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protos
 protobuf
 protobuflist
 protobufsingle
@@ -2880,6 +2886,7 @@ sysctl
 syslog
 syslogd
 systemd
+sqlreference
 tabix
 tablum
 tabseparated
@@ -3187,6 +3194,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+workfactor
 writability
 wrt
 wyHash
@@ -3209,3 +3217,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+JSONCompactEachRowWithProgress
+JSONCompactStringsEachRowWithProgress

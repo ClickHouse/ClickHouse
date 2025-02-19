@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/SystemLog.h>
-#include <Interpreters/ClientInfo.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/ZooKeeper/IKeeper.h>
+
+#include <Poco/Net/SocketAddress.h>
 
 
 namespace DB

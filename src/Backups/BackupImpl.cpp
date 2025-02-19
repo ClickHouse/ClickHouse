@@ -3,13 +3,13 @@
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
-#include <Interpreters/Context.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
@@ -31,6 +31,7 @@ namespace ProfileEvents
     extern const Event BackupsOpenedForWrite;
     extern const Event BackupReadMetadataMicroseconds;
     extern const Event BackupWriteMetadataMicroseconds;
+    extern const Event BackupLockFileReads;
 }
 
 namespace DB
@@ -53,7 +54,8 @@ namespace ErrorCodes
 namespace
 {
     const int INITIAL_BACKUP_VERSION = 1;
-    const int CURRENT_BACKUP_VERSION = 1;
+    /// We may use lightweight backup in version 2.
+    const int CURRENT_BACKUP_VERSION = 2;
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -88,7 +90,8 @@ namespace
 BackupImpl::BackupImpl(
     BackupFactory::CreateParams params_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_)
+    std::shared_ptr<IBackupReader> reader_,
+    std::shared_ptr<IBackupReader> lightweight_snapshot_reader_)
     : params(std::move(params_))
     , backup_info(params.backup_info)
     , backup_name_for_logging(backup_info.toStringForLogging())
@@ -96,10 +99,15 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
+    , lightweight_snapshot_reader(std::move(lightweight_snapshot_reader_))
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
+    if (params.is_lightweight_snapshot && !lightweight_snapshot_reader_)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create lightweight backup reader");
+    }
     open();
 }
 
@@ -184,6 +192,7 @@ void BackupImpl::close()
     closeArchive(/* finalize= */ false);
     writer.reset();
     reader.reset();
+    lightweight_snapshot_reader.reset();
     coordination.reset();
 }
 
@@ -319,7 +328,7 @@ void BackupImpl::writeBackupMetadata()
         out = writer->writeFile(".backup");
 
     *out << "<config>";
-    *out << "<version>" << CURRENT_BACKUP_VERSION << "</version>";
+    *out << "<version>" << (params.is_lightweight_snapshot ? CURRENT_BACKUP_VERSION : INITIAL_BACKUP_VERSION) << "</version>";
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
@@ -544,8 +553,12 @@ void BackupImpl::createLockFile()
 
 bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
-    if (!lock_file_name.empty() && uuid && writer->fileContentsEqual(lock_file_name, toString(*uuid)))
-        return true;
+    if (!lock_file_name.empty() && uuid)
+    {
+        ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
+            return true;
+    }
 
     if (throw_if_failed)
     {
@@ -572,8 +585,8 @@ void BackupImpl::removeLockFile()
 
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     String prefix = removeLeadingSlash(directory);
     if (!prefix.empty() && !prefix.ends_with('/'))
@@ -602,8 +615,8 @@ Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 
 bool BackupImpl::hasFiles(const String & directory) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     String prefix = removeLeadingSlash(directory);
     if (!prefix.empty() && !prefix.ends_with('/'))
@@ -620,8 +633,8 @@ bool BackupImpl::hasFiles(const String & directory) const
 
 bool BackupImpl::fileExists(const String & file_name) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     auto adjusted_path = removeLeadingSlash(file_name);
     std::lock_guard lock{mutex};
@@ -630,8 +643,8 @@ bool BackupImpl::fileExists(const String & file_name) const
 
 bool BackupImpl::fileExists(const SizeAndChecksum & size_and_checksum) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     std::lock_guard lock{mutex};
     return file_infos.contains(size_and_checksum);
@@ -649,8 +662,8 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 
 SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     auto adjusted_path = removeLeadingSlash(file_name);
 
@@ -680,8 +693,8 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum &
 
 std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     if (size_and_checksum.first == 0)
     {
@@ -782,8 +795,8 @@ size_t BackupImpl::copyFileToDisk(const String & file_name,
 size_t BackupImpl::copyFileToDisk(const SizeAndChecksum & size_and_checksum,
                                   DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const
 {
-    if (open_mode != OpenMode::READ)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for reading");
+    if (open_mode == OpenMode::WRITE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
 
     if (size_and_checksum.first == 0)
     {
@@ -867,8 +880,8 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
     if (entry->isReference())
         return;
 
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
     if (writing_finalized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is already finalized");
@@ -955,8 +968,8 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 void BackupImpl::finalizeWriting()
 {
     std::lock_guard lock{mutex};
-    if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup is not opened for writing");
+    if (open_mode == OpenMode::READ)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
     if (corrupted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup can't be finalized after an error happened");

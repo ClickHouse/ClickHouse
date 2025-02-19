@@ -43,6 +43,7 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
     $ROOT_PATH/src/Storages/SetSettings.cpp
     $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+    $ROOT_PATH/src/Interpreters/Cache/FileCacheSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
@@ -77,7 +78,7 @@ done
 # We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
 # Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"
 find "$ROOT_PATH"/{src,base,programs,utils} \( -name '*.cpp' -o -name '*.h' \) -print0 | \
-    xargs -0 rg "^\s*extern const .*Settings" | tr ':' ' ' | \
+    xargs -0 rg "^\s*extern const .*Settings" | tr ':' ' ' | grep -v "NOLINT" | \
     awk '{print substr($5, 0, length($5) -1) " " $4 " " $1}' >> "${SETTINGS_FILE}"
 
 # Detect duplicate extern declarations for settings (harmless but better style)
