@@ -64,7 +64,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
-        chassert(arguments[0].column->size() == input_rows_count);
         auto col_result = ColumnInt8::create();
 
         if (input_rows_count == 0)
@@ -89,29 +88,29 @@ public:
         size_t num_bytes = has_five_args ? arguments[4].column->getUInt(0) : std::numeric_limits<size_t>::max();
         if (num_bytes == 0)
         {
-            col_result->insertMany(0, arguments[0].column->size());
+            col_result->insertMany(0, input_rows_count);
             return col_result;
         }
 
-        col_result->getData().resize(arguments[0].column->size());
+        col_result->getData().resize(input_rows_count);
         auto & result_array = col_result->getData();
 
         if (col_str1 && col_str2_const)
-            executeStringConst<false>(*col_str1, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, result_array);
+            executeStringConst<false>(*col_str1, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1_const && col_str2)
-            executeStringConst<true>(*col_str2, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, result_array);
+            executeStringConst<true>(*col_str2, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1 && col_str2)
-            executeStringString(*col_str1, str1_offset, *col_str2, str2_offset, num_bytes, result_array);
+            executeStringString(*col_str1, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && fixed_str2_col)
-            executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, result_array);
+            executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && col_str2)
-            executeFixedStringString<false>(*fixed_str1_col, str1_offset, *col_str2, str2_offset, num_bytes, result_array);
+            executeFixedStringString<false>(*fixed_str1_col, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1 && fixed_str2_col)
-            executeFixedStringString<true>(*fixed_str2_col, str2_offset, *col_str1, str1_offset, num_bytes, result_array);
+            executeFixedStringString<true>(*fixed_str2_col, str2_offset, *col_str1, str1_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && col_str2_const)
-            executeFixedStringConst<false>(*fixed_str1_col, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, result_array);
+            executeFixedStringConst<false>(*fixed_str1_col, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str2_col && col_str1_const)
-            executeFixedStringConst<true>(*fixed_str2_col, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, result_array);
+            executeFixedStringConst<true>(*fixed_str2_col, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, input_rows_count, result_array);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -166,7 +165,7 @@ private:
 
     template <bool reverse>
     static bool isOverflowComparison(
-        size_t str1_length, size_t str1_offset, size_t str2_length, size_t str2_offset, PaddedPODArray<Int8> & result_array, size_t rows)
+        size_t str1_length, size_t str1_offset, size_t str2_length, size_t str2_offset, PaddedPODArray<Int8> & result_array, size_t input_rows_count)
     {
         bool is_overflow = false;
         Int8 res = 0;
@@ -191,7 +190,7 @@ private:
                 res = 1;
             is_overflow = true;
         }
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
             result_array[i] = res;
         return is_overflow;
     }
@@ -203,13 +202,14 @@ private:
         const String & str2,
         size_t str2_offset,
         size_t num_bytes,
+        size_t input_rows_count,
         PaddedPODArray<Int8> & result_array) const
     {
         const auto & str1_data = col_str1.getChars();
         const auto & str1_offsets = col_str1.getOffsets();
         size_t str1_data_offset = 0;
         auto str2_length = str2_offset >= str2.size() ? 0 : std::min(num_bytes, str2.size() - str2_offset);
-        for (size_t i = 0, size = col_str1.size(); i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t str1_total_len = str1_offsets[i] - str1_data_offset - 1;
             if (!isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result_array[i]))
@@ -233,18 +233,18 @@ private:
         const String & str2,
         size_t str2_offset,
         size_t num_bytes,
+        size_t input_rows_count,
         PaddedPODArray<Int8> & result_array) const
     {
-        size_t rows = col_str1.size();
         size_t str1_total_len = col_str1.getN();
-        if (isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result_array, rows))
+        if (isOverflowComparison<reverse>(str1_total_len, str1_offset, str2.size(), str2_offset, result_array, input_rows_count))
             return;
 
         const auto & str1_data = col_str1.getChars();
         size_t str1_data_offset = str1_offset;
         auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
         auto str2_length = std::min(num_bytes, str2.size() - str2_offset);
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             result_array[i] = normalComparison<reverse>(str1, str1_length, str2.data() + str2_offset, str2_length);
@@ -259,6 +259,7 @@ private:
         const ColumnString & col_str2,
         size_t str2_offset,
         size_t num_bytes,
+        size_t input_rows_count,
         PaddedPODArray<Int8> & result_array) const
     {
         auto str1_total_len = col_str1.getN();
@@ -267,7 +268,7 @@ private:
         const auto & str2_offsets = col_str2.getOffsets();
         size_t str1_data_offset = str1_offset;
         size_t str2_data_offset = 0;
-        for (size_t i = 0, rows = col_str1.size(); i < rows; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             auto str1_length = std::min(num_bytes, str1_total_len - str1_offset);
@@ -289,6 +290,7 @@ private:
         const ColumnString & col_str2,
         size_t str2_offset,
         size_t num_bytes,
+        size_t input_rows_count,
         PaddedPODArray<Int8> & result_array) const
     {
         const auto & str1_data = col_str1.getChars();
@@ -297,7 +299,7 @@ private:
         const auto & str2_offsets = col_str2.getOffsets();
         ColumnString::Offset str1_data_offset = 0;
         ColumnString::Offset str2_data_offset = 0;
-        for (size_t i = 0, rows = col_str1.size(); i < rows; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset + str1_offset);
             size_t str1_total_len = str1_offsets[i] - str1_data_offset - 1;
@@ -322,12 +324,12 @@ private:
         const ColumnFixedString & col_str2,
         size_t str2_offset,
         size_t num_bytes,
+        size_t input_rows_count,
         PaddedPODArray<Int8> & result_array) const
     {
-        size_t rows = col_str1.size();
         size_t str1_total_len = col_str1.getN();
         size_t str2_total_len = col_str2.getN();
-        if (isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result_array, rows))
+        if (isOverflowComparison<false>(str1_total_len, str1_offset, str2_total_len, str2_offset, result_array, input_rows_count))
             return;
 
         const auto & str1_data = col_str1.getChars();
@@ -336,7 +338,7 @@ private:
         auto str2_length = std::min(num_bytes, str2_total_len - str2_offset);
         size_t str1_data_offset = str1_offset;
         size_t str2_data_offset = str2_offset;
-        for (size_t i = 0; i < rows; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto * str1 = reinterpret_cast<const char *>(str1_data.data() + str1_data_offset);
             const auto * str2 = reinterpret_cast<const char *>(str2_data.data() + str2_data_offset);
