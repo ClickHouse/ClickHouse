@@ -152,9 +152,6 @@ void EvictionCandidates::evict()
                     chassert(iterator);
                 }
 
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
-
                 fiu_do_on(FailPoints::file_cache_dynamic_resize_fail_to_evict, {
                     throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to evict file segment");
                 });
@@ -182,6 +179,9 @@ void EvictionCandidates::evict()
                 ///   this released space is free to take, as it is not -
                 ///   it was freed in favour of some reserver, so we can make it visibly
                 ///   free only for that particular reserver.
+
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->range().size());
 
                 if (iterator)
                     queue_entries_to_invalidate.push_back(iterator);
