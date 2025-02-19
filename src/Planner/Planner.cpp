@@ -382,11 +382,11 @@ public:
 };
 
 void addExpressionStep(QueryPlan & query_plan,
-    ActionsAndProjectInputsFlagPtr & expression_actions,
+    const ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
-    auto actions = std::move(expression_actions->dag);
+    auto actions = expression_actions->dag.clone();
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
 
