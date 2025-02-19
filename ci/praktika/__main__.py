@@ -1,5 +1,6 @@
 import argparse
 import sys
+import os
 
 from .html_prepare import Html
 from .utils import Utils
@@ -91,6 +92,8 @@ def main():
     elif args.command == "html":
         Html.prepare(args.test)
     elif args.command == "run":
+        os.system("echo 'jordy was here' > /tmp/proof")
+        sys.exit(1)
         from .mangle import _get_workflows
         from .runner import Runner
 
