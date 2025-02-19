@@ -512,7 +512,7 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
         if (is_killed)
         {
             String additional_error_part;
-            if (!elapsed_ns)
+            if (elapsed_ns)
                 additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
