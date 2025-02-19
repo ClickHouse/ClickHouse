@@ -82,10 +82,10 @@ public:
 
         bool has_five_args = arguments.size() == 5;
 
-        auto str1_offset = has_five_args ? arguments[2].column->getUInt(0) : 0;
-        auto str2_offset = has_five_args ? arguments[3].column->getUInt(0) : 0;
+        size_t str1_offset = has_five_args ? arguments[2].column->getUInt(0) : 0;
+        size_t str2_offset = has_five_args ? arguments[3].column->getUInt(0) : 0;
 
-        auto num_bytes = has_five_args ? arguments[4].column->getUInt(0) : std::numeric_limits<size_t>::max();
+        size_t num_bytes = has_five_args ? arguments[4].column->getUInt(0) : std::numeric_limits<size_t>::max();
         if (num_bytes == 0)
         {
             col_result->insertMany(0, arguments[0].column->size());
