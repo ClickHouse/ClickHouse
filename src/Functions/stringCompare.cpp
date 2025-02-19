@@ -65,7 +65,8 @@ public:
     {
         chassert(arguments[0].column->size() == input_rows_count);
         auto col_result = ColumnInt8::create();
-        if (!input_rows_count)
+
+        if (input_rows_count == 0)
             return std::move(col_result);
 
         auto prepare_string_args
