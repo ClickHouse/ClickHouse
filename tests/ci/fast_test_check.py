@@ -92,6 +92,11 @@ def main():
 
     repo_path = Path(REPO_COPY)
 
+    # i.e. "ClickHouse/ci/tmp"
+    #
+    # Note, it is not the same as "TEMP_PATH", since we want to upload binaries
+    # to the "clickhouse-builds" bucket from the Runner::_post_run, not the
+    # "S3_REPORT_BUCKET_NAME" via HtmlRunnerHooks::post_run
     build_output_temp_path = repo_path / "ci" / "tmp"
     build_output_temp_path.mkdir(parents=True, exist_ok=True)
     build_output_path = build_output_temp_path / "build"
