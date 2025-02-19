@@ -192,11 +192,6 @@ static void mergeAttributes(Element & config_element, Element & with_element)
 
 #if USE_SSL
 
-bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name)
-{
-    return hasNodeWithNameAndChildNodeWithAttribute(loaded_config.preprocessed_xml.get(), node_name, attribute_name);
-}
-
 std::string ConfigProcessor::encryptValue(const std::string & codec_name, const std::string & value)
 {
     EncryptionMethod encryption_method = toEncryptionMethod(codec_name);
@@ -290,6 +285,11 @@ bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node *
             return true;
     }
     return false;
+}
+
+bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name)
+{
+    return hasNodeWithNameAndChildNodeWithAttribute(loaded_config.preprocessed_xml.get(), node_name, attribute_name);
 }
 
 #endif
@@ -899,7 +899,11 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
     return xml_tree_copy;
 }
 
-void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir, bool decrypt_values)
+void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir
+#if USE_SSL
+    , bool skip_zk_encryption_keys
+#endif
+)
 {
     try
     {
@@ -957,9 +961,32 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
     }
 
 #if USE_SSL
-    if (decrypt_values)
+    /* If skip_zk_encryption_keys == true, load encryption codecs and decrypt config's encrypted elements unless encryption keys are stored in ZK,
+    since ZK is not available at this stage and loading keys from ZK causes an exception
+    Config example we process here:
+    <clickhouse>
+      <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+      </encryption_codecs>
+      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
+    </clickhouse>
+
+    Config example we do not process here:
+    <clickhouse>
+      <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/key128"/>
+        </aes_128_gcm_siv>
+      </encryption_codecs>
+      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
+    </clickhouse>
+    */
+    constexpr auto encryption_codecs_key = "encryption_codecs";
+    if (!skip_zk_encryption_keys || !hasNodeWithNameAndChildNodeWithAttribute(loaded_config, encryption_codecs_key, "from_zk"))
     {
-        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, encryption_codecs_key);
         decryptEncryptedElements(loaded_config);
     }
 #endif

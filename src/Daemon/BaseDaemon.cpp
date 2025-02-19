@@ -265,33 +265,11 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
 #if USE_SSL
-    /* Load encryption codecs and decrypt config's encrypted elements, if encryption keys are not stored in ZK, since ZK is not available at this stage
-    Config example we process here:
-    <clickhouse>
-      <encryption_codecs>
-        <aes_128_gcm_siv>
-            <key_hex>00112233445566778899aabbccddeeff</key_hex>
-        </aes_128_gcm_siv>
-      </encryption_codecs>
-      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
-    </clickhouse>
-
-    Config example we do not process here (the keys are loaded and elements are decrypted later on in Server::main()):
-    <clickhouse>
-      <encryption_codecs>
-        <aes_128_gcm_siv>
-            <key_hex from_zk="/clickhouse/key128"/>
-        </aes_128_gcm_siv>
-      </encryption_codecs>
-      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
-    </clickhouse>
-    */
-    auto has_encryption_codec_nodes_with_from_zk_attribute = ConfigProcessor(config_path).hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "encryption_codecs", "from_zk");
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "", !has_encryption_codec_nodes_with_from_zk_attribute);
-#else // !USE_SSL
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
+    , true // skip loading encryption keys from ZK
 #endif
+    );
 
     /// Write core dump on crash.
     {
