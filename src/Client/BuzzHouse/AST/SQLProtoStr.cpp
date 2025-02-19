@@ -659,6 +659,12 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_MINUS:
             ret += " - ";
             break;
+        case BINOP_DIV:
+            ret += " DIV ";
+            break;
+        case BINOP_MOD:
+            ret += " MOD ";
+            break;
     }
 }
 
