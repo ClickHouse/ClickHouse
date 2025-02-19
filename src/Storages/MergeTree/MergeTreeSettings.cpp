@@ -203,6 +203,7 @@ namespace ErrorCodes
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, "Enables requesting FS cache hints from in-memory cache on other replicas. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, "If enabled all the replicas try to fetch part in memory data (like primary key, partition info and so on) from other replicas where it already exists.", 0) \
     DECLARE(Bool, allow_reduce_blocking_parts_task, true, "Background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", 0) \
+    DECLARE(Seconds, refresh_parts_interval, 0, "If it is greater than zero - refresh the list of data parts from the underlying filesystem to check if the data was updated under the hood. It can be set only if the table is located on readonly disks (which means that this is a readonly replica, while data is being written by another replica).", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \

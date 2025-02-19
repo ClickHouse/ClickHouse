@@ -246,6 +246,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
+    extern const MergeTreeSettingsSeconds refresh_parts_interval;
 }
 
 namespace ServerSetting
@@ -1962,8 +1963,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     num_parts += active_parts.size();
 
     auto part_lock = lockParts();
-    LOG_TEST(log, "loadDataParts: clearing data_parts_indexes (had {} parts)", data_parts_indexes.size());
-    data_parts_indexes.clear();
 
     MutableDataPartsVector broken_parts_to_detach;
     MutableDataPartsVector duplicate_parts_to_remove;
@@ -2136,6 +2135,24 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, data_parts_indexes.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
     data_parts_loading_finished = true;
+
+    auto refresh_parts_interval = (*settings)[MergeTreeSetting::refresh_parts_interval].totalMilliseconds();
+    if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
+    {
+        refresh_parts_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeData::refreshDataParts",
+            [this, refresh_parts_interval] { refreshDataParts(refresh_parts_interval); });
+
+        refresh_parts_task->scheduleAfter(refresh_parts_interval);
+    }
+}
+
+void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
+{
+    for (auto & disk : getStoragePolicy()->getDisks())
+        disk->refresh();
+    loadDataParts(false, {});
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 void MergeTreeData::loadUnexpectedDataParts()

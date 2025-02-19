@@ -507,6 +507,10 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
+    /// Check the set of data parts on disk and load if needed, assuming the data on disk can change under the hood.
+    /// This method allows read-only replicas of tables on a shared storage.
+    void refreshDataParts(UInt64 interval_milliseconds);
+
     /// Returns a pointer to primary index cache if it is enabled.
     PrimaryIndexCachePtr getPrimaryIndexCache() const;
     /// Returns a pointer to primary index cache if it is enabled and required to be prewarmed.
@@ -1687,6 +1691,8 @@ protected:
     void loadOutdatedDataParts(bool is_async);
     void startOutdatedAndUnexpectedDataPartsLoadingTask();
     void stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+    BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
