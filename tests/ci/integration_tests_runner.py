@@ -648,7 +648,10 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
-            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
+            # Run flaky tests in a random order to increase chance to catch an error
+            repeat_cmd = (
+                f" --count {repeat_count} --random-order " if repeat_count > 0 else ""
+            )
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
