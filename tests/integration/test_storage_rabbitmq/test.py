@@ -3761,46 +3761,56 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
     )
 
-    instance3.replace_in_config(
-        "/etc/clickhouse-server/config.d/mergetree.xml",
-        "parts_to_throw_insert>0",
-        "parts_to_throw_insert>10",
-    )
-    instance3.restart_clickhouse()
-
-    count = [0]
-
-    def on_consume(channel, method, properties, body):
-        channel.basic_publish(exchange=exchange, routing_key="", body=body)
-        count[0] += 1
-        if count[0] == num_rows:
-            channel.stop_consuming()
-
-    channel.basic_consume(queue_name, on_consume)
-    channel.start_consuming()
-
-    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    count = 0
-    while time.monotonic() < deadline:
-        count = int(instance3.query("SELECT count() FROM test.view"))
-        if count == num_rows:
-            break
-        time.sleep(0.05)
-    else:
-        pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count did not match {num_rows}."
+    try:
+        instance3.replace_in_config(
+            "/etc/clickhouse-server/config.d/mergetree.xml",
+            "parts_to_throw_insert>0",
+            "parts_to_throw_insert>10",
         )
+        instance3.restart_clickhouse()
 
-    assert count == num_rows
+        count = [0]
 
-    instance3.query(
-        f"""
-        DROP TABLE test.consumer;
-        DROP TABLE test.view;
-        DROP TABLE test.{table_name};
-    """
-    )
-    connection.close()
+        def on_consume(channel, method, properties, body):
+            channel.basic_publish(exchange=exchange, routing_key="", body=body)
+            count[0] += 1
+            if count[0] == num_rows:
+                channel.stop_consuming()
+
+        channel.basic_consume(queue_name, on_consume)
+        channel.start_consuming()
+
+        deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+        count = 0
+        while time.monotonic() < deadline:
+            count = int(instance3.query("SELECT count() FROM test.view"))
+            if count == num_rows:
+                break
+            time.sleep(0.05)
+        else:
+            pytest.fail(
+                f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The count did not match {num_rows}."
+            )
+
+        assert count == num_rows
+
+        instance3.query(
+            f"""
+            DROP TABLE test.consumer;
+            DROP TABLE test.view;
+            DROP TABLE test.{table_name};
+        """
+        )
+        connection.close()
+    finally:
+        # Restore the original configuration so that other tests (this one included if executed
+        # again) behave as expected by the initial configuration
+        instance3.replace_in_config(
+            "/etc/clickhouse-server/config.d/mergetree.xml",
+            "parts_to_throw_insert>10",
+            "parts_to_throw_insert>0",
+        )
+        instance3.restart_clickhouse()
 
 
 def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
