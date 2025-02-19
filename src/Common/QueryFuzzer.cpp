@@ -977,32 +977,12 @@ ASTPtr QueryFuzzer::fuzzLiteralUnderExpressionList(ASTPtr child)
 {
     const auto * l = child->as<ASTLiteral>();
     chassert(l);
-
-    if (fuzz_rand() % 200 == 0)
-    {
-        /// Return a NULL literal
-        return std::make_shared<ASTLiteral>(Field());
-    }
-    if (fuzz_rand() % 200 == 0)
-    {
-        /// Return a * literal
-        return std::make_shared<ASTAsterisk>();
-    }
-
     const auto type = l->value.getType();
-    if (type == Field::Types::Which::String)
+    if (type == Field::Types::Which::String && fuzz_rand() % 7 == 0)
     {
-        if (fuzz_rand() % 7 == 0)
-        {
-            const String value = l->value.safeGet<String>();
-            child = makeASTFunction(
-                "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
-        }
-        else if (fuzz_rand() % 200 == 0)
-        {
-            /// Return an empty string
-            child = std::make_shared<ASTLiteral>(Field(""));
-        }
+        const String value = l->value.safeGet<String>();
+        child = makeASTFunction(
+            "toFixedString", std::make_shared<ASTLiteral>(value), std::make_shared<ASTLiteral>(static_cast<UInt64>(value.size())));
     }
     else if (type == Field::Types::Which::UInt64 && fuzz_rand() % 7 == 0)
     {
@@ -1088,7 +1068,12 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
     }
     for (auto & child : expr_list.children)
     {
-        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
+        if (fuzz_rand() % 200 == 0)
+        {
+            /// Return a * literal
+            child = std::make_shared<ASTAsterisk>();
+        }
+        else if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
         {
             if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
