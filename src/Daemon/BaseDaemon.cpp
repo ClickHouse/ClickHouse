@@ -266,8 +266,6 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
-
 #if USE_SSL
     /* Load encryption codecs and decrypt config's encrypted elements, if encryption keys are not stored in ZK, since ZK is not available at this stage
     Config example we process here:
@@ -290,18 +288,11 @@ void BaseDaemon::initialize(Application & self)
       <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
     </clickhouse>
     */
-    bool has_encryption_codec_nodes_with_from_zk_attribute = std::ranges::find_if(loaded_config.nodes_with_from_zk_attribute,
-        [](const auto& node_name)
-        {
-            return node_name.find(".encryption_codecs.") != std::string::npos;
-        }) != loaded_config.nodes_with_from_zk_attribute.end();
-    if (!has_encryption_codec_nodes_with_from_zk_attribute)
-    {
-        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
-        ConfigProcessor(config_path).decryptEncryptedElements(loaded_config);
-    }
+    auto has_encryption_codec_nodes_with_from_zk_attribute = ConfigProcessor(config_path).hasNodeWithNameAndChildNodeWithAttribute(loaded_config, "encryption_codecs", "from_zk");
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "", !has_encryption_codec_nodes_with_from_zk_attribute);
+#else // !USE_SSL
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 #endif
-
     /// Write core dump on crash.
     {
         struct rlimit rlim;

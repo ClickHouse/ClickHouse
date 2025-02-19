@@ -69,7 +69,7 @@ generates merged configuration file:
 </clickhouse>
 ```
 
-### Using from_env and from_zk
+### Using from_env and from_zk {#from_env_zk}
 
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
@@ -200,7 +200,7 @@ Example:
 </clickhouse>
 ```
 
-Encryption keys may also be loaded through environment or read from a Zookeeper key:
+The attributes [from_env](#from_env_zk) and [from_zk](#from_env_zk) can also be applied to ```encryption_codecs```:
 ```xml
 <clickhouse>
 
@@ -235,7 +235,7 @@ Encryption keys may also be loaded through environment or read from a Zookeeper 
 </clickhouse>
 ```
 
-Encryption keys can be defined in config.xml only, and encrypted values may reside in any config file.
+Encryption keys and encrypted values can be defined in either config file.
 
 Example `config.xml`:
 

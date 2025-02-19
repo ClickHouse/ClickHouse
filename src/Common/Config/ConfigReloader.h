@@ -17,12 +17,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-enum class LoadEncryptionCodecs
-{
-    Yes,
-    No
-};
-
 /** Every two seconds checks configuration files for update.
   * If configuration is changed, then config will be reloaded by ConfigProcessor
   *  and the reloaded config will be applied via Updater functor.
@@ -41,8 +35,7 @@ public:
         const std::string & preprocessed_dir,
         zkutil::ZooKeeperNodeCache && zk_node_cache,
         const zkutil::EventPtr & zk_changed_event,
-        Updater && updater,
-        LoadEncryptionCodecs load_encryption_codecs_ = LoadEncryptionCodecs::Yes);
+        Updater && updater);
 
     ~ConfigReloader();
 
@@ -85,8 +78,6 @@ private:
     zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
-
-    LoadEncryptionCodecs load_encryption_codecs;
 
     std::atomic<bool> quit{false};
     ThreadFromGlobalPool thread;

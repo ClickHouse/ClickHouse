@@ -64,8 +64,7 @@ public:
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
         const zkutil::EventPtr & zk_changed_event = nullptr,
-        bool is_config_changed = true,
-        std::unordered_set<std::string> * nodes_with_from_zk_attribute = nullptr);
+        bool is_config_changed = true);
 
     XMLDocumentPtr parseConfig(const std::string & config_path);
 
@@ -85,7 +84,6 @@ public:
         bool loaded_from_preprocessed;
         XMLDocumentPtr preprocessed_xml;
         std::string config_path;
-        std::unordered_set<std::string> nodes_with_from_zk_attribute;
     };
 
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
@@ -102,8 +100,9 @@ public:
         bool is_config_changed = true);
 
     /// Save preprocessed config to specified directory.
+    /// Optionally load encryption keys and decrypt values in config
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
-    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
+    void savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir, bool decrypt_values = true);
 
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
@@ -116,8 +115,8 @@ public:
     static bool isPreprocessedFile(const std::string & config_path);
 
 #if USE_SSL
-    /// Decrypt elements in config with specified encryption attributes and previously loaded encryption keys
-    void decryptEncryptedElements(LoadedConfig & loaded_config);
+    /// Determine if there is a node in loaded_config with a given node_name which has a descendant with a given attribute
+    static bool hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name);
 
     /// Encrypt text value
     static std::string encryptValue(const std::string & codec_name, const std::string & value);
@@ -145,7 +144,17 @@ private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
 #if USE_SSL
-    void decryptRecursive(Poco::XML::Node * config_root);
+
+    /// Decrypt elements in XML tree recursively starting with config_root
+    static void decryptRecursive(Poco::XML::Node * config_root);
+    /// Decrypt elements in config with specified encryption attributes and previously loaded encryption keys
+    static void decryptEncryptedElements(LoadedConfig & loaded_config);
+
+    /// Determine if there is a node starting inside config_root which has a descendant with a given attribute
+    static bool hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name);
+    /// Determine if there is a node starting inside config_root with a given node_name which has a descendant with a given attribute
+    static bool hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name);
+
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);
@@ -163,9 +172,7 @@ private:
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             const zkutil::EventPtr & zk_changed_event,
-            std::unordered_set<std::string> & contributing_zk_paths,
-            std::string & current_path,
-            std::unordered_set<std::string> * nodes_with_from_zk_attribute);
+            std::unordered_set<std::string> & contributing_zk_paths);
 };
 
 }

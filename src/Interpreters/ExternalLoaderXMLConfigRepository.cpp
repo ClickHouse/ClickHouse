@@ -90,9 +90,6 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigReposito
     ConfigProcessor config_processor{config_file_path};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
     config_processor.savePreprocessedConfig(preprocessed, app_path);
-#if USE_SSL
-    config_processor.decryptEncryptedElements(preprocessed);
-#endif
     return preprocessed.configuration;
 }
 
