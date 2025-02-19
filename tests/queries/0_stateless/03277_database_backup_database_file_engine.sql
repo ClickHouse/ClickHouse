@@ -16,12 +16,12 @@ SELECT '--';
 
 SELECT (id % 10) AS key, count() FROM 03277_test_database.test_table_2 GROUP BY key ORDER BY key;
 
-BACKUP DATABASE 03277_test_database TO File('03277_test_database.zip') FORMAT Null;
+BACKUP DATABASE 03277_test_database TO File('03277_test_database') FORMAT Null;
 
 SELECT '--';
 
 DROP DATABASE IF EXISTS 03277_test_database_backup_database;
-CREATE DATABASE 03277_test_database_backup_database ENGINE = Backup('03277_test_database', File('03277_test_database.zip'));
+CREATE DATABASE 03277_test_database_backup_database ENGINE = Backup('03277_test_database', File('03277_test_database'));
 
 SELECT name, total_rows FROM system.tables WHERE database = '03277_test_database_backup_database' ORDER BY name;
 

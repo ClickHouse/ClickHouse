@@ -36,7 +36,6 @@ def cleanup_backup_files(instance):
     "backup_destination",
     [
         "File('test_database_backup_file')",
-        "File('test_database_backup_file_archive.zip')",
         "Disk('backup_disk_local', 'test_database_backup')",
         "Disk('backup_disk_s3_plain', 'test_database_backup')",
         "Disk('backup_disk_object_storage_local_plain', 'test_database_backup')",
@@ -107,7 +106,6 @@ def test_database_backup_database(backup_destination):
     "backup_destination",
     [
         "File('test_table_backup_file')",
-        "File('test_table_backup_file_archive.zip')",
         "Disk('backup_disk_local', 'test_table_backup')",
         "Disk('backup_disk_s3_plain', 'test_table_backup')",
         "Disk('backup_disk_object_storage_local_plain', 'test_table_backup')",
