@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
-#include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
 namespace DB

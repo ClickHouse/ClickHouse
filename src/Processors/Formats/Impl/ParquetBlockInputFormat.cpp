@@ -585,7 +585,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
 {
     if (max_decoding_threads > 1)
         pool = std::make_unique<ThreadPool>(CurrentMetrics::ParquetDecoderThreads, CurrentMetrics::ParquetDecoderThreadsActive, CurrentMetrics::ParquetDecoderThreadsScheduled, max_decoding_threads);
-    if (supportPrefetch())
+    if (supportPrefetch() || format_settings.parquet.use_native_reader_with_filter_push_down)
         io_pool = std::make_shared<ThreadPool>(CurrentMetrics::ParquetDecoderIOThreads, CurrentMetrics::ParquetDecoderIOThreadsActive, CurrentMetrics::ParquetDecoderIOThreadsScheduled, max_io_threads);
 }
 
@@ -764,7 +764,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (format_settings.parquet.use_native_reader_with_filter_push_down)
     {
         SeekableReadBuffer * seekable_in = nullptr;
-        if (auto * buffer_reader = dynamic_cast<arrow::io::BufferReader*>(arrow_file.get()))
+        if (auto * buffer_reader = dynamic_cast<arrow::io::BufferReader *>(arrow_file.get()))
         {
             memory_buffer_reader = std::make_shared<ReadBufferFromMemory>(buffer_reader->buffer()->data(), buffer_reader->buffer()->size());
             seekable_in = memory_buffer_reader.get();
@@ -776,17 +776,13 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                 throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "native ParquetReader only supports SeekableReadBuffer");
         }
         std::vector<int> row_groups_indices;
+        ParquetReader::Settings settings{
+            .arrow_properties = parquet::ArrowReaderProperties(),
+            .reader_properties = parquet::ReaderProperties(ArrowMemoryPool::instance()),
+            .format_settings = format_settings,
+            .min_bytes_for_seek = min_bytes_for_seek};
         new_native_reader = std::make_shared<ParquetReader>(
-            getPort().getHeader(),
-            *seekable_in,
-            parquet::ArrowReaderProperties{},
-            parquet::ReaderProperties(ArrowMemoryPool::instance()),
-            arrow_file,
-            format_settings,
-            row_groups_indices,
-            metadata,
-            io_pool
-        );
+            getPort().getHeader(), *seekable_in, arrow_file, settings, row_groups_indices, metadata, io_pool);
         new_native_reader->setSourceArrowFile(arrow_file);
         if (filter.has_value())
             pushFilterToParquetReader(filter.value(), *new_native_reader);

@@ -635,7 +635,7 @@ class BytesValuesFilter : public ColumnFilter
 
 public:
     BytesValuesFilter(const std::vector<String> & values_, bool null_allowed_)
-        : ColumnFilter(BytesValues, null_allowed_), values(values_.begin(), values_.end())
+        : ColumnFilter(BytesValues, null_allowed_), values_storage(values_), values(values_storage.begin(), values_storage.end())
     {
         std::ranges::for_each(values_, [&](const String & value) { lengths.insert(value.size()); });
         lower = *std::min_element(values_.begin(), values_.end());
@@ -646,7 +646,8 @@ public:
         : ColumnFilter(ColumnFilterKind::BytesValues, null_allowed_)
         , lower(other.lower)
         , upper(other.upper)
-        , values(other.values)
+        , values_storage(other.values_storage)
+        , values(values_storage.begin(), values_storage.end())
         , lengths(other.lengths)
     {
     }
@@ -666,6 +667,7 @@ public:
 private:
     String lower;
     String upper;
+    std::vector<String> values_storage;
     std::unordered_set<std::string_view> values;
     std::unordered_set<size_t> lengths;
 };

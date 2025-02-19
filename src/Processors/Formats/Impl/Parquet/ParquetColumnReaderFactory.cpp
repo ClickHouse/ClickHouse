@@ -957,7 +957,6 @@ ColumnReaderBuilder::buildReader(parquet::schema::NodePtr node, const DataTypePt
                   .build();
         if (context.row_group_index_reader)
         {
-            // TODO set index to nested type
             if (column_idx >= 0)
             {
                 leaf_reader->setColumnIndex(context.row_group_index_reader->GetColumnIndex(column_idx));

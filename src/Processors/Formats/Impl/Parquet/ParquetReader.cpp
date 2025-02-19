@@ -49,28 +49,25 @@ static std::unique_ptr<parquet::ParquetFileReader> createFileReader(
 ParquetReader::ParquetReader(
     Block header_,
     SeekableReadBuffer & file_,
-    parquet::ArrowReaderProperties arrow_properties_,
-    parquet::ReaderProperties reader_properties_,
     std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file_,
-    const FormatSettings & format_settings,
+    const Settings & settings_,
     std::vector<int> row_groups_indices_,
     std::shared_ptr<parquet::FileMetaData> metadata,
     std::shared_ptr<ThreadPool> io_pool_)
-    : file_reader(metadata ? nullptr : createFileReader(arrow_file_, reader_properties_, metadata))
+    : file_reader(metadata ? nullptr : createFileReader(arrow_file_, settings_.reader_properties, metadata))
     , file(file_)
-    , arrow_properties(arrow_properties_)
     , header(std::move(header_))
-    , max_block_size(format_settings.parquet.max_block_size)
-    , properties(reader_properties_)
+    , max_block_size(settings_.format_settings.parquet.max_block_size)
     , row_groups_indices(std::move(row_groups_indices_))
     , meta_data(metadata ? metadata : file_reader->metadata())
     , io_pool(io_pool_)
+    , settings(settings_)
 {
     if (row_groups_indices.empty())
         for (int i = 0; i < meta_data->num_row_groups(); i++)
             row_groups_indices.push_back(i);
     const auto * root = meta_data->schema()->group_node();
-    case_insensitive = format_settings.parquet.case_insensitive_column_matching;
+    case_insensitive = settings.format_settings.parquet.case_insensitive_column_matching;
     for (int i = 0; i < root->field_count(); ++i)
     {
         const auto & node = root->field(i);
@@ -78,15 +75,14 @@ ParquetReader::ParquetReader(
         parquet_columns.emplace(name, node);
     }
     chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
-    //    if (!io_pool)
-    //    {
-    // TODO add settings for io pool
-    io_pool = std::make_shared<ThreadPool>(
-        CurrentMetrics::ParquetDecoderIOThreads,
-        CurrentMetrics::ParquetDecoderIOThreadsActive,
-        CurrentMetrics::ParquetDecoderIOThreadsScheduled,
-        24 * 4);
-    //    }
+    if (!io_pool)
+    {
+        io_pool = std::make_shared<ThreadPool>(
+            CurrentMetrics::ParquetDecoderIOThreads,
+            CurrentMetrics::ParquetDecoderIOThreadsActive,
+            CurrentMetrics::ParquetDecoderIOThreadsScheduled,
+            1);
+    }
 }
 
 Block ParquetReader::read()
@@ -128,8 +124,8 @@ std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader
     std::vector<RowGroupPrefetchPtr> row_group_condition_prefetches;
     for (auto row_group_idx : row_group_indices_)
     {
-        RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
-        RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, arrow_properties, *io_pool);
+        RowGroupPrefetchPtr prefetch = std::make_shared<RowGroupPrefetch>(file, file_mutex, settings.arrow_properties, *io_pool);
+        RowGroupPrefetchPtr condition_prefetch = std::make_unique<RowGroupPrefetch>(file, file_mutex, settings.arrow_properties, *io_pool);
         auto row_group_meta = meta_data->RowGroup(row_group_idx);
         row_group_prefetches.push_back(std::move(prefetch));
         row_group_condition_prefetches.push_back(std::move(condition_prefetch));

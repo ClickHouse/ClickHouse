@@ -70,7 +70,6 @@ parquet::EncodedStatistics ExtractStatsFromHeader(const H & header)
     // Use the new V2 min-max statistics over the former one if it is filled
     if (stats.__isset.max_value || stats.__isset.min_value)
     {
-        // TODO: check if the column_order is TYPE_DEFINED_ORDER.
         if (stats.__isset.max_value)
         {
             page_statistics.set_max(stats.max_value);
@@ -82,8 +81,6 @@ parquet::EncodedStatistics ExtractStatsFromHeader(const H & header)
     }
     else if (stats.__isset.max || stats.__isset.min)
     {
-        // TODO: check created_by to see if it is corrupted for some types.
-        // TODO: check if the sort_order is SIGNED.
         if (stats.__isset.max)
         {
             page_statistics.set_max(stats.max);

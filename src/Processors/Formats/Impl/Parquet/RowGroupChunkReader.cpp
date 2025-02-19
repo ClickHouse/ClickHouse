@@ -43,30 +43,33 @@ RowGroupChunkReader::RowGroupChunkReader(
     builder = std::make_unique<ColumnReaderBuilder>(
         parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
 
-    auto page_index_reader
-        = parquet::PageIndexReader::Make(parquetReader->arrow_file.get(), parquetReader->meta_data, parquetReader->properties);
-    if (page_index_reader)
+    if (parquet_reader->hasFilter())
     {
-        Int32 rg_idx = static_cast<int>(row_group_idx);
-//        std::vector<Int32> column_indices;
-//        for (const auto & item : parquet_reader->parquet_columns)
-//        {
-//            int column_idx = parquet_reader->metaData().schema()->ColumnIndex(*parquet_reader->parquet_columns.at(item.first));
-//            /// nested column node will get -1
-//            if (column_idx < 0) continue;
-//            column_indices.push_back(column_idx);
-//        }
-//        static const parquet::PageIndexSelection ALL_INDEX = {true, true};
-//        page_index_reader->WillNeed({rg_idx}, column_indices, ALL_INDEX);
-        row_group_index_reader = page_index_reader->RowGroup(rg_idx);
-        context.row_group_index_reader = row_group_index_reader;
+        auto page_index_reader = parquet::PageIndexReader::Make(
+            parquetReader->arrow_file.get(), parquet_reader->meta_data, parquet_reader->settings.reader_properties);
+        if (page_index_reader)
+        {
+            Int32 rg_idx = static_cast<int>(row_group_idx);
+            //TODO need handle group node
+            //        std::vector<Int32> column_indices;
+            //        for (const auto & item : parquet_reader->parquet_columns)
+            //        {
+            //            int column_idx = parquet_reader->metaData().schema()->ColumnIndex(*parquet_reader->parquet_columns.at(item.first));
+            //            /// nested column node will get -1
+            //            if (column_idx < 0) continue;
+            //            column_indices.push_back(column_idx);
+            //        }
+            //        static const parquet::PageIndexSelection ALL_INDEX = {true, true};
+            //        page_index_reader->WillNeed({rg_idx}, column_indices, ALL_INDEX);
+            row_group_index_reader = page_index_reader->RowGroup(rg_idx);
+            context.row_group_index_reader = row_group_index_reader;
+        }
     }
 
     for (const auto & col_with_name : parquet_reader->header)
     {
         const auto & node = parquetReader->getParquetColumn(col_with_name.name);
         SelectiveColumnReaderPtr column_reader;
-        auto filter = filters.contains(col_with_name.name) ? filters.at(col_with_name.name) : nullptr;
         column_reader = builder->buildReader(node, col_with_name.type, 0, 0);
         column_readers.push_back(column_reader);
         reader_data_types.push_back(column_reader->getResultType());
@@ -105,9 +108,8 @@ RowGroupChunkReader::RowGroupChunkReader(
             filter_columns.push_back(name);
     }
     // try merge read condition columns and result columns;
-    // TODO use a configuration
     if (prefetch_conditions && prefetch_conditions.get() != prefetch.get()
-        && prefetch_conditions->totalSize() + prefetch->totalSize() < 4_MiB)
+        && prefetch_conditions->totalSize() + prefetch->totalSize() < parquet_reader->settings.format_settings.parquet.local_read_min_bytes_for_seek)
     {
         bool merged = prefetch_conditions->merge(prefetch);
         if (merged)
