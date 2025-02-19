@@ -28,9 +28,9 @@ std::unique_ptr<HTTPRequestHandler> LibraryBridgeHandlerFactory::createRequestHa
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
     {
         if (uri.getPath() == "/extdict_ping")
-            return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(keep_alive_timeout, getContext(), libraries_paths);
+            return std::make_unique<ExternalDictionaryLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
         else if (uri.getPath() == "/catboost_ping")
-            return std::make_unique<CatBoostLibraryBridgeExistsHandler>(keep_alive_timeout, getContext(), libraries_paths);
+            return std::make_unique<CatBoostLibraryBridgeExistsHandler>(keep_alive_timeout, getContext());
     }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
