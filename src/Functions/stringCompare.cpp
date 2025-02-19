@@ -96,21 +96,21 @@ public:
         auto & result_array = col_result->getData();
 
         if (col_str1 && col_str2)
-            executeStringString(*col_str1, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
+            executeStringString(*col_str1, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1 && col_str2_const)
-            executeStringConst<false>(*col_str1, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, input_rows_count, result_array);
+            executeStringConst<false>(*col_str1, String(col_str2_const->getDataAt(0)), str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1_const && col_str2)
-            executeStringConst<true>(*col_str2, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, input_rows_count, result_array);
+            executeStringConst<true>(*col_str2, String(col_str1_const->getDataAt(0)), str2_offset, str1_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && fixed_str2_col)
             executeFixedStringFixedString(*fixed_str1_col, str1_offset, *fixed_str2_col, str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1 && fixed_str2_col)
-            executeFixedStringString<true>(*fixed_str2_col, str2_offset, *col_str1, str1_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringString<true>(*fixed_str2_col, *col_str1, str2_offset, str1_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && col_str2)
-            executeFixedStringString<false>(*fixed_str1_col, str1_offset, *col_str2, str2_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringString<false>(*fixed_str1_col, *col_str2, str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
         else if (fixed_str1_col && col_str2_const)
-            executeFixedStringConst<false>(*fixed_str1_col, str1_offset, String(col_str2_const->getDataAt(0)), str2_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringConst<false>(*fixed_str1_col, String(col_str2_const->getDataAt(0)), str1_offset, str2_offset, num_bytes, input_rows_count, result_array);
         else if (col_str1_const && fixed_str2_col)
-            executeFixedStringConst<true>(*fixed_str2_col, str2_offset, String(col_str1_const->getDataAt(0)), str1_offset, num_bytes, input_rows_count, result_array);
+            executeFixedStringConst<true>(*fixed_str2_col, String(col_str1_const->getDataAt(0)), str2_offset, str1_offset, num_bytes, input_rows_count, result_array);
         else
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
@@ -197,8 +197,8 @@ private:
 
     void executeStringString(
         const ColumnString & col_str1,
-        size_t str1_offset,
         const ColumnString & col_str2,
+        size_t str1_offset,
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
@@ -232,8 +232,8 @@ private:
     template <bool reverse>
     void executeStringConst(
         const ColumnString & col_str1,
-        size_t str1_offset,
         const String & str2,
+        size_t str1_offset,
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
@@ -293,8 +293,8 @@ private:
     template <bool reverse>
     void executeFixedStringString(
         const ColumnFixedString & col_str1,
-        size_t str1_offset,
         const ColumnString & col_str2,
+        size_t str1_offset,
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
@@ -325,8 +325,8 @@ private:
     template <bool reverse>
     void executeFixedStringConst(
         const ColumnFixedString & col_str1,
-        size_t str1_offset,
         const String & str2,
+        size_t str1_offset,
         size_t str2_offset,
         size_t num_bytes,
         size_t input_rows_count,
