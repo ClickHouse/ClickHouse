@@ -1068,15 +1068,18 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
     }
     for (auto & child : expr_list.children)
     {
-        if (fuzz_rand() % 200 == 0)
+        if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
         {
-            /// Return a * literal
-            child = std::make_shared<ASTAsterisk>();
-        }
-        else if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
-        {
-            if (fuzz_rand() % 13 == 0)
+            /// Return a '*' literal
+            if (fuzz_rand() % 200 == 0)
+                child = std::make_shared<ASTAsterisk>();
+            else if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
+        }
+        else if (fuzz_rand() % 200 == 0 && (typeid_cast<ASTIdentifier *>(child.get()) || typeid_cast<ASTFunction *>(child.get())))
+        {
+            /// Return a '*' literal
+            child = std::make_shared<ASTAsterisk>();
         }
         else
         {
