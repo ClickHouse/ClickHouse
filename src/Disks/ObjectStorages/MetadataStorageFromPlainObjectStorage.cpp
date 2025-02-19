@@ -169,7 +169,6 @@ MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
-        LOG_TRACE(getLogger("Metadata"), "Object key: {}", object_key.serialize());
         if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;

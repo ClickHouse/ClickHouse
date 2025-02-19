@@ -282,12 +282,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
-    LOG_TRACE(getLogger("Metadata"), "Checking the existence of {}", path);
-
     if (existsDirectory(path))
         return false;
-    else
-        LOG_TRACE(getLogger("Metadata"), "Directory does not exists: {}", path);
 
     return getObjectMetadataEntryWithCache(path) != nullptr;
 }
