@@ -13,9 +13,17 @@ class SortingStep : public ITransformingStep
 public:
     enum class Type : uint8_t
     {
+        /// Performs a complete sorting operation and returns a single fully ordered data stream
         Full,
+        
+        /// Completes the sorting process for partially sorted data.
         FinishSorting,
+        
+        /// Applies FinishSorting for partitioned partially sorted data.
+        /// The sorting is applied within each partition separately without merging them.
         PartitionedFinishSorting,
+        
+        /// Merges multiple sorted streams into a single sorted output.
         MergingSorted,
     };
 
