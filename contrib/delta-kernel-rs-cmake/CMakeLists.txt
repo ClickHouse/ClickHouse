@@ -6,7 +6,7 @@ include(ExternalProject)
 
 set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER OR NOT ENABLE_RUST)
+if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR NO_ARMV81_OR_HIGHER OR NOT ENABLE_RUST)
   message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
 endif()
@@ -65,8 +65,15 @@ else()
 endif()
 
 corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib ALL_FEATURES FLAGS --offline)
+# Set a custom CARGO_HOME to build this crate to avoid cache conflicts
+# If we don't do this then building one of the subprojects will invalidate cache from the others are doing simple
+# `ninja clickhouse` will rebuild rust libraries unnecessarily
 corrosion_set_env_vars(delta_kernel_ffi "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/delta_home" "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
 
+# We set manually the cargo config flags via command line `--config` option
+# This is needed to pass the proper compilation flags (CC, CXX, CFLAGS, etc)
+# We have to do it this way because the project is built from the source folder and we can't place the `config.toml`
+# there, as it would conflict if you have multiple build folders
 get_property(
         INTERFACE_DELTA_CARGO_FLAGS
         TARGET delta_kernel_ffi

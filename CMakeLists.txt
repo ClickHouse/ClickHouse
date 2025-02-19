@@ -557,7 +557,7 @@ include (cmake/print_flags.cmake)
 if (ENABLE_RUST)
     add_subdirectory (rust)
 
-    # With LTO Rust adds few symbols with global visiblity, the most common is
+    # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.
     #

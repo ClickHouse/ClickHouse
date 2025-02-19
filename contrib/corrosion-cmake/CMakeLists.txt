@@ -106,6 +106,7 @@ message(STATUS "RUST_CARGO_BUILD_STD: ${RUST_CARGO_BUILD_STD}")
 
 set(RUST_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../rust_vendor")
 
-# We now prepare a custom config.toml with all the flags and add it to cargo config via the config flags
+# We now prepare a custom config.toml with all the flags and add it to cargo via flags
+# This needs to be done for each project using set_property(INTERFACE_CORROSION_CARGO_FLAGS)
 configure_file("config.toml.in" "config.toml" @ONLY)
 set (RUST_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config.toml" CACHE INTERNAL "Rust config")

@@ -1,3 +1,20 @@
+if (OS_FREEBSD)
+    # Right nix/libc requires fspacectl and it had been added only since FreeBSD14.
+    # And since sysroot has older libraries you will got undefined reference for clickhouse binary.
+    #
+    # But likely everything should work without this syscall, however it is not
+    # possible right now to gently override libraries versions for dependencies,
+    # and forking rust modules is a little bit too much for this thing.
+    #
+    # You can take a look at the details in the following issue [1].
+    #
+    #   [1]: https://github.com/rust-lang/cargo/issues/5640
+    #
+    # Update 2024-04: Now prql also requires getrandom() via std::sys::pal::unix::rand::imp::getrandom_fill_bytes
+    message(STATUS "Rust build is disabled for FreeBSD because we use old sysroot files")
+    return()
+endif()
+
 function(clickhouse_import_crate)
     # This is a workaround for Corrosion case sensitive build type matching in
     # _generator_add_cargo_targets(), that leads to different paths in
@@ -25,17 +42,19 @@ function(clickhouse_import_crate)
 
 endfunction()
 
-# TODO: via properties
+# TODO: add via properties if necessary
 ## -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'
 ## -Wno-unused-macros: unused CXXBRIDGE1_RUST_STRING
 #set(CXXBRIDGE_CXXFLAGS "-Wno-dollar-in-identifier-extension -Wno-unused-macros")
 #set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
 #message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
 
+# Set a different CARGO_HOME for each crate to avoid cache conflicts (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
 corrosion_set_env_vars(_ch_rust_prql "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/prql_home")
 corrosion_set_env_vars(_ch_rust_skim_rust "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/skim_home")
 
+# Set cargo config (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)
 get_property(
     INTERFACE_PRQL_CARGO_FLAGS
     TARGET _ch_rust_prql
