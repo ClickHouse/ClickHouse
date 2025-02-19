@@ -59,6 +59,7 @@ class JobConfigs:
         requires=[JobNames.DOCKER_BUILDS_AMD],
         timeout=3000,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        provides=[ArtifactNames.FAST_TEST],
     )
     build_jobs = Job.Config(
         name=JobNames.BUILD,
