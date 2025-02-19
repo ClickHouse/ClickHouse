@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Interpreters/ActionsDAG.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -283,6 +284,36 @@ std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
     ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
+}
+
+bool FilterStep::removeUnusedColumns(const Names & required_outputs)
+{
+    auto required_columns = required_outputs;
+    required_columns.push_back(filter_column_name);
+
+    const auto removed_any_actions = actions_dag.removeUnusedActions(required_columns);
+
+    if (!removed_any_actions)
+        return false;
+
+    std::unordered_set<String> required_inputs_set;
+
+    for (const auto* input_node : actions_dag.getInputs())
+        required_inputs_set.insert(input_node->result_name);
+
+    auto& input_header = input_headers.front();
+
+    Header new_input_header{};
+
+    for(const auto& col_type_and_name: input_header)
+    {
+        if (required_inputs_set.contains(col_type_and_name.name))
+            new_input_header.insert(col_type_and_name);
+    }
+
+    updateInputHeader(std::move(new_input_header), 0);
+
+    return true;
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)

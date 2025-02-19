@@ -2,23 +2,23 @@
 
 #include <Processors/QueryPlan/JoinStep.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
-#include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
-#include <Common/typeid_cast.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Storages/StorageJoin.h>
 #include <ranges>
 #include <Core/Settings.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/PasteJoin.h>
-#include <Planner/PlannerJoins.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/PasteJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <Planner/PlannerJoins.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageJoin.h>
+#include <Common/JSONBuilder.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -179,6 +179,62 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
             result_nodes.push_back(output);
     }
     return result_nodes;
+}
+
+bool JoinStepLogical::removeUnusedColumns(const Names & required_outputs)
+{
+    // In case we already have the same number of outputs or we only have a single output, then we cannot remove anything more
+    if (required_outputs.size() == required_output_columns.size() || required_output_columns.size() == 1U)
+        return false;
+
+    required_output_columns = required_outputs;
+    Names left_required_outputs{};
+    Names right_required_outputs{};
+
+    auto collect_required_outputs_from_condition
+        = [this, &left_required_outputs, &right_required_outputs](const JoinCondition & condition) mutable
+    {
+        for (const auto & predicate : condition.predicates)
+        {
+            left_required_outputs.push_back(predicate.left_node.column_name);
+            right_required_outputs.push_back(predicate.right_node.column_name);
+        }
+        for (const auto & residual_condition : condition.residual_conditions)
+            required_output_columns.push_back(residual_condition.column_name);
+    };
+
+    collect_required_outputs_from_condition(join_info.expression.condition);
+    for (const auto & condition : join_info.expression.disjunctive_conditions)
+        collect_required_outputs_from_condition(condition);
+
+    // Join needs to have at least one output
+    if (required_output_columns.empty())
+    {
+        const auto & left_node = join_info.expression.condition.predicates.front().left_node;
+        expression_actions.post_join_actions.addOrReplaceInOutputs(expression_actions.post_join_actions.addInput(left_node.getColumn()));
+        required_output_columns.push_back(left_node.column_name);
+    }
+
+    expression_actions.post_join_actions.removeUnusedActions(required_output_columns);
+    expression_actions.left_pre_join_actions.removeUnusedActions(left_required_outputs);
+    expression_actions.right_pre_join_actions.removeUnusedActions(right_required_outputs);
+
+    Headers new_input_headers;
+
+    const auto get_input_columns = [](const ActionsDAG & actions)
+    {
+        Header result;
+        for (const auto * input_node : actions.getInputs())
+            result.insert(ColumnWithTypeAndName{input_node->column, input_node->result_type, input_node->result_name});
+
+        return result;
+    };
+
+    new_input_headers.push_back(get_input_columns(expression_actions.left_pre_join_actions));
+    new_input_headers.push_back(get_input_columns(expression_actions.right_pre_join_actions));
+    updateInputHeaders(std::move(new_input_headers));
+
+    return true;
 }
 
 void JoinStepLogical::updateOutputHeader()

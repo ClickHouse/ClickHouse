@@ -8,6 +8,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
+#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -95,6 +96,32 @@ std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ct
         throw Exception(ErrorCodes::INCORRECT_DATA, "ExpressionStep must have one input stream");
 
     return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
+}
+
+
+bool ExpressionStep::removeUnusedColumns(const Names & required_outputs)
+{
+    const auto removed_any_actions = actions_dag.removeUnusedActions(required_outputs);
+
+    if (!removed_any_actions)
+        return false;
+
+    std::unordered_set<String> required_inputs_set;
+
+    for (const auto* input_node : actions_dag.getInputs())
+        required_inputs_set.insert(input_node->result_name);
+
+    auto& input_header = input_headers.front();
+
+    Header new_input_header{};
+
+    for(const auto& col_type_and_name: input_header)
+        if (required_inputs_set.contains(col_type_and_name.name))
+            new_input_header.insert(col_type_and_name);
+
+    updateInputHeader(std::move(new_input_header), 0);
+
+    return true;
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

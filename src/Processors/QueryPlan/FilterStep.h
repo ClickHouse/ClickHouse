@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -31,6 +32,9 @@ public:
     void serialize(Serialization & ctx) const override;
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
+    bool canRemoveUnusedColumns() const override { return true; }
+    bool removeUnusedColumns(const Names & required_outputs) override;
 
 private:
     void updateOutputHeader() override;

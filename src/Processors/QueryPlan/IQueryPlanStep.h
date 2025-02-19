@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
@@ -102,6 +101,13 @@ public:
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
+
+
+    /// Returns true if the step has implemented removeUnusedColumns.
+    virtual bool canRemoveUnusedColumns() const { return false; }
+
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs
+    virtual bool removeUnusedColumns(const Names & /*required_outputs*/);
 
 protected:
     virtual void updateOutputHeader() = 0;

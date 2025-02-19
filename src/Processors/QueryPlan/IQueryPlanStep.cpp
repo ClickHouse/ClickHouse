@@ -34,6 +34,11 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
     updateOutputHeader();
 }
 
+bool IQueryPlanStep::removeUnusedInputs(const Names & /*required_outputs*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedInputs is not implemented for step {}", getName());
+}
+
 const Header & IQueryPlanStep::getOutputHeader() const
 {
     if (!hasOutputHeader())
