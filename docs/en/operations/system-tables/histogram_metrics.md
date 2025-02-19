@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/system-tables/metrics
+slug: /en/operations/system-tables/histogram_metrics
 ---
 import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
@@ -7,7 +7,7 @@ import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Contains histogram metrics which can be calculated instantly and exported in the Prometheus format. This table is always up to date.
+This table contains histogram metrics that can be calculated instantly and exported in the Prometheus format. It is always up to date.
 
 Columns:
 
