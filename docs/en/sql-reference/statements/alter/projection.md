@@ -123,7 +123,7 @@ FROM visits
 WHERE user_id > 50 AND user_id < 150
 GROUP BY user_agent
 ```
-```sql
+```
 SELECT
     user_agent,
     sum(pages_visited)

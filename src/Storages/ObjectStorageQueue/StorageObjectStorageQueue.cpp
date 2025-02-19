@@ -1,8 +1,6 @@
 #include <optional>
 
 #include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <IO/CompressionMethod.h>
@@ -10,7 +8,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
@@ -35,17 +32,6 @@
 
 namespace fs = std::filesystem;
 
-namespace ProfileEvents
-{
-    extern const Event ObjectStorageQueueCommitRequests;
-    extern const Event ObjectStorageQueueSuccessfulCommits;
-    extern const Event ObjectStorageQueueUnsuccessfulCommits;
-    extern const Event ObjectStorageQueueRemovedObjects;
-    extern const Event ObjectStorageQueueInsertIterations;
-    extern const Event ObjectStorageQueueProcessedRows;
-}
-
-
 namespace DB
 {
 namespace Setting
@@ -54,11 +40,6 @@ namespace Setting
     extern const SettingsBool s3queue_enable_logging_to_s3queue_log;
     extern const SettingsBool stream_like_engine_allow_direct_select;
     extern const SettingsBool use_concurrency_control;
-}
-
-namespace FailPoints
-{
-    extern const char object_storage_queue_fail_commit[];
 }
 
 namespace ServerSetting
@@ -81,14 +62,12 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 polling_max_timeout_ms;
     extern const ObjectStorageQueueSettingsUInt64 polling_backoff_ms;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
-    extern const ObjectStorageQueueSettingsUInt64 buckets;
+    extern const ObjectStorageQueueSettingsUInt32 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
-    extern const ObjectStorageQueueSettingsUInt64 list_objects_batch_size;
-    extern const ObjectStorageQueueSettingsBool enable_hash_ring_filtering;
 }
 
 namespace ErrorCodes
@@ -98,7 +77,6 @@ namespace ErrorCodes
     extern const int BAD_QUERY_PARAMETER;
     extern const int QUERY_NOT_ALLOWED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 namespace
@@ -192,8 +170,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     , polling_min_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_min_timeout_ms])
     , polling_max_timeout_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_max_timeout_ms])
     , polling_backoff_ms((*queue_settings_)[ObjectStorageQueueSetting::polling_backoff_ms])
-    , list_objects_batch_size((*queue_settings_)[ObjectStorageQueueSetting::list_objects_batch_size])
-    , enable_hash_ring_filtering((*queue_settings_)[ObjectStorageQueueSetting::enable_hash_ring_filtering])
     , commit_settings(CommitSettings{
         .max_processed_files_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_files_before_commit],
         .max_processed_rows_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_rows_before_commit],
@@ -244,10 +220,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
         zk_path, *queue_settings_, storage_metadata.getColumns(), configuration_->format, context_, is_attach, log);
 
-    ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
-
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
-        storage_type,
         zk_path,
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
@@ -280,15 +253,6 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
     if (files_metadata)
     {
-        try
-        {
-            files_metadata->unregister(getStorageID(), /* active */true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
-
         files_metadata->shutdown();
         files_metadata.reset();
     }
@@ -408,12 +372,10 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
     size_t processing_threads_num = storage->getTableMetadata().processing_threads_num;
 
     createIterator(nullptr);
-    auto progress = std::make_shared<ObjectStorageQueueSource::ProcessingProgress>();
     for (size_t i = 0; i < processing_threads_num; ++i)
         pipes.emplace_back(storage->createSource(
                                i/* processor_id */,
                                info,
-                               progress,
                                iterator,
                                max_block_size,
                                context,
@@ -432,7 +394,6 @@ void ReadFromObjectStorageQueue::initializePipeline(QueryPipelineBuilder & pipel
 std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSource(
     size_t processor_id,
     const ReadFromFormatInfo & info,
-    ProcessingProgressPtr progress_,
     std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
     size_t max_block_size,
     ContextPtr local_context,
@@ -445,7 +406,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     }
     return std::make_shared<ObjectStorageQueueSource>(
         getName(), processor_id,
-        file_iterator, configuration, object_storage, progress_,
+        file_iterator, configuration, object_storage,
         info, format_settings,
         commit_settings_copy,
         files_metadata,
@@ -454,31 +415,29 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         getStorageID(), log, commit_once_processed);
 }
 
-size_t StorageObjectStorageQueue::getDependencies() const
+bool StorageObjectStorageQueue::hasDependencies(const StorageID & table_id)
 {
-    auto table_id = getStorageID();
-
     // Check if all dependencies are attached
     auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
     LOG_TEST(log, "Number of attached views {} for {}", view_ids.size(), table_id.getNameForLogs());
 
     if (view_ids.empty())
-        return 0;
+        return false;
 
     // Check the dependencies are ready?
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().tryGetTable(view_id, getContext());
         if (!view)
-            return 0;
+            return false;
 
         // If it materialized view, check it's target table
         auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
         if (materialized_view && !materialized_view->tryGetTargetTable())
-            return 0;
+            return false;
     }
 
-    return view_ids.size();
+    return true;
 }
 
 void StorageObjectStorageQueue::threadFunc()
@@ -486,18 +445,15 @@ void StorageObjectStorageQueue::threadFunc()
     if (shutdown_called)
         return;
 
-    const auto storage_id = getStorageID();
     try
     {
-        const size_t dependencies_count = getDependencies();
+        const size_t dependencies_count = DatabaseCatalog::instance().getDependentViews(getStorageID()).size();
         if (dependencies_count)
         {
             mv_attached.store(true);
             SCOPE_EXIT({ mv_attached.store(false); });
 
             LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
-
-            files_metadata->registerIfNot(storage_id, /* active */true);
 
             if (streamToViews())
             {
@@ -528,18 +484,6 @@ void StorageObjectStorageQueue::threadFunc()
     {
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_processing_interval_ms);
         task->scheduleAfter(reschedule_processing_interval_ms);
-
-        if (reschedule_processing_interval_ms > 5000) /// TODO: Add a setting
-        {
-            try
-            {
-                files_metadata->unregister(storage_id, /* active */true);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-            }
-        }
     }
 }
 
@@ -568,10 +512,6 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        /// FIXME:
-        /// it is possible that MV is dropped just before we start the insert,
-        /// but in this case we would not throw any exception, so
-        /// data will not be inserted anywhere.
         InterpreterInsertQuery interpreter(
             insert,
             queue_context,
@@ -592,13 +532,11 @@ bool StorageObjectStorageQueue::streamToViews()
         pipes.reserve(processing_threads_num);
         sources.reserve(processing_threads_num);
 
-        auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < processing_threads_num; ++i)
         {
             auto source = createSource(
                 i/* processor_id */,
                 read_from_format_info,
-                processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
@@ -616,8 +554,6 @@ bool StorageObjectStorageQueue::streamToViews()
         std::atomic_size_t rows = 0;
         block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
-
         try
         {
             CompletedPipelineExecutor executor(block_io.pipeline);
@@ -625,72 +561,21 @@ bool StorageObjectStorageQueue::streamToViews()
         }
         catch (...)
         {
-            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true));
+            for (auto & source : sources)
+                source->commit(/* success */false, getCurrentExceptionMessage(true));
+
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        commit(/* insert_succeeded */true, rows, sources);
+        for (auto & source : sources)
+            source->commit(/* success */true);
+
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
 
-    LOG_TEST(log, "Processed rows: {}", total_rows);
     return total_rows > 0;
-}
-
-void StorageObjectStorageQueue::commit(
-    bool insert_succeeded,
-    size_t inserted_rows,
-    std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
-    const std::string & exception_message) const
-{
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedRows, inserted_rows);
-
-    Coordination::Requests requests;
-    StoredObjects successful_objects;
-    for (auto & source : sources)
-        source->prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
-
-    if (requests.empty())
-    {
-        LOG_TEST(log, "Nothing to commit");
-        return;
-    }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
-
-    if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
-    {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
-    }
-
-    auto zk_client = getZooKeeper();
-    Coordination::Responses responses;
-
-    fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-        throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to commit processed files");
-    });
-
-    auto code = zk_client->tryMulti(requests, responses);
-    if (code != Coordination::Error::ZOK)
-    {
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
-        throw zkutil::KeeperMultiException(code, requests, responses);
-    }
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueSuccessfulCommits);
-
-    for (auto & source : sources)
-        source->finalizeCommit(insert_succeeded, exception_message);
-
-    LOG_TRACE(
-        log, "Successfully committed {} requests for {} sources (inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), inserted_rows, successful_objects.size());
 }
 
 static const std::unordered_set<std::string_view> changeable_settings_unordered_mode
@@ -707,8 +592,6 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "max_processed_rows_before_commit",
     "max_processed_bytes_before_commit",
     "max_processing_time_sec_before_commit",
-    "enable_hash_ring_filtering",
-    "list_objects_batch_size",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -723,56 +606,14 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "max_processed_bytes_before_commit",
     "max_processing_time_sec_before_commit",
     "buckets",
-    "list_objects_batch_size",
 };
-
-static std::string normalizeSetting(const std::string & name)
-{
-    /// We support this prefix for compatibility.
-    if (name.starts_with("s3queue_"))
-        return name.substr(std::strlen("s3queue_"));
-    return name;
-}
-
-void checkNormalizedSetting(const std::string & name)
-{
-    if (name.starts_with("s3queue_"))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting is not normalized: {}", name);
-}
 
 static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode)
 {
-    checkNormalizedSetting(name);
-
     if (mode == ObjectStorageQueueMode::UNORDERED)
         return changeable_settings_unordered_mode.contains(name);
     else
         return changeable_settings_ordered_mode.contains(name);
-}
-
-static bool requiresDetachedMV(const std::string & name)
-{
-    checkNormalizedSetting(name);
-    return name == "buckets";
-}
-
-static AlterCommands normalizeAlterCommands(const AlterCommands & alter_commands)
-{
-    /// Remove s3queue_ prefix from setting to avoid duplicated settings,
-    /// because of altering setting with the prefix to a setting without the prefix.
-    AlterCommands normalized_alter_commands(alter_commands);
-    for (auto & command : normalized_alter_commands)
-    {
-        for (auto & setting : command.settings_changes)
-            setting.name = normalizeSetting(setting.name);
-
-        std::set<std::string> settings_resets;
-        for (const auto & setting : command.settings_resets)
-            settings_resets.insert(normalizeSetting(setting));
-
-        command.settings_resets = settings_resets;
-    }
-    return normalized_alter_commands;
 }
 
 void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -780,70 +621,35 @@ void StorageObjectStorageQueue::checkAlterIsPossible(const AlterCommands & comma
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
-        {
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Only MODIFY/RESET SETTING alter is allowed for {}", getName());
-        }
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only MODIFY SETTING alter is allowed for {}", getName());
     }
 
-    StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
-    SettingsChanges * old_settings = nullptr;
-    if (old_metadata.settings_changes)
-    {
-        old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
-        for (auto & setting : *old_settings)
-            setting.name = normalizeSetting(setting.name);
-    }
+    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    commands.apply(new_metadata, local_context);
 
-    StorageInMemoryMetadata new_metadata(old_metadata);
-
-    auto alter_commands = normalizeAlterCommands(commands);
-    alter_commands.apply(new_metadata, local_context);
-
+    StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     if (!new_metadata.hasSettingsChanges())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No settings changes");
 
+    const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+    const auto & old_changes = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
     const auto mode = getTableMetadata().getMode();
-    const auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
-
-    for (const auto & setting : new_settings)
+    for (const auto & changed_setting : new_changes)
     {
-        bool setting_changed = true;
-        if (old_settings)
-        {
-            auto it = std::find_if(
-                old_settings->begin(), old_settings->end(),
-                [&](const SettingChange & change) { return change.name == setting.name; });
+        auto it = std::find_if(
+            old_changes.begin(), old_changes.end(),
+            [&](const SettingChange & change) { return change.name == changed_setting.name; });
 
-            setting_changed = it != old_settings->end() && it->value != setting.value;
-        }
+        const bool setting_changed = it != old_changes.end() && it->value != changed_setting.value;
 
         if (setting_changed)
         {
-            /// `new_settings` contains a full set of settings, changed and non-changed together.
-            /// So we check whether setting is allowed to be changed only if it is actually changed.
-            if (!isSettingChangeable(setting.name, mode))
+            if (!isSettingChangeable(changed_setting.name, mode))
             {
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "Changing setting {} is not allowed for {} mode of {}",
-                    setting.name, magic_enum::enum_name(mode), getName());
-            }
-
-            /// Some settings affect the work of background processing thread,
-            /// so might require its cancellation.
-            if (requiresDetachedMV(setting.name))
-            {
-                const size_t dependencies_count = getDependencies();
-                if (dependencies_count)
-                {
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Changing setting {} is allowed "
-                        "only with detached dependencies (dependencies count: {})",
-                        setting.name, dependencies_count);
-                }
+                    changed_setting.name, magic_enum::enum_name(mode), getName());
             }
         }
     }
@@ -857,79 +663,41 @@ void StorageObjectStorageQueue::alter(
     if (commands.isSettingsAlter())
     {
         auto table_id = getStorageID();
-        auto alter_commands = normalizeAlterCommands(commands);
 
-        StorageInMemoryMetadata old_metadata(getInMemoryMetadata());
-        SettingsChanges * old_settings = nullptr;
-        if (old_metadata.settings_changes)
+        StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
+        /// At the moment we cannot do ALTER MODIFY/RESET SETTING if there are no settings changes (exception will be thrown),
+        /// so we do not need to check if old_metadata.settings_changes == nullptr.
+        const auto & old_settings = old_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+        StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+        commands.apply(new_metadata, local_context);
+        auto new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
+
+        ObjectStorageQueueSettings default_settings;
+        for (const auto & setting : old_settings)
         {
-            old_settings = &old_metadata.settings_changes->as<ASTSetQuery &>().changes;
-            for (auto & setting : *old_settings)
-                setting.name = normalizeSetting(setting.name);
-        }
+            auto it = std::find_if(
+                new_settings.begin(), new_settings.end(),
+                [&](const SettingChange & change) { return change.name == setting.name; });
 
-        /// settings_changes will be cloned.
-        StorageInMemoryMetadata new_metadata(old_metadata);
-        alter_commands.apply(new_metadata, local_context);
-        auto & new_settings = new_metadata.settings_changes->as<ASTSetQuery &>().changes;
-
-        if (old_settings)
-        {
-            auto get_names = [](const SettingsChanges & settings)
+            if (it == new_settings.end())
             {
-                std::set<std::string> names;
-                for (const auto & [name, _] : settings)
-                {
-                    auto inserted = names.insert(name).second;
-                    if (!inserted)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", name);
-                }
-                return names;
-            };
-
-            auto old_settings_set = get_names(*old_settings);
-            auto new_settings_set = get_names(new_settings);
-
-            std::set<std::string> reset_settings;
-            std::set_difference(
-                old_settings_set.begin(), old_settings_set.end(),
-                new_settings_set.begin(), new_settings_set.end(),
-                std::inserter(reset_settings, reset_settings.begin()));
-
-            if (!reset_settings.empty())
-            {
-                LOG_TRACE(
-                    log, "Will reset settings: {} (old settings: {}, new_settings: {})",
-                    fmt::join(reset_settings, ", "),
-                    fmt::join(old_settings_set, ", "), fmt::join(new_settings_set, ", "));
-
-                ObjectStorageQueueSettings default_settings;
-                for (const auto & name : reset_settings)
-                    new_settings.push_back(SettingChange(name, default_settings.get(name)));
+                /// Setting was reset.
+                new_settings.push_back(SettingChange(setting.name, default_settings.get(setting.name)));
             }
         }
 
         SettingsChanges changed_settings;
-        std::set<std::string> new_settings_set;
+        std::set<std::string> changed_settings_set;
 
         const auto mode = getTableMetadata().getMode();
-        for (auto & setting : new_settings)
+        for (const auto & setting : new_settings)
         {
-            LOG_TEST(log, "New setting {}: {}", setting.name, setting.value);
+            auto it = std::find_if(
+                old_settings.begin(), old_settings.end(),
+                [&](const SettingChange & change) { return change.name == setting.name; });
 
-            auto inserted = new_settings_set.emplace(setting.name).second;
-            if (!inserted)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", setting.name);
-
-            bool setting_changed = true;
-            if (old_settings)
-            {
-                auto it = std::find_if(
-                    old_settings->begin(), old_settings->end(),
-                    [&](const SettingChange & change) { return change.name == setting.name; });
-
-                setting_changed = it == old_settings->end() || it->value != setting.value;
-            }
+            const bool setting_changed = it == old_settings.end() || it->value != setting.value;
             if (!setting_changed)
                 continue;
 
@@ -941,26 +709,19 @@ void StorageObjectStorageQueue::alter(
                     setting.name, magic_enum::enum_name(mode), getName());
             }
 
-            if (requiresDetachedMV(setting.name))
-            {
-                const size_t dependencies_count = getDependencies();
-                if (dependencies_count)
-                {
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Changing setting {} is not allowed only with detached dependencies "
-                        "(dependencies count: {})",
-                        setting.name, dependencies_count);
-                }
-            }
+            SettingChange result_setting(setting);
+            if (result_setting.name.starts_with("s3queue_"))
+                result_setting.name = result_setting.name.substr(std::strlen("s3queue_"));
 
-            changed_settings.push_back(setting);
+            changed_settings.push_back(result_setting);
+
+            auto inserted = changed_settings_set.emplace(result_setting.name).second;
+            if (!inserted)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is duplicated", setting.name);
         }
 
-        LOG_TEST(log, "New settings: {}", serializeAST(*new_metadata.settings_changes));
-
         /// Alter settings which are stored in keeper.
-        files_metadata->alterSettings(changed_settings, local_context);
+        files_metadata->alterSettings(changed_settings);
 
         /// Alter settings which are not stored in keeper.
         for (const auto & change : changed_settings)
@@ -982,15 +743,13 @@ void StorageObjectStorageQueue::alter(
                 commit_settings.max_processed_bytes_before_commit = change.value.safeGet<UInt64>();
             if (change.name == "max_processing_time_sec_before_commit")
                 commit_settings.max_processing_time_sec_before_commit = change.value.safeGet<UInt64>();
-
-            if (change.name == "list_objects_batch_size")
-                list_objects_batch_size = change.value.safeGet<UInt64>();
-            if (change.name == "enable_hash_ring_filtering")
-                enable_hash_ring_filtering = change.value.safeGet<bool>();
         }
 
+        StorageInMemoryMetadata metadata = getInMemoryMetadata();
+        metadata.setSettingsChanges(new_metadata.settings_changes);
+        setInMemoryMetadata(metadata);
+
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
-        setInMemoryMetadata(new_metadata);
     }
 }
 
@@ -1002,31 +761,17 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
+    auto settings = configuration->getQuerySettings(local_context);
+    auto glob_iterator = std::make_unique<StorageObjectStorageSource::GlobIterator>(
+        object_storage, configuration, predicate, getVirtualsList(), local_context,
+        nullptr, settings.list_object_keys_size, settings.throw_on_zero_files_match);
+
     const auto & table_metadata = getTableMetadata();
     bool file_deletion_enabled = table_metadata.getMode() == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_ttl_sec || table_metadata.tracked_files_limit);
 
-    size_t list_objects_batch_size_copy;
-    bool enable_hash_ring_filtering_copy;
-    {
-        std::lock_guard lock(mutex);
-        list_objects_batch_size_copy = list_objects_batch_size;
-        enable_hash_ring_filtering_copy = enable_hash_ring_filtering;
-    }
-
     return std::make_shared<FileIterator>(
-        files_metadata,
-        object_storage,
-        configuration,
-        getStorageID(),
-        list_objects_batch_size_copy,
-        predicate,
-        getVirtualsList(),
-        local_context,
-        log,
-        enable_hash_ring_filtering_copy,
-        file_deletion_enabled,
-        shutdown_called);
+        files_metadata, std::move(glob_iterator), object_storage, file_deletion_enabled, shutdown_called, log);
 }
 
 ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
@@ -1058,8 +803,6 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
         settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
-        settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
-        settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
     }
 
     return settings;

@@ -13,6 +13,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -169,30 +170,6 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
-
-/** MySQL returns this error code, HY000, so should we.
-  *
-  * These error codes represent the worst legacy practices in software engineering from 1970s
-  * (fixed-size fields, short variable names, cryptic abbreviations, lack of documentation, made-up alphabets)
-  * We should never ever fall into these practices, and having this compatibility error code is probably the only exception.
-  *
-  * You might be wondering, why it is HY000, and more precisely, what do the letters H and Y mean?
-  * The history does not know. The best answer I found is:
-  * https://dba.stackexchange.com/questions/241506/what-does-hy-stand-for-in-error-code
-  * Also, https://en.wikipedia.org/wiki/SQLSTATE
-  *
-  * Apparently, they decide to allocate alphanumeric characters for some meaning,
-  * then split their range (0..9A..Z) to some intervals for the system, user, and other categories,
-  * and the letter H appeared to be the first in some category.
-  *
-  * Also, the letter Y is chosen, because it is the highest, but someone afraid to took letter Z,
-  * and decided that the second highest letter is good enough.
-  *
-  * This will forever remind us about the mistakes made by previous generations of software engineers.
-  */
-static constexpr const char * mysql_error_code = "HY000";
-
-
 MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
@@ -280,7 +257,7 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
+            packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
@@ -344,7 +321,7 @@ void MySQLHandler::run()
             catch (...)
             {
                 tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
-                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), mysql_error_code, getCurrentExceptionMessage(false)));
+                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)));
             }
         }
     }
@@ -363,14 +340,14 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     size_t packet_size = PACKET_HEADER_SIZE + SSL_REQUEST_PAYLOAD_SIZE;
 
     /// Buffer for SSLRequest or part of HandshakeResponse.
-    std::vector<char> buf(packet_size);
+    char buf[packet_size];
     size_t pos = 0;
 
     /// Reads at least count and at most packet_size bytes.
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
+            int ret = socket().receiveBytes(buf + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
@@ -380,19 +357,19 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     };
     read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
-    size_t payload_size = unalignedLoad<uint32_t>(buf.data()) & 0xFFFFFFu;
+    size_t payload_size = unalignedLoad<uint32_t>(buf) & 0xFFFFFFu;
     LOG_TRACE(log, "payload size: {}", payload_size);
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
-        finishHandshakeSSL(packet_size, buf.data(), pos, read_bytes, packet);
+        finishHandshakeSSL(packet_size, buf, pos, read_bytes, packet);
     }
     else
     {
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
-        buf_for_handshake_response.write(buf.data(), pos);
+        buf_for_handshake_response.write(buf, pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
         ReadBufferFromString payload(buf_for_handshake_response.str());
         payload.ignore(PACKET_HEADER_SIZE);
@@ -423,7 +400,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
+        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);

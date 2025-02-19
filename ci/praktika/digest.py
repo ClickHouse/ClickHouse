@@ -1,12 +1,9 @@
 import dataclasses
 import hashlib
-import json
 import os
 from hashlib import md5
 from pathlib import Path
 from typing import List
-
-from praktika.utils import Shell
 
 from . import Job
 from .docker import Docker
@@ -26,14 +23,10 @@ class Digest:
         hash_string = hash_obj.hexdigest()
         return hash_string
 
-    @classmethod
-    def get_null_digest(cls):
-        return "f" * Settings.CACHE_DIGEST_LEN
-
     def calc_job_digest(self, job_config: Job.Config, docker_digests):
         config = job_config.digest_config
         if not config:
-            return self.get_null_digest()
+            return "f" * Settings.CACHE_DIGEST_LEN
 
         cache_key = self._hash_digest_config(config)
 
@@ -55,33 +48,15 @@ class Digest:
             hash_md5 = hashlib.md5()
             for i, file_path in enumerate(included_files):
                 hash_md5 = self._calc_file_digest(file_path, hash_md5)
-            if config.with_git_submodules:
-                submodules_shas = Shell.get_output(
-                    "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
-                )
-                hash_md5.update(submodules_shas.encode())
             digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
-
-        self.digest_cache[cache_key] = digest
+            self.digest_cache[cache_key] = digest
 
         if job_config.run_in_docker:
             # respect docker digest in the job digest
             docker_digest = docker_digests[job_config.run_in_docker.split("+")[0]]
             digest = "-".join([docker_digest, digest])
 
-        job_config_dict = dataclasses.asdict(job_config)
-        drop_fields = [
-            "requires",
-            "enable_commit_status",
-            "allow_merge_on_failure",
-        ]
-        filtered_job_dict = {
-            k: v for k, v in job_config_dict.items() if k not in drop_fields
-        }
-        config_digest = hashlib.md5(
-            json.dumps(filtered_job_dict, sort_keys=True).encode()
-        ).hexdigest()[: min(Settings.CACHE_DIGEST_LEN // 4, 4)]
-        return digest + "-" + config_digest
+        return digest
 
     def calc_docker_digest(
         self,

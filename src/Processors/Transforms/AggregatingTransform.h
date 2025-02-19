@@ -106,12 +106,18 @@ struct ManyAggregatedData
                 // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
                 if (variant->aggregator)
                 {
+                    // variant is moved here and will be destroyed in the destructor of the lambda function.
                     pool->scheduleOrThrowOnError(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
+                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
+                            if (thread_group)
+                                CurrentThread::attachToGroupIfDetached(thread_group);
 
-                            my_variant.reset();
+                            setThreadName("AggregDestruct");
                         });
                 }
             }

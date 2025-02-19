@@ -7,7 +7,7 @@
 #include <base/find_symbols.h>
 #include <base/preciseExp10.h>
 
-constexpr size_t JSON_MAX_DEPTH = 100;
+#define JSON_MAX_DEPTH 100
 
 
 #pragma clang diagnostic push

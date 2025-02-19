@@ -7,7 +7,6 @@
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -33,6 +32,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
+#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -425,6 +425,8 @@ public:
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
 
+    static bool partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right, PreformattedMessage & out_reason);
+
     StoragePolicyPtr getStoragePolicy() const override;
 
     bool isMergeTree() const override { return true; }
@@ -484,7 +486,6 @@ public:
         virtual NameSet getAllUpdatedColumns() const = 0;
 
         bool hasDataMutations() const { return params.need_data_mutations && info.num_data_mutations > 0; }
-        bool hasMetadataMutations() const { return info.num_metadata_mutations > 0; }
 
         virtual ~IMutationsSnapshot() = default;
     };
@@ -554,12 +555,6 @@ public:
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
-
-    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
-    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
-
-    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
-    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
@@ -884,7 +879,6 @@ public:
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
@@ -892,7 +886,6 @@ public:
     ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
 
@@ -903,7 +896,6 @@ public:
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         auto lock = lockParts();
-        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
 
@@ -1200,21 +1192,11 @@ protected:
     /// under lockForShare if rename is possible.
     String relative_data_path;
 
-private:
-    /// Columns and secondary indices sizes can be calculated lazily.
-    mutable std::mutex columns_and_secondary_inices_sizes_mutex;
-    mutable bool are_columns_and_secondary_inices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
-    mutable ColumnSizeByName column_sizes;
-    /// Current secondary index sizes in compressed and uncompressed form.
-    mutable IndexSizeByName secondary_index_sizes;
+    ColumnSizeByName column_sizes;
 
-protected:
-    void resetColumnSizes()
-    {
-        column_sizes.clear();
-        are_columns_and_secondary_inices_sizes_calculated = false;
-    }
+    /// Current secondary index sizes in compressed and uncompressed form.
+    IndexSizeByName secondary_index_sizes;
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -1386,12 +1368,11 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
+    void calculateColumnAndSecondaryIndexSizesImpl();
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
-    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
-    void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
-    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
+    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
+    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
@@ -1562,7 +1543,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1658,7 +1639,7 @@ protected:
     mutable std::mutex outdated_data_parts_mutex;
     mutable std::condition_variable outdated_data_parts_cv;
 
-    BackgroundSchedulePoolTaskHolder outdated_data_parts_loading_task;
+    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
@@ -1674,7 +1655,7 @@ protected:
         MutableDataPartPtr part;
     };
 
-    BackgroundSchedulePoolTaskHolder unexpected_data_parts_loading_task;
+    BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
     std::vector<UnexpectedPartLoadState> unexpected_data_parts;
     bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
 

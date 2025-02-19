@@ -8,7 +8,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
-#include <Common/MemorySpillScheduler.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -79,7 +78,6 @@ public:
 
     const FatalErrorCallback fatal_error_callback;
 
-    MemorySpillScheduler memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -141,31 +139,17 @@ private:
 };
 
 /**
- * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
- *
- * Typically used for inheriting thread group when scheduling tasks on a thread pool:
- *   pool->scheduleOrThrow([thread_group = CurrentThread::getGroup()]()
- *       {
- *           ThreadGroupSwitcher switcher(thread_group, "MyThread");
- *           ...
- *       });
+ * Since merge is executed with multiple threads, this class
+ * switches the parent MemoryTracker as part of the thread group to account all the memory used.
  */
 class ThreadGroupSwitcher : private boost::noncopyable
 {
 public:
-    /// If thread_group_ is nullptr or equal to current thread group, does nothing.
-    /// allow_existing_group:
-    ///  * If false, asserts that the thread is not already attached to a different group.
-    ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and restores it in destructor.
-    /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
-    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group = false) noexcept;
+    explicit ThreadGroupSwitcher(ThreadGroupPtr thread_group);
     ~ThreadGroupSwitcher();
 
 private:
-    ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
-    ThreadGroupPtr thread_group;
 };
 
 

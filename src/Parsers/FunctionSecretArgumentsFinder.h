@@ -582,9 +582,9 @@ protected:
     void findDatabaseEngineSecretArguments()
     {
         const String & engine_name = function->name();
-        if (engine_name == "MySQL" ||
-            engine_name == "PostgreSQL" ||
-            engine_name == "MaterializedPostgreSQL")
+        if ((engine_name == "MySQL") || (engine_name == "MaterializeMySQL") ||
+            (engine_name == "MaterializedMySQL") || (engine_name == "PostgreSQL") ||
+            (engine_name == "MaterializedPostgreSQL"))
         {
             /// MySQL('host:port', 'database', 'user', 'password')
             /// PostgreSQL('host:port', 'database', 'user', 'password')

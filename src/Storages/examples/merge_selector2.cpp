@@ -1,19 +1,15 @@
-#include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
-#include <Storages/MergeTree/Compaction/PartProperties.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
-
+#include <list>
+#include <iostream>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/Operators.h>
-
+#include <Storages/MergeTree/MergeSelectors/SimpleMergeSelector.h>
 #include <Common/formatReadable.h>
 
-#include <iostream>
-#include <ostream>
 
 /** This program tests merge-selecting algorithm.
  * Usage:
 clickhouse-client --query="
-    SELECT name, bytes, now() - modification_time
+    SELECT bytes, now() - modification_time, level, name
     FROM system.parts
     WHERE table = 'visits' AND active AND partition = '201610'" | ./merge_selector2
   */
@@ -22,8 +18,8 @@ int main(int, char **)
 {
     using namespace DB;
 
-    PartsRanges ranges(1);
-    PartsRange & parts = ranges.back();
+    IMergeSelector::PartsRanges partitions(1);
+    IMergeSelector::PartsRange & parts = partitions.back();
 
     SimpleMergeSelector::Settings settings;
     SimpleMergeSelector selector(settings);
@@ -31,27 +27,18 @@ int main(int, char **)
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
 
     size_t sum_parts_size = 0;
-    size_t num_parts = 0;
+
+    std::list<std::string> part_names;
 
     while (!in.eof())
     {
-        size_t size;
-        time_t age;
-        std::string name;
-
-        in >> name >> "\t" >> size >> "\t" >> age >> "\n";
-
-        auto part_info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-        parts.push_back(PartProperties
-        {
-            .name = name,
-            .info = part_info,
-            .size = size,
-            .age = age,
-        });
-
-        sum_parts_size += size;
-        ++num_parts;
+        part_names.emplace_back();
+        IMergeSelector::Part part;
+        in >> part.size >> "\t" >> part.age >> "\t" >> part.level >> "\t" >> part_names.back() >> "\n";
+        part.data = part_names.back().data();
+        part.level = 0;
+        parts.emplace_back(part);
+        sum_parts_size += part.size;
     }
 
     size_t total_size_merged = 0;
@@ -61,125 +48,83 @@ int main(int, char **)
 
     while (parts.size() > 1)
     {
-        PartsRange selected_parts = selector.select(ranges, 100ULL * 1024 * 1024 * 1024, nullptr);
+        IMergeSelector::PartsRange selected_parts = selector.select(partitions, 100ULL * 1024 * 1024 * 1024);
 
         if (selected_parts.empty())
         {
             ++age_passed;
+            for (auto & part : parts)
+                ++part.age;
 
             if (age_passed > 60 * 86400)
                 break;
 
             if (age_passed % 86400 == 0)
-            {
                 std::cout << ".";
-                std::cout.flush();
-            }
-
-            PartsRange next_range;
-            for (auto & part : parts)
-            {
-                next_range.push_back(PartProperties
-                {
-                    .name = part.name,
-                    .info = part.info,
-                    .size = part.size,
-                    .age = part.age + 1,
-                });
-            }
-            parts.swap(next_range);
 
             continue;
         }
-        std::cout << "Time passed: " << age_passed << "\n";
+        std::cout << "Time passed: " << age_passed << '\n';
 
         size_t sum_merged_size = 0;
-        int64_t min_block = 0;
-        int64_t max_block = 0;
-        uint32_t max_level = 0;
+        size_t start_index = 0;
+        unsigned max_level = 0;
         bool in_range = false;
 
-        PartsRange next_range;
-        for (const auto & part : parts)
+        for (size_t i = 0, size = parts.size(); i < size; ++i)
         {
-            if (part.name == selected_parts.front().name)
+            if (parts[i].data == selected_parts.front().data)
             {
                 std::cout << "\033[1;31m";
-
                 in_range = true;
-                min_block = part.info.min_block;
+                start_index = i;
             }
 
-            std::cout << part.name << "___" << (part.size / 1024);
+            std::cout << (parts[i].size / 1024) << "_" << parts[i].level;
             if (in_range)
             {
-                sum_merged_size += part.size;
-                max_level = std::max(part.info.level, max_level);
-            }
-            else
-            {
-                next_range.push_back(part);
+                sum_merged_size += parts[i].size;
+                max_level = std::max(parts[i].level, max_level);
             }
 
-            if (part.name == selected_parts.back().name)
+            if (parts[i].data == selected_parts.back().data)
             {
                 in_range = false;
-                max_block = part.info.max_block;
-
-                auto part_info = MergeTreePartInfo::fromPartName(fmt::format("all_{}_{}_{}", min_block, max_block, max_level + 1), MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
-                next_range.push_back(PartProperties
-                {
-                    .name = part_info.getPartNameV1(),
-                    .info = part_info,
-                    .size = sum_merged_size,
-                    .age = 0,
-                });
-
                 std::cout << "\033[0m";
             }
 
             std::cout << " ";
         }
-        std::cout << "\n";
 
-        parts.swap(next_range);
+        parts[start_index].size = sum_merged_size;
+        parts[start_index].level = max_level + 1;
+        parts[start_index].age = 0;
+        parts.erase(parts.begin() + start_index + 1, parts.begin() + start_index + selected_parts.size());
+
+        std::cout << '\n';
+
         sum_size_written += sum_merged_size;
         total_size_merged += sum_merged_size;
+
         ++num_merges;
 
         double time_to_merge = sum_merged_size / (1048576 * 10.0);
+
         age_passed = static_cast<size_t>(age_passed + time_to_merge);
+        for (auto & part : parts)
+            part.age = static_cast<time_t>(part.age + time_to_merge);
 
-        {
-            next_range.clear();
-            for (auto & part : parts)
-            {
-                next_range.push_back(PartProperties
-                {
-                    .name = part.name,
-                    .info = part.info,
-                    .size = part.size,
-                    .age = static_cast<time_t>(part.age + time_to_merge),
-                });
-            }
-            parts.swap(next_range);
-        }
-
-        std::cout
-            << "Time passed: " << age_passed << ", "
-            << "num parts: " << parts.size() << ", "
-            << "merged " << selected_parts.size() << " parts, " << formatReadableSizeWithBinarySuffix(sum_merged_size) << ", "
-            << "total written: " << formatReadableSizeWithBinarySuffix(total_size_merged) << "\n";
+        std::cout << "Time passed: " << age_passed << ", num parts: " << parts.size()
+            << ", merged " << selected_parts.size() << " parts, " << formatReadableSizeWithBinarySuffix(sum_merged_size)
+            << ", total written: " << formatReadableSizeWithBinarySuffix(total_size_merged) << '\n';
     }
 
-    std::cout << "\n";
     std::cout << std::fixed << std::setprecision(2)
         << "Write amplification: " << static_cast<double>(sum_size_written) / sum_parts_size << "\n"
-        << "Num parts: " << num_parts << "\n"
-        << "Num merges: " << num_merges << "\n";
-
-    for (const auto & part : parts)
-        std::cout << part.name << ", size: " << part.size << "\n";
+        << "Num parts: " << part_names.size() << "\n"
+        << "Num merges: " << num_merges << "\n"
+        << "Tree depth: " << parts.front().level << "\n"
+        ;
 
     return 0;
 }

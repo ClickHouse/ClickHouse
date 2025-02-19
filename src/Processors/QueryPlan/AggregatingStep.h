@@ -1,11 +1,8 @@
 #pragma once
-
-#include <Core/Block.h>
-#include <Core/Block_fwd.h>
-#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Aggregator.h>
 
 namespace DB
 {

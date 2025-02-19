@@ -52,31 +52,6 @@ struct PrewhereExprInfo
     std::string dumpConditions() const;
 };
 
-struct ReadStepPerformanceCounters
-{
-    std::atomic<UInt64> rows_read = 0;
-};
-
-using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
-
-class ReadStepsPerformanceCounters final
-{
-public:
-    ReadStepPerformanceCountersPtr getCountersForStep(size_t step)
-    {
-        if (step >= performance_counters.size())
-            performance_counters.resize(step + 1);
-        if (!performance_counters[step])
-            performance_counters[step] = std::make_shared<ReadStepPerformanceCounters>();
-        return performance_counters[step];
-    }
-
-    const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
-
-private:
-    std::vector<ReadStepPerformanceCountersPtr> performance_counters;
-};
-
 class FilterWithCachedCount
 {
     ConstantFilterDescription const_description;  /// TODO: ConstantFilterDescription only checks always true/false for const columns
@@ -127,8 +102,7 @@ public:
         MergeTreeRangeReader * prev_reader_,
         const PrewhereExprStep * prewhere_info_,
         bool last_reader_in_chain_,
-        bool main_reader_,
-        ReadStepPerformanceCountersPtr performance_counters_);
+        bool main_reader_);
 
     MergeTreeRangeReader() = default;
 
@@ -339,10 +313,8 @@ private:
     Columns continueReadingChain(const ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result) const;
 
-    void fillVirtualColumns(Columns & columns, const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-    ColumnPtr createPartOffsetColumn(const ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
-
-    void updatePerformanceCounters(size_t num_rows_read);
+    void fillVirtualColumns(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
+    ColumnPtr createPartOffsetColumn(ReadResult & result, UInt64 leading_begin_part_offset, UInt64 leading_end_part_offset);
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
@@ -357,8 +329,6 @@ private:
     bool last_reader_in_chain = false;
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool is_initialized = false;
-
-    ReadStepPerformanceCountersPtr performance_counters;
 
     LoggerPtr log = getLogger("MergeTreeRangeReader");
 };

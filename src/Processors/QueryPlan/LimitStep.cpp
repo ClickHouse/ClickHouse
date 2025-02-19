@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/Port.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 

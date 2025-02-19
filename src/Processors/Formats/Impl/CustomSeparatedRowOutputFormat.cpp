@@ -1,10 +1,8 @@
 #include <Processors/Formats/Impl/CustomSeparatedRowOutputFormat.h>
-
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Port.h>
 
 
 namespace DB

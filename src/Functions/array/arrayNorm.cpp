@@ -154,26 +154,24 @@ public:
 
         switch (array_type->getNestedType()->getTypeId())
         {
-            case TypeIndex::BFloat16:
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt8:
             case TypeIndex::UInt16:
             case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
+            case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
+            case TypeIndex::Float32:
+                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Arguments of function {} has nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
-                    getName(),
-                    array_type->getNestedType()->getName());
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
+                    getName(), array_type->getNestedType()->getName());
         }
     }
 
@@ -207,7 +205,6 @@ private:
     action(Int16)   \
     action(Int32)   \
     action(Int64)   \
-    action(BFloat16) \
     action(Float32) \
     action(Float64)
 
@@ -228,8 +225,8 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} have nested type {}. "
-                    "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
+                    "Arguments of function {} has nested type {}. "
+                    "Support: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.",
                     getName(), nested_type->getName());
         }
     }

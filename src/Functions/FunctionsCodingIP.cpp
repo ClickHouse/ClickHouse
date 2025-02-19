@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1099,16 +1098,12 @@ public:
         const ColumnString::Chars & vec_src = input_column->getChars();
         const ColumnString::Offsets & offsets_src = input_column->getOffsets();
         size_t prev_offset = 0;
-        ColumnString::Offset result = 0;
+        UInt32 result = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            ColumnString::Offset new_offset = offsets_src[i];
-            vec_res[i] = parseIPv4whole(
-                reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
-                reinterpret_cast<unsigned char *>(&result));
-            prev_offset = new_offset;
+            vec_res[i] = DB::parseIPv4whole(reinterpret_cast<const char *>(&vec_src[prev_offset]), reinterpret_cast<unsigned char *>(&result));
+            prev_offset = offsets_src[i];
         }
 
         return col_res;
@@ -1162,16 +1157,15 @@ public:
 
         const ColumnString::Chars & vec_src = input_column->getChars();
         const ColumnString::Offsets & offsets_src = input_column->getOffsets();
-        ColumnString::Offset prev_offset = 0;
+        size_t prev_offset = 0;
         char buffer[IPV6_BINARY_LENGTH];
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            ColumnString::Offset new_offset = offsets_src[i];
             vec_res[i] = DB::parseIPv6whole(reinterpret_cast<const char *>(&vec_src[prev_offset]),
-                                            reinterpret_cast<const char *>(&vec_src[new_offset - 1]),
+                                            reinterpret_cast<const char *>(&vec_src[offsets_src[i] - 1]),
                                             reinterpret_cast<unsigned char *>(buffer));
-            prev_offset = new_offset;
+            prev_offset = offsets_src[i];
         }
 
         return col_res;

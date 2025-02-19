@@ -15,8 +15,9 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
 #include "Common/FieldVisitors.h"
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
@@ -140,8 +141,7 @@ public:
     static constexpr ResultType lowerBound(const Data & data, const Target & target, size_t array_size, ArrOffset current_offset)
     {
         ResultType current = 0;
-        size_t low = 0;
-        size_t high = array_size;
+        size_t low = 0, high = array_size;
         while (high - low > 0)
         {
             auto middle = low + ((high - low) >> 1);

@@ -49,14 +49,6 @@ struct DeserializeBinaryBulkStateDynamic : public ISerialization::DeserializeBin
     SerializationPtr variant_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr variant_state;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamic>(*this);
-        new_state->variant_state = variant_state ? variant_state->clone() : nullptr;
-        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
-        return new_state;
-    }
 };
 
 void SerializationDynamic::enumerateStreams(
@@ -133,7 +125,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         writeVarUInt(dynamic_state->num_dynamic_types, *stream);
 
     writeVarUInt(dynamic_state->num_dynamic_types, *stream);
-    if (settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format)
+    if (settings.data_types_binary_encoding)
     {
         const auto & variants = assert_cast<const DataTypeVariant &>(*dynamic_state->variant_type).getVariants();
         for (const auto & variant: variants)
@@ -238,15 +230,6 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
     dynamic_state->variant_serialization = checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state)->variant_type->getDefaultSerialization();
 
     settings.path.push_back(Substream::DynamicData);
-
-    /// Call callback for newly discovered dynamic subcolumns if needed.
-    if (settings.dynamic_subcolumns_callback)
-    {
-        EnumerateStreamsSettings enumerate_settings;
-        enumerate_settings.path = settings.path;
-        dynamic_state->variant_serialization->enumerateStreams(enumerate_settings, settings.dynamic_subcolumns_callback, SubstreamData(dynamic_state->variant_serialization));
-    }
-
     dynamic_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_state->variant_state, cache);
     settings.path.pop_back();
 
@@ -279,7 +262,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         DataTypes variants;
         readVarUInt(structure_state->num_dynamic_types, *structure_stream);
         variants.reserve(structure_state->num_dynamic_types + 1); /// +1 for shared variant.
-        if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
+        if (settings.data_types_binary_encoding)
         {
             for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 variants.push_back(decodeDataType(*structure_stream));

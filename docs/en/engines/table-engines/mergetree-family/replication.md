@@ -51,7 +51,7 @@ ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/index.md) for sto
 To use replication, set parameters in the [zookeeper](/docs/en/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
 
 :::note
-Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
+Don’t neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
 :::
 
 Example of setting the addresses of the ClickHouse Keeper cluster:
@@ -106,12 +106,12 @@ Example of setting the addresses of the auxiliary ZooKeeper cluster:
 To store table metadata in an auxiliary ZooKeeper cluster instead of the default ZooKeeper cluster, we can use SQL to create the table with
 ReplicatedMergeTree engine as follows:
 
-```sql
+```
 CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 
-If ZooKeeper is not set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
+If ZooKeeper is not set in the config file, you can’t create replicated tables, and any existing replicated tables will be read-only.
 
 ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/en/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/en/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
 
@@ -139,11 +139,11 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
-```sql
+```
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', ver)
 ```
 with:
-```sql
+```
 ENGINE = ReplicatedMergeTree
 ```
 :::
@@ -224,7 +224,7 @@ Be careful with table renames when using these built-in substitutions. The path 
 
 The replica name identifies different replicas of the same table. You can use the server name for this, as in the example. The name only needs to be unique within each shard.
 
-You can define the parameters explicitly instead of using substitutions. This might be convenient for testing and for configuring small clusters. However, you can't use distributed DDL queries (`ON CLUSTER`) in this case.
+You can define the parameters explicitly instead of using substitutions. This might be convenient for testing and for configuring small clusters. However, you can’t use distributed DDL queries (`ON CLUSTER`) in this case.
 
 When working with large clusters, we recommend using substitutions because they reduce the probability of error.
 
@@ -273,7 +273,7 @@ Note that ClickHouse does not perform any destructive actions such as automatica
 
 When the server starts (or establishes a new session with ClickHouse Keeper), it only checks the quantity and sizes of all files. If the file sizes match but bytes have been changed somewhere in the middle, this is not detected immediately, but only when attempting to read the data for a `SELECT` query. The query throws an exception about a non-matching checksum or size of a compressed block. In this case, data parts are added to the verification queue and copied from the replicas if necessary.
 
-If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by "pushing a button".
+If the local set of data differs too much from the expected one, a safety mechanism is triggered. The server enters this in the log and refuses to launch. The reason for this is that this case may indicate a configuration error, such as if a replica on a shard was accidentally configured like a replica on a different shard. However, the thresholds for this mechanism are set fairly low, and this situation might occur during normal failure recovery. In this case, data is restored semi-automatically - by “pushing a button”.
 
 To start recovery, create the node `/path_to_table/replica_name/flags/force_restore_data` in ClickHouse Keeper with any content, or run the command to restore all replicated tables:
 
@@ -294,7 +294,7 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 Then start the server (restart, if it is already running). Data will be downloaded from replicas.
 
-An alternative recovery option is to delete information about the lost replica from ClickHouse Keeper (`/path_to_table/replica_name`), then create the replica again as described in "[Creating replicated tables](#creating-replicated-tables)".
+An alternative recovery option is to delete information about the lost replica from ClickHouse Keeper (`/path_to_table/replica_name`), then create the replica again as described in “[Creating replicated tables](#creating-replicated-tables)”.
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
@@ -334,7 +334,7 @@ Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data
 
 Use [ATTACH TABLE ... AS NOT REPLICATED](/docs/en/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
 
-Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table's data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
+Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 

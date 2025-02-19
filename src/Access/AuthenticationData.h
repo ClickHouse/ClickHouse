@@ -1,10 +1,5 @@
 #pragma once
 
-#include "config.h"
-
-#include <vector>
-#include <base/types.h>
-
 #include <Access/Common/AuthenticationType.h>
 #include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Access/Common/SSLCertificateSubjects.h>
@@ -12,6 +7,11 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <vector>
+#include <base/types.h>
+
+
+#include "config.h"
 
 namespace DB
 {

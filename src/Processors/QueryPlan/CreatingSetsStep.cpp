@@ -6,6 +6,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>
@@ -165,8 +166,8 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
     pipelines.reserve(1 + subqueries.size());
     pipelines.push_back(std::move(pipeline));
 
-    QueryPlanOptimizationSettings plan_settings(context);
-    BuildQueryPipelineSettings pipeline_settings(context);
+    auto plan_settings = QueryPlanOptimizationSettings::fromContext(context);
+    auto pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
 
     for (auto & future_set : subqueries)
     {
@@ -197,7 +198,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         if (!plan)
             continue;
 
-        plan->optimize(QueryPlanOptimizationSettings(step.context));
+        plan->optimize(QueryPlanOptimizationSettings::fromContext(step.context));
 
         plans.emplace_back(std::move(plan));
     }

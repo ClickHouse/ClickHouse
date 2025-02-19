@@ -13,7 +13,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
@@ -259,12 +258,6 @@ TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
 bool StorageInMemoryMetadata::hasAnyTableTTL() const
 {
     return hasAnyMoveTTL() || hasRowsTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL();
-}
-
-bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
-{
-    bool has_any_other_ttl = hasAnyMoveTTL() || hasAnyRecompressionTTL() || hasAnyGroupByTTL() || hasAnyRowsWhereTTL() || hasAnyColumnTTL();
-    return hasRowsTTL() && !has_any_other_ttl;
 }
 
 TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const

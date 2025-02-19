@@ -46,7 +46,7 @@ The table structure can differ from the original PostgreSQL table structure:
 
 [Named collections](/docs/en/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
 
-```xml
+```
 <named_collections>
     <postgres_creds>
         <host>localhost</host>
