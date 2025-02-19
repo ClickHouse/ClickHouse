@@ -1820,20 +1820,20 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
 double AsynchronousMetrics::getCPUOverloadMetric()
 {
-    UInt64 curr_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
-    UInt64 curr_cpu_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
+    Int64 curr_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
+    Int64 curr_cpu_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
 
-    Float64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds;
-    Float64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds;
+    Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds;
+    Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds;
 
     prev_cpu_wait_microseconds = curr_cpu_wait_microseconds;
     prev_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds;
 
     /// If we used less than one CPU core, we cannot detect overload.
-    if (os_cpu_virtual_time_microseconds < 1'000'000.0 || os_cpu_wait_microseconds <= 0)
+    if (os_cpu_virtual_time_microseconds < 1'000'000 || os_cpu_wait_microseconds <= 0)
         return 0;
 
-    return os_cpu_wait_microseconds / os_cpu_virtual_time_microseconds;
+    return static_cast<double>(os_cpu_wait_microseconds) / os_cpu_virtual_time_microseconds;
 }
 
 }
