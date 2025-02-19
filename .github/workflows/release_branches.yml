@@ -15,17 +15,14 @@ on: # yamllint disable-line rule:truthy
       - reopened
       - opened
     branches:
-      # Anything/24.12 (e.g customizations/24.12.x or -24.12)
-      - '**/24.12*'
-      - '**-24.12*'
+      - 'antalya'
   release:
     types:
       - published
       - prereleased
   push:
     branches:
-      - 'releases/24.12**'
-      - 'project-antalya-24.12.2'
+      - 'antalya'
     tags:
       - '*'
   workflow_dispatch:
