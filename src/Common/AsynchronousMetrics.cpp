@@ -1,23 +1,18 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
-#include <IO/UncompressedCache.h>
 #include <base/cgroupsv2.h>
-#include <base/errnoToString.h>
 #include <base/find_symbols.h>
-#include <base/getPageSize.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
-#include <Common/filesystemHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
 #include <boost/locale/date_time_facet.hpp>
 
-#include <chrono>
 #include <string_view>
 
 #include "config.h"
@@ -26,6 +21,12 @@
 #    include <jemalloc/jemalloc.h>
 #endif
 
+
+namespace ProfileEvents
+{
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
+}
 
 namespace DB
 {
@@ -1798,6 +1799,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         }
     }
 
+    new_values["OSCPUOverload"] = { getCPUOverloadMetric(), "Relative CPU deficit, calculated as: how many threads are waiting for CPU relative to the number of threads, using CPU. If it is greater than zero, the server would benefit from more CPU. If it is significantly greater than zero, the server could become unresponsive. The metric is accumulated between the updates of asynchronous metrics." };
+
     /// Add more metrics as you wish.
 
     updateImpl(update_time, current_time, force_update, first_run, new_values);
@@ -1813,6 +1816,24 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
     }
+}
+
+double AsynchronousMetrics::getCPUOverloadMetric()
+{
+    UInt64 curr_os_cpu_wait_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUWaitMicroseconds];
+    UInt64 curr_os_virtual_time_microseconds = ProfileEvents::global_counters[ProfileEvents::OSCPUVirtualTimeMicroseconds];
+
+    Float64 avg_os_cpu_wait_microseconds = curr_os_cpu_wait_microseconds - prev_os_cpu_wait_microseconds;
+    Float64 avg_os_virtual_time_microseconds = curr_os_virtual_time_microseconds - prev_os_virtual_time_microseconds;
+
+    prev_os_cpu_wait_microseconds = curr_os_cpu_wait_microseconds;
+    prev_os_virtual_time_microseconds = curr_os_virtual_time_microseconds;
+
+    /// If we used less than one CPU core, we cannot detect overload.
+    if (avg_os_virtual_time_microseconds < 1.0 || avg_os_cpu_wait_microseconds <= 0)
+        return 0;
+
+    return avg_os_cpu_wait_microseconds / avg_os_virtual_time_microseconds;
 }
 
 }

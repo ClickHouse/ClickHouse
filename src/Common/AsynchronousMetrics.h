@@ -121,6 +121,11 @@ private:
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
 
+    UInt64 prev_os_cpu_wait_microseconds = 0;
+    UInt64 prev_os_virtual_time_microseconds = 0;
+
+    double getCPUOverloadMetric();
+
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> loadavg TSA_GUARDED_BY(data_mutex);
