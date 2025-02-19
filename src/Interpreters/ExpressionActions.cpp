@@ -1044,6 +1044,18 @@ void ExpressionActionsChain::finalize()
     }
 }
 
+ExpressionActionsChainSteps::ExpressionActionsStep * ExpressionActionsChain::getLastExpressionStep(bool allow_empty)
+{
+    if (steps.empty())
+    {
+        if (allow_empty)
+            return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+    }
+
+    return typeid_cast<ExpressionActionsChainSteps::ExpressionActionsStep *>(steps.back().get());
+}
+
 std::string ExpressionActionsChain::dumpChain() const
 {
     WriteBufferFromOwnString ss;
