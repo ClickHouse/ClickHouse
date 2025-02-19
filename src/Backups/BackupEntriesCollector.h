@@ -48,7 +48,7 @@ public:
     std::shared_ptr<IBackupCoordination> getBackupCoordination() const { return backup_coordination; }
     const ReadSettings & getReadSettings() const { return read_settings; }
     ContextPtr getContext() const { return context; }
-    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return zookeeper_retries_info; }
+    const ZooKeeperRetriesInfo & getZooKeeperRetriesInfo() const { return global_zookeeper_retries_info; }
 
     /// Returns all access entities which can be put into a backup.
     std::unordered_map<UUID, AccessEntityPtr> getAllAccessEntities();
@@ -129,7 +129,7 @@ private:
     LoggerPtr log;
     /// Unfortunately we can use ZooKeeper for collecting information for backup
     /// and we need to retry...
-    ZooKeeperRetriesInfo zookeeper_retries_info;
+    ZooKeeperRetriesInfo global_zookeeper_retries_info;
 
     Strings all_hosts;
     DDLRenamingMap renaming_map;

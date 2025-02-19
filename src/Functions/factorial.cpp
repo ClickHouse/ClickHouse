@@ -105,7 +105,7 @@ Computes the factorial of an integer value. It works with any native integer typ
 The factorial of 0 is 1. Likewise, the factorial() function returns 1 for any negative value. The maximum positive value for the input argument is 20, a value of 21 or greater will cause exception throw.
 )",
             .examples{{"factorial", "SELECT factorial(10)", ""}},
-            .category{"Mathematical"}},
+            .categories{"Mathematical"}},
         FunctionFactory::Case::Insensitive);
 }
 

@@ -27,47 +27,47 @@ ASTPtr ASTCreateWorkloadQuery::clone() const
     return res;
 }
 
-void ASTCreateWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateWorkloadQuery::formatImpl(const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
+    format.ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        ostr << "OR REPLACE ";
+        format.ostr << "OR REPLACE ";
 
-    ostr << "WORKLOAD ";
+    format.ostr << "WORKLOAD ";
 
     if (if_not_exists)
-        ostr << "IF NOT EXISTS ";
+        format.ostr << "IF NOT EXISTS ";
 
-    ostr << (format.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_none : "");
 
-    ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadName()) << (format.hilite ? hilite_none : "");
 
-    formatOnCluster(ostr, format);
+    formatOnCluster(format);
 
     if (hasParent())
     {
-        ostr << (format.hilite ? hilite_keyword : "") << " IN " << (format.hilite ? hilite_none : "");
-        ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IN " << (format.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getWorkloadParent()) << (format.hilite ? hilite_none : "");
     }
 
     if (!changes.empty())
     {
-        ostr << ' ' << (format.hilite ? hilite_keyword : "") << "SETTINGS" << (format.hilite ? hilite_none : "") << ' ';
+        format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "SETTINGS" << (format.hilite ? hilite_none : "") << ' ';
 
         bool first = true;
 
         for (const auto & change : changes)
         {
             if (!first)
-                ostr << ", ";
+                format.ostr << ", ";
             else
                 first = false;
-            ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
+            format.ostr << change.name << " = " << applyVisitor(FieldVisitorToString(), change.value);
             if (!change.resource.empty())
             {
-                ostr << ' ' << (format.hilite ? hilite_keyword : "") << "FOR" << (format.hilite ? hilite_none : "") << ' ';
-                ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(change.resource) << (format.hilite ? hilite_none : "");
+                format.ostr << ' ' << (format.hilite ? hilite_keyword : "") << "FOR" << (format.hilite ? hilite_none : "") << ' ';
+                format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(change.resource) << (format.hilite ? hilite_none : "");
             }
         }
     }

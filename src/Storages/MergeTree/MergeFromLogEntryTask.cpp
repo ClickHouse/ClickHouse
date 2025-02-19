@@ -1,18 +1,12 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/randomSeed.h>
-
-#include <Core/BackgroundSchedulePool.h>
-
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <pcg_random.hpp>
-
+#include <Common/randomSeed.h>
 #include <cmath>
 
 namespace ProfileEvents
@@ -202,7 +196,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts, true);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -451,15 +445,8 @@ bool MergeFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrite
     finish_callback = [storage_ptr = &storage]() { storage_ptr->merge_selecting_task->schedule(); };
     ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
-    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
-
-    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
-        addMarksToCache(*part, cached_marks, mark_cache.get());
-
-    /// Move index to cache and reset it here because we need
-    /// a correct part name after rename for a key of cache entry.
-    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-        part->moveIndexToCache(*index_cache);
+    if (auto * mark_cache = storage.getContext()->getMarkCache().get())
+        addMarksToCache(*part, cached_marks, mark_cache);
 
     write_part_log({});
     StorageReplicatedMergeTree::incrementMergedPartsProfileEvent(part->getType());

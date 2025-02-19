@@ -136,7 +136,7 @@ Example:
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
 
-```sql
+```
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64

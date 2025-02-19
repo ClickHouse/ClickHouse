@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
 

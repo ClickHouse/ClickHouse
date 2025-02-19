@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
 
@@ -42,7 +41,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
     std::exception_ptr saved_exception;
 
-    bool need_to_save_exception = true;
+    bool retryable_error = false;
     try
     {
         /// We don't have any backoff for failed entries
@@ -58,21 +57,19 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                print_exception = false;
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                print_exception = false;
-                need_to_save_exception = false;
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                print_exception = false;
-                need_to_save_exception = false;
+                retryable_error = true;
                 storage.cleanup_thread.wakeup();
             }
             else
@@ -95,7 +92,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         saved_exception = std::current_exception();
     }
 
-    if (need_to_save_exception && saved_exception)
+    if (!retryable_error && saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
 
@@ -125,13 +122,15 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_failed_part_info = source_part_info;
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
-                    status.latest_fail_error_code_name = ErrorCodes::getName(getExceptionErrorCode(saved_exception));
                     if (result_data_version == it->first)
                         storage.mutation_backoff_policy.addPartMutationFailure(src_part, (*storage.getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
                 }
             }
         }
     }
+
+    if (retryable_error)
+        print_exception = false;
 
     if (saved_exception)
         std::rethrow_exception(saved_exception);
@@ -144,7 +143,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_mutate_entry)->thread_group);
 
     auto remove_processed_entry = [&] () -> bool
     {

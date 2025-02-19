@@ -83,7 +83,7 @@ struct L2Distance
 
 #if USE_MULTITARGET_CODE
     template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const ResultType * __restrict data_x,
         const ResultType * __restrict data_y,
         size_t i_max,
@@ -91,10 +91,8 @@ struct L2Distance
         size_t & i_y,
         State<ResultType> & state)
     {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
         __m512 sums;
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) <= 4)
             sums = _mm512_setzero_ps();
         else
             sums = _mm512_setzero_pd();
@@ -103,7 +101,7 @@ struct L2Distance
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (is_float32)
+            if constexpr (sizeof(ResultType) == 4)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -119,7 +117,7 @@ struct L2Distance
             }
         }
 
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) <= 4)
             state.sum = _mm512_reduce_add_ps(sums);
         else
             state.sum = _mm512_reduce_add_pd(sums);
@@ -134,20 +132,19 @@ struct L2Distance
         State<Float32> & state)
     {
         __m512 sums = _mm512_setzero_ps();
-
         constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            __m512 x1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
-            __m512 x2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
-            __m512 y1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
-            __m512 y2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
+            __m512 x_1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
+            __m512 x_2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
+            __m512 y_1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
+            __m512 y_2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
 
-            __m512 differences1 = _mm512_sub_ps(x1, y1);
-            __m512 differences2 = _mm512_sub_ps(x2, y2);
-            sums = _mm512_fmadd_ps(differences1, differences1, sums);
-            sums = _mm512_fmadd_ps(differences2, differences2, sums);
+            __m512 differences_1 = _mm512_sub_ps(x_1, y_1);
+            __m512 differences_2 = _mm512_sub_ps(x_2, y_2);
+            sums = _mm512_fmadd_ps(differences_1, differences_1, sums);
+            sums = _mm512_fmadd_ps(differences_2, differences_2, sums);
         }
 
         state.sum = _mm512_reduce_add_ps(sums);
@@ -270,7 +267,7 @@ struct CosineDistance
 
 #if USE_MULTITARGET_CODE
     template <typename ResultType>
-    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineF32F64(
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
         const ResultType * __restrict data_x,
         const ResultType * __restrict data_y,
         size_t i_max,
@@ -278,13 +275,11 @@ struct CosineDistance
         size_t & i_y,
         State<ResultType> & state)
     {
-        static constexpr bool is_float32 = std::is_same_v<ResultType, Float32>;
-
         __m512 dot_products;
         __m512 x_squareds;
         __m512 y_squareds;
 
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) <= 4)
         {
             dot_products = _mm512_setzero_ps();
             x_squareds = _mm512_setzero_ps();
@@ -301,7 +296,7 @@ struct CosineDistance
 
         for (; i_x + n < i_max; i_x += n, i_y += n)
         {
-            if constexpr (is_float32)
+            if constexpr (sizeof(ResultType) == 4)
             {
                 __m512 x = _mm512_loadu_ps(data_x + i_x);
                 __m512 y = _mm512_loadu_ps(data_y + i_y);
@@ -319,7 +314,7 @@ struct CosineDistance
             }
         }
 
-        if constexpr (is_float32)
+        if constexpr (sizeof(ResultType) == 4)
         {
             state.dot_prod = _mm512_reduce_add_ps(dot_products);
             state.x_squared = _mm512_reduce_add_ps(x_squareds);
@@ -341,9 +336,13 @@ struct CosineDistance
         size_t & i_y,
         State<Float32> & state)
     {
-        __m512 dot_products = _mm512_setzero_ps();
-        __m512 x_squareds = _mm512_setzero_ps();
-        __m512 y_squareds = _mm512_setzero_ps();
+        __m512 dot_products;
+        __m512 x_squareds;
+        __m512 y_squareds;
+
+        dot_products = _mm512_setzero_ps();
+        x_squareds = _mm512_setzero_ps();
+        y_squareds = _mm512_setzero_ps();
 
         constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
 
@@ -395,22 +394,22 @@ public:
 
             types.push_back(array_type->getNestedType());
         }
-        const DataTypePtr & common_type = getLeastSupertype(types);
+        const auto & common_type = getLeastSupertype(types);
         switch (common_type->getTypeId())
         {
-            case TypeIndex::BFloat16: /// (*)
-            case TypeIndex::Float32:
-                return std::make_shared<DataTypeFloat32>();
             case TypeIndex::UInt8:
             case TypeIndex::UInt16:
             case TypeIndex::UInt32:
-            case TypeIndex::UInt64:
             case TypeIndex::Int8:
             case TypeIndex::Int16:
             case TypeIndex::Int32:
+            case TypeIndex::UInt64:
             case TypeIndex::Int64:
             case TypeIndex::Float64:
                 return std::make_shared<DataTypeFloat64>();
+            case TypeIndex::Float32:
+            case TypeIndex::BFloat16:
+                return std::make_shared<DataTypeFloat32>();
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -418,12 +417,6 @@ public:
                     "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     common_type->getName());
-
-            /// (*) You may ask why we return Float32 instead of BFloat16 for Array(BFloat16) arguments.
-            ///     The reason is that Intels' SIMD support for BFloat16 that is extremely limited at the moment, see
-            ///     https://en.wikichip.org/wiki/x86/avx512_bf16 for AVX-512 BF16. To calculate the common L2 and cosine distances with
-            ///     SIMD, we need to cast up or relinquish SIMD support. (Interestingly, FP16 (IEEE 754 binary16) is well supported by
-            ///     AVX-512 but nobody seems to likes FP16 these days ...)
         }
     }
 
@@ -474,7 +467,7 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} have nested type {}. "
+                    "Arguments of function {} has nested type {}. "
                     "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_x->getName());
@@ -499,7 +492,7 @@ private:
             default:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} have nested type {}. "
+                    "Arguments of function {} has nested type {}. "
                     "Supported types: UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, BFloat16, Float32, Float64.",
                     getName(),
                     type_y->getName());
@@ -536,7 +529,7 @@ private:
         for (auto off : offsets_x)
         {
             /// Process chunks in vectorized manner
-            static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
+            static constexpr size_t VEC_SIZE = 4;
             typename Kernel::template State<ResultType> states[VEC_SIZE];
             for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
             {
@@ -580,8 +573,15 @@ private:
         ColumnArray::Offset prev_offset = 0;
         for (auto offset_y : offsets_y)
         {
-            if (offsets_x[0] != offset_y - prev_offset)
-                throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Array arguments for function {} must have equal sizes", getName());
+            if (offsets_x[0] != offset_y - prev_offset) [[unlikely]]
+            {
+                throw Exception(
+                    ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                    "Arguments of function {} have different array sizes: {} and {}",
+                    getName(),
+                    offsets_x[0],
+                    offset_y - prev_offset);
+            }
             prev_offset = offset_y;
         }
 
@@ -602,37 +602,37 @@ private:
             /// To avoid combinatorial explosion of SIMD kernels, focus on
             /// - the three most common input/output types (BFloat16 x BFloat16) --> Float32,
             ///   (Float32 x Float32) --> Float32 and (Float64 x Float64) --> Float64
-            ///   instead of 11 x 11 input types x 2 output types,
+            ///   instead of 10 x 10 input types x 2 output types,
             /// - const/non-const inputs instead of non-const/non-const inputs
             /// - the two most common metrics L2 and cosine distance,
-            /// - the most powerful SIMD instruction set (AVX-512).
-            bool processed_with_simd = false;
+            /// - the most powerful SIMD instruction set (AVX-512F).
+            bool processed = false;
 #if USE_MULTITARGET_CODE
+            /// ResultType is Float32 or Float64
             if constexpr (std::is_same_v<Kernel, L2Distance> || std::is_same_v<Kernel, CosineDistance>)
             {
-                if constexpr ((std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, Float32> && std::is_same_v<RightType, Float32>)
-                           || (std::is_same_v<ResultType, Float64> && std::is_same_v<LeftType, Float64> && std::is_same_v<RightType, Float64>))
+                if constexpr (std::is_same_v<ResultType, LeftType> && std::is_same_v<ResultType, RightType>)
                 {
                     if (isArchSupported(TargetArch::AVX512F))
                     {
-                        Kernel::template accumulateCombineF32F64<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                        processed_with_simd = true;
+                        Kernel::template accumulateCombine<ResultType>(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
+                        processed = true;
                     }
                 }
-                else if constexpr (std::is_same_v<ResultType, Float32> && std::is_same_v<LeftType, BFloat16> && std::is_same_v<RightType, BFloat16>)
+                else if constexpr (std::is_same_v<Float32, ResultType> && std::is_same_v<BFloat16, LeftType> && std::is_same_v<BFloat16, RightType>)
                 {
                     if (isArchSupported(TargetArch::AVX512BF16))
                     {
                         Kernel::accumulateCombineBF16(data_x.data(), data_y.data(), i + offsets_x[0], i, prev, state);
-                        processed_with_simd = true;
+                        processed = true;
                     }
                 }
             }
 #endif
-            if (!processed_with_simd)
+            if (!processed)
             {
                 /// Process chunks in a vectorized manner.
-                static constexpr size_t VEC_SIZE = 16; /// the choice of the constant has no huge performance impact. 16 seems the best.
+                static constexpr size_t VEC_SIZE = 32;
                 typename Kernel::template State<ResultType> states[VEC_SIZE];
                 for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
                 {

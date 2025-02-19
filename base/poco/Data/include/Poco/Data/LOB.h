@@ -63,12 +63,20 @@ namespace Data
         {
         }
 
+        LOB(const std::basic_string<T> & content) : _pContent(new std::vector<T>(content.begin(), content.end()))
+        /// Creates a LOB from a string.
+        {
+        }
+
         LOB(const LOB & other) : _pContent(other._pContent)
         /// Creates a LOB by copying another one.
         {
         }
 
-        ~LOB() = default;
+        ~LOB()
+        /// Destroys the LOB.
+        {
+        }
 
         LOB & operator=(const LOB & other)
         /// Assignment operator.
@@ -189,14 +197,14 @@ namespace std
 {
 template <>
 inline void swap<Poco::Data::BLOB>(Poco::Data::BLOB & b1, Poco::Data::BLOB & b2)
-/// Full template specalization of std::swap for BLOB
+/// Full template specalization of std:::swap for BLOB
 {
     b1.swap(b2);
 }
 
 template <>
 inline void swap<Poco::Data::CLOB>(Poco::Data::CLOB & c1, Poco::Data::CLOB & c2)
-/// Full template specalization of std::swap for CLOB
+/// Full template specalization of std:::swap for CLOB
 {
     c1.swap(c2);
 }

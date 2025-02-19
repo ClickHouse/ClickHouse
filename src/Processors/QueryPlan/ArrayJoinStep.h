@@ -22,11 +22,6 @@ public:
     const Names & getColumns() const { return array_join.columns; }
     bool isLeft() const { return array_join.is_left; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
-    void serialize(Serialization & ctx) const override;
-
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
 private:
     void updateOutputHeader() override;
 

@@ -136,9 +136,8 @@ bool CustomResourceManager::State::Node::equals(const CustomResourceManager::Sta
     return ptr->equals(o.ptr.get());
 }
 
-CustomResourceManager::Classifier::Classifier(const ClassifierSettings & settings_, const CustomResourceManager::StatePtr & state_, const String & classifier_name)
-    : settings(settings_)
-    , state(state_)
+CustomResourceManager::Classifier::Classifier(const CustomResourceManager::StatePtr & state_, const String & classifier_name)
+    : state(state_)
 {
     // State is immutable, but nodes are mutable and thread-safe
     // So it's safe to obtain node pointers w/o lock
@@ -171,10 +170,7 @@ ResourceLink CustomResourceManager::Classifier::get(const String & resource_name
 {
     if (auto iter = resources.find(resource_name); iter != resources.end())
         return iter->second;
-    if (settings.throw_on_unknown_workload)
-        throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Access denied to resource '{}'", resource_name);
-    else
-        return ResourceLink{}; // unlimited access
+    throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "Access denied to resource '{}'", resource_name);
 }
 
 CustomResourceManager::CustomResourceManager()
@@ -231,7 +227,7 @@ bool CustomResourceManager::hasResource(const String & resource_name) const
     return state->resources.contains(resource_name);
 }
 
-ClassifierPtr CustomResourceManager::acquire(const String & classifier_name, const ClassifierSettings & settings)
+ClassifierPtr CustomResourceManager::acquire(const String & classifier_name)
 {
     // Acquire a reference to the current state
     StatePtr state_ref;
@@ -240,7 +236,7 @@ ClassifierPtr CustomResourceManager::acquire(const String & classifier_name, con
         state_ref = state;
     }
 
-    return std::make_shared<Classifier>(settings, state_ref, classifier_name);
+    return std::make_shared<Classifier>(state_ref, classifier_name);
 }
 
 void CustomResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)

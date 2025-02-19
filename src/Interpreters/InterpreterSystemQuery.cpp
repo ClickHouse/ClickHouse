@@ -98,9 +98,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsUInt64 keeper_max_retries;
-    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
-    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsMaxThreads max_threads;
@@ -113,7 +110,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
@@ -375,18 +371,9 @@ BlockIO InterpreterSystemQuery::execute()
             prewarmMarkCache();
             break;
         }
-        case Type::PREWARM_PRIMARY_INDEX_CACHE:
-        {
-            prewarmPrimaryIndexCache();
-            break;
-        }
         case Type::DROP_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context->clearMarkCache();
-            break;
-        case Type::DROP_PRIMARY_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
-            system_context->clearPrimaryIndexCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
@@ -399,10 +386,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
-            break;
-        case Type::DROP_SKIPPING_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
-            system_context->clearSkippingIndexCache();
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
@@ -761,7 +744,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true, query.logs);
+            system_logs.flush(true);
             break;
         }
         case Type::STOP_LISTEN:
@@ -826,10 +809,6 @@ BlockIO InterpreterSystemQuery::execute()
             resetCoverage();
             break;
         }
-        case Type::LOAD_PRIMARY_KEY: {
-            loadPrimaryKeys();
-            break;
-        }
         case Type::UNLOAD_PRIMARY_KEY:
         {
             unloadPrimaryKeys();
@@ -886,13 +865,7 @@ void InterpreterSystemQuery::restoreReplica()
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    const auto & settings = getContext()->getSettingsRef();
-
-    table_replicated_ptr->restoreMetadataInZooKeeper(
-        ZooKeeperRetriesInfo{settings[Setting::keeper_max_retries],
-                             settings[Setting::keeper_retry_initial_backoff_ms],
-                             settings[Setting::keeper_retry_max_backoff_ms],
-                             getContext()->getProcessListElementSafe()});
+    table_replicated_ptr->restoreMetadataInZooKeeper();
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
@@ -1025,32 +998,16 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
-        /// Instead of silently failing, check the permissions to delete all databases in advance.
-        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
-        /// Include the databases that the user needs privileges for in the exception
-        std::vector<String> required_access;
-        for (auto & elem : databases)
-        {
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                required_access.emplace_back(elem.first);
-                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-            }
-        }
-
-        if (!required_access.empty())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Access denied for {}. Not enough permissions to drop these databases: {}",
-                "SYSTEM DROP REPLICA",
-                fmt::join(required_access, ", "));
-
-        /// If we are here, then the user has the necassary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
+                if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first, iterator->name()))
+                {
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
+                    continue;
+                }
                 dropReplicaImpl(query, iterator->table());
             }
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -1258,38 +1215,28 @@ void InterpreterSystemQuery::waitLoadingParts()
     }
 }
 
-void InterpreterSystemQuery::loadPrimaryKeys()
-{
-    loadOrUnloadPrimaryKeysImpl(true);
-};
-
 void InterpreterSystemQuery::unloadPrimaryKeys()
-{
-    loadOrUnloadPrimaryKeysImpl(false);
-}
-
-void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 {
     if (!table_id.empty())
     {
-        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
         if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         {
-            LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
-            load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
+            LOG_TRACE(log, "Unloading primary keys for table {}", table_id.getFullTableName());
+            merge_tree->unloadPrimaryKeys();
         }
         else
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Command {} PRIMARY KEY is supported only for MergeTree tables, but got: {}", load ? "LOAD" : "UNLOAD", table->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Command UNLOAD PRIMARY KEY is supported only for MergeTree table, but got: {}", table->getName());
         }
     }
     else
     {
-        getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
-        LOG_TRACE(log, "{} primary keys for all tables", load ? "Loading" : "Unloading");
+        getContext()->checkAccess(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
+        LOG_TRACE(log, "Unloading primary keys for all tables");
 
         for (auto & database : DatabaseCatalog::instance().getDatabases())
         {
@@ -1297,7 +1244,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 {
-                    load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
+                    merge_tree->unloadPrimaryKeys();
                 }
             }
         }
@@ -1355,7 +1302,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
-    ctx->checkAccess(AccessType::SYSTEM_VIEWS, table_id);
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
     auto tasks = ctx->getRefreshSet().findTasks(table_id);
     if (tasks.empty())
         throw Exception(
@@ -1372,45 +1319,17 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
     auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
-    auto mark_cache = getContext()->getMarkCache();
-    if (!mark_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mark cache is not configured");
-
     ThreadPool pool(
         CurrentMetrics::MergeTreePartsLoaderThreads,
         CurrentMetrics::MergeTreePartsLoaderThreadsActive,
         CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
         getContext()->getSettingsRef()[Setting::max_threads]);
 
-    merge_tree->prewarmCaches(pool, std::move(mark_cache), nullptr);
-}
-
-void InterpreterSystemQuery::prewarmPrimaryIndexCache()
-{
-    if (table_id.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for PREWARM PRIMARY INDEX CACHE command");
-
-    getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
-
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
-    if (!merge_tree)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
-
-    auto index_cache = merge_tree->getPrimaryIndexCache();
-    if (!index_cache)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary index cache is not configured or is not enabled for table {}", table_id.getFullTableName());
-
-    ThreadPool pool(
-        CurrentMetrics::MergeTreePartsLoaderThreads,
-        CurrentMetrics::MergeTreePartsLoaderThreadsActive,
-        CurrentMetrics::MergeTreePartsLoaderThreadsScheduled,
-        getContext()->getSettingsRef()[Setting::max_threads]);
-
-    merge_tree->prewarmCaches(pool, nullptr, std::move(index_cache));
+    merge_tree->prewarmMarkCache(pool);
 }
 
 
@@ -1432,14 +1351,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MARK_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
@@ -1621,11 +1538,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::PREWARM_PRIMARY_INDEX_CACHE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_PREWARM_MARK_CACHE, query.getDatabase(), query.getTable());
-            break;
-        }
         case Type::SYNC_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
@@ -1678,14 +1590,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::JEMALLOC_FLUSH_PROFILE:
         {
             required_access.emplace_back(AccessType::SYSTEM_JEMALLOC);
-            break;
-        }
-        case Type::LOAD_PRIMARY_KEY:
-        {
-            if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY);
-            else
-                required_access.emplace_back(AccessType::SYSTEM_LOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
             break;
         }
         case Type::UNLOAD_PRIMARY_KEY:

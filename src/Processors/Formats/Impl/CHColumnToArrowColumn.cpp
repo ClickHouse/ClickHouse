@@ -22,8 +22,6 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
-#include <Processors/Port.h>
-
 #include <arrow/api.h>
 #include <arrow/builder.h>
 #include <arrow/type.h>

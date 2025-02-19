@@ -11,17 +11,15 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Core/Settings.h>
 
@@ -318,12 +316,6 @@ public:
         }
 
         if (const auto * /*join_node*/ _ = node->as<JoinNode>())
-        {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
-            return;
-        }
-
-        if (const auto * /*cross_join_node*/ _ = node->as<CrossJoinNode>())
         {
             can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
             return;

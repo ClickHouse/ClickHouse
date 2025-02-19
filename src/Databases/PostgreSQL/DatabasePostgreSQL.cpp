@@ -23,10 +23,9 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
-#include <Disks/IDisk.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -69,10 +68,9 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
-    , db_disk(getContext()->getDatabaseDisk())
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
-    db_disk->createDirectories(metadata_path);
+    fs::create_directories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -137,7 +135,8 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
 
 bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
 {
-    if (table_name.contains('\'') || table_name.contains('\\'))
+    if (table_name.find('\'') != std::string::npos
+        || table_name.find('\\') != std::string::npos)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "PostgreSQL table name cannot contain single quote or backslash characters, passed {}", table_name);
@@ -252,7 +251,8 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
     detached_or_dropped.erase(table_name);
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    db_disk->removeFileIfExists(table_marked_as_removed);
+    if (fs::exists(table_marked_as_removed))
+        (void)fs::remove(table_marked_as_removed);
 }
 
 
@@ -298,7 +298,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    db_disk->createFile(mark_table_removed);
+    FS::createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -309,7 +309,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    db_disk->removeRecursive(getMetadataPath());
+    (void)fs::remove_all(getMetadataPath());
 }
 
 
@@ -317,16 +317,14 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 {
     {
         std::lock_guard lock{mutex};
-        /// Check for previously dropped tables
-        for (const auto it = db_disk->iterateDirectory(getMetadataPath()); it->isValid(); it->next())
-        {
-            auto path = fs::path(it->path());
-            if (path.filename().empty())
-                path = path.parent_path();
+        fs::directory_iterator iter(getMetadataPath());
 
-            if (db_disk->existsFile(path) && endsWith(path.filename(), suffix))
+        /// Check for previously dropped tables
+        for (fs::directory_iterator end; iter != end; ++iter)
+        {
+            if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
             {
-                const auto & file_name = path.filename().string();
+                const auto & file_name = iter->path().filename().string();
                 const auto & table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(suffix)));
                 detached_or_dropped.emplace(table_name);
             }
@@ -380,7 +378,8 @@ void DatabasePostgreSQL::removeOutdatedTables()
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            db_disk->removeFileIfExists(table_marked_as_removed);
+            if (fs::exists(table_marked_as_removed))
+                (void)fs::remove(table_marked_as_removed);
         }
         else
             ++iter;

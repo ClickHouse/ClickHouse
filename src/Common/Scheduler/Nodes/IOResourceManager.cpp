@@ -1,4 +1,3 @@
-#include "Common/Scheduler/IResourceManager.h"
 #include <Common/Scheduler/Nodes/IOResourceManager.h>
 
 #include <Common/Scheduler/Nodes/FifoQueue.h>
@@ -218,8 +217,8 @@ IOResourceManager::Workload::~Workload()
     }
     catch (...)
     {
-        tryLogCurrentException("Workload");
-        chassert(false);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
+            getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 }
 
@@ -337,11 +336,6 @@ void IOResourceManager::deleteResource(const String & resource_name)
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
 }
 
-IOResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
-    : settings(settings_)
-{
-}
-
 IOResourceManager::Classifier::~Classifier()
 {
     // Detach classifier from all resources in parallel (executed in every scheduler thread)
@@ -401,16 +395,9 @@ ResourceLink IOResourceManager::Classifier::get(const String & resource_name)
 {
     std::unique_lock lock{mutex};
     if (auto iter = attachments.find(resource_name); iter != attachments.end())
-    {
         return iter->second.link;
-    }
     else
-    {
-        if (settings.throw_on_unknown_workload)
-            throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Access denied to resource '{}'", resource_name);
-        else
-            return ResourceLink{}; // unlimited access
-    }
+        throw Exception(ErrorCodes::RESOURCE_NOT_FOUND, "Access denied to resource '{}'", resource_name);
 }
 
 void IOResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link)
@@ -463,9 +450,9 @@ bool IOResourceManager::hasResource(const String & resource_name) const
     return resources.contains(resource_name);
 }
 
-ClassifierPtr IOResourceManager::acquire(const String & workload_name, const ClassifierSettings & settings)
+ClassifierPtr IOResourceManager::acquire(const String & workload_name)
 {
-    auto classifier = std::make_shared<Classifier>(settings);
+    auto classifier = std::make_shared<Classifier>();
 
     // Attach classifier to all resources in parallel (executed in every scheduler thread)
     std::vector<std::future<void>> futures;

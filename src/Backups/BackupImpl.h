@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Backups/BackupFactory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
@@ -16,6 +15,8 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -33,18 +34,28 @@ public:
         size_t max_volume_size = 0;
     };
 
-    /// RESTORE
     BackupImpl(
-        BackupFactory::CreateParams params_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
+        const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
-        std::shared_ptr<IBackupReader> lightweight_snapshot_reader_ = nullptr);
+        const ContextPtr & context_,
+        bool is_internal_backup_,
+        bool use_same_s3_credentials_for_base_backup_,
+        bool use_same_password_for_base_backup_);
 
-    /// BACKUP
     BackupImpl(
-        BackupFactory::CreateParams params_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupWriter> writer_);
+        const std::optional<BackupInfo> & base_backup_info_,
+        std::shared_ptr<IBackupWriter> writer_,
+        const ContextPtr & context_,
+        bool is_internal_backup_,
+        const std::shared_ptr<IBackupCoordination> & coordination_,
+        const std::optional<UUID> & backup_uuid_,
+        bool deduplicate_files_,
+        bool use_same_s3_credentials_for_base_backup_,
+        bool use_same_password_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -106,7 +117,6 @@ private:
 
     std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
-    const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
     const bool use_archive;
@@ -114,9 +124,8 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
-    /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
-    std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
-    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
+    const ContextPtr context;
+    const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -124,9 +133,6 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
-    /// object_key -> file name, only used by lightweight snapshot
-    std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
     time_t timestamp = 0;
@@ -149,6 +155,9 @@ private:
 
     bool writing_finalized = false;
     bool corrupted = false;
+    bool deduplicate_files = true;
+    bool use_same_s3_credentials_for_base_backup = false;
+    bool use_same_password_for_base_backup = false;
     const LoggerPtr log;
 };
 

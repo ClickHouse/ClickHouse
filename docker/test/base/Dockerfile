@@ -50,6 +50,5 @@ RUN ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezo
 
 # This script is used to setup realtime export of server logs from the CI into external ClickHouse cluster:
 COPY setup_export_logs.sh /
-COPY basic_helpers.sh /
 
 CMD sleep 1
