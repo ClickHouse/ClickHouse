@@ -140,9 +140,9 @@ private:
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
 
-    void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & o);
-    ASTPtr buildBinaryTree(const ASTs & predicates, const std::string & op);
-    ASTPtr permutePredicateClause(const ASTPtr & predicate);
+    void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
+    ASTPtr buildBinaryTree(const ASTs & predicates, const std::string & op, int prob);
+    ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
 
     template <typename T>
     const T & pickRandomlyFromVector(pcg64 & rand, const std::vector<T> & vals)

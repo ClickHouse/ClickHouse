@@ -1203,21 +1203,21 @@ ASTPtr QueryFuzzer::generatePredicate()
 }
 
 /// Helper function to extract all predicates from a binary AND/OR tree
-void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op)
+void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, const int negProb)
 {
     if (const auto * func = node->as<ASTFunction>())
     {
         if (func->name == op)
         {
             /// Recursively extract predicates from the left and right children
-            extractPredicates(func->arguments->children[0], predicates, op);
-            extractPredicates(func->arguments->children[1], predicates, op);
+            extractPredicates(func->arguments->children[0], predicates, op, negProb);
+            extractPredicates(func->arguments->children[1], predicates, op, negProb);
             return;
         }
         else if (func->name == "and" || func->name == "or")
         {
             /// Hit another "or" or "and" clause, shuffle it
-            predicates.emplace_back(permutePredicateClause(node));
+            predicates.emplace_back(permutePredicateClause(node, negProb));
             return;
         }
     }
@@ -1225,7 +1225,7 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
     predicates.emplace_back(node);
 }
 
-ASTPtr QueryFuzzer::buildBinaryTree(const ASTs & predicates, const std::string & op)
+ASTPtr QueryFuzzer::buildBinaryTree(const ASTs & predicates, const std::string & op, const int negProb)
 {
     if (predicates.empty())
     {
@@ -1233,17 +1233,17 @@ ASTPtr QueryFuzzer::buildBinaryTree(const ASTs & predicates, const std::string &
     }
 
     /// Start with the first predicate
-    ASTPtr current = tryNegateNextPredicate(predicates[0], 10);
+    ASTPtr current = tryNegateNextPredicate(predicates[0], negProb);
     /// Iteratively build the binary tree
     for (size_t i = 1; i < predicates.size(); i++)
     {
-        current = makeASTFunction(op, current, tryNegateNextPredicate(predicates[i], 10));
+        current = makeASTFunction(op, current, tryNegateNextPredicate(predicates[i], negProb));
     }
     return current;
 }
 
 /// Recursive function to traverse a predicate clause and permute logical groups
-ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate)
+ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate, const int negProb)
 {
     if (const auto * func = predicate->as<ASTFunction>())
     {
@@ -1251,10 +1251,10 @@ ASTPtr QueryFuzzer::permutePredicateClause(const ASTPtr & predicate)
         {
             /// Extract all predicates under the current logical operator
             ASTs predicates;
-            extractPredicates(predicate, predicates, func->name);
+            extractPredicates(predicate, predicates, func->name, negProb);
             /// Shuffle them
             std::shuffle(predicates.begin(), predicates.end(), fuzz_rand);
-            return buildBinaryTree(predicates, func->name);
+            return buildBinaryTree(predicates, func->name, negProb);
         }
     }
     return predicate;
@@ -1291,10 +1291,15 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
     }
 
     ASTPtr pred_expr = sel->getExpression(expr, false);
-    if (pred_expr && fuzz_rand() % 2 == 0)
+    if (pred_expr && fuzz_rand() % 10 == 0)
     {
         /// Permute predicate list
-        sel->setExpression(expr, permutePredicateClause(pred_expr));
+        ASTPtr new_pred_expr = permutePredicateClause(pred_expr, 10);
+
+        if (new_pred_expr != pred_expr)
+        {
+            sel->setExpression(expr, std::move(new_pred_expr));
+        }
     }
 }
 
@@ -1735,9 +1740,23 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             fuzzJoinType(tj);
         }
-        if (tj->using_expression_list && fuzz_rand() % 30 == 0)
+        if (fuzz_rand() % 20 == 0)
         {
-            fuzzColumnLikeExpressionList(tj->using_expression_list.get());
+            if (tj->using_expression_list)
+            {
+                fuzzColumnLikeExpressionList(tj->using_expression_list.get());
+            }
+            else if (tj->on_expression)
+            {
+                const ASTPtr & original_on_expression = tj->on_expression;
+                const ASTPtr new_on_expression = permutePredicateClause(original_on_expression, 30);
+
+                if (new_on_expression != original_on_expression)
+                {
+                    tj->on_expression = new_on_expression;
+                    tj->children = {new_on_expression};
+                }
+            }
         }
     }
     else if (auto * select = typeid_cast<ASTSelectQuery *>(ast.get()))
