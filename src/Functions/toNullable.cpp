@@ -1,35 +1,48 @@
-#include <Functions/toNullable.h>
-
+#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
-#include <memory>
+#include <Core/ColumnNumbers.h>
+
 
 namespace DB
 {
-
-FunctionPtr FunctionToNullable::create(ContextPtr)
+namespace
 {
-    return std::make_shared<FunctionToNullable>();
-}
 
-std::string FunctionToNullable::getName() const { return name; }
-
-size_t FunctionToNullable::getNumberOfArguments() const { return 1; }
-
-bool FunctionToNullable::useDefaultImplementationForNulls() const { return false; }
-
-bool FunctionToNullable::useDefaultImplementationForNothing() const { return false; }
-
-bool FunctionToNullable::useDefaultImplementationForConstants() const { return true; }
-
-bool FunctionToNullable::isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const { return false; }
-
-DataTypePtr FunctionToNullable::getReturnTypeImpl(const DataTypes & arguments) const { return makeNullable(arguments[0]); }
-
-ColumnPtr FunctionToNullable::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
+/// If value is not Nullable or NULL, wraps it to Nullable.
+class FunctionToNullable : public IFunction
 {
-    return makeNullable(arguments[0].column);
+public:
+    static constexpr auto name = "toNullable";
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionToNullable>();
+    }
+
+    std::string getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        return makeNullable(arguments[0]);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        return makeNullable(arguments[0].column);
+    }
+};
+
 }
 
 REGISTER_FUNCTION(ToNullable)
