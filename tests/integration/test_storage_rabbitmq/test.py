@@ -3703,18 +3703,19 @@ def test_rabbitmq_handle_error_mode_stream(rabbitmq_cluster):
 
 
 def test_attach_broken_table(rabbitmq_cluster):
+    table_name = f"rabbit_queue_{uuid.uuid4().hex}"
     instance.query(
-        f"ATTACH TABLE rabbit_queue UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
+        f"ATTACH TABLE {table_name} UUID '{uuid.uuid4()}' (`payload` String) ENGINE = RabbitMQ SETTINGS rabbitmq_host_port = 'nonexisting:5671', rabbitmq_format = 'JSONEachRow', rabbitmq_username = 'test', rabbitmq_password = 'test'"
     )
 
-    error = instance.query_and_get_error("SELECT * FROM rabbit_queue")
+    error = instance.query_and_get_error(f"SELECT * FROM {table_name}")
     assert "CANNOT_CONNECT_RABBITMQ" in error
-    error = instance.query_and_get_error("INSERT INTO rabbit_queue VALUES ('test')")
+    error = instance.query_and_get_error(f"INSERT INTO {table_name} VALUES ('test')")
     assert "CANNOT_CONNECT_RABBITMQ" in error
 
 
 def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
-    table_name = "nack_failed_insert"
+    table_name = f"nack_failed_insert_{uuid.uuid4().hex}"
     exchange = f"{table_name}_exchange"
 
     credentials = pika.PlainCredentials("root", "clickhouse")
