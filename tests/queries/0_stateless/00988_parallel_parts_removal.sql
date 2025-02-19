@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS mt;
 
 CREATE TABLE mt (x UInt64) ENGINE = MergeTree ORDER BY x
