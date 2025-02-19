@@ -186,7 +186,7 @@ Field QueryFuzzer::fuzzField(Field field)
     if (type == Field::Types::String)
     {
         auto & str = field.safeGet<std::string>();
-        UInt64 action = fuzz_rand() % 10;
+        const UInt64 action = fuzz_rand() % 12;
         switch (action)
         {
             case 0:
@@ -204,8 +204,26 @@ Field QueryFuzzer::fuzzField(Field field)
                     str[fuzz_rand() % str.size()] = '\0';
                 }
                 break;
+            case 5:
+                /// Not UTF-8
+                str = "\xF0\x28\x8C\xBC";
+                break;
+            case 6:
+            case 7:
+                /// For LIKE strings
+                if (str.size() < 128)
+                {
+                    for (auto & c : str)
+                    {
+                        if ((c == '_' || c == '%') && ((fuzz_rand() % 2) == 0))
+                        {
+                            c = (c == '_') ? '%' : '_';
+                        }
+                    }
+                }
+                break;
             default:
-                // Do nothing
+                /// Do nothing
                 break;
         }
     }
@@ -215,7 +233,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
-            size_t pos = fuzz_rand() % arr.size();
+            const size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
             if (debug_stream)
                 *debug_stream << "erased\n";
@@ -225,7 +243,7 @@ Field QueryFuzzer::fuzzField(Field field)
         {
             if (!arr.empty())
             {
-                size_t pos = fuzz_rand() % arr.size();
+                const size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
                 if (debug_stream)
                     *debug_stream << fmt::format("inserted (pos {})\n", pos);
@@ -249,7 +267,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
         if (fuzz_rand() % 5 == 0 && !arr.empty())
         {
-            size_t pos = fuzz_rand() % arr.size();
+            const size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
 
             if (debug_stream)
@@ -260,7 +278,7 @@ Field QueryFuzzer::fuzzField(Field field)
         {
             if (!arr.empty())
             {
-                size_t pos = fuzz_rand() % arr.size();
+                const size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
 
                 if (debug_stream)
