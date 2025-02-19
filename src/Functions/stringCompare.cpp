@@ -68,7 +68,7 @@ public:
         auto col_result = ColumnInt8::create();
 
         if (input_rows_count == 0)
-            return std::move(col_result);
+            return col_result;
 
         auto try_cast_column
             = [](const ColumnPtr & column) -> std::tuple<const ColumnString *, const ColumnFixedString *, const ColumnConst *>
@@ -90,7 +90,7 @@ public:
         if (num_bytes == 0)
         {
             col_result->insertMany(0, arguments[0].column->size());
-            return std::move(col_result);
+            return col_result;
         }
 
         col_result->getData().resize(arguments[0].column->size());
@@ -119,7 +119,7 @@ public:
                 arguments[0].column->getName(),
                 arguments[1].column->getName(),
                 getName());
-        return std::move(col_result);
+        return col_result;
     }
 
 private:
