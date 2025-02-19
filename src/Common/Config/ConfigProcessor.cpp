@@ -775,7 +775,6 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
         XMLDocumentPtr include_from;
         std::string include_from_path;
-        std::string current_path;
         if (node)
         {
             /// if we include_from env or zk.

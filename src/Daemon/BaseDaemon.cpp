@@ -48,7 +48,6 @@
 #include <Common/Elf.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <Interpreters/Context.h>
 #include <filesystem>
 
