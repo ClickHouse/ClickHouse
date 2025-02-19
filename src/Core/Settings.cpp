@@ -464,7 +464,7 @@ Initial backoff timeout for checking uploaded object to s3
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0) \
-    DECLARE(UInt64, azure_check_objects_after_upload_max_attempts, 3, R"(
+    DECLARE(UInt64, azure_check_objects_after_upload_max_attempts, 1, R"(
 Max attempts to check with backoff each uploaded object to azure to be sure that upload was successful
 )", 0) \
     DECLARE(UInt64, azure_check_objects_after_upload_initial_backoff_ms, 100, R"(

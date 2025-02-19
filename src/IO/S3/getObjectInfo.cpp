@@ -13,7 +13,6 @@ namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 check_objects_after_upload_max_attempts;
     extern const S3RequestSettingsUInt64 check_objects_after_upload_initial_backoff_ms;
-
 }
 
 namespace ProfileEvents

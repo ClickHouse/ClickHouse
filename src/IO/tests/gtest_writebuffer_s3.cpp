@@ -438,7 +438,7 @@ struct HeadObjectFailIngection: InjectionModel
     }
 };
 
-struct HeadObjectNoSuchKeyWithRetriesIngection : InjectionModel
+struct HeadObjectNoSuchKeyWithRetriesInjection : InjectionModel
 {
     size_t attempts = 1;
 
@@ -448,7 +448,7 @@ struct HeadObjectNoSuchKeyWithRetriesIngection : InjectionModel
         {
             attempts--;
             return Aws::Client::AWSError<Aws::S3::S3Errors>(
-                Aws::S3::S3Errors::NO_SUCH_KEY, "FailInjection", "HeadObjectNoSuchKeyIngection", false);
+                Aws::S3::S3Errors::NO_SUCH_KEY, "FailInjection", "HeadObjectNoSuchKeyWithRetriesInjection", false);
         }
         return {};
     }
@@ -713,7 +713,7 @@ TEST_P(SyncAsync, ExceptionOnHead) {
 
 TEST_P(SyncAsync, TestCheckObjectAfterUploadWithRetries)
 {
-    auto injection = std::make_shared<MockS3::HeadObjectNoSuchKeyWithRetriesIngection>();
+    auto injection = std::make_shared<MockS3::HeadObjectNoSuchKeyWithRetriesInjection>();
     setInjectionModel(injection);
 
     auto write_buffer = [&](const String & name)
