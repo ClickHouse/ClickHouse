@@ -546,7 +546,6 @@ public:
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
-
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
@@ -1202,8 +1201,8 @@ protected:
 
 private:
     /// Columns and secondary indices sizes can be calculated lazily.
-    mutable std::mutex columns_and_secondary_inices_sizes_mutex;
-    mutable bool are_columns_and_secondary_inices_sizes_calculated = false;
+    mutable std::mutex columns_and_secondary_indices_sizes_mutex;
+    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
@@ -1213,7 +1212,7 @@ protected:
     void resetColumnSizes()
     {
         column_sizes.clear();
-        are_columns_and_secondary_inices_sizes_calculated = false;
+        are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
     /// Engine-specific methods

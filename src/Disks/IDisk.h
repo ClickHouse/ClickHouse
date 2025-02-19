@@ -456,6 +456,14 @@ public:
     /// Performs custom action on disk startup.
     virtual void startupImpl(ContextPtr) {}
 
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
+    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
+    /// (those that MergeTree tables can make).
+    virtual void refresh()
+    {
+        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
+    }
+
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
     virtual String getUniqueId(const String & path) const { return path; }
@@ -466,7 +474,7 @@ public:
     virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
 
     /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) { }
+    virtual void onFreeze(const String &) {}
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;

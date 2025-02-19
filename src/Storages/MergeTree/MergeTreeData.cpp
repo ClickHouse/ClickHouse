@@ -115,6 +115,7 @@
 #include <azure/core/http/http.hpp>
 #endif
 
+
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
 {
@@ -1831,7 +1832,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// Only check if user did touch storage configuration for this table.
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks)
     {
-        /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2073,7 +2074,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-    are_columns_and_secondary_inices_sizes_calculated = false;
+    are_columns_and_secondary_indices_sizes_calculated = false;
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         calculateColumnAndSecondaryIndexSizesIfNeeded();
 
@@ -5268,8 +5269,8 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
 {
-    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
-    if (are_columns_and_secondary_inices_sizes_calculated)
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     column_sizes.clear();
@@ -5279,14 +5280,14 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
     for (const auto & part : committed_parts_range)
         addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 
-    are_columns_and_secondary_inices_sizes_calculated = true;
+    are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
-    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
-    if (!are_columns_and_secondary_inices_sizes_calculated)
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
@@ -5314,8 +5315,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
-    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
-    if (!are_columns_and_secondary_inices_sizes_calculated)
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     for (const auto & column : part->getColumns())
