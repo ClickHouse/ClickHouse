@@ -4,21 +4,11 @@ set(DELTA_KERNEL_RS_CMAKE_DIR "${ClickHouse_SOURCE_DIR}/contrib/delta-kernel-rs-
 
 include(ExternalProject)
 
-set(USE_DELTA_KERNEL_RS 1)
+set(USE_DELTA_KERNEL_RS ${ENABLE_LIBRARIES})
 
-if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER)
-  message(STATUS "Disabling delta kernel because of incompatible platfrom")
+if (NOT ENABLE_LIBRARIES OR NOT OS_LINUX OR (NOT ARCH_AMD64 AND NOT ARCH_AARCH64) OR (SANITIZE STREQUAL "memory") OR NO_ARMV81_OR_HIGHER OR NOT ENABLE_RUST)
+  message(STATUS "Disabling delta kernel because of incompatible platform or Rust is disabled")
   set(USE_DELTA_KERNEL_RS 0)
-else()
-  list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/delta-kernel-rs/cmake")
-  find_package(Rust)
-  set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
-endif()
-
-option(ENABLE_RUST "Enable rust" ${DEFAULT_ENABLE_RUST})
-if(NOT ENABLE_RUST)
-  message(STATUS "Not using rust")
-  return()
 endif()
 
 option(ENABLE_DELTA_KERNEL_RS "Enable delta-kernel-rs" ${USE_DELTA_KERNEL_RS})
@@ -75,9 +65,23 @@ else()
 endif()
 
 corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib ALL_FEATURES FLAGS --offline)
+corrosion_set_env_vars(delta_kernel_ffi "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/delta_home" "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
 
-corrosion_set_env_vars(delta_kernel_ffi "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
-corrosion_add_target_rustflags(delta_kernel_ffi "-C" "link-arg=-fuse-ld=lld")
+get_property(
+        INTERFACE_DELTA_CARGO_FLAGS
+        TARGET delta_kernel_ffi
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
+)
+set_property(
+        TARGET delta_kernel_ffi
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_DELTA_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}"
+)
+get_property(
+        INTERFACE_DELTA_CARGO_FLAGS
+        TARGET delta_kernel_ffi
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
+)
+message(STATUS "Delta-kernel cargo flags: ${INTERFACE_DELTA_CARGO_FLAGS}")
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)

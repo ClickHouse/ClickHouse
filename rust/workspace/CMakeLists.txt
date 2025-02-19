@@ -22,23 +22,45 @@ function(clickhouse_import_crate)
     endif()
 
     corrosion_import_crate(${ARGN} NO_STD PROFILE ${profile} LOCKED FLAGS --offline)
+
 endfunction()
 
-# -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'
-# -Wno-unused-macros: unused CXXBRIDGE1_RUST_STRING
-set(CXXBRIDGE_CXXFLAGS "-Wno-dollar-in-identifier-extension -Wno-unused-macros")
-set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
-message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
-
-configure_file(".cargo/config.toml.in" ".cargo/config.toml" @ONLY)
-# Force a copy to the main directory. This is done to also affect the build of delta-kernel-rs (outside of the submodule)
-configure_file(".cargo/config.toml.in" "${CMAKE_BINARY_DIR}/.cargo/config.toml" @ONLY)
+# TODO: via properties
+## -Wno-dollar-in-identifier-extension: cxx bridge complies names with '$'
+## -Wno-unused-macros: unused CXXBRIDGE1_RUST_STRING
+#set(CXXBRIDGE_CXXFLAGS "-Wno-dollar-in-identifier-extension -Wno-unused-macros")
+#set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
+#message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
 
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
+corrosion_set_env_vars(_ch_rust_prql "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/prql_home")
+corrosion_set_env_vars(_ch_rust_skim_rust "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/skim_home")
+
+get_property(
+    INTERFACE_PRQL_CARGO_FLAGS
+    TARGET _ch_rust_prql
+    PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
+)
+SET(INTERFACE_PRQL_CARGO_FLAGS "${INTERFACE_PRQL_CARGO_FLAGS};--config=${RUST_CONFIG_FILE}")
+set_property(
+        TARGET _ch_rust_prql
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_PRQL_CARGO_FLAGS}"
+)
+set_property(
+        TARGET _ch_rust_skim_rust
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS "${INTERFACE_PRQL_CARGO_FLAGS}"
+)
+
+get_property(
+        INTERFACE_PRQL_CARGO_FLAGS
+        TARGET _ch_rust_prql
+        PROPERTY INTERFACE_CORROSION_CARGO_FLAGS
+)
+
+message(STATUS "Workspace libs cargo flags: ${INTERFACE_PRQL_CARGO_FLAGS}")
 
 target_include_directories(_ch_rust_prql INTERFACE prql/include)
 add_library(ch_rust::prql ALIAS _ch_rust_prql)
 
 target_include_directories(_ch_rust_skim_rust INTERFACE skim/include)
 add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
-
