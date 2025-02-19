@@ -3176,7 +3176,6 @@ For example:
 </remote_url_allow_hosts>
 ```
 
-
 ## timezone
 
 The server's time zone.
