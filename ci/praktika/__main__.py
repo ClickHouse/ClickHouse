@@ -93,6 +93,7 @@ def main():
         Html.prepare(args.test)
     elif args.command == "run":
         os.system("echo 'jordy was here' > /tmp/proof")
+        os.system("echo 'this runs on a pr because pull_request_target'")
         sys.exit(1)
         from .mangle import _get_workflows
         from .runner import Runner
