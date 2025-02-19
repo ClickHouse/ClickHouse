@@ -8,6 +8,7 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <base/scope_guard.h>
+#include <Common/ActionBlocker.h>
 #include <Common/ExternalLoaderStatus.h>
 #include <Common/Logger.h>
 #include <Core/Types.h>
@@ -211,6 +212,8 @@ public:
 
     /// Reload only a specified path in a specified config repository.
     void reloadConfig(const String & repository_name, const String & path) const;
+
+    ActionLock getActionLock(StorageActionBlockType action_type);
 
 protected:
     virtual LoadableMutablePtr createObject(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
