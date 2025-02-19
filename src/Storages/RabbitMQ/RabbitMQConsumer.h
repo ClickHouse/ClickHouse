@@ -106,7 +106,6 @@ private:
         ERROR,
     };
     std::atomic<State> state = State::NONE;
-    size_t subscriptions_num = 0;
 
     ConcurrentBoundedQueue<MessageData> received;
     MessageData current;

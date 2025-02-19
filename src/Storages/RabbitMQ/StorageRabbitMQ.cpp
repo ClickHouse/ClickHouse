@@ -1239,7 +1239,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     }
     else
     {
-        LOG_TEST(log, "Will {} messages for {} channels", write_failed ? "nack" : "ack", sources.size());
+        LOG_TEST(log, "Will {} {} messages for {} channels", write_failed ? "nack" : "ack", rows, sources.size());
 
         /// Commit
         for (auto & source : sources)

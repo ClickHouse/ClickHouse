@@ -19,10 +19,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW c (d UInt64) ENGINE = Rep
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
 ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table"
-if ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (2)" 2>/dev/null; then
-    echo "FAIL"
-    echo "Expected 'too many parts' on table b"
-fi
+${CLICKHOUSE_CLIENT} --materialized_views_ignore_errors=1 --query "INSERT INTO root VALUES (2)" 2>&1 | grep -q 'DB::Exception: Too many parts'
 
 echo
 ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table, d"

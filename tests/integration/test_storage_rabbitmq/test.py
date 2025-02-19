@@ -40,19 +40,6 @@ instance2 = cluster.add_instance(
     with_rabbitmq=True,
 )
 
-instance3 = cluster.add_instance(
-    "instance3",
-    user_configs=["configs/users.xml"],
-    main_configs=[
-        "configs/rabbitmq.xml",
-        "configs/macros.xml",
-        "configs/named_collection.xml",
-        "configs/mergetree.xml",
-    ],
-    with_rabbitmq=True,
-    stay_alive=True,
-)
-
 # Helpers
 
 
@@ -112,7 +99,6 @@ def rabbitmq_cluster():
         cluster.start()
         logging.debug("rabbitmq_id is {}".format(instance.cluster.rabbitmq_docker_id))
         instance.query("CREATE DATABASE test")
-        instance3.query("CREATE DATABASE test")
 
         yield cluster
 
@@ -3924,7 +3910,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     queue_name = result.method.queue
     channel.queue_bind(exchange="deadl", routing_key="", queue=queue_name)
 
-    instance3.query(
+    instance.query(
         f"""
         CREATE TABLE test.{table_name} (key UInt64, value UInt64)
             ENGINE = RabbitMQ
@@ -3932,7 +3918,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_exchange_name = '{exchange}',
                      rabbitmq_format = 'JSONEachRow',
-                    rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
+                     rabbitmq_queue_settings_list='x-dead-letter-exchange=deadl';
 
         DROP TABLE IF EXISTS test.view;
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -3941,7 +3927,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
         DROP TABLE IF EXISTS test.consumer;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
-            SELECT * FROM test.{table_name};
+            SELECT intDiv(key, if(key < 25, 0, 1)), value FROM test.{table_name};
         """
     )
 
@@ -3950,23 +3936,15 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
         message = json.dumps({"key": i, "value": i}) + "\n"
         channel.basic_publish(exchange=exchange, routing_key="", body=message)
 
-    instance3.wait_for_log_line(
-        "Failed to push to views. Error: Code: 252. DB::Exception: Too many parts"
+    instance.wait_for_log_line(
+        "Failed to push to views. Error: Code: 153. DB::Exception: Division by zero",
     )
-
-    instance3.replace_in_config(
-        "/etc/clickhouse-server/config.d/mergetree.xml",
-        "parts_to_throw_insert>0",
-        "parts_to_throw_insert>10",
-    )
-    instance3.restart_clickhouse()
-
-    count = [0]
 
     def on_consume(channel, method, properties, body):
-        channel.basic_publish(exchange=exchange, routing_key="", body=body)
-        count[0] += 1
-        if count[0] == num_rows:
+        data = json.loads(body)
+        message = json.dumps({"key": data["key"] + 100, "value": data["value"]}) + "\n"
+        channel.basic_publish(exchange=exchange, routing_key="", body=message)
+        if data["key"] == num_rows - 1:
             channel.stop_consuming()
 
     channel.basic_consume(queue_name, on_consume)
@@ -3975,7 +3953,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     count = 0
     while time.monotonic() < deadline:
-        count = int(instance3.query("SELECT count() FROM test.view"))
+        count = int(instance.query("SELECT count() FROM test.view"))
         if count == num_rows:
             break
         time.sleep(0.05)
@@ -3986,7 +3964,7 @@ def test_rabbitmq_nack_failed_insert(rabbitmq_cluster):
 
     assert count == num_rows
 
-    instance3.query(
+    instance.query(
         f"""
         DROP TABLE test.consumer;
         DROP TABLE test.view;

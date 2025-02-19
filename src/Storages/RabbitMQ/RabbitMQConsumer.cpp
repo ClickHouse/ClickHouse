@@ -1,6 +1,4 @@
 #include <utility>
-#include <chrono>
-#include <thread>
 #include <atomic>
 #include <memory>
 #include <Storages/RabbitMQ/RabbitMQConsumer.h>
@@ -8,7 +6,6 @@
 #include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/logger_useful.h>
-#include "Poco/Timer.h"
 #include <amqpcpp.h>
 
 namespace DB
@@ -55,8 +52,8 @@ void RabbitMQConsumer::subscribe()
         .onSuccess([&](const std::string & /* consumer_tag */)
         {
             LOG_TRACE(
-                log, "Consumer on channel {} ({}/{}) is subscribed to queue {}",
-                channel_id, subscriptions_num, queues.size(), queue_name);
+                log, "Consumer on channel {} (queues size {}) is subscribed to queue {}",
+                channel_id, queues.size(), queue_name);
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
@@ -147,6 +144,8 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
 
 bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
 {
+    LOG_DEBUG(log, "nackMessages");
+
     if (state != State::OK)
     {
         LOG_TEST(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
@@ -163,7 +162,7 @@ bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
 
     if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple))
     {
-        LOG_TRACE(
+        LOG_TEST(
             log, "Consumer rejected messages with deliveryTags from {} to {} on channel {}",
             last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
 
@@ -197,7 +196,6 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 
             LOG_TRACE(log, "Channel {} is successfully created", channel_id);
 
-            subscriptions_num = 0;
             subscribe();
 
             state = State::OK;

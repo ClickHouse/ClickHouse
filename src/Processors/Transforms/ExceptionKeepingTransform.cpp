@@ -1,5 +1,6 @@
 #include <exception>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include "Common/CurrentThread.h"
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
@@ -140,6 +141,7 @@ void ExceptionKeepingTransform::work()
             ready_output = true;
             data.exception = exception;
             onException(data.exception);
+            cancel();
         }
     }
     else if (stage == Stage::Consume || stage == Stage::Generate)
@@ -154,6 +156,7 @@ void ExceptionKeepingTransform::work()
                 ready_output = true;
                 data.exception = exception;
                 onException(data.exception);
+                cancel();
             }
             else
                 stage = Stage::Generate;
@@ -168,6 +171,7 @@ void ExceptionKeepingTransform::work()
                 ready_output = true;
                 data.exception = exception;
                 onException(data.exception);
+                cancel();
             }
             else
             {
@@ -190,6 +194,7 @@ void ExceptionKeepingTransform::work()
             ready_output = true;
             data.exception = exception;
             onException(data.exception);
+            cancel();
         }
     }
 }

@@ -51,13 +51,14 @@ def test_basic(start_cluster):
     old_src, old_a, old_b, old_c = src, a, b, c
 
     # that issert fails on test_mv_b due to partitions by A
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            """
-            SET max_partitions_per_insert_block = 3;
-            INSERT INTO test SELECT number FROM numbers(10);
-            """
-        )
+    # In order to have the data inserted in other MV we have to ignore the errors with setting materialized_views_ignore_errors=1;
+    node.query(
+        """
+        SET max_partitions_per_insert_block = 3;
+        SET materialized_views_ignore_errors=1;
+        INSERT INTO test SELECT number FROM numbers(10);
+        """
+    )
     src, a, b, c = get_counts()
     assert src == old_src + 10
     assert a == old_a + 10
@@ -103,14 +104,14 @@ def test_basic(start_cluster):
     old_src, old_a, old_b, old_c = src, a, b, c
 
     # that issert fails on test_mv_b due to partitions by A, it is an uniq data which is not deduplicated
-    with pytest.raises(QueryRuntimeException):
-        node.query(
-            """
-            SET max_partitions_per_insert_block = 3;
-            SET deduplicate_blocks_in_dependent_materialized_views = 1;
-            INSERT INTO test SELECT number FROM numbers(100,10);
-            """
-        )
+    node.query(
+        """
+        SET max_partitions_per_insert_block = 3;
+        SET deduplicate_blocks_in_dependent_materialized_views = 1;
+        SET materialized_views_ignore_errors=1;
+        INSERT INTO test SELECT number FROM numbers(100,10);
+        """
+    )
     src, a, b, c = get_counts()
     assert src == old_src + 10
     assert a == old_a + 10
