@@ -358,6 +358,7 @@ class ArtifactNames:
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
+    FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -436,6 +437,11 @@ ARTIFACTS = [
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
         ]
+    ),
+    Artifact.Config(
+        name=ArtifactNames.FAST_TEST,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/*",
     ),
     *Artifact.Config(
         name="*",
@@ -549,6 +555,7 @@ class Jobs:
                 "./src",
             ],
         ),
+        provides=[ArtifactNames.FAST_TEST],
     )
 
     build_jobs = Job.Config(
