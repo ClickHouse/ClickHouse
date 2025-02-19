@@ -1187,6 +1187,10 @@ private:
         {
             info->loading_id = info->state_id;
         }
+
+        if (info->isBlocked())
+            info->blocked = false;
+
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
         /// Add `loading_id` to the list of recently finished loadings.
