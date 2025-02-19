@@ -34,6 +34,8 @@ extern const int CANNOT_SEND_SIGNAL;
 
 extern const char * GIT_HASH;
 
+static const std::vector<StackTrace::FramePointers> empty_stack;
+
 using namespace DB;
 
 
@@ -112,7 +114,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
     out.finalize();
