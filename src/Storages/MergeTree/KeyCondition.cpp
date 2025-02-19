@@ -1919,8 +1919,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             /// Analyze (x, y)
             RPNElement::MultiColumnsFunctionDescription column_desc;
             column_desc.function_name = func_name;
-            auto first_argument = func.getArgumentAt(0).toFunctionNode();
 
+            /// TODO: support index analysis for first argument of Point/Tuple type.
+            if (!func.getArgumentAt(0).isFunction())
+                return false;
+
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
             if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
                 return false;
 
