@@ -164,7 +164,7 @@ In the meantime, some other tests might be added with the same numeric prefix, b
 
 Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
 
-```
+```sql
 select x; -- { serverError 49 }
 ```
 
