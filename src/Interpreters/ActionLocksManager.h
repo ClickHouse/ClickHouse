@@ -24,9 +24,15 @@ public:
     void add(const StorageID & table_id, StorageActionBlockType action_type);
     void add(const StoragePtr & table, StorageActionBlockType action_type);
 
+    /// Add a new global lock
+    void add(StorageActionBlockType action_type, ActionLock&& action_lock);
+
     /// Removes a lock for a table if it exists
     void remove(const StorageID & table_id, StorageActionBlockType action_type);
     void remove(const StoragePtr & table, StorageActionBlockType action_type);
+
+    /// Remove a global lock if it exists
+    void remove(StorageActionBlockType action_type);
 
     /// Removes all locks of non-existing tables
     void cleanExpired();
@@ -38,6 +44,7 @@ private:
 
     mutable std::mutex mutex;
     StorageLocks storage_locks;
+    Locks global_locks;
 };
 
 }
