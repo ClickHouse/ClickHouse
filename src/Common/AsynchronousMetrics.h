@@ -121,8 +121,8 @@ private:
     [[maybe_unused]] const bool update_jemalloc_epoch;
     [[maybe_unused]] const bool update_rss;
 
-    UInt64 prev_os_cpu_wait_microseconds = 0;
-    UInt64 prev_os_virtual_time_microseconds = 0;
+    UInt64 prev_cpu_wait_microseconds = 0;
+    UInt64 prev_cpu_virtual_time_microseconds = 0;
 
     double getCPUOverloadMetric();
 
