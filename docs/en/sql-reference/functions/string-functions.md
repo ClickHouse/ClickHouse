@@ -515,12 +515,12 @@ stringCompare(string1, string2[, string1_offset, string2_offset, num_bytes]);
 
 **Returned value**
 
-- -1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
-If `string1_offset` >= len(`string1`) and `string2_offset` < len(`string2`).
-- 0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
-If `string1_offset` >= len(`string1`) and `string2_offset` >= len(`string2`).
-- 1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
-If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
+- -1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < length(`string1`) and `string2_offset` < length(`string2`).
+If `string1_offset` >= length(`string1`) and `string2_offset` < length(`string2`).
+- 0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < length(`string1`) and `string2_offset` < length(`string2`).
+If `string1_offset` >= length(`string1`) and `string2_offset` >= length(`string2`).
+- 1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < length(`string1`) and `string2_offset` < length(`string2`).
+If `string1_offset` < length(`string1`) and `string2_offset` >= length(`string2`).
 
 **Example**
 
