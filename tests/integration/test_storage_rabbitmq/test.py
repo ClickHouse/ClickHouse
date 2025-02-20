@@ -539,6 +539,7 @@ def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):
 def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     instance.query(
         """
+        SET allow_materialized_view_with_bad_select = true;
         DROP TABLE IF EXISTS test.view1;
         DROP TABLE IF EXISTS test.view2;
         DROP TABLE IF EXISTS test.view3;
