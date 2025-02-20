@@ -182,9 +182,6 @@ void IDisk::copyDirectoryContent(
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    if (!to_disk->existsDirectory(to_dir))
-        to_disk->createDirectories(to_dir);
-
     copyThroughBuffers(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
