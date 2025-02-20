@@ -49,10 +49,10 @@ endfunction()
 #set(RUST_CXXFLAGS "${RUST_CXXFLAGS} ${CXXBRIDGE_CXXFLAGS}")
 #message(STATUS "RUST_CXXFLAGS (for skim): ${RUST_CXXFLAGS}")
 
-# Set a different CARGO_HOME for each crate to avoid cache conflicts (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)
 clickhouse_import_crate(MANIFEST_PATH Cargo.toml)
-corrosion_set_env_vars(_ch_rust_prql "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/prql_home")
-corrosion_set_env_vars(_ch_rust_skim_rust "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/skim_home")
+# Set a different CARGO_HOME for each crate to avoid cache conflicts (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)
+#corrosion_set_env_vars(_ch_rust_prql "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/prql_home")
+#corrosion_set_env_vars(_ch_rust_skim_rust "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/skim_home")
 
 # Set cargo config (see contrib/delta-kernel-rs-cmake/CMakeLists.txt)
 get_property(

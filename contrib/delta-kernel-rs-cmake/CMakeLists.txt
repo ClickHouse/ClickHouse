@@ -67,10 +67,7 @@ else()
 endif()
 
 corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib ALL_FEATURES FLAGS --offline)
-# Set a custom CARGO_HOME to build this crate to avoid cache conflicts
-# If we don't do this then building one of the subprojects will invalidate cache from the others are doing simple
-# `ninja clickhouse` will rebuild rust libraries unnecessarily
-corrosion_set_env_vars(delta_kernel_ffi "CARGO_HOME=${CMAKE_CURRENT_BINARY_DIR}/delta_home" "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
+corrosion_set_env_vars(delta_kernel_ffi "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}" "OPENSSL_LIBS=${SSLNAME}:${CRYPTONAME}" "OPENSSL_STATIC=1" "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/" "OPENSSL_INCLUDE_DIR=${DELTA_KERNEL_RS_BINARY_DIR}/${PLATFORM_DIRECTORY}")
 
 # We set manually the cargo config flags via command line `--config` option
 # This is needed to pass the proper compilation flags (CC, CXX, CFLAGS, etc)
