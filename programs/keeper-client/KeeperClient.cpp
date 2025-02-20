@@ -442,6 +442,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     else
         runInteractive();
 
+    /// Suppress "Finalizing session {}" message.
+    getLogger("ZooKeeperClient")->setLevel("error");
+    zookeeper.reset();
+
     return 0;
 }
 
