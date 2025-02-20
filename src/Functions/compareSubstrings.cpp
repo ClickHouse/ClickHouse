@@ -24,16 +24,13 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-// Usage:
-// - stringCompare(s, t):
-//     Compare s with t.
-// - stringCompare(s, t[, offset_s, offset_t, n])
-//     Compare s from offset_s to offset_s + n with t from offset_t to offset_t + n.
-class FunctionStringCompare : public IFunction
+// compareSubstrings(str1, str2, offset1, offset2, num_bytes):
+// - Compare str1 from offset1 to offset1 + num_bytes with str2 from offset2 to offset2 + num_bytes.
+class FunctionCompareSubstrings : public IFunction
 {
 public:
-    static constexpr auto name = "stringCompare";
-    static FunctionPtr create(const ContextPtr /*context*/) { return std::make_shared<FunctionStringCompare>(); }
+    static constexpr auto name = "compareSubstrings";
+    static FunctionPtr create(const ContextPtr /*context*/) { return std::make_shared<FunctionCompareSubstrings>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -43,19 +40,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 2 && arguments.size() != 5)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires 2 or 5 arguments", getName());
-
         FunctionArgumentDescriptors mandatory_args{
             {"string1", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
             {"string2", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
-        };
-        FunctionArgumentDescriptors optional_args{
             {"string1_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
             {"string2_offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
             {"num_bytes", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), isColumnConst, "const UInt*"},
         };
-        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeInt8>();
     }
@@ -382,28 +374,28 @@ private:
     }
 };
 
-REGISTER_FUNCTION(StringCompare)
+REGISTER_FUNCTION(CompareSubstrings)
 {
-    factory.registerFunction<FunctionStringCompare>(FunctionDocumentation{
+    factory.registerFunction<FunctionCompareSubstrings>(FunctionDocumentation{
         .description = R"(
                 This function compares parts of two strings directly, without the need to copy the parts of the string into new columns.
                 )",
         .syntax = R"(
-        stringCompare(str1, str2[, str1_off, str2_off, num_bytes])
+        compareSubstrings(str1, str2, str1_off, str2_off, num_bytes)
         )",
         .arguments
         = {{"string1", "Required. The string to compare."},
            {"string2", "Required. The string to compare."},
-           {"string1_offset", "Optional, positive number. The starting position (zero-based index) in `str1` from which the comparison begins."},
-           {"string2_offset", "Optional, positive number. The starting position (zero-based index) in `str2` from which the comparison begins."},
+           {"string1_offset", "Positive number. The starting position (zero-based index) in `str1` from which the comparison begins."},
+           {"string2_offset", "Positive number. The starting position (zero-based index) in `str2` from which the comparison begins."},
            {"num_bytes", "The number of bytes to compare in both strings, starting from their respective offsets."}},
         .returned_value
         = R"(-1 if the substring from str1 is lexicographically smaller than the substring from str2, 0 if the substrings are equal, 1 if the substring from str1 is lexicographically greater than the substring from str2.)",
         .examples{
             {"typical",
-             "SELECT stringCompare('123', '123', 0, 0, 3)",
+             "SELECT compareSubstrings('123', '123', 0, 0, 3)",
              R"(
-                ┌─stringCompar⋯', 0, 0, 3)─┐
+                ┌─compareSubtr⋯', 0, 0, 3)─┐
              1. │                        0 │
                 └──────────────────────────┘
                 )"}},

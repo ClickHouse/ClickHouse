@@ -495,23 +495,23 @@ Result:
 └──────────────────────────────┴─────────────────────────┘
 ```
 
-## stringCompare
+## compareSubstrings
 
 Compare two strings lexicographically.
 
 **Syntax**
 
 ```sql
-stringCompare(string1, string2[, string1_offset, string2_offset, num_bytes]);
+compareSubstrings(string1, string2, string1_offset, string2_offset, num_bytes);
 ```
 
 **Arguments**
 
 - `string1` — The first string to compare. [String](../data-types/string.md)
 - `string2` - The second string to compare.[String](../data-types/string.md)
-- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional. [UInt*](../data-types/int-uint.md).
-- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional. [UInt*](../data-types/int-uint.md).
-- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. Optional. [UInt*](../data-types/int-uint.md).
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. [UInt*](../data-types/int-uint.md).
 
 **Returned value**
 
@@ -524,32 +524,15 @@ stringCompare(string1, string2[, string1_offset, string2_offset, num_bytes]);
 Query:
 
 ```sql
-SELECT
-    stringCompare('C-3P0', 'R2-D2') AS result1,
-    stringCompare('R2-D2', 'R2-D2') AS result2,
-    stringCompare('R2-D2', 'C-3PO') AS result3
+SELECT compareSubstrings('Saxony', 'Anglo-Saxon', 0, 6, 5) AS result,
 ```
 
 Result:
 
 ```result
-   ┌─result1─┬─result2─┬─result3─┐
-1. │      -1 │       0 │       1 │
-   └─────────┴─────────┴─────────┘
-```
-
-Query:
-
-```sql
-SELECT stringCompare('Saxony', 'Anglo-Saxon', 0, 6, 5) AS result,
-```
-
-Result:
-
-```result
-   ┌─result─┐
-1. │      0 │
-   └────────┘
+┌─result─┐
+│      0 │
+└────────┘
 ```
 
 ## lower
