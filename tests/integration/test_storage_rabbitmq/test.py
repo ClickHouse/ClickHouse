@@ -16,7 +16,6 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, check_rabbitmq_is_available
 from helpers.test_tools import TSV
 
-from . import rabbitmq_pb2
 
 DEFAULT_TIMEOUT_SEC = 60
 
@@ -62,43 +61,6 @@ def rabbitmq_check_result(result, check=False, reference=None):
         assert TSV(result) == TSV(reference)
     else:
         return TSV(result) == TSV(reference)
-
-
-def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
-    logging.getLogger("pika").propagate = False
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            if check_rabbitmq_is_available(rabbitmq_docker_id, cookie):
-                logging.debug("RabbitMQ is available")
-                return
-            time.sleep(0.5)
-        except Exception as ex:
-            logging.debug("Can't connect to RabbitMQ " + str(ex))
-            time.sleep(0.5)
-
-
-def kill_rabbitmq(rabbitmq_id, rabbitmq_cookie):
-    try:
-        p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
-        p.wait(timeout=30)
-        return p.returncode == 0
-    except Exception as ex:
-        print("Exception stopping rabbit MQ, will try forcefully", ex)
-        try:
-            p = subprocess.Popen(
-                ("docker", "stop", "-s", "9", rabbitmq_id), stdout=subprocess.PIPE
-            )
-            p.wait(timeout=30)
-            return p.returncode == 0
-        except Exception as e:
-            print("Exception stopping rabbit MQ forcefully", e)
-
-
-def revive_rabbitmq(rabbitmq_id, cookie):
-    p = subprocess.Popen(("docker", "start", rabbitmq_id), stdout=subprocess.PIPE)
-    p.wait(timeout=60)
-    wait_rabbitmq_to_start(rabbitmq_id, cookie)
 
 
 # Fixtures
