@@ -224,7 +224,7 @@ The attributes [from_env](#from_env_zk) and [from_zk](#from_env_zk) can also be 
 
     <encryption_codecs>
         <aes_128_gcm_siv>
-            <key_hex from_env="CLICK_KEY"/>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
         </aes_128_gcm_siv>
     </encryption_codecs>
 
@@ -241,7 +241,7 @@ The attributes [from_env](#from_env_zk) and [from_zk](#from_env_zk) can also be 
 
     <encryption_codecs>
         <aes_128_gcm_siv>
-            <key_hex from_zk="/clickhouse/key128"/>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
         </aes_128_gcm_siv>
     </encryption_codecs>
 
@@ -262,7 +262,7 @@ Example `config.xml`:
 
     <encryption_codecs>
         <aes_128_gcm_siv>
-            <key_hex from_zk="/clickhouse/key128"/>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
         </aes_128_gcm_siv>
     </encryption_codecs>
 

@@ -961,8 +961,9 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
     }
 
 #if USE_SSL
-    /* If skip_zk_encryption_keys == true, load encryption codecs and decrypt config's encrypted elements unless encryption keys are stored in ZK,
-    since ZK is not available at this stage and loading keys from ZK causes an exception
+    /* Some callers (e.g. during very early server startup) will not have access to Zookeeper. Such callers can specify `skip_zk_encryption_keys = false`
+    (but they will not be able to decrypt encrypted elements). If there are no `encryption_codecs` tags with `from_zk` attributes, we can decrypt anyways.
+
     Config example we process here:
     <clickhouse>
       <encryption_codecs>
@@ -977,7 +978,7 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
     <clickhouse>
       <encryption_codecs>
         <aes_128_gcm_siv>
-            <key_hex from_zk="/clickhouse/key128"/>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
         </aes_128_gcm_siv>
       </encryption_codecs>
       <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
