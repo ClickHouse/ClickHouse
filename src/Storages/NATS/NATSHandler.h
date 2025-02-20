@@ -30,9 +30,12 @@ public:
     std::future<NATSConnectionPtr> createConnection(const NATSConfiguration & configuration);
 
 private:
+    static void processTasks(uv_async_t* scheduler);
+
     /// Execute task on event loop thread
     void post(Task task);
-
+    void executeTasks();
+        
     NATSOptionsPtr createOptions();
 
     bool isRunning();
@@ -47,6 +50,8 @@ private:
 
     std::mutex tasks_mutex;
     std::queue<Task> tasks;
+
+    uv_async_t execute_tasks_scheduler;
 };
 
 }
