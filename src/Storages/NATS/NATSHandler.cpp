@@ -75,7 +75,7 @@ void NATSHandler::runLoop()
 
 void NATSHandler::processTasks(uv_async_t* scheduler)
 {
-    auto self_ptr = static_cast<NATSHandler *>(scheduler->data);
+    auto * self_ptr = static_cast<NATSHandler *>(scheduler->data);
     if (!self_ptr)
     {
         return;
