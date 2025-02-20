@@ -155,13 +155,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                     last_modified = object_metadata->last_modified;
 
                     /// Load the list of files inside the directory
+                    fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
                     size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
-                    for (auto dir_iterator = object_storage->iterate(remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
+                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
                         String remote_file_path = remote_file->getPath();
-                        chassert(remote_file_path.starts_with(remote_path.string()));
-                        auto filename = std::filesystem::path(remote_file_path).filename();
+                        chassert(remote_file_path.starts_with(full_remote_path.string()));
+                        auto filename = fs::path(remote_file_path).filename();
 
                         /// Check that the file is a direct child.
                         if (remote_file_path.substr(prefix_length) == filename)
@@ -203,7 +204,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
                 }
 
                 auto added = path_map->addPathIfNotExists(
-                    std::filesystem::path(local_path).parent_path(),
+                    fs::path(local_path).parent_path(),
                     InMemoryDirectoryPathMap::RemotePathInfo{remote_path, last_modified.epochTime(), std::move(files)});
 
                 /// This can happen if table replication is enabled, then the same local path is written
@@ -295,7 +296,7 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    std::unordered_set<std::string> result = getDirectChildrenOnDisk(std::filesystem::path(path) / "");
+    std::unordered_set<std::string> result = getDirectChildrenOnDisk(fs::path(path) / "");
     return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
 }
 
@@ -312,7 +313,7 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 }
 
 std::unordered_set<std::string>
-MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const std::filesystem::path & local_path) const
+MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
 {
     std::unordered_set<std::string> result;
     path_map->iterateSubdirectories(local_path, [&](const auto & elem){ result.emplace(elem); });
