@@ -4,7 +4,7 @@
 #include <Backups/BackupImpl.h>
 #include <Backups/BackupInMemory.h>
 #include <Common/Exception.h>
-#include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBuffer.h>
 #include <Interpreters/Context.h>
 
@@ -34,7 +34,7 @@ UInt64 BackupReaderMemory::getFileSize(const String & file_name)
     return backup_in_memory->getFileSize(file_name);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderMemory::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderMemory::readFile(const String & file_name)
 {
     return backup_in_memory->readFile(file_name);
 }
