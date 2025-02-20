@@ -5,10 +5,9 @@ env:
   PYTHONUNBUFFERED: 1
 
 "on":
-  ### Disabled until the workflow will work ###
-  # schedule:
-  #   # Fridays 09:55 UTC
-  #   - cron: '55 9 * * 5'
+  schedule:
+    # Fridays 09:55 UTC
+    - cron: '55 9 * * 5'
   workflow_dispatch:
     inputs:
       dry-run:
