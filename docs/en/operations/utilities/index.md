@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/
+slug: /operations/utilities/
 sidebar_position: 56
 sidebar_label: List of tools and utilities
 title: List of tools and utilities
