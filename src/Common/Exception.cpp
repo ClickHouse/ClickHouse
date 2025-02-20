@@ -92,6 +92,8 @@ Exception::MessageMasked::MessageMasked(std::string && msg_)
         masker->wipeSensitiveData(msg);
 }
 
+const Exception::ThreadFramePointersBase Exception::dummy_frame_pointers = {};
+
 Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
     , remote(remote_)
