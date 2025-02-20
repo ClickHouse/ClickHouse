@@ -269,6 +269,7 @@ Chunk StorageObjectStorageSource::generate()
                 }
                 else
                 {
+#if USE_PARQUET
                     /// This is a bad crutch until old implementation of DeltaLake (without delta-kernel) is removed.
                     if (configuration->isDataLakeConfiguration())
                     {
@@ -301,6 +302,7 @@ Chunk StorageObjectStorageSource::generate()
                             }
                         }
                     }
+#endif
                 }
             }
             return chunk;

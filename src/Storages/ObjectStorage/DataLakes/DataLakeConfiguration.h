@@ -129,11 +129,13 @@ public:
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
+#if USE_PARQUET
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
         auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
         return delta_lake_metadata->getPartitionColumns();
     }
+#endif
 
 private:
     DataLakeMetadataPtr current_metadata;
