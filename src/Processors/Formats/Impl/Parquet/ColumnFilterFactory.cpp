@@ -77,7 +77,8 @@ bool isIntInput(const ActionsDAG::Node & node)
 {
     const auto * input_node = getInputNode(node);
     auto input_type = removeNullable(input_node->result_type);
-    if (!isInt64(input_type) && !isInt32(input_type) && !isInt16(input_type))
+    if (!isInt64(input_type) && !isInt32(input_type) && !isInt16(input_type)
+        && !isDateOrDate32(input_type) && !isDateTimeOrDateTime64(input_type))
         return false;
     return true;
 }
@@ -253,11 +254,15 @@ bool BytesValuesFilterFactory::validate(const ActionsDAG::Node & node)
 Strings extractStringsForInClause(const ActionsDAG::Node & node)
 {
     auto constant_nodes = getConstantNode(node);
-    const auto * arg = checkAndGetColumn<const ColumnConst>(constant_nodes.front()->column.get());
-    const auto * column_set = checkAndGetColumn<const ColumnSet>(&arg->getDataColumn());
+    const IColumn * column_set_ptr;
+    if (const auto * arg = checkAndGetColumn<const ColumnConst>(constant_nodes.front()->column.get()))
+        column_set_ptr = &arg->getDataColumn();
+    else
+        column_set_ptr = constant_nodes.front()->column.get();
+    const auto * column_set = checkAndGetColumn<const ColumnSet>(column_set_ptr);
     if (!column_set)
         throw DB::Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Only ColumnSet is supported in IN or notIn clause, but got {}", arg->getDataColumn().getName());
+            ErrorCodes::NOT_IMPLEMENTED, "Only ColumnSet is supported in IN or notIn clause, but got {}", column_set_ptr->getName());
     auto set = column_set->getData()->get();
     if (set->getSetElements().size() != 1)
         throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Only one set element is supported in IN clause");
@@ -313,26 +318,27 @@ bool NegatedBytesValuesFilterFactory::validate(const ActionsDAG::Node & node)
 }
 NamedColumnFilter NegatedBytesValuesFilterFactory::create(const ActionsDAG::Node & node)
 {
-    const auto * input_node = getInputNode(node);
-    auto name = input_node->result_name;
+
     auto func_name = node.function_base->getName();
     auto constant_nodes = getConstantNode(node);
     ColumnFilterPtr filter;
     if (func_name == "notEquals")
     {
+        const auto * input_node = getInputNode(node);
         auto value = constant_nodes.front()->column->getDataAt(0);
         String str;
         str.resize(value.size);
         memcpy(str.data(), value.data, value.size);
         std::vector<String> values = {str};
         filter = std::make_shared<NegatedBytesValuesFilter>(values, false);
-        return std::make_pair(name, filter);
+        return std::make_pair(input_node->result_name, filter);
     }
     else if (func_name == "notIn")
     {
+        const auto * input_node = getInputNode(node);
         auto values = extractStringsForInClause(node);
         filter = std::make_shared<NegatedBytesValuesFilter>(values, false);
-        return std::make_pair(name, filter);
+        return std::make_pair(input_node->result_name, filter);
     }
     const auto * child = getFirstChildNode(node);
     auto non_negated_filter = non_negated_factory.create(*child);
@@ -372,13 +378,13 @@ bool IsNotNullFilterFactory::validate(const ActionsDAG::Node & node)
 
 NamedColumnFilter IsNotNullFilterFactory::create(const ActionsDAG::Node & node)
 {
-    const auto * input_node = getInputNode(node);
-    auto name = input_node->result_name;
     auto func_name = node.function_base->getName();
     auto constant_nodes = getConstantNode(node);
     ColumnFilterPtr filter;
     if (func_name == "isNotNull")
     {
+        const auto * input_node = getInputNode(node);
+        auto name = input_node->result_name;
         filter = std::make_shared<IsNotNullFilter>();
         return std::make_pair(name, filter);
     }
