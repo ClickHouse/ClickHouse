@@ -2,7 +2,6 @@
 
 #include <Backups/BackupInfo.h>
 #include <Common/SettingsChanges.h>
-#include <IO/S3Defines.h>
 #include <optional>
 
 
@@ -130,9 +129,6 @@ struct RestoreSettings
 
     /// Whether base backup from S3 should inherit credentials from the RESTORE query.
     bool use_same_s3_credentials_for_base_backup = false;
-
-    /// Max size of file to be copied using single part copy operation
-    UInt64 s3_max_single_operation_copy_size = S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE;
 
     /// Whether base backup archive should be unlocked using the same password as the incremental archive
     bool use_same_password_for_base_backup = false;

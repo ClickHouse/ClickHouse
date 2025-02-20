@@ -165,7 +165,6 @@ namespace
     M(Bool, update_access_entities_dependents) \
     M(RestoreUDFCreationMode, create_function) \
     M(Bool, allow_s3_native_copy) \
-    M(UInt64, s3_max_single_operation_copy_size) \
     M(Bool, use_same_s3_credentials_for_base_backup) \
     M(Bool, use_same_password_for_base_backup) \
     M(Bool, restore_broken_parts_as_detached) \

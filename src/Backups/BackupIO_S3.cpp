@@ -51,7 +51,6 @@ namespace S3AuthSetting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool allow_native_copy;
-    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 http_max_fields;
     extern const S3RequestSettingsUInt64 http_max_field_name_size;
@@ -151,7 +150,6 @@ BackupReaderS3::BackupReaderS3(
     const String & access_key_id_,
     const String & secret_access_key_,
     bool allow_s3_native_copy,
-    UInt64 s3_max_single_operation_copy_size,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
     const ContextPtr & context_,
@@ -170,7 +168,6 @@ BackupReaderS3::BackupReaderS3(
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
-    s3_settings.request_settings[S3RequestSetting::max_single_operation_copy_size] = s3_max_single_operation_copy_size;
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);
 
@@ -250,7 +247,6 @@ BackupWriterS3::BackupWriterS3(
     const String & access_key_id_,
     const String & secret_access_key_,
     bool allow_s3_native_copy,
-    UInt64 s3_max_single_operation_copy_size,
     const String & storage_class_name,
     const ReadSettings & read_settings_,
     const WriteSettings & write_settings_,
@@ -271,7 +267,6 @@ BackupWriterS3::BackupWriterS3(
 
     s3_settings.request_settings.updateFromSettings(context_->getSettingsRef(), /* if_changed */true);
     s3_settings.request_settings[S3RequestSetting::allow_native_copy] = allow_s3_native_copy;
-    s3_settings.request_settings[S3RequestSetting::max_single_operation_copy_size] = s3_max_single_operation_copy_size;
     s3_settings.request_settings[S3RequestSetting::storage_class_name] = storage_class_name;
 
     client = makeS3Client(s3_uri_, access_key_id_, secret_access_key_, s3_settings, context_);

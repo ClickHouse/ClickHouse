@@ -5,7 +5,6 @@
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-#include <IO/S3Defines.h>
 #include <Parsers/IAST_fwd.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
@@ -45,7 +44,6 @@ public:
         bool use_same_s3_credentials_for_base_backup = false;
         bool use_same_password_for_base_backup = false;
         bool azure_attempt_to_create_container = true;
-        UInt64 s3_max_single_operation_copy_size = S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE;
         ReadSettings read_settings;
         WriteSettings write_settings;
 

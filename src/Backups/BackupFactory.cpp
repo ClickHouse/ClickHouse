@@ -18,7 +18,6 @@ BackupFactory::CreateParams BackupFactory::CreateParams::getCreateParamsForBaseB
     read_params.context = context;
     read_params.is_internal_backup = is_internal_backup;
     read_params.allow_s3_native_copy = allow_s3_native_copy;
-    read_params.s3_max_single_operation_copy_size = s3_max_single_operation_copy_size;
     read_params.allow_azure_native_copy = allow_azure_native_copy;
     read_params.use_same_s3_credentials_for_base_backup = use_same_s3_credentials_for_base_backup;
     read_params.use_same_password_for_base_backup = use_same_password_for_base_backup;
