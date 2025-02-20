@@ -139,10 +139,13 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
-                document_ok = parser.parse(json, document);
+                if constexpr (!std::is_same_v<JSONParser, OnDemandSimdJSONParser>)
+                {
+                    std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                    document_ok = parser.parse(json, document);
+                }
             }
-
+            //std::cerr <<"gethere is jsonconst?" << col_json_const << std::endl;
             String error;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -151,8 +154,16 @@ public:
                     std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
                     document_ok = parser.parse(json, document);
                 }
+                else if constexpr (std::is_same_v<JSONParser, OnDemandSimdJSONParser>)
+                {
+                    //std::cerr <<"gethere jsonconst, need reset dock:" << document_ok << std::endl;
+                    ///document.reset();
+                    std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                    document_ok = parser.parse(json, document);
+                }
 
                 bool added_to_column = false;
+                //std::cerr <<"gethere i:" << i << ", doc ok?" << document_ok<< std::endl;
                 if (document_ok)
                 {
                     /// Perform moves.
@@ -235,17 +246,20 @@ private:
     template <typename JSONParser>
     static bool performMoves(const ColumnsWithTypeAndName & arguments, size_t row,
                              const typename JSONParser::Element & document, const std::vector<Move> & moves,
-                             typename JSONParser::Element & element, std::string_view & last_key)
+                                typename JSONParser::Element & element, std::string_view & last_key)
     {
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
+        //std::cerr << "gethere move size: " << moves.size() << std::endl;
         for (size_t j = 0; j != moves.size(); ++j)
         {
+            //std::cerr <<"gethere perform move: " << j << std::endl;
             switch (moves[j].type)
             {
                 case MoveType::ConstIndex:
                 {
+                    //std::cerr <<"gethere move by index: " << moves[j].index << std::endl;
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(moves[j].index), key))
                         return false;
                     break;
@@ -253,6 +267,7 @@ private:
                 case MoveType::ConstKey:
                 {
                     key = moves[j].key;
+                    //std::cerr <<"gethere move by constkey: " << key << std::endl;
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
@@ -260,6 +275,7 @@ private:
                 case MoveType::Index:
                 {
                     Int64 index = (*arguments[j + 1].column)[row].safeGet<Int64>();
+                    //std::cerr <<"gethere move by index: " << index << std::endl;
                     if (!moveToElementByIndex<JSONParser>(res_element, static_cast<int>(index), key))
                         return false;
                     break;
@@ -267,11 +283,13 @@ private:
                 case MoveType::Key:
                 {
                     key = arguments[j + 1].column->getDataAt(row).toView();
+                    //std::cerr <<"gethere move by key: " << key << std::endl;
                     if (!moveToElementByKey<JSONParser>(res_element, key))
                         return false;
                     break;
                 }
             }
+            //std::cerr <<"gethere perform move: " << j  << " done"<< std::endl;
         }
 
         element = res_element;
@@ -285,12 +303,13 @@ private:
         if (element.isArray())
         {
             auto array = element.getArray();
+            size_t array_size = array.size();
             if (index >= 0)
                 --index;
             else
-                index += array.size();
+                index += array_size;
 
-            if (static_cast<size_t>(index) >= array.size())
+            if (static_cast<size_t>(index) >= array_size)
                 return false;
             element = array[index];
             out_key = {};
@@ -302,12 +321,13 @@ private:
             if (element.isObject())
             {
                 auto object = element.getObject();
+                size_t object_size = object.size();
                 if (index >= 0)
                     --index;
                 else
-                    index += object.size();
+                    index += object_size;
 
-                if (static_cast<size_t>(index) >= object.size())
+                if (static_cast<size_t>(index) >= object_size)
                     return false;
                 std::tie(out_key, element) = object[index];
                 return true;
@@ -362,6 +382,23 @@ constexpr bool functionForcesTheReturnType()
 {
     return std::is_same_v<Impl<void>, JSONExtractImpl<void>> || std::is_same_v<Impl<void>, JSONExtractKeysAndValuesImpl<void>>;
 }
+
+struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
+struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
+struct NameJSONLength { static constexpr auto name{"JSONLength"}; };
+struct NameJSONKey { static constexpr auto name{"JSONKey"}; };
+struct NameJSONType { static constexpr auto name{"JSONType"}; };
+struct NameJSONExtractInt { static constexpr auto name{"JSONExtractInt"}; };
+struct NameJSONExtractUInt { static constexpr auto name{"JSONExtractUInt"}; };
+struct NameJSONExtractFloat { static constexpr auto name{"JSONExtractFloat"}; };
+struct NameJSONExtractBool { static constexpr auto name{"JSONExtractBool"}; };
+struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; };
+struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
+struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
+struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
+struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
+struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
+struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
 
 template <typename Name, template<typename> typename Impl>
 class ExecutableFunctionJSON : public IExecutableFunction
@@ -434,7 +471,12 @@ private:
     {
 #if USE_SIMDJSON
         if (allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+        {
+            if constexpr (std::is_same_v<Name, NameIsValidJSON> || std::is_same_v<Name, NameJSONExtract> || std::is_same_v<Name, NameJSONLength>)
+                return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+            else
+                return FunctionJSONHelpers::Executor<Name, Impl, OnDemandSimdJSONParser>::run(arguments, result_type, input_rows_count, format_settings);
+        }
 #endif
 
 #if USE_RAPIDJSON
@@ -550,24 +592,6 @@ public:
             null_presence, getContext()->getSettingsRef()[Setting::allow_simdjson], argument_types, return_type, json_return_type, getFormatSettings(getContext()));
     }
 };
-
-struct NameJSONHas { static constexpr auto name{"JSONHas"}; };
-struct NameIsValidJSON { static constexpr auto name{"isValidJSON"}; };
-struct NameJSONLength { static constexpr auto name{"JSONLength"}; };
-struct NameJSONKey { static constexpr auto name{"JSONKey"}; };
-struct NameJSONType { static constexpr auto name{"JSONType"}; };
-struct NameJSONExtractInt { static constexpr auto name{"JSONExtractInt"}; };
-struct NameJSONExtractUInt { static constexpr auto name{"JSONExtractUInt"}; };
-struct NameJSONExtractFloat { static constexpr auto name{"JSONExtractFloat"}; };
-struct NameJSONExtractBool { static constexpr auto name{"JSONExtractBool"}; };
-struct NameJSONExtractString { static constexpr auto name{"JSONExtractString"}; };
-struct NameJSONExtract { static constexpr auto name{"JSONExtract"}; };
-struct NameJSONExtractKeysAndValues { static constexpr auto name{"JSONExtractKeysAndValues"}; };
-struct NameJSONExtractRaw { static constexpr auto name{"JSONExtractRaw"}; };
-struct NameJSONExtractArrayRaw { static constexpr auto name{"JSONExtractArrayRaw"}; };
-struct NameJSONExtractKeysAndValuesRaw { static constexpr auto name{"JSONExtractKeysAndValuesRaw"}; };
-struct NameJSONExtractKeys { static constexpr auto name{"JSONExtractKeys"}; };
-
 
 template <typename JSONParser>
 class JSONHasImpl
@@ -997,10 +1021,13 @@ public:
         auto array = element.getArray();
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
 
+        size_t size = 0;
         for (auto value : array)
+        {
+            ++size;
             JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_res.getData(), value, {}, format_settings, error);
-
-        col_res.getOffsets().push_back(col_res.getOffsets().back() + array.size());
+        }
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + size);
         return true;
     }
 };
@@ -1033,13 +1060,15 @@ public:
         auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
         auto & col_value = assert_cast<ColumnString &>(col_tuple.getColumn(1));
 
+        size_t size = 0;
         for (const auto & [key, value] : object)
         {
             col_key.insertData(key.data(), key.size());
             JSONExtractRawImpl<JSONParser>::insertResultToColumn(col_value, value, {}, format_settings, error);
+            ++size;
         }
 
-        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + object.size());
+        col_arr.getOffsets().push_back(col_arr.getOffsets().back() + size);
         return true;
     }
 };
@@ -1067,12 +1096,14 @@ public:
         ColumnArray & col_res = assert_cast<ColumnArray &>(dest);
         auto & col_key = assert_cast<ColumnString &>(col_res.getData());
 
+        size_t count = 0;
         for (const auto & [key, value] : object)
         {
+            ++count;
             col_key.insertData(key.data(), key.size());
         }
 
-        col_res.getOffsets().push_back(col_res.getOffsets().back() + object.size());
+        col_res.getOffsets().push_back(col_res.getOffsets().back() + count);
         return true;
     }
 };

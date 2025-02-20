@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <Functions/JSONPath/ASTs/ASTJSONPathStar.h>
 #include <Functions/JSONPath/Generator/IVisitor.h>
 #include <Functions/JSONPath/Generator/VisitorStatus.h>
@@ -19,21 +20,25 @@ public:
 
     VisitorStatus apply(typename JSONParser::Element & element) const override
     {
-        typename JSONParser::Array array = element.getArray();
-        element = array[current_index];
+        element = array.value()[current_index];
         return VisitorStatus::Ok;
     }
 
     VisitorStatus visit(typename JSONParser::Element & element) override
     {
-        if (!element.isArray())
+        if (!array && !element.isArray())
         {
             this->setExhausted(true);
             return VisitorStatus::Error;
         }
 
+        if (!array_size)
+        {
+            array = element.getArray();
+            array_size = array.value().size();
+        }
         VisitorStatus status;
-        if (current_index < element.getArray().size())
+        if (current_index < array_size.value())
         {
             apply(element);
             status = VisitorStatus::Ok;
@@ -46,11 +51,53 @@ public:
 
         return status;
     }
+    using TElement = JSONParser::Element;
+    VisitorStatus visitBatch(TElement & element, std::function<void(const TElement &)> & res_func, bool can_reduce) override
+    {
+        if (!array && !element.isArray())
+        {
+            this->setExhausted(true);
+            return VisitorStatus::Error;
+        }
+
+        if (!array)
+        {
+            array = element.getArray();
+            array_size = array.value().size();
+        }
+        VisitorStatus status = VisitorStatus::Ok;
+
+        if (can_reduce)
+        {
+            for (auto item: array.value())
+                res_func(item);
+
+            this->setExhausted(true);
+        }
+        else
+        {
+            if (current_index < array_size.value())
+            {
+                apply(element);
+                status = VisitorStatus::Ok;
+            }
+            else
+            {
+                status = VisitorStatus::Ignore;
+                this->setExhausted(true);
+            }
+
+        }
+
+        return status;
+    }
 
     void reinitialize() override
     {
         current_index = 0;
         this->setExhausted(false);
+        array_size.reset();
+        array.reset();
     }
 
     void updateState() override
@@ -59,7 +106,9 @@ public:
     }
 
 private:
-    UInt32 current_index;
+    UInt32 current_index{};
+    std::optional<typename JSONParser::Array> array{};
+    std::optional<size_t> array_size{};
 };
 
 }

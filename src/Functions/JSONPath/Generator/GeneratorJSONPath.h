@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <Functions/JSONPath/Generator/IGenerator.h>
 #include <Functions/JSONPath/Generator/VisitorJSONPathMemberAccess.h>
 #include <Functions/JSONPath/Generator/VisitorJSONPathRange.h>
@@ -21,6 +22,7 @@ template <typename JSONParser>
 class GeneratorJSONPath : public IGenerator<JSONParser>
 {
 public:
+    using TElement = typename JSONParser::Element;
     /**
      * Traverses children ASTs of ASTJSONPathQuery and creates a vector of corresponding visitors
      * @param query_ptr_ pointer to ASTJSONPathQuery
@@ -80,11 +82,6 @@ public:
                 return VisitorStatus::Exhausted;
             }
 
-            for (int i = 0; i < current_visitor; ++i)
-            {
-                visitors[i]->apply(current);
-            }
-
             VisitorStatus status = VisitorStatus::Error;
             for (size_t i = current_visitor; i < visitors.size(); ++i)
             {
@@ -102,6 +99,31 @@ public:
                 element = current;
                 return status;
             }
+        }
+    }
+
+    VisitorStatus getNextItemBatch(TElement & element, std::function<void(const TElement &)> & res_func) override
+    {
+        while (true)
+        {
+            /// element passed to us actually is root, so here we assign current to root
+            auto current = element;
+            if (current_visitor < 0)
+                return VisitorStatus::Exhausted;
+
+            VisitorStatus status = VisitorStatus::Error;
+            size_t visitor_size = visitors.size();
+            for (size_t i = current_visitor; i < visitor_size; ++i)
+            {
+                status = visitors[i]->visitBatch(current, res_func, i == visitor_size - 1);
+                current_visitor = static_cast<int>(i);
+                if (status == VisitorStatus::Error || status == VisitorStatus::Ignore)
+                    break;
+            }
+            updateVisitorsForNextRun();
+
+            if (status != VisitorStatus::Ignore)
+                return status;
         }
     }
 

@@ -10,6 +10,8 @@ template <typename JSONParser>
 class IGenerator
 {
 public:
+    using TElement = typename JSONParser::Element;
+
     IGenerator() = default;
 
     virtual const char * getName() const = 0;
@@ -20,7 +22,9 @@ public:
      * @param element to be extracted into
      * @return true if generator is not exhausted
      */
-    virtual VisitorStatus getNextItem(typename JSONParser::Element & element) = 0;
+    virtual VisitorStatus getNextItem(TElement & element) = 0;
+
+    virtual VisitorStatus getNextItemBatch(TElement & element, std::function<void(const TElement &)> & res_func) = 0;
 
     virtual ~IGenerator() = default;
 };

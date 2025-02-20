@@ -8,13 +8,20 @@ template <typename JSONParser>
 class IVisitor
 {
 public:
+    using TElement = typename JSONParser::Element;
     virtual const char * getName() const = 0;
 
     /**
      * Applies this visitor to document and mutates its state
      * @param element simdjson element
      */
-    virtual VisitorStatus visit(typename JSONParser::Element & element) = 0;
+    virtual VisitorStatus visit(TElement & element) = 0;
+
+    /**
+     * Applies this visitor to document and mutates its state, returning a batch of results
+     * @param element simdjson element
+     */
+    virtual VisitorStatus visitBatch(TElement &element, std::function<void(const TElement &)> & res_func, bool can_reduce) = 0;
 
     /**
      * Applies this visitor to document, but does not mutate state
