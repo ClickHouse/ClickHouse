@@ -1794,7 +1794,6 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
                     actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
                     actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
-
         }
         else
         {
@@ -1806,6 +1805,12 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
                 actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
         }
+
+        chassert(main_priority->getSizeApprox() <= actual_settings[FileCacheSetting::max_size]);
+        chassert(main_priority->getElementsCountApprox() <= actual_settings[FileCacheSetting::max_elements]);
+
+        chassert(main_priority->getSizeLimit(lockCache()) == actual_settings[FileCacheSetting::max_size]);
+        chassert(main_priority->getElementsLimit(lockCache()) == actual_settings[FileCacheSetting::max_elements]);
     }
 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
