@@ -35,9 +35,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     const auto context = args.getLocalContext();
     auto queue_settings = std::make_unique<StorageObjectStorageSettings>();
 
-    queue_settings->loadFromQuery(*args.storage_def);
+    if (args.storage_def->settings)
+        queue_settings->loadFromQuery(*args.storage_def->settings);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, std::move(queue_settings));
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, queue_settings.get());
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current

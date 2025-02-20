@@ -64,12 +64,9 @@ StorageObjectStorageSettings::~StorageObjectStorageSettings() = default;
 STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 
-void StorageObjectStorageSettings::loadFromQuery(ASTStorage & storage_def)
+void StorageObjectStorageSettings::loadFromQuery(ASTSetQuery & settings_ast)
 {
-    if (storage_def.settings)
-    {
-        impl->applyChanges(storage_def.settings->changes);
-    }
+    impl->applyChanges(settings_ast.changes);
 }
 
 Field StorageObjectStorageSettings::get(const std::string & name)

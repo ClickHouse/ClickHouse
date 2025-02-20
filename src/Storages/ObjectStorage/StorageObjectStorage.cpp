@@ -588,7 +588,7 @@ void StorageObjectStorage::Configuration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    std::unique_ptr<StorageObjectStorageSettings> settings)
+    StorageObjectStorageSettings * settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration.fromNamedCollection(*named_collection, local_context);

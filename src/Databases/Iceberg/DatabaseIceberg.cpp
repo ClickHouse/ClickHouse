@@ -228,7 +228,7 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, std::move(storage_settings));
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, storage_settings.get());
 
     return std::make_shared<StorageObjectStorage>(
         configuration,

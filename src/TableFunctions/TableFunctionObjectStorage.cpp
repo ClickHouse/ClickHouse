@@ -73,6 +73,16 @@ void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
     auto & args = args_func.at(0)->children;
+    for (auto * it = args.begin(); it != args.end(); ++it)
+    {
+        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
+        if (settings_ast)
+        {
+            settings.loadFromQuery(*settings_ast);
+            args.erase(it);
+            break;
+        }
+    }
     parseArgumentsImpl(args, context);
 }
 

@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
@@ -48,12 +47,9 @@ public:
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
         ContextPtr local_context,
-        bool allow_experimental_delta_kernel_rs)
+        bool)
     {
-        if (allow_experimental_delta_kernel_rs)
-            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
-        else
-            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
     }
 
     bool supportsFileIterator() const override { return true; }

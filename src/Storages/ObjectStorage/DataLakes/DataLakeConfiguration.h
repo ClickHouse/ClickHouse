@@ -126,6 +126,14 @@ public:
         return current_metadata->iterate();
     }
 
+    /// This is an awful temporary crutch,
+    /// which will be removed once DeltaKernel is used by default for DeltaLake.
+    /// By release 25.3.
+    DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
+    {
+        auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
+        return delta_lake_metadata->getPartitionColumns();
+    }
 
 private:
     DataLakeMetadataPtr current_metadata;

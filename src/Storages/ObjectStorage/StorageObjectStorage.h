@@ -172,7 +172,7 @@ public:
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        std::unique_ptr<StorageObjectStorageSettings> settings);
+        StorageObjectStorageSettings * settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;

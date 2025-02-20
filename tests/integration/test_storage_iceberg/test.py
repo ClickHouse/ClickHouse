@@ -2029,12 +2029,14 @@ def test_partition_pruning(started_cluster, storage_type):
     assert (
         check_validity_and_get_prunned_files(
             f"SELECT * FROM {creation_expression} WHERE date3 <= '2024-01-25' ORDER BY ALL"
-
+        )
         == 3
     )
 
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN tag TYPE BIGINT")
 
+    assert (
+        check_validity_and_get_prunned_files(
             f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
         )
         == 2
