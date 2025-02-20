@@ -96,7 +96,7 @@ protected:
         ThreadFramePointersBase frame_pointers;
     };
     static thread_local ThreadFramePointers thread_frame_pointers;
-    static ThreadFramePointersBase dummy_frame_pointers;
+    static const ThreadFramePointersBase dummy_frame_pointers;
 
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
     struct MessageMasked
