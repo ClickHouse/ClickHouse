@@ -32,6 +32,7 @@ public:
 
     size_t getFileSize() override { return in->getFileSize(); }
 
+    void prefetch(Priority priority) override;
 private:
     bool nextImpl() override;
 
