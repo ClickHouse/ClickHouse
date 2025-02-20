@@ -353,6 +353,8 @@ void KeeperClient::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
