@@ -51,24 +51,16 @@ void NATSHandler::runLoop()
     if (error)
     {
         LOG_ERROR(log, "Can not create scheduler");
-        std::lock_guard lock(loop_state_mutex);
-        loop_state = Loop::CLOSED;
+        setLoopState(Loop::CLOSED);
         return;
     }
     execute_tasks_scheduler.data = this;
 
-    {
-        std::lock_guard lock(loop_state_mutex);
-        loop_state = Loop::RUN;
-    }
+    setLoopState(Loop::RUN);
     LOG_DEBUG(log, "Background loop started");
 
     uv_run(loop.getLoop(), UV_RUN_DEFAULT);
-
-    {
-        std::lock_guard lock(loop_state_mutex);
-        loop_state = Loop::CLOSED;
-    }
+    setLoopState(Loop::CLOSED);
 
     LOG_DEBUG(log, "Background loop ended");
 }
@@ -208,10 +200,10 @@ NATSOptionsPtr NATSHandler::createOptions()
     return result;
 }
 
-bool NATSHandler::isRunning()
+void NATSHandler::setLoopState(UInt8 loop_state_)
 {
-    std::scoped_lock lock(loop_state_mutex, tasks_mutex);
-    return loop_state == Loop::RUN || !tasks.empty();
+    std::lock_guard lock(loop_state_mutex);
+    loop_state = loop_state_;
 }
 
 void NATSHandler::resetThreadLocalLoop()
