@@ -51,7 +51,7 @@ namespace S3AuthSetting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool allow_native_copy;
-    extern const S3RequestSettingsBool max_single_operation_copy_size;
+    extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 http_max_fields;
     extern const S3RequestSettingsUInt64 http_max_field_name_size;

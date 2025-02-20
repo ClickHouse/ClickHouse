@@ -13,7 +13,6 @@
 #include <unordered_map>
 
 
-
 namespace DB
 {
 class IBackupCoordination;
