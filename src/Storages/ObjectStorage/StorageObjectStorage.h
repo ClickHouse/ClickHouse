@@ -246,6 +246,7 @@ public:
     String structure = "auto";
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
+    void updateIfRequired(ObjectStoragePtr object_storage, ContextPtr local_context);
 
     /// Create arguments for table function with path and access parameters
     virtual ASTPtr createArgsWithAccessData() const
@@ -261,6 +262,7 @@ protected:
     void assertInitialized() const;
 
     bool initialized = false;
+    bool updated = false;
     DataLakePartitionColumns partition_columns;
 
     bool allow_dynamic_metadata_for_data_lakes;
