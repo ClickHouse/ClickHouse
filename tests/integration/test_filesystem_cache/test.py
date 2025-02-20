@@ -479,7 +479,7 @@ def test_force_filesystem_cache_on_merges(cluster):
         )
         assert r_cache_count_2 == r_cache_count
 
-        assert node.query("select current_size from system.filesystem_cache_settings") == node.query("select sum(downloaded_size) from system.filesystem_cache")
+        assert node.query("select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'") == node.query("select sum(downloaded_size) from system.filesystem_cache")
 
         node.query("SYSTEM DROP FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
