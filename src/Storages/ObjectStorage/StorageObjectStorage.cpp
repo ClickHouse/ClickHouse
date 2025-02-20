@@ -103,29 +103,35 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    try
+    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    bool failed_init = false;
+    auto do_init = [&]()
     {
-        if (!lazy_init)
+        try
         {
             if (configuration->hasExternalDynamicMetadata())
                 configuration->updateAndGetCurrentSchema(object_storage, context);
             else
                 configuration->update(object_storage, context);
         }
-    }
-    catch (...)
-    {
-        // If we don't have format or schema yet, we can't ignore failed configuration update,
-        // because relevant configuration is crucial for format and schema inference
-        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+        catch (...)
         {
-            throw;
+            // If we don't have format or schema yet, we can't ignore failed configuration update,
+            // because relevant configuration is crucial for format and schema inference
+            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+            {
+                throw;
+            }
+            else
+            {
+                tryLogCurrentException(log);
+                failed_init = true;
+            }
         }
-        else
-        {
-            tryLogCurrentException(log);
-        }
-    }
+    };
+
+    if (!do_lazy_init)
+        do_init();
 
     std::string sample_path;
     ColumnsDescription columns{columns_};
@@ -137,18 +143,21 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty()
+    /// FIXME: We need to call getPathSample() lazily on select
+    /// in case it failed to be initialized in constructor.
+    if (!failed_init
+        && sample_path.empty()
         && context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->withPartitionWildcard())
     {
+        if (do_lazy_init)
+            do_init();
         try
         {
             sample_path = getPathSample(context);
         }
         catch (...)
         {
-            /// FIXME: We need to call getPathSample() lazily on select
-            /// in case it failed to be initialized in constructor.
             LOG_WARNING(
                 log, "Failed to list object storage, cannot use hive partitioning. "
                 "Error: {}", getCurrentExceptionMessage(true));
