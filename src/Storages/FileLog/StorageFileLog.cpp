@@ -175,7 +175,7 @@ StorageFileLog::StorageFileLog(
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(getLogger("StorageFileLog (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.database_name "." + table_id_.table_name + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
