@@ -1,10 +1,12 @@
-#include <iostream>
 #include <Processors/IProcessor.h>
+
+#include <iostream>
+
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB

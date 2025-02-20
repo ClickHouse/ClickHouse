@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Common/CurrentThread.h>
 #include <IO/Operators.h>
 
 namespace DB
