@@ -2,7 +2,7 @@
 
 #include <Backups/BackupsInMemoryHolder.h>
 #include <Common/Exception.h>
-#include <IO/ReadBufferFromString.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
 
 
@@ -56,7 +56,7 @@ void BackupInMemory::removeFile(const String & file_name)
 }
 
 
-std::unique_ptr<SeekableReadBuffer> BackupInMemory::readFile(const String & file_name) const
+std::unique_ptr<ReadBufferFromFileBase> BackupInMemory::readFile(const String & file_name) const
 {
     String file_contents;
 
@@ -68,7 +68,7 @@ std::unique_ptr<SeekableReadBuffer> BackupInMemory::readFile(const String & file
         file_contents = it->second;
     }
 
-    return std::make_unique<ReadBufferFromOwnString>(std::move(file_contents));
+    return std::make_unique<ReadBufferFromOwnMemoryFile>(file_name, std::move(file_contents));
 }
 
 

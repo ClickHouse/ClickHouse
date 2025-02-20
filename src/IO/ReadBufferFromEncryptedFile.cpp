@@ -128,6 +128,11 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     return true;
 }
 
+void ReadBufferFromEncryptedFile::prefetch(Priority priority)
+{
+    in->prefetch(priority);
+}
+
 }
 
 #endif
