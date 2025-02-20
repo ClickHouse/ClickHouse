@@ -1035,6 +1035,9 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
+    if (dropped_metadata.empty())
+        return;
+
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
     ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");

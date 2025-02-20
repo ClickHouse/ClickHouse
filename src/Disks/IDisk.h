@@ -382,22 +382,22 @@ public:
     virtual bool isSymlink(const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink() is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     virtual bool isSymlinkNoThrow(const String &) const
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method isSymlinkNothrow() is not implemented for disk type: {}",
+            "Method isSymlinkNothrow is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
-    virtual void createDirectoriesSymlink(const String &, const String &)
+    virtual void createDirectorySymlink(const String &, const String &)
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDirectoriesSymlink() is not implemented for disk type: {}",
+            "Method createDirectorySymlink is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -405,20 +405,20 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method readSymlink() is not implemented for disk type: {}",
+            "Method readSymlink is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
     virtual bool equivalent(const String &, const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     virtual bool equivalentNoThrow(const String &, const String &) const
     {
         throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
+            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent is not implemented for disk type: {}", getDataSourceDescription().toString());
     }
 
     /// Truncate file to specified size.
@@ -485,7 +485,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getMetadataStorage() is not implemented for disk type: {}",
+            "Method getMetadataStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -519,7 +519,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getObjectStorage() is not implemented for disk type: {}",
+            "Method getObjectStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -530,7 +530,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDiskObjectStorage() is not implemented for disk type: {}",
+            "Method createDiskObjectStorage is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 
@@ -552,7 +552,7 @@ public:
     {
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Method getS3StorageClient() is not implemented for disk type: {}",
+            "Method getS3StorageClient is not implemented for disk type: {}",
             getDataSourceDescription().toString());
     }
 

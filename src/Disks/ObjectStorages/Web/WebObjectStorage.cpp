@@ -287,7 +287,7 @@ std::unique_ptr<IObjectStorage> WebObjectStorage::cloneObjectStorage(
     const Poco::Util::AbstractConfiguration & /* config */,
     const std::string & /* config_prefix */, ContextPtr /* context */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage() is not implemented for WebObjectStorage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "cloneObjectStorage is not implemented for WebObjectStorage");
 }
 
 }

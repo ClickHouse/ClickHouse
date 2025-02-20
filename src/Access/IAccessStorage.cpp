@@ -307,7 +307,7 @@ bool IAccessStorage::insertImpl(const UUID &, const AccessEntityPtr & entity, bo
 {
     if (isReadOnly())
         throwReadonlyCannotInsert(entity->getType(), entity->getName());
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl() is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl is not implemented in {}", getStorageType());
 }
 
 
@@ -403,7 +403,7 @@ bool IAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
             return false;
         throwReadonlyCannotRemove(entity->getType(), entity->getName());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl() is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl is not implemented in {}", getStorageType());
 }
 
 
@@ -499,7 +499,7 @@ bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_
             return false;
         throwReadonlyCannotUpdate(entity->getType(), entity->getName());
     }
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl() is not implemented in {}", getStorageType());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl is not implemented in {}", getStorageType());
 }
 
 
