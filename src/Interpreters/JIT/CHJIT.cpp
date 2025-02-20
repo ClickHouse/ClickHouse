@@ -28,7 +28,6 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
-#include <llvm/Transforms/Scalar/NewGVN.h>
 #include <llvm/Transforms/Scalar/EarlyCSE.h>
 #include <llvm/Transforms/Scalar/CorrelatedValuePropagation.h>
 #include <llvm/Transforms/Scalar/LICM.h>
@@ -36,7 +35,6 @@
 #include <llvm/Transforms/Scalar/SimplifyCFG.h>
 #include <llvm/Transforms/InstCombine/InstCombine.h>
 #include <llvm/Transforms/Utils/SimplifyCFGOptions.h>
-#include <llvm/ADT/Statistic.h>
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
@@ -530,7 +528,8 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     pb.crossRegisterProxies(lam, fam, cgam, mam);
     /// Add passes the same with ExtraVectorizerPasses = true
     pb.registerOptimizerLastEPCallback(
-        [&](llvm::ModulePassManager& module_pm, llvm::OptimizationLevel) {
+        [&](llvm::ModulePassManager& module_pm, llvm::OptimizationLevel)
+        {
             llvm::FunctionPassManager ExtraPasses;
             ExtraPasses.addPass(llvm::EarlyCSEPass());
             ExtraPasses.addPass(llvm::CorrelatedValuePropagationPass());
