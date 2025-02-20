@@ -111,7 +111,7 @@ Enables or disables writing the final index mark at the end of data part (after 
 
 Default value: 1.
 
-Don’t change or bad things will happen.
+Don't change or bad things will happen.
 
 ## storage_policy
 
@@ -133,6 +133,12 @@ The value specified when table is created overrides the global value for this se
 Minimum size of blocks of uncompressed data required for compression when writing the next mark.
 You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
+
+## max_merge_selecting_sleep_ms
+
+Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting will trigger selecting tasks in `background_schedule_pool` frequently which results in a large amount of requests to zookeeper in large-scale clusters.
+
+Default value: `60000`
 
 ## max_suspicious_broken_parts
 
@@ -169,7 +175,7 @@ Possible values:
 
 Default value: 1000.
 
-ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
+ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the background merge process can merge parts faster than they are added.
 
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 

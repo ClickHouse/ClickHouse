@@ -1,9 +1,11 @@
 ---
+description: "System table containing information about storage policies and volumes which are defined in server configuration."
 slug: /en/operations/system-tables/storage_policies
+title: "storage_policies"
+keywords: ["system table", "storage_policies"]
 ---
-# storage_policies
 
-Contains information about storage policies and volumes defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Contains information about storage policies and volumes which are defined in [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Columns:
 

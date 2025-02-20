@@ -119,15 +119,18 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
     }
 
     static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
-    std::unordered_set<String> block_rows_settings{
-        "max_block_size",
-        "max_insert_block_size",
-        "min_insert_block_size_rows",
-        "min_insert_block_size_bytes_for_materialized_views",
-        "min_external_table_block_size_rows",
-        "max_joined_block_size_rows",
-        "input_format_parquet_max_block_size"};
-    for (auto const & setting : block_rows_settings)
+
+    using namespace std::literals;
+    static constexpr std::array block_rows_settings{
+        "max_block_size"sv,
+        "max_insert_block_size"sv,
+        "min_insert_block_size_rows"sv,
+        "min_insert_block_size_bytes_for_materialized_views"sv,
+        "min_external_table_block_size_rows"sv,
+        "max_joined_block_size_rows"sv,
+        "input_format_parquet_max_block_size"sv};
+
+    for (auto const setting : block_rows_settings)
     {
         if (auto block_size = get_current_value(setting).safeGet<UInt64>();
             block_size > max_sane_block_rows_size)

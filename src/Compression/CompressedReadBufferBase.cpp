@@ -4,8 +4,10 @@
 #include <cstring>
 #include <cassert>
 #include <city.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <base/demangle.h>
 #include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -13,6 +15,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
+#include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -22,6 +25,10 @@ namespace ProfileEvents
     extern const Event ReadCompressedBytes;
     extern const Event CompressedReadBufferBlocks;
     extern const Event CompressedReadBufferBytes;
+
+    extern const Event CompressedReadBufferChecksumDoesntMatch;
+    extern const Event CompressedReadBufferChecksumDoesntMatchSingleBitMismatch;
+    extern const Event CompressedReadBufferChecksumDoesntMatchMicroseconds;
 }
 
 namespace DB
@@ -44,6 +51,9 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
         return;
+
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatch);
+    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::CompressedReadBufferChecksumDoesntMatchMicroseconds);
 
     WriteBufferFromOwnString message;
 
@@ -87,6 +97,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
             auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(tmp_data, size);
             if (expected_checksum == checksum_of_data_with_flipped_bit)
             {
+                ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
                 message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "
                     << message_hardware_failure;
                 throw Exception::createDeprecated(message.str(), error_code);
@@ -102,6 +113,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
 
     if (difference == 1)
     {
+        ProfileEvents::increment(ProfileEvents::CompressedReadBufferChecksumDoesntMatchSingleBitMismatch);
         message << ". The mismatch is caused by single bit flip in checksum. "
             << message_hardware_failure;
         throw Exception::createDeprecated(message.str(), error_code);
@@ -315,6 +327,35 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
     }
     else
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+}
+
+void CompressedReadBufferBase::addDiagnostics(Exception & e) const
+{
+    /// Error messages can look really scary when we can't decompress something.
+    /// It makes sense to give more information to help debugging such issues.
+    std::optional<off_t> current_pos;
+    if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
+        current_pos = seekable_in->tryGetPosition();
+    UInt8 header_size = ICompressionCodec::getHeaderSize();
+    String header_hex = hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size));
+
+    e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
+                 getFileNameFromReadBuffer(*compressed_in),
+                 (current_pos ? std::to_string(*current_pos) : "?"),
+                 demangle(typeid(*compressed_in).name()),
+                 header_hex);
+}
+
+void CompressedReadBufferBase::flushAsynchronousDecompressRequests() const
+{
+    if (codec)
+        codec->flushAsynchronousDecompressRequests();
+}
+
+void CompressedReadBufferBase::setDecompressMode(ICompressionCodec::CodecMode mode) const
+{
+    if (codec)
+        codec->setDecompressMode(mode);
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

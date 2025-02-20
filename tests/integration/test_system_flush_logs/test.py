@@ -33,11 +33,12 @@ def test_system_logs_exists():
         ("system.trace_log", 1),
         ("system.metric_log", 1),
         ("system.error_log", 1),
+        ("system.latency_log", 1),
     ]
 
-    node.query("SYSTEM FLUSH LOGS")
     for table, exists in system_logs:
-        q = "SELECT * FROM {}".format(table)
+        node.query(f"SYSTEM FLUSH LOGS {table}")
+        q = f"SELECT * FROM {table}"
         if exists:
             node.query(q)
         else:

@@ -66,9 +66,8 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         source_data_version = future_part->parts[0]->info.getDataVersion();
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
-        WriteBufferFromString out(partition);
         const auto & part = future_part->parts[0];
-        part->partition.serializeText(part->storage, out, {});
+        partition = part->partition.serializeToString(part->getMetadataSnapshot());
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
@@ -112,6 +111,11 @@ MergeInfo MergeListElement::getInfo() const
         res.source_part_paths.emplace_back(source_part_path);
 
     return res;
+}
+
+const MemoryTracker & MergeListElement::getMemoryTracker() const
+{
+    return thread_group->memory_tracker;
 }
 
 MergeListElement::~MergeListElement()

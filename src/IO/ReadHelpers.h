@@ -25,7 +25,7 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/intExp.h>
+#include <Common/exp10_i32.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -1006,11 +1006,19 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
+inline T parseWithoutAssertEOF(const char * data, size_t size);
+
+template <typename T>
 inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
 
+template <typename T>
+inline T parseFromStringWithoutAssertEOF(std::string_view str)
+{
+    return parseWithoutAssertEOF<T>(str.data(), str.size());
+}
 
 template <typename ReturnType = void, bool dt64_mode = false>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
@@ -1753,6 +1761,17 @@ inline T parse(const char * data, size_t size)
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
     assertEOF(buf);
+    return res;
+}
+
+/// This function is used in one place (parseRemoteDescriptionForExternalDataba)
+/// where we need to preserve backward compatibility.
+template <typename T>
+inline T parseWithoutAssertEOF(const char * data, size_t size)
+{
+    T res;
+    ReadBufferFromMemory buf(data, size);
+    readText(res, buf);
     return res;
 }
 

@@ -12,6 +12,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -138,11 +139,7 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-
-                setThreadName("SystemReplicas");
+                ThreadGroupSwitcher switcher(thread_group, "SystemReplicas");
 
                 try
                 {
