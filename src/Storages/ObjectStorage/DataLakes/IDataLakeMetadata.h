@@ -32,7 +32,8 @@ public:
     virtual NamesAndTypesList getTableSchema() const = 0;
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
-    virtual NamesAndTypesList getReadSchema() const { return getTableSchema(); }
+    /// Return nothing if read schema is the same as table schema.
+    virtual NamesAndTypesList getReadSchema() const { return {}; }
 
     virtual bool supportsPartitionPruning() { return false; }
     virtual Strings makePartitionPruning(const ActionsDAG &) { throwNotImplemented("makePartitionPrunning()"); }

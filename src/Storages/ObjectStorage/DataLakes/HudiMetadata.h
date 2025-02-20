@@ -31,7 +31,11 @@ public:
             && data_files == hudi_metadata->data_files;
     }
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
+    static DataLakeMetadataPtr create(
+        ObjectStoragePtr object_storage,
+        ConfigurationObserverPtr configuration,
+        ContextPtr local_context,
+        bool)
     {
         return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
     }

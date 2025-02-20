@@ -49,6 +49,7 @@ namespace ErrorCodes
 namespace StorageObjectStorageSetting
 {
 extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -612,8 +613,12 @@ void StorageObjectStorage::Configuration::initialize(
         FormatFactory::instance().checkFormatName(configuration.format);
 
     if (settings)
+    {
         configuration.allow_dynamic_metadata_for_data_lakes
             = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
+        configuration.allow_experimental_delta_kernel_rs
+            = (*settings)[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
+    }
     configuration.initialized = true;
 }
 

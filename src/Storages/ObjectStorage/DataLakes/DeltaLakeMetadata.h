@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataOld.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
 namespace DeltaLake
@@ -18,6 +19,10 @@ class TableSnapshot;
 
 namespace DB
 {
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
+}
 
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
@@ -39,9 +44,16 @@ public:
 
     bool operator ==(const IDataLakeMetadata &) const override;
 
-    static DataLakeMetadataPtr create(ObjectStoragePtr object_storage, ConfigurationObserverPtr configuration, ContextPtr local_context)
+    static DataLakeMetadataPtr create(
+        ObjectStoragePtr object_storage,
+        ConfigurationObserverPtr configuration,
+        ContextPtr local_context,
+        bool allow_experimental_delta_kernel_rs)
     {
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+        if (allow_experimental_delta_kernel_rs)
+            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+        else
+            return std::make_unique<DeltaLakeMetadataOld>(object_storage, configuration, local_context);
     }
 
     bool supportsFileIterator() const override { return true; }

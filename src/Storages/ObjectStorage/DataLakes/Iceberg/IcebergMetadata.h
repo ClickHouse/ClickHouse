@@ -55,8 +55,11 @@ public:
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr
-    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
+    static DataLakeMetadataPtr create(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationObserverPtr & configuration,
+        const ContextPtr & local_context,
+        bool allow_experimental_delta_kernel_rs);
 
     size_t getVersion() const { return current_metadata_version; }
 

@@ -291,7 +291,10 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 
 
 DataLakeMetadataPtr IcebergMetadata::create(
-    const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
+    const ObjectStoragePtr & object_storage,
+    const ConfigurationObserverPtr & configuration,
+    const ContextPtr & local_context,
+    bool)
 {
     auto configuration_ptr = configuration.lock();
 

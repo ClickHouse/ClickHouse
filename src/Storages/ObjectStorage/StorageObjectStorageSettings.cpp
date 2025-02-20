@@ -17,6 +17,9 @@ namespace DB
     DECLARE(Bool, allow_dynamic_metadata_for_data_lakes, false, R"(
 If enabled, indicates that metadata is taken from iceberg specification that is pulled from cloud before each query.
 )", 0) \
+    DECLARE(Bool, allow_experimental_delta_kernel_rs, false, R"(
+If enabled, the engine would use delta-kernel-rs for DeltaLake metadata parsing
+)", 0) \
 
 // clang-format on
 

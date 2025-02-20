@@ -100,7 +100,9 @@ public:
             && current_metadata->supportsExternalMetadataChange();
     }
 
-    ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
+    ColumnsDescription updateAndGetCurrentSchema(
+        ObjectStoragePtr object_storage,
+        ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
         if (updateMetadataObjectIfNeeded(object_storage, context))
@@ -152,7 +154,10 @@ private:
         auto info = DB::prepareReadingFromFormat(requested_columns, storage_snapshot, local_context, supports_subset_of_columns);
         if (!current_metadata)
         {
-            current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+            current_metadata = DataLakeMetadata::create(
+                object_storage,
+                weak_from_this(),
+                local_context, BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
         }
         auto read_schema = current_metadata->getReadSchema();
         if (!read_schema.empty())
@@ -186,11 +191,17 @@ private:
         return info;
     }
 
-    bool updateMetadataObjectIfNeeded(ObjectStoragePtr object_storage, ContextPtr context)
+    bool updateMetadataObjectIfNeeded(
+        ObjectStoragePtr object_storage,
+        ContextPtr context)
     {
         if (!current_metadata)
         {
-            current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+            current_metadata = DataLakeMetadata::create(
+                object_storage,
+                weak_from_this(),
+                context,
+                BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
             return true;
         }
 
@@ -199,7 +210,7 @@ private:
             return current_metadata->update(context);
         }
 
-        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context, BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
         if (*current_metadata != *new_metadata)
         {
             current_metadata = std::move(new_metadata);
