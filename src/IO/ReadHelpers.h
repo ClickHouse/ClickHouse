@@ -1128,12 +1128,12 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
     const char * s = buf.position();
 
     /// hhh:mm:ss
-    static constexpr auto time_broken_down_length = 7;
+    static constexpr auto time_broken_down_length = 9;
     bool optimistic_path_for_date_time_input = s + time_broken_down_length <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
     {
-        UInt16 hour = 0; // max value for uint_8 is 255 so it is not enough for the Time type.
+        UInt8 hour = 0;
         UInt8 minute = 0;
         UInt8 second = 0;
 
@@ -1154,7 +1154,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             second = (s[7] - '0') * 10 + (s[8] - '0');
 
             datetime = date_lut.makeTime(hour, minute, second);
-            buf.position() += time_broken_down_length + 2;
+            buf.position() += time_broken_down_length;
 
             return ReturnType(true);
         }
@@ -1175,7 +1175,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             second = (s[6] - '0') * 10 + (s[7] - '0');
 
             datetime = date_lut.makeTime(hour, minute, second);
-            buf.position() += time_broken_down_length + 1;
+            buf.position() += time_broken_down_length;
 
             return ReturnType(true);
         }
@@ -1202,8 +1202,8 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
         }
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
-}
+    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+} /// TODO
 
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
