@@ -57,22 +57,10 @@ def check_args_and_update_paths(args: argparse.Namespace) -> None:
         args.binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.binary))
 
     if not args.odbc_bridge_binary:
-        args.odbc_bridge_binary = os.path.join(
-            os.path.dirname(args.binary), "clickhouse-odbc-bridge"
-        )
-    elif not os.path.isabs(args.odbc_bridge_binary):
-        args.odbc_bridge_binary = os.path.abspath(
-            os.path.join(CURRENT_WORK_DIR, args.odbc_bridge_binary)
-        )
+        args.odbc_bridge_binary = "/usr/bin/clickhouse-odbc-bridge"
 
     if not args.library_bridge_binary:
-        args.library_bridge_binary = os.path.join(
-            os.path.dirname(args.binary), "clickhouse-library-bridge"
-        )
-    elif not os.path.isabs(args.library_bridge_binary):
-        args.library_bridge_binary = os.path.abspath(
-            os.path.join(CURRENT_WORK_DIR, args.library_bridge_binary)
-        )
+        args.library_bridge_binary = "/usr/bin/clickhouse-library-bridge"
 
     if args.base_configs_dir:
         if not os.path.isabs(args.base_configs_dir):
@@ -239,13 +227,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--odbc-bridge-binary",
         default=os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH", ""),
-        help="Path to clickhouse-odbc-bridge binary. Defaults to clickhouse-odbc-bridge in the same dir as clickhouse.",
+        help="Path to clickhouse-odbc-bridge binary. Defaults to /usr/bin/clickhouse-odbc-bridge.",
     )
 
     parser.add_argument(
         "--library-bridge-binary",
         default=os.environ.get("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH", ""),
-        help="Path to clickhouse-library-bridge binary. Defaults to clickhouse-library-bridge in the same dir as clickhouse.",
+        help="Path to clickhouse-library-bridge binary. Defaults to /usr/bin/clickhouse-odbc-bridge",
     )
 
     parser.add_argument(

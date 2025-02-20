@@ -241,24 +241,14 @@ def subprocess_check_call(
 def get_odbc_bridge_path():
     path = os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH")
     if path is None:
-        server_path = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
-        if server_path is not None:
-            return os.path.join(os.path.dirname(server_path), "clickhouse-odbc-bridge")
-        else:
-            return "/usr/bin/clickhouse-odbc-bridge"
+        return "/usr/bin/clickhouse-odbc-bridge"
     return path
 
 
 def get_library_bridge_path():
     path = os.environ.get("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH")
     if path is None:
-        server_path = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
-        if server_path is not None:
-            return os.path.join(
-                os.path.dirname(server_path), "clickhouse-library-bridge"
-            )
-        else:
-            return "/usr/bin/clickhouse-library-bridge"
+        return "/usr/bin/clickhouse-library-bridge"
     return path
 
 
