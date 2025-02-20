@@ -4,11 +4,8 @@
 #include <bit>
 #include <cstdint>
 
+#include <base/MemorySanitizer.h>
 #include <base/simd.h>
-
-#include <Core/Defines.h>
-#include <Common/MemorySanitizer.h>
-
 
 namespace detail
 {

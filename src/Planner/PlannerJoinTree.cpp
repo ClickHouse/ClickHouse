@@ -584,7 +584,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
     ASTPtr additional_filter_ast;
     for (const auto & additional_filter : additional_filters)
     {
-        const auto & tuple = additional_filter.safeGet<const Tuple &>();
+        const auto & tuple = additional_filter.safeGet<Tuple>();
         auto const & table = tuple.at(0).safeGet<String>();
         auto const & filter = tuple.at(1).safeGet<String>();
 
