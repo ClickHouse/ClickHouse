@@ -134,9 +134,8 @@ private:
 public:
     LoggerPtr log;
     DB::Strings collations, storage_policies, timezones, disks, clusters;
-    std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
-                                     sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
-                                     minio_server = std::nullopt;
+    std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
+        minio_server;
     std::unordered_map<String, PerformanceMetric> metrics;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, use_dump_table_oracle = true,
          compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false;

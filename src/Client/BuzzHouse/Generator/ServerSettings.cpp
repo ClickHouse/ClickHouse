@@ -31,34 +31,53 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_optimize_predicate_expression", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"enable_optimize_predicate_expression_to_final_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"join_any_take_last_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"join_algorithm",
-        CHSetting(
-            [](RandomGenerator & rg)
-            {
-                const DB::Strings & choices
-                    = {"'default'",
-                       "'grace_hash'",
-                       "'direct, hash'",
-                       "'hash'",
-                       "'parallel_hash'",
-                       "'partial_merge'",
-                       "'direct'",
-                       "'auto'",
-                       "'full_sorting_merge'",
-                       "'prefer_partial_merge'"};
-                return rg.pickRandomlyFromVector(choices);
-            },
-            {"'default'",
-             "'grace_hash'",
-             "'direct, hash'",
-             "'hash'",
-             "'parallel_hash'",
-             "'partial_merge'",
-             "'direct'",
-             "'auto'",
-             "'full_sorting_merge'",
-             "'prefer_partial_merge'"},
-            false)},
+        {"join_algorithm",
+         CHSetting(
+             [](RandomGenerator & rg)
+             {
+                 String res;
+                 DB::Strings choices
+                     = {"auto",
+                        "default",
+                        "direct",
+                        "full_sorting_merge",
+                        "grace_hash",
+                        "hash",
+                        "parallel_hash",
+                        "partial_merge",
+                        "prefer_partial_merge"};
+
+                 if (rg.nextBool())
+                 {
+                     res = rg.pickRandomlyFromVector(choices);
+                 }
+                 else
+                 {
+                     const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+
+                     std::shuffle(choices.begin(), choices.end(), rg.generator);
+                     for (uint32_t i = 0; i < nalgo; i++)
+                     {
+                         if (i != 0)
+                         {
+                             res += ",";
+                         }
+                         res += choices[i];
+                     }
+                 }
+                 return "'" + res + "'";
+             },
+             {"'default'",
+              "'grace_hash'",
+              "'direct, hash'",
+              "'hash'",
+              "'parallel_hash'",
+              "'partial_merge'",
+              "'direct'",
+              "'auto'",
+              "'full_sorting_merge'",
+              "'prefer_partial_merge'"},
+             false)},
        {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"max_bytes_ratio_before_external_group_by",
         CHSetting(
@@ -464,11 +483,22 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"insert_quorum", CHSetting(zeroOneTwo, {}, false)},
     {"insert_quorum_parallel", CHSetting(trueOrFalse, {}, false)},
     {"interval_output_format", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'kusto'" : "'numeric'"; }, {}, false)},
+
     /// {"join_overflow_mode", CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'throw'" : "'break'"; }, {}, false)},
     {"join_use_nulls", CHSetting(trueOrFalse, {}, false)},
     {"keeper_map_strict_mode", CHSetting(trueOrFalse, {}, false)},
     {"legacy_column_name_of_tuple_literal", CHSetting(trueOrFalse, {}, false)},
     /// {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)}, FINAL queries don't cover these
+    {"load_balancing",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {
+                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"},
+         false)},
     {"load_marks_asynchronously", CHSetting(trueOrFalse, {}, false)},
     {"local_filesystem_read_method",
      CHSetting(
@@ -495,8 +525,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
     {"materialized_views_ignore_errors", CHSetting(trueOrFalse, {}, false)},
-    /// {"max_bytes_in_distinct", CHSetting(highRange, {}, false)},
-    {"max_bytes_in_join",
+    /// {"max_bytes_in_distinct", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+    /*{"max_bytes_in_join",
      CHSetting(
          [](RandomGenerator & rg)
          {
