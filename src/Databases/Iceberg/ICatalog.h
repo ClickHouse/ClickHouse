@@ -7,6 +7,7 @@
 
 namespace Iceberg
 {
+
 using StorageType = DB::DatabaseIcebergStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 

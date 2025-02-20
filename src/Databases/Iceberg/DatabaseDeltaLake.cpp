@@ -1,11 +1,11 @@
-#include <Databases/Iceberg/DatabaseIceberg.h>
+#include <Databases/Iceberg/DatabaseDeltaLake.h>
 
 #if USE_AVRO
 #include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Core/Settings.h>
 
 #include <Databases/DatabaseFactory.h>
-#include <Databases/Iceberg/RestCatalog.h>
+#include <Databases/Iceberg/UnityCatalog.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -67,7 +67,7 @@ namespace
     }
 }
 
-DatabaseIceberg::DatabaseIceberg(
+DatabaseDeltaLake::DatabaseDeltaLake(
     const std::string & database_name_,
     const std::string & url_,
     const DatabaseIcebergSettings & settings_,
@@ -81,7 +81,7 @@ DatabaseIceberg::DatabaseIceberg(
     validateSettings();
 }
 
-void DatabaseIceberg::validateSettings()
+void DatabaseDeltaLake::validateSettings()
 {
     if (settings[DatabaseIcebergSetting::warehouse].value.empty())
     {
@@ -91,22 +91,18 @@ void DatabaseIceberg::validateSettings()
     }
 }
 
-std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog() const
+std::shared_ptr<Iceberg::ICatalog> DatabaseDeltaLake::getCatalog() const
 {
     if (catalog_impl)
         return catalog_impl;
 
     switch (settings[DatabaseIcebergSetting::catalog_type].value)
     {
-        case DB::DatabaseIcebergCatalogType::REST:
+        case DB::DatabaseIcebergCatalogType::UNITY:
         {
-            catalog_impl = std::make_shared<Iceberg::RestCatalog>(
+            catalog_impl = std::make_shared<DeltaLake::UnityCatalog>(
                 settings[DatabaseIcebergSetting::warehouse].value,
                 url,
-                settings[DatabaseIcebergSetting::catalog_credential].value,
-                settings[DatabaseIcebergSetting::auth_scope].value,
-                settings[DatabaseIcebergSetting::auth_header],
-                settings[DatabaseIcebergSetting::oauth_server_uri].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -118,7 +114,7 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseIceberg::getCatalog() const
     return catalog_impl;
 }
 
-std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfiguration(DatabaseIcebergStorageType type) const
+std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDeltaLake::getConfiguration(DatabaseIcebergStorageType type) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -127,35 +123,17 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
 #if USE_AWS_S3
         case DB::DatabaseIcebergStorageType::S3:
         {
-            return std::make_shared<StorageS3IcebergConfiguration>();
+            return std::make_shared<StorageS3DeltaLakeConfiguration>();
         }
 #endif
-#if USE_AZURE_BLOB_STORAGE
-        case DB::DatabaseIcebergStorageType::Azure:
-        {
-            return std::make_shared<StorageAzureIcebergConfiguration>();
-        }
-#endif
-#if USE_HDFS
-        case DB::DatabaseIcebergStorageType::HDFS:
-        {
-            return std::make_shared<StorageHDFSIcebergConfiguration>();
-        }
-#endif
-        case DB::DatabaseIcebergStorageType::Local:
-        {
-            return std::make_shared<StorageLocalIcebergConfiguration>();
-        }
-#if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Server does not contain support for storage type {}",
                             type);
-#endif
     }
 }
 
-std::string DatabaseIceberg::getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const
+std::string DatabaseDeltaLake::getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const
 {
     auto endpoint_from_settings = settings[DatabaseIcebergSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
@@ -165,18 +143,18 @@ std::string DatabaseIceberg::getStorageEndpointForTable(const Iceberg::TableMeta
 
 }
 
-bool DatabaseIceberg::empty() const
+bool DatabaseDeltaLake::empty() const
 {
     return getCatalog()->empty();
 }
 
-bool DatabaseIceberg::isTableExist(const String & name, ContextPtr /* context_ */) const
+bool DatabaseDeltaLake::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
     const auto [namespace_name, table_name] = parseTableName(name);
     return getCatalog()->existsTable(namespace_name, table_name);
 }
 
-StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_) const
+StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr context_) const
 {
     auto catalog = getCatalog();
     auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
@@ -250,7 +228,7 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
         /* lazy_init */true);
 }
 
-DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
+DatabaseTablesIteratorPtr DatabaseDeltaLake::getTablesIterator(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
     bool /* skip_not_loaded */) const
@@ -272,7 +250,7 @@ DatabaseTablesIteratorPtr DatabaseIceberg::getTablesIterator(
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
-ASTPtr DatabaseIceberg::getCreateDatabaseQuery() const
+ASTPtr DatabaseDeltaLake::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(getDatabaseName());
@@ -280,7 +258,7 @@ ASTPtr DatabaseIceberg::getCreateDatabaseQuery() const
     return create_query;
 }
 
-ASTPtr DatabaseIceberg::getCreateTableQueryImpl(
+ASTPtr DatabaseDeltaLake::getCreateTableQueryImpl(
     const String & name,
     ContextPtr /* context_ */,
     bool /* throw_on_error */) const
@@ -331,7 +309,7 @@ ASTPtr DatabaseIceberg::getCreateTableQueryImpl(
     return create_table_query;
 }
 
-void registerDatabaseIceberg(DatabaseFactory & factory)
+void registerDatabaseDeltaLake(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
@@ -339,7 +317,7 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
             && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "DatabaseIceberg engine is experimental. "
+                            "DatabaseDeltaLake engine is experimental. "
                             "To allow its usage, enable setting allow_experimental_database_iceberg");
         }
 
@@ -363,13 +341,13 @@ void registerDatabaseIceberg(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define);
 
-        return std::make_shared<DatabaseIceberg>(
+        return std::make_shared<DatabaseDeltaLake>(
             args.database_name,
             url,
             database_settings,
             database_engine_define->clone());
     };
-    factory.registerDatabase("Iceberg", create_fn, { .supports_arguments = true, .supports_settings = true });
+    factory.registerDatabase("DeltaLake", create_fn, { .supports_arguments = true, .supports_settings = true });
 }
 
 }

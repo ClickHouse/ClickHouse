@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ public:
 
     const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
 
-    bool operator ==(const IDataLakeMetadata & other) const override
+    bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
         return deltalake_metadata
@@ -41,6 +42,10 @@ public:
     {
         return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
     }
+
+    static DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
+    static DataTypePtr getFieldValue(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable);
+    static Field getFieldValue(const String & value, DataTypePtr data_type);
 
 private:
     mutable Strings data_files;

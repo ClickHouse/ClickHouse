@@ -362,6 +362,7 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 enum class DatabaseIcebergCatalogType : uint8_t
 {
     REST,
+    UNITY,
 };
 
 DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
