@@ -84,7 +84,7 @@ If a condition refers columns from different tables, then only the equality oper
 
 Consider `table_1` and `table_2`:
 
-```
+```response
 ┌─Id─┬─name─┐     ┌─Id─┬─text───────────┬─scores─┐
 │  1 │ A    │     │  1 │ Text A         │     10 │
 │  2 │ B    │     │  1 │ Another text A │     12 │
@@ -101,7 +101,7 @@ SELECT name, text FROM table_1 LEFT OUTER JOIN table_2
 
 Note that the result contains the row with the name `C` and the empty text column. It is included into the result because an `OUTER` type of a join is used.
 
-```
+```response
 ┌─name─┬─text───┐
 │ A    │ Text A │
 │ B    │ Text B │
@@ -118,7 +118,7 @@ SELECT name, text, scores FROM table_1 INNER JOIN table_2
 
 Result:
 
-```
+```sql
 ┌─name─┬─text───┬─scores─┐
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
@@ -139,7 +139,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key;
 
 Result:
 
-```
+```response
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 1 │ -1 │   1 │
@@ -165,7 +165,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 Result:
 
-```
+```response
 ┌─a─┬──b─┬─val─┐
 │ 0 │  0 │   0 │
 │ 2 │ -2 │   2 │
@@ -181,7 +181,7 @@ Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` wit
 
 Table `t1`:
 
-```
+```response
 ┌─key──┬─attr─┬─a─┬─b─┬─c─┐
 │ key1 │ a    │ 1 │ 1 │ 2 │
 │ key1 │ b    │ 2 │ 3 │ 2 │
@@ -195,7 +195,7 @@ Table `t1`:
 
 Table `t2`
 
-```
+```response
 ┌─key──┬─attr─┬─a─┬─b─┬─c─┐
 │ key1 │ A    │ 1 │ 2 │ 1 │
 │ key1 │ B    │ 2 │ 1 │ 2 │
@@ -210,7 +210,7 @@ Table `t2`
 SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDER BY (t1.key, t1.attr, t2.key, t2.attr);
 ```
 
-```
+```response
 key1	a	1	1	2	key1	B	2	1	2
 key1	a	1	1	2	key1	C	3	4	5
 key1	a	1	1	2	key1	D	4	1	6
@@ -232,7 +232,7 @@ The NULL is not equal to any value, including itself. It means that if a JOIN ke
 
 Table `A`:
 
-```
+```response
 ┌───id─┬─name────┐
 │    1 │ Alice   │
 │    2 │ Bob     │
@@ -242,7 +242,7 @@ Table `A`:
 
 Table `B`:
 
-```
+```response
 ┌───id─┬─score─┐
 │    1 │    90 │
 │    3 │    85 │
@@ -254,7 +254,7 @@ Table `B`:
 SELECT A.name, B.score FROM A LEFT JOIN B ON A.id = B.id
 ```
 
-```
+```response
 ┌─name────┬─score─┐
 │ Alice   │    90 │
 │ Bob     │     0 │
@@ -270,7 +270,7 @@ In case you want to match NULL values, use the `isNotDistinctFrom` function to c
 SELECT A.name, B.score FROM A LEFT JOIN B ON isNotDistinctFrom(A.id, B.id)
 ```
 
-```
+```markdown
 ┌─name────┬─score─┐
 │ Alice   │    90 │
 │ Bob     │     0 │
@@ -337,7 +337,7 @@ The rows are matched based on their positions in the original tables (the order 
 If the subqueries return a different number of rows, extra rows will be cut.
 
 Example:
-```SQL
+```sql
 SELECT *
 FROM
 (
@@ -357,7 +357,7 @@ PASTE JOIN
 └───┴──────┘
 ```
 Note: In this case result can be nondeterministic if the reading is parallel. Example:
-```SQL
+```sql
 SELECT *
 FROM
 (
@@ -401,14 +401,14 @@ Be careful when using `GLOBAL`. For more information, see the [Distributed subqu
 **Example**
 
 Consider the table `t_1`:
-```text
+```response
 ┌─a─┬─b─┬─toTypeName(a)─┬─toTypeName(b)─┐
 │ 1 │ 1 │ UInt16        │ UInt8         │
 │ 2 │ 2 │ UInt16        │ UInt8         │
 └───┴───┴───────────────┴───────────────┘
 ```
 and the table `t_2`:
-```text
+```response
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │ -1 │    1 │ Int16         │ Nullable(Int64) │
 │  1 │   -1 │ Int16         │ Nullable(Int64) │
@@ -421,7 +421,7 @@ The query
 SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
 ```
 returns the set:
-```text
+```response
 ┌──a─┬────b─┬─toTypeName(a)─┬─toTypeName(b)───┐
 │  1 │    1 │ Int32         │ Nullable(Int64) │
 │  2 │    2 │ Int32         │ Nullable(Int64) │

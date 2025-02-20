@@ -47,7 +47,7 @@ INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
 SELECT * FROM insert_select_testtable;
 ```
 
-```
+```text
 ┌─a─┬─b─┬─c─┐
 │ 2 │   │ 2 │
 └───┴───┴───┘

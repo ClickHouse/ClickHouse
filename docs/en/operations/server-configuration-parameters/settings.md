@@ -3157,6 +3157,25 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
+## remote_url_allow_hosts
+
+List of hosts which are allowed to be used in URL-related storage engines and table functions.
+
+When adding a host with the `\<host\>` xml tag:
+- it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
+- if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
+- if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
+- if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
+- if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
+
+For example: 
+
+```sql
+<remote_url_allow_hosts>
+    <host>clickhouse.com</host>
+</remote_url_allow_hosts>
+```
+
 ## timezone
 
 The server's time zone.
@@ -3923,6 +3942,26 @@ Used to regulate how resources are utilized and shared between mutations and oth
 Type: `String`
 
 Default: `default`
+
+## throw_on_unknown_workload
+
+Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
+
+- If `true`, RESOURCE_ACCESS_DENIED exception is thrown from a query that is trying to access unknown workload. Useful to enforce resource scheduling for all queries after WORKLOAD hierarchy is established and contains WORKLOAD default.
+- If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
+
+**See Also**
+- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+
+Type: String
+
+Default: false
+
+**Example**
+
+```xml
+<throw_on_unknown_workload>true</throw_on_unknown_workload>
+```
 
 ## workload_path
 

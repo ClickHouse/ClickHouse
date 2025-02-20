@@ -130,13 +130,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        setThreadName("Collector");
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "Collector");
 
         try
         {
@@ -201,13 +195,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        setThreadName("Formatter");
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "Formatter");
 
         try
         {

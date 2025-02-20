@@ -40,7 +40,7 @@ SELECT floor(123.45, 1) AS rounded
 
 Result:
 
-```
+```response
 ┌─rounded─┐
 │   123.4 │
 └─────────┘
@@ -54,7 +54,7 @@ SELECT floor(123.45, -1)
 
 Result:
 
-```
+```response
 ┌─rounded─┐
 │     120 │
 └─────────┘
@@ -131,7 +131,7 @@ Example with `Float` inputs:
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-```
+```response
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
@@ -145,7 +145,7 @@ Example with `Decimal` inputs:
 SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;
 ```
 
-```
+```sql
 ┌───x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
 │   0 │                                                0 │
 │ 0.5 │                                                1 │
@@ -160,7 +160,7 @@ SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIM
 
 ```
 
-```
+```sql
 ┌──────x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
 │ 0.0000 │                                           0.0000 │
 │ 0.5000 │                                           1.0000 │
@@ -245,7 +245,7 @@ Query:
 
 Result:
 
-```
+```response
 ┌───x─┬─b─┐
 │   0 │ 0 │
 │ 0.5 │ 0 │
@@ -262,7 +262,7 @@ Result:
 
 Examples of Banker's rounding:
 
-```
+```response
 roundBankers(0.4) = 0
 roundBankers(-3.5) = -4
 roundBankers(4.5) = 4

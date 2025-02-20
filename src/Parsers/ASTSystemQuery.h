@@ -154,6 +154,8 @@ public:
 
     std::vector<String> src_replicas;
 
+    Strings logs;
+
     ServerType server_type;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
