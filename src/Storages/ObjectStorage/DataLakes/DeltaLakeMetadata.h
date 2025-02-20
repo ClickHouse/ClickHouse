@@ -56,7 +56,7 @@ public:
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
         ContextPtr local_context,
-        bool allow_experimental_delta_kernel_rs)
+        [[maybe_unused]] bool allow_experimental_delta_kernel_rs)
     {
 #if USE_DELTA_KERNEL_RS
         if (allow_experimental_delta_kernel_rs)
