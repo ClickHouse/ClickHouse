@@ -70,7 +70,7 @@ const ActionsDAG::Node * getInputNode(const ActionsDAG::Node & node)
         if (isInputNode(*child))
             return child;
     }
-    throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "No input node found");
+    throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "No input node found in {}", node.result_name);
 }
 
 bool isIntInput(const ActionsDAG::Node & node)
@@ -268,6 +268,7 @@ Strings extractStringsForInClause(const ActionsDAG::Node & node)
         throw DB::Exception(ErrorCodes::PARQUET_EXCEPTION, "Only one set element is supported in IN clause");
     auto elements = set->getSetElements().front();
     std::vector<String> values;
+    values.reserve(elements->size());
     for (size_t i = 0; i < elements->size(); ++i)
     {
         auto value = elements->getDataAt(i);
