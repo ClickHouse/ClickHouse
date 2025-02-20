@@ -18,10 +18,6 @@ class TableSnapshot;
 
 namespace DB
 {
-namespace StorageObjectStorageSetting
-{
-extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
-}
 
 class DeltaLakeMetadataDeltaKernel final : public IDataLakeMetadata
 {

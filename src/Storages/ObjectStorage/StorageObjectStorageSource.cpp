@@ -278,7 +278,7 @@ Chunk StorageObjectStorageSource::generate()
                         if (auto * delta_conf = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
                             auto partition_columns = delta_conf->getDeltaLakePartitionColumns();
-                            if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
+                            if (!partition_columns.empty())
                             {
                                 auto partition_values = partition_columns.find(filename);
                                 if (partition_values != partition_columns.end())
