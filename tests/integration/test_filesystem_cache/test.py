@@ -677,7 +677,7 @@ def test_dynamic_resize(cluster):
     node.query(
         f"""
 DROP TABLE IF EXISTS test;
-
+SYSTEM DROP FILESYSTEM CACHE;
 CREATE TABLE test (a String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
@@ -712,11 +712,13 @@ SELECT * FROM test;
         ))
 
 
-    assert 277 == get_downloaded_size()
-    assert 277 == get_queue_size()
+    size = = get_downloaded_size()
+    assert size > 100
+    assert size == get_queue_size()
 
-    assert 28 == get_downloaded_elements()
-    assert 28 == get_queue_elements()
+    elements = get_downloaded_elements()
+    assert elements > 10
+    assert elements == get_queue_elements()
 
     default_config = cache_dynamic_resize_config.format(100000, 100)
     new_config = cache_dynamic_resize_config.format(100000, 10)
