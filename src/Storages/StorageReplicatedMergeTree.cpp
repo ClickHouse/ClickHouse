@@ -6830,9 +6830,18 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetri
 
     has_metadata_in_zookeeper = true;
 
+    PartitionCommand command;
+    command.part = true;
+    command.type = PartitionCommand::ATTACH_PARTITION;
+
     if (is_first_replica)
-        for (const String& part_name : active_parts_names)
-            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+    {
+        for (const auto & part_name : active_parts_names)
+        {
+            command.partition = std::make_shared<ASTLiteral>(part_name);
+            attachPartition(command, metadata_snapshot, getContext());
+        }
+    }
 
     LOG_INFO(log, "Attached all partitions, starting table");
 
@@ -6934,10 +6943,7 @@ void StorageReplicatedMergeTree::truncate(
 
 
 PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
-    const ASTPtr & partition,
-    const StorageMetadataPtr & metadata_snapshot,
-    bool attach_part,
-    ContextPtr query_context)
+    const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context)
 {
     /// Allow ATTACH PARTITION on readonly replica when restoring it.
     if (!are_restoring_replica)
@@ -6945,7 +6951,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(partition, attach_part, query_context, renamed_parts);
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, query_context, renamed_parts);
 
     /// TODO Allow to use quorum here.
     ReplicatedMergeTreeSink output(
@@ -6969,7 +6975,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
         output.writeExistingPart(loaded_parts[i]);
 
-        renamed_parts.old_and_new_names[i].old_name.clear();
+        renamed_parts.old_and_new_names[i].old_dir.clear();
 
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
 
