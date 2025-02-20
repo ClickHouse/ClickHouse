@@ -49,12 +49,12 @@ FOR_EACH_UNDERLYING_DECIMAL_TYPE(INVOKE);
 FOR_EACH_UNDERLYING_DECIMAL_TYPE(DISPATCH)
 #undef DISPATCH
 
-template <typename T> bool operator< (const Decimal<T> & x, const Decimal<T> & y) { return x.value < y.value; }
-template <typename T> bool operator> (const Decimal<T> & x, const Decimal<T> & y) { return x.value > y.value; }
-template <typename T> bool operator<= (const Decimal<T> & x, const Decimal<T> & y) { return x.value <= y.value; }
-template <typename T> bool operator>= (const Decimal<T> & x, const Decimal<T> & y) { return x.value >= y.value; }
-template <typename T> bool operator== (const Decimal<T> & x, const Decimal<T> & y) { return x.value == y.value; }
-template <typename T> bool operator!= (const Decimal<T> & x, const Decimal<T> & y) { return x.value != y.value; }
+template <typename T> ALWAYS_INLINE bool operator< (const Decimal<T> & x, const Decimal<T> & y) { return x.value < y.value; }
+template <typename T> ALWAYS_INLINE bool operator> (const Decimal<T> & x, const Decimal<T> & y) { return x.value > y.value; }
+template <typename T> ALWAYS_INLINE bool operator<= (const Decimal<T> & x, const Decimal<T> & y) { return x.value <= y.value; }
+template <typename T> ALWAYS_INLINE bool operator>= (const Decimal<T> & x, const Decimal<T> & y) { return x.value >= y.value; }
+template <typename T> ALWAYS_INLINE bool operator== (const Decimal<T> & x, const Decimal<T> & y) { return x.value == y.value; }
+template <typename T> ALWAYS_INLINE bool operator!= (const Decimal<T> & x, const Decimal<T> & y) { return x.value != y.value; }
 
 #define DISPATCH(TYPE) \
 template bool operator< (const Decimal<TYPE> & x, const Decimal<TYPE> & y); \

@@ -5,6 +5,7 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <iostream>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -300,7 +301,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
+void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena [[maybe_unused]])
 {
     if (row_begin >= row_end)
         return;
@@ -314,8 +315,19 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
     }
     else
     {
-        for (size_t i = row_begin; i < row_end; i++)
-            setIfGreater(column, i, arena);
+        const auto * data = vec.getData().data();
+        const auto * begin = data + row_begin;
+        const auto * end = data + row_end;
+
+        T max_value = *begin;
+        const auto * curr = begin + 1;
+        while (curr < end)
+        {
+            max_value = max_value > *curr ? max_value : *curr;
+            ++curr;
+        }
+
+        setIfGreater(max_value);
     }
 }
 
