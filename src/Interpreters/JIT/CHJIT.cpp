@@ -1,4 +1,5 @@
 #include "CHJIT.h"
+#include <llvm/IR/PassManager.h>
 
 #if USE_EMBEDDED_COMPILER
 
@@ -27,6 +28,15 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
+#include <llvm/Transforms/Scalar/NewGVN.h>
+#include <llvm/Transforms/Scalar/EarlyCSE.h>
+#include <llvm/Transforms/Scalar/CorrelatedValuePropagation.h>
+#include <llvm/Transforms/Scalar/LICM.h>
+#include <llvm/Transforms/Scalar/SimpleLoopUnswitch.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Utils/SimplifyCFGOptions.h>
+#include <llvm/ADT/Statistic.h>
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
@@ -493,20 +503,14 @@ std::string CHJIT::getMangledName(const std::string & name_to_mangle) const
 
 void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
 {
-    const char *argv[] =
-    {
-        "CH-JIT",
-        "-extra-vectorizer-passes", // Enable ExtraVectorizerPasses
-    };
-    constexpr int argc = 2;
-    llvm::cl::ParseCommandLineOptions(argc, argv, "CH-JIT");
-
     llvm::LoopAnalysisManager lam;
     llvm::FunctionAnalysisManager fam;
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
+
     auto target_analysis = machine->getTargetIRAnalysis();
     fam.registerPass([&] { return target_analysis; });
+
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
     pto.LoopInterleaving = true;
@@ -519,13 +523,30 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     pto.EagerlyInvalidateAnalyses = true;
 
     llvm::PassBuilder pb(nullptr, pto);
-
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
     pb.registerFunctionAnalyses(fam);
     pb.registerLoopAnalyses(lam);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
-
+    /// Add passes the same with ExtraVectorizerPasses = true
+    pb.registerOptimizerLastEPCallback(
+        [&](llvm::ModulePassManager& module_pm, llvm::OptimizationLevel) {
+            llvm::FunctionPassManager ExtraPasses;
+            ExtraPasses.addPass(llvm::EarlyCSEPass());
+            ExtraPasses.addPass(llvm::CorrelatedValuePropagationPass());
+            ExtraPasses.addPass(llvm::InstCombinePass());
+            llvm::LoopPassManager LPM;
+            LPM.addPass(llvm::LICMPass(pto.LicmMssaOptCap, pto.LicmMssaNoAccForPromotionCap,
+                                 /*AllowSpeculation=*/true));
+            LPM.addPass(llvm::SimpleLoopUnswitchPass(true));
+            ExtraPasses.addPass(
+                createFunctionToLoopPassAdaptor(std::move(LPM), /*UseMemorySSA=*/true,
+                                                /*UseBlockFrequencyInfo=*/true));
+            ExtraPasses.addPass(
+                llvm::SimplifyCFGPass(llvm::SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+            ExtraPasses.addPass(llvm::InstCombinePass());
+            module_pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(ExtraPasses)));
+    });
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
     mpm.run(module, mam);
 
