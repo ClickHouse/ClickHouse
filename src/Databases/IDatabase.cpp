@@ -70,5 +70,4 @@ void IDatabase::createTableRestoredFromBackup(const ASTPtr & create_table_query,
                     getEngineName(), backQuoteIfNeed(getDatabaseName()),
                     backQuoteIfNeed(create_table_query->as<const ASTCreateQuery &>().getTable()));
 }
-
 }

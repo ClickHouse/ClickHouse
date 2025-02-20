@@ -31,6 +31,7 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+struct AlterCommand;
 class AlterCommands;
 class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
@@ -415,6 +416,12 @@ public:
     {
         std::lock_guard lock{mutex};
         return database_name;
+    }
+
+    // Alter comment of database.
+    virtual void alterDatabaseComment(const AlterCommand &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
     }
 
     /// Get UUID of database.
