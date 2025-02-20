@@ -89,6 +89,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
             {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"compile_expressions", false, true, "For ci tests"},
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
             {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
