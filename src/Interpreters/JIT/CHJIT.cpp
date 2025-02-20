@@ -1,5 +1,4 @@
 #include "CHJIT.h"
-#include <llvm/IR/PassManager.h>
 
 #if USE_EMBEDDED_COMPILER
 
