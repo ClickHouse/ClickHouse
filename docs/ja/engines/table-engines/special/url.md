@@ -94,12 +94,6 @@ SELECT * FROM url_engine_table
     - インデックス。
     - レプリケーション。
 
-## PARTITION BY
-
-`PARTITION BY` — 任意です。パーティションキーに基づいてデータを分割して、別々のファイルを作成することができます。ほとんどの場合、パーティションキーは不要であり、必要な場合でも一般的に月ごと以上に細かいパーティションキーは不要です。パーティション分割はクエリを高速化しません（ORDER BY式とは対照的です）。過度に細かいパーティション分割は避けてください。クライアントの識別子や名前でデータをパーティション分割しないでください（代わりに、クライアント識別子や名前をORDER BY式の最初のカラムにしてください）。
-
-月ごとにパーティション分割するには、`toYYYYMM(date_column)`式を使用します。ここで`date_column`は[Date](/docs/ja/sql-reference/data-types/date.md)型の日付を持つカラムです。パーティション名は`"YYYYMM"`形式になります。
-
 ## 仮想カラム {#virtual-columns}
 
 - `_path` — `URL`へのパスです。型: `LowCardinality(String)`。

@@ -24,11 +24,11 @@ A table object with a single column containing perturbed query strings.
 
 ## Usage Example
 
-``` sql
+```sql
 SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2;
 ```
 
-```
+```response
    ┌─query──────────────────────────────────────────────────────────┐
 1. │ SELECT 'a' AS key GROUP BY key                                 │
 2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │

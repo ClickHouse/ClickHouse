@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/ASTConstraintDeclaration.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ComparisonGraph.h>
 
@@ -10,7 +9,12 @@
 namespace DB
 {
 
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
 using ConstraintsExpressions = std::vector<ExpressionActionsPtr>;
+
+class NamesAndTypesList;
 
 struct ConstraintsDescription
 {
