@@ -211,7 +211,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
         RemoteFunc * rfunc = tfunc->mutable_remote();
 
         rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-        rfunc->set_rdatabase(t.db ? ("d" + std::to_string(t.db->dname)) : "default");
+        rfunc->set_rdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
         rfunc->set_rtable("t" + std::to_string(t.tname));
         rfunc->set_user(sc.user);
         rfunc->set_password(sc.password);
@@ -285,7 +285,7 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
 
         chassert(table_engine);
         rfunc->set_address(fc.getConnectionHostAndPort());
-        rfunc->set_rdatabase(t.db ? ("d" + std::to_string(t.db->dname)) : "default");
+        rfunc->set_rdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
         rfunc->set_rtable("t" + std::to_string(t.tname));
     }
 }
@@ -294,29 +294,28 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 {
     const auto has_table_lambda = [&](const SQLTable & tt)
     {
-        return (!tt.db || tt.db->attached == DetachStatus::ATTACHED) && tt.attached == DetachStatus::ATTACHED
+        return tt.isAttached()
+            /* When comparing query success results, don't use tables from other RDBMS, SQL is very undefined */
             && (this->allow_engine_udf || !tt.isAnotherRelationalDatabaseEngine())
-            && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer());
+            /* When a query is going to be compared against another ClickHouse server, make sure all tables exist in that server */
+            && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
+            /* Don't use tables backing not deterministic views in query oracles */
+            && (tt.is_deterministic || this->allow_not_deterministic);
     };
+    const auto has_view_lambda
+        = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
+    const bool has_view = collectionHas<SQLView>(has_view_lambda);
 
     const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth && this->width < this->fc.max_width);
     const uint32_t cte = 10 * static_cast<uint32_t>(!this->ctes.empty());
     const uint32_t table = (40 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
-    const uint32_t view = 20
-        * static_cast<uint32_t>(
-                              this->peer_query != PeerQuery::ClickHouseOnly
-                              && collectionHas<SQLView>(
-                                  [&](const SQLView & vv)
-                                  {
-                                      return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
-                                          && (vv.is_deterministic || this->allow_not_deterministic);
-                                  }));
-    const uint32_t engineudf = 5 * static_cast<uint32_t>(this->allow_engine_udf && has_table);
+    const uint32_t view = 20 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
+    const uint32_t engineudf = 5 * static_cast<uint32_t>(this->allow_engine_udf && (has_table || has_view));
     const uint32_t tudf = 5;
-    const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic);
+    const uint32_t system_table = 5 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t mudf = 3;
-    const uint32_t cudf = 4 * static_cast<uint32_t>(!fc.clusters.empty() && has_table);
+    const uint32_t cudf = 4 * static_cast<uint32_t>(!fc.clusters.empty() && (has_table || has_view));
     const uint32_t prob_space = derived_table + cte + table + view + engineudf + tudf + system_table + mudf + cudf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
@@ -373,15 +372,9 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     }
     else if (view && nopt < (derived_table + cte + table + view + 1))
     {
-        SQLRelation rel(name);
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(
-            [&](const SQLView & vv)
-            {
-                return (!vv.db || vv.db->attached == DetachStatus::ATTACHED) && vv.attached == DetachStatus::ATTACHED
-                    && (vv.is_deterministic || this->allow_not_deterministic);
-            }));
+        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
 
         if (v.db)
         {
@@ -390,19 +383,38 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         est->mutable_table()->set_table("v" + std::to_string(v.tname));
         jt->mutable_table_alias()->set_table(name);
         jt->set_final(!v.is_materialized && (this->enforce_final || rg.nextSmallNumber() < 3));
-        for (uint32_t i = 0; i < v.ncols; i++)
-        {
-            rel.cols.emplace_back(SQLRelationCol(name, {"c" + std::to_string(i)}));
-        }
-        this->levels[this->current_level].rels.emplace_back(rel);
+        addViewRelation(name, v);
     }
     else if (engineudf && nopt < (derived_table + cte + table + view + engineudf + 1))
     {
         JoinedTableFunction * jtf = tos->mutable_joined_table_function();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+        const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
+        const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
+        const uint32_t pspace = remote_table + remote_view;
+        std::uniform_int_distribution<uint32_t> ndist(1, pspace);
+        const uint32_t nopt2 = ndist(rg.generator);
 
-        setTableRemote(rg, true, t, jtf->mutable_tfunc());
-        addTableRelation(rg, true, name, t);
+        if (remote_table && nopt2 < (remote_table + 1))
+        {
+            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+
+            setTableRemote(rg, true, t, jtf->mutable_tfunc());
+            addTableRelation(rg, true, name, t);
+        }
+        else if (remote_view && nopt2 < (remote_table + remote_view + 1))
+        {
+            RemoteFunc * rfunc = jtf->mutable_tfunc()->mutable_remote();
+            const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
+
+            rfunc->set_address(fc.getConnectionHostAndPort());
+            rfunc->set_rdatabase("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
+            rfunc->set_rtable("v" + std::to_string(v.tname));
+            addViewRelation(name, v);
+        }
+        else
+        {
+            chassert(0);
+        }
         jtf->mutable_table_alias()->set_table(name);
     }
     else if (tudf && nopt < (derived_table + cte + table + view + engineudf + tudf + 1))
@@ -519,9 +531,9 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 
         if (rg.nextBool())
         {
-            mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, 'd'));
+            mdf->set_mdatabase(setMergeTableParameter<std::shared_ptr<SQLDatabase>>(rg, "d"));
         }
-        mdf->set_mtable(setMergeTableParameter<SQLTable>(rg, 't'));
+        mdf->set_mtable(rg.nextBool() ? setMergeTableParameter<SQLTable>(rg, "t") : setMergeTableParameter<SQLView>(rg, "v"));
         for (uint32_t i = 0; i < 6; i++)
         {
             rel.cols.emplace_back(SQLRelationCol(name, {"c" + std::to_string(i)}));
@@ -534,21 +546,46 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         JoinedTableFunction * jtf = tos->mutable_joined_table_function();
         TableFunction * tf = jtf->mutable_tfunc();
         ClusterFunc * cdf = tf->mutable_cluster();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+        const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
+        const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
+        const uint32_t pspace = remote_table + remote_view;
+        std::uniform_int_distribution<uint32_t> ndist(1, pspace);
+        const uint32_t nopt2 = ndist(rg.generator);
 
         cdf->set_cname(static_cast<ClusterFunc_CName>((rg.nextRandomUInt32() % static_cast<uint32_t>(ClusterFunc::CName_MAX)) + 1));
         cdf->set_ccluster(rg.pickRandomlyFromVector(fc.clusters));
-        cdf->set_cdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-        cdf->set_ctable("t" + std::to_string(t.tname));
-        if (rg.nextBool())
+        if (remote_table && nopt2 < (remote_table + 1))
         {
-            /// Optional sharding key
-            flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
-            cdf->set_sharding_key(rg.pickRandomlyFromVector(this->remote_entries).getBottomName());
-            this->remote_entries.clear();
+            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+
+            cdf->set_cdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
+            cdf->set_ctable("t" + std::to_string(t.tname));
+            if (rg.nextBool())
+            {
+                /// Optional sharding key
+                flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
+                cdf->set_sharding_key(rg.pickRandomlyFromVector(this->remote_entries).getBottomName());
+                this->remote_entries.clear();
+            }
+            addTableRelation(rg, true, name, t);
+        }
+        else if (remote_view && nopt2 < (remote_table + remote_view + 1))
+        {
+            const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
+
+            cdf->set_cdatabase("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
+            cdf->set_ctable("v" + std::to_string(v.tname));
+            if (rg.nextBool())
+            {
+                cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));
+            }
+            addViewRelation(name, v);
+        }
+        else
+        {
+            chassert(0);
         }
         jtf->mutable_table_alias()->set_table(name);
-        addTableRelation(rg, true, name, t);
     }
     else
     {

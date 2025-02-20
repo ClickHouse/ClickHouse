@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/topk
+slug: /sql-reference/aggregate-functions/reference/topk
 sidebar_position: 202
 ---
 

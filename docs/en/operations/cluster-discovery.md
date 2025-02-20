@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/cluster-discovery
+slug: /operations/cluster-discovery
 sidebar_label: Cluster Discovery
 ---
 # Cluster Discovery

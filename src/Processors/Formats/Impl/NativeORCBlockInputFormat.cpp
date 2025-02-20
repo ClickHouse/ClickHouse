@@ -1,6 +1,7 @@
 #include "NativeORCBlockInputFormat.h"
 
 #if USE_ORC
+#    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnDecimal.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnMap.h>
@@ -35,11 +36,10 @@
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <orc/MemoryPool.hh>
+#    include <orc/Vector.hh>
 #    include <Common/Allocator.h>
 #    include <Common/FieldVisitorsAccurateComparison.h>
-#    include <Common/MemorySanitizer.h>
 #    include <Common/quoteString.h>
-#    include <orc/Vector.hh>
 
 #    include "ArrowBufferedStreams.h"
 
