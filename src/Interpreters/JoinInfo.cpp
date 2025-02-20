@@ -4,6 +4,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {

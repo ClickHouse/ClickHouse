@@ -114,7 +114,7 @@ void loadDirectoryTree(
         getLogger("MetadataStorageFromPlainObjectStorage"),
         "Loaded directory tree for {} directories, found {} files",
         map.size(),
-        num_files);
+        num_files.load());
 }
 
 std::shared_ptr<InMemoryDirectoryPathMap> loadPathPrefixMap(const std::string & metadata_key_prefix, ObjectStoragePtr object_storage)

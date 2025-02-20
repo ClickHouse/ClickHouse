@@ -63,7 +63,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::findLastRevision()
             revision += "0";
     }
     revision_counter = static_cast<UInt64>(std::bitset<64>(revision).to_ullong());
-    LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter, disk->name);
+    LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter.load(), disk->name);
 }
 
 int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)

@@ -86,7 +86,7 @@ std::streampos StdStreamBufFromReadBuffer::seekpos(std::streampos pos, std::ios_
         return pos;
     }
 
-    throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek's offset {} is out of bound", pos);
+    throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek's offset {} is out of bound", pos.state().__count);
 }
 
 std::streampos StdStreamBufFromReadBuffer::getCurrentPosition() const

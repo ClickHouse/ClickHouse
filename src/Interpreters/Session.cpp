@@ -26,6 +26,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 namespace Setting

@@ -223,7 +223,7 @@ public:
             {
                 concat_args[i] = instruction.execute();
             }
-            catch (const fmt::v9::format_error & e)
+            catch (const fmt::v11::format_error & e)
             {
                 if (instruction.is_literal)
                     throw Exception(

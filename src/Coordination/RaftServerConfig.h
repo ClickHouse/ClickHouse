@@ -6,6 +6,7 @@
 #include <libnuraft/srv_config.hxx>
 
 #include <optional>
+#include <variant>
 #include <vector>
 
 

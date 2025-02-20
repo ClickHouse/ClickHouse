@@ -11,6 +11,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {

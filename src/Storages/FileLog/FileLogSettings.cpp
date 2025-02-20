@@ -90,7 +90,7 @@ void FileLogSettings::loadFromQuery(ASTStorage & storage_def)
     constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32
     if (impl->poll_max_batch_size > max_sane_block_rows_size)
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size);
+            ErrorCodes::INVALID_SETTING_VALUE, "Sanity check: 'poll_max_batch_size' value is too high ({})", impl->poll_max_batch_size.value);
 }
 
 bool FileLogSettings::hasBuiltin(std::string_view name)

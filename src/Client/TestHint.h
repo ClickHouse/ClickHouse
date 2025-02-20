@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>

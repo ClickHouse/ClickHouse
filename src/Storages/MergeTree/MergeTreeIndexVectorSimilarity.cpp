@@ -21,6 +21,8 @@
 
 #include <ranges>
 
+#include <fmt/ranges.h>
+
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;

@@ -15,6 +15,7 @@
 #include <QueryPipeline/Pipe.h>
 
 #include <boost/circular_buffer.hpp>
+#include <fmt/ranges.h>
 
 #include <ranges>
 

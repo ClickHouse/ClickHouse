@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {

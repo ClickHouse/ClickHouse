@@ -8,6 +8,8 @@
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/UserInfo.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 struct FileCacheReserveStat;
@@ -33,7 +35,7 @@ public:
         std::atomic<size_t> size;
         size_t hits = 0;
 
-        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size); }
+        std::string toString() const { return fmt::format("{}:{}:{}", key, offset, size.load()); }
 
         bool isEvicting(const CachePriorityGuard::Lock &) const { return evicting; }
         bool isEvicting(const LockedKey &) const { return evicting; }
