@@ -101,18 +101,13 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
     return join->data->getJoinedData();
 }
 
-void reserveSpaceInHashMaps(
-    const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins,
-    ThreadPool * pool,
-    const StatsCollectingParams & stats_collecting_params,
-    size_t slots)
+void reserveSpaceInHashMaps(HashJoin & hash_join, size_t ind, const StatsCollectingParams & stats_collecting_params, size_t slots)
 {
     if (auto hint = getSizeHint(stats_collecting_params, slots))
     {
         /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
         /// we need to preallocate in all buckets of all hash maps.
         const size_t reserve_size = hint->median_size;
-        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size);
 
         /// Each `HashJoin` instance will "own" a subset of buckets during the build phase. Because of that
         /// we preallocate space only in the specific buckets of each `HashJoin` instance.
@@ -129,25 +124,9 @@ void reserveSpaceInHashMaps(
                 })
         };
 
-        for (size_t i = 0; i < slots; ++i)
-        {
-            pool->scheduleOrThrow(
-                [&, i, thread_group = CurrentThread::getGroup()]()
-                {
-                    SCOPE_EXIT_SAFE({
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    });
-
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
-                    setThreadName("ConcurrentJoin");
-
-                    const auto & right_data = getData(hash_joins[i]);
-                    std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, i); }, right_data->maps.at(0));
-                });
-        }
-        pool->wait();
+        const auto & right_data = hash_join.getJoinedData();
+        std::visit([&](auto & maps) { return reserve_space_in_buckets(maps, right_data->type, ind); }, right_data->maps.at(0));
+        ProfileEvents::increment(ProfileEvents::HashJoinPreallocatedElementsInHashTables, reserve_size / slots);
     }
 }
 
@@ -220,12 +199,6 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                 });
         }
         pool->wait();
-
-        if (!hash_joins[0]->data->twoLevelMapIsUsed())
-            /// Means fixed-size hash map is used
-            return;
-
-        reserveSpaceInHashMaps(hash_joins, pool.get(), stats_collecting_params, slots);
     }
     catch (...)
     {
@@ -315,6 +288,12 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 std::unique_lock<std::mutex> lock(hash_join->mutex, std::try_to_lock);
                 if (!lock.owns_lock())
                     continue;
+
+                if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
+                {
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots);
+                    hash_join->space_was_preallocated = true;
+                }
 
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(dispatched_block, check_limits);
 
@@ -636,7 +615,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 {
     for (auto & hash_join : hash_joins)
     {
-        // It cannot be called concurrently with other IJoin methods
+        // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
         hash_join->data->onBuildPhaseFinish();
     }
 

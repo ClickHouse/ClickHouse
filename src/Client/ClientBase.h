@@ -106,6 +106,7 @@ public:
     /// Returns true if query succeeded
     bool processTextAsSingleQuery(const String & full_query);
 
+    std::string getConnectionHostAndPortForFuzzing() const;
 protected:
     void runInteractive();
     void runNonInteractive();
