@@ -1724,6 +1724,51 @@ void SelectQueryExpressionAnalyzer::validateOrderByKeyType(const DataTypePtr & k
     key_type->forEachChild(check);
 }
 
+bool SelectQueryExpressionAnalyzer::appendLimitInrangeFrom(ExpressionActionsChain & chain, bool only_types)
+{
+    const auto * select_query = getSelectQuery();
+
+    if (!select_query->limitInRangeFrom())
+        return false;
+
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns); // // maybe other argument for lastStep?
+
+    getRootActions(select_query->limitInRangeFrom(), only_types, step.actions()->dag);
+
+    auto limit_inrange_from_column_name = select_query->limitInRangeFrom()->getColumnName();
+    step.addRequiredOutput(limit_inrange_from_column_name);
+
+    const auto & node = step.actions()->dag.findInOutputs(limit_inrange_from_column_name);
+    auto filter_type = node.result_type;
+
+    if (!filter_type->canBeUsedInBooleanContext())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in LIMIT INRANGE FROM: {}",
+                        filter_type->getName());
+
+    return true;
+}
+
+bool SelectQueryExpressionAnalyzer::appendLimitInrangeTo(ExpressionActionsChain & chain, bool only_types)
+{
+    const auto * select_query = getSelectQuery();
+
+    if (!select_query->limitInRangeTo())
+        return false;
+
+    ExpressionActionsChain::Step & step = chain.lastStep(aggregated_columns); // maybe other argument for lastStep?
+    getRootActions(select_query->limitInRangeTo(), only_types, step.actions()->dag);
+
+    auto limit_inrange_to_column_name = select_query->limitInRangeTo()->getColumnName();
+    step.addRequiredOutput(limit_inrange_to_column_name);
+    const auto & node = step.actions()->dag.findInOutputs(limit_inrange_to_column_name);
+    auto filter_type = node.result_type;
+    if (!filter_type->canBeUsedInBooleanContext())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Invalid type for filter in LIMIT INRANGE TO: {}",
+                        filter_type->getName());
+
+    return true;
+}
+
 bool SelectQueryExpressionAnalyzer::appendLimitBy(ExpressionActionsChain & chain, bool only_types)
 {
     const auto * select_query = getSelectQuery();
@@ -2260,6 +2305,19 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             chain.addStep();
         }
 
+        if (query_analyzer.appendLimitInrangeFrom(chain, only_types || !second_stage))
+        {
+            // limit_inrange_from_step_num = chain.steps.size() - 1; ??
+            before_limit_inrange_from = chain.getLastActions();
+            chain.addStep();
+        }
+        if (query_analyzer.appendLimitInrangeTo(chain, only_types || !second_stage))
+        {
+            // limit_inrange_to_step_num = chain.steps.size() - 1; ??
+            before_limit_inrange_to = chain.getLastActions();
+            chain.addStep();
+        }
+
         final_projection = query_analyzer.appendProjectResult(chain);
 
         finalize_chain(chain);
@@ -2390,6 +2448,16 @@ std::string ExpressionAnalysisResult::dump() const
     if (before_order_by)
     {
         ss << "before_order_by " << before_order_by->dag.dumpDAG() << "\n";
+    }
+
+    if (before_limit_inrange_from)
+    {
+        ss << "before_limit_inrange_from " << before_limit_inrange_from->dag.dumpDAG() << "\n";
+    }
+
+    if (before_limit_inrange_to)
+    {
+        ss << "before_limit_inrange_to " << before_limit_inrange_to->dag.dumpDAG() << "\n";
     }
 
     if (before_limit_by)
