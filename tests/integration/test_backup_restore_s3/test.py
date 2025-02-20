@@ -779,13 +779,15 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
     backup_name = new_backup_name()
     backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
     settings = {"allow_s3_native_copy": allow_s3_native_copy}
+    size = 1000
     if use_multipart_copy:
-        settings["s3_max_single_operation_copy_size"] = 1
+        size = 10000000
     (backup_events, _) = check_backup_and_restore(
         storage_policy,
         backup_destination,
         backup_settings=settings,
         restore_settings=settings,
+        size=size
     )
     check_system_tables(backup_events["query_id"])
 
