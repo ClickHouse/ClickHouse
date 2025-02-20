@@ -34,7 +34,7 @@ jobs:
       - name: Set envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          DRY_RUN=${{ github.event.inputs.dry-run && '--dry-run' || '' }}
+          DRY_RUN=${{ github.event.inputs.dry-run == 'true' && '--dry-run' || '' }}
           ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
           ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
           RCSK
