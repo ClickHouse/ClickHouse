@@ -123,7 +123,6 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
-    extern const int UNKNOWN_TABLE;
 }
 
 namespace ActionLocks
@@ -906,13 +905,14 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
                         backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
-    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
+    std::optional<Exception> exception;
+    auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
     ASTPtr create_ast;
 
     if (!table)
     {
         if (throw_on_error)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", replica);
+            throw Exception(*exception);
         return nullptr;
     }
     const StorageID replica_table_id = table->getStorageID();
