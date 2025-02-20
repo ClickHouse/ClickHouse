@@ -11,6 +11,7 @@
 
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -238,7 +239,7 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting max_bytes_ratio_before_external_group_by should be >= 0 and < 1 ({})", ratio);
 
         auto available_system_memory = getMostStrictAvailableSystemMemory();
-        if (available_system_memory.has_value())
+        if (available_system_memory.has_value() && !std::isnan(ratio))
         {
             size_t ratio_in_bytes = static_cast<size_t>(*available_system_memory * ratio);
             if (threshold)
@@ -247,9 +248,9 @@ size_t Aggregator::Params::getMaxBytesBeforeExternalGroupBy(size_t max_bytes_bef
                 threshold = ratio_in_bytes;
 
             LOG_TRACE(getLogger("Aggregator"), "Adjusting memory limit before external aggregation with {} (ratio: {}, available system memory: {})",
-                formatReadableSizeWithBinarySuffix(ratio_in_bytes),
-                ratio,
-                formatReadableSizeWithBinarySuffix(*available_system_memory));
+                    formatReadableSizeWithBinarySuffix(ratio_in_bytes),
+                    ratio,
+                    formatReadableSizeWithBinarySuffix(*available_system_memory));
         }
         else
         {
@@ -337,7 +338,17 @@ ColumnRawPtrs Aggregator::Params::makeRawKeyColumns(const Block & block) const
     ColumnRawPtrs key_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
+    {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+        if (block.getPositionByName(keys[i]) != i)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Wrong key in block [{}] at position {}, expected keys: [{}]",
+                block.dumpStructure(), i, fmt::join(keys, ", "));
+        }
+#endif
         key_columns[i] = block.safeGetByPosition(i).column.get();
+    }
 
     return key_columns;
 }
@@ -361,15 +372,16 @@ void Aggregator::Params::explain(WriteBuffer & out, size_t indent) const
 
     {
         /// Dump keys.
-        out << prefix << "Keys: ";
+        out << prefix << "Keys:";
 
         bool first = true;
         for (const auto & key : keys)
         {
-            if (!first)
+            if (first)
+                out << " ";
+            else
                 out << ", ";
             first = false;
-
             out << key;
         }
 
@@ -2321,15 +2333,8 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 
     std::atomic<UInt32> next_bucket_to_merge = 0;
 
-    auto converter = [&](size_t thread_id, ThreadGroupPtr thread_group)
+    auto converter = [&](size_t thread_id)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-
         BlocksList blocks;
         while (true)
         {
@@ -2357,10 +2362,14 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
             tasks[thread_id] = std::packaged_task<BlocksList()>(
-                [group = CurrentThread::getGroup(), thread_id, &converter] { return converter(thread_id, group); });
+                [thread_id, &converter] { return converter(thread_id); });
 
             if (thread_pool)
-                thread_pool->scheduleOrThrowOnError([thread_id, &tasks] { tasks[thread_id](); });
+                thread_pool->scheduleOrThrowOnError([thread_id, &tasks, thread_group = CurrentThread::getGroup()]
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, "");
+                        tasks[thread_id]();
+                    });
             else
                 tasks[thread_id]();
         }
@@ -2880,7 +2889,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     Arena * arena_for_keys) const
 {
     const AggregateColumnsConstData & aggregate_columns_data = params.makeAggregateColumnsData(block);
-    const ColumnRawPtrs & key_columns = params.makeRawKeyColumns(block);
+    ColumnRawPtrs key_columns = params.makeRawKeyColumns(block);
 
     mergeStreamsImpl<Method, Table>(
         aggregates_pool, method, data, overflow_row, consecutive_keys_cache_stats,
@@ -3086,15 +3095,8 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupPtr thread_group)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool)
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-
             for (Block & block : bucket_to_blocks[bucket])
             {
                 /// Copy to avoid race.
@@ -3129,15 +3131,14 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            /// if we don't use thread pool we don't need to attach and definitely don't want to detach from the thread group
-            /// because this thread is already attached
-            auto task = [group = thread_pool != nullptr ? CurrentThread::getGroup() : nullptr, bucket, &merge_bucket, aggregates_pool]
-            { merge_bucket(bucket, aggregates_pool, group); };
-
             if (thread_pool)
-                thread_pool->scheduleOrThrowOnError(task);
+                thread_pool->scheduleOrThrowOnError([bucket, &merge_bucket, aggregates_pool, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, "");
+                    merge_bucket(bucket, aggregates_pool);
+                });
             else
-                task();
+                merge_bucket(bucket, aggregates_pool);
         }
 
         if (thread_pool)
@@ -3355,11 +3356,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block) const
 
     AggregatedDataVariants data;
 
-    ColumnRawPtrs key_columns(params.keys_size);
-
-    /// Remember the columns we will work with
-    for (size_t i = 0; i < params.keys_size; ++i)
-        key_columns[i] = block.safeGetByPosition(i).column.get();
+    ColumnRawPtrs key_columns = params.makeRawKeyColumns(block);
 
     AggregatedDataVariants::Type type = method_chosen;
     data.keys_size = params.keys_size;

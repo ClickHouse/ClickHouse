@@ -12,6 +12,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -138,11 +139,7 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-
-                setThreadName("SystemReplicas");
+                ThreadGroupSwitcher switcher(thread_group, "SystemReplicas");
 
                 try
                 {
@@ -248,7 +245,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     };
 
     description.setAliases({
-        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
+        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
     });
 
     StorageInMemoryMetadata storage_metadata;

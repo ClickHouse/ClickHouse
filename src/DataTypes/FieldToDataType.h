@@ -40,6 +40,10 @@ public:
     DataTypePtr operator() (const DecimalField<Decimal64> & x) const;
     DataTypePtr operator() (const DecimalField<Decimal128> & x) const;
     DataTypePtr operator() (const DecimalField<Decimal256> & x) const;
+    DataTypePtr operator() (const Decimal32 & x, UInt32 scale) const;
+    DataTypePtr operator() (const Decimal64 & x, UInt32 scale) const;
+    DataTypePtr operator() (const Decimal128 & x, UInt32 scale) const;
+    DataTypePtr operator() (const Decimal256 & x, UInt32 scale) const;
     DataTypePtr operator() (const AggregateFunctionStateData & x) const;
     DataTypePtr operator() (const CustomType & x) const;
     DataTypePtr operator() (const UInt256 & x) const;

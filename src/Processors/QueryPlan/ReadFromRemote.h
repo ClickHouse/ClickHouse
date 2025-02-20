@@ -1,5 +1,7 @@
 #pragma once
-#include <Processors/QueryPlan/ISourceStep.h>
+
+#include <stack>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
@@ -17,7 +19,7 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 
 /// Reading step from remote servers.
 /// Unite query results from several shards.
-class ReadFromRemote final : public ISourceStep
+class ReadFromRemote final : public SourceStepWithFilterBase
 {
 public:
     /// @param main_table_ if Shards contains main_table then this parameter will be ignored

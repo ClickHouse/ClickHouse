@@ -1,6 +1,7 @@
-#include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Port.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/logger_useful.h>
 
 namespace ProfileEvents
