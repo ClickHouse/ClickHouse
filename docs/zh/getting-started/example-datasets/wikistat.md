@@ -1,1 +1,1 @@
-../../../en/getting-started/example-datasets/wikistat.md
+../../../getting-started/example-datasets/wikistat.md

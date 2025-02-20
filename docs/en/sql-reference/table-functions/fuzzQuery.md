@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/fuzzQuery
+slug: /sql-reference/table-functions/fuzzQuery
 sidebar_position: 75
 sidebar_label: fuzzQuery
 ---

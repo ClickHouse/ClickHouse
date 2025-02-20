@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/where
+slug: /sql-reference/statements/select/where
 sidebar_label: WHERE
 ---
 
