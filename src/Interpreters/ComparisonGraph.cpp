@@ -157,7 +157,7 @@ bool less(const Field & lhs, const Field & rhs)
         if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible type ({} and {}), please verify that table constraints are "
+                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
                 "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
                 "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
                 lhs.getTypeName(),
@@ -183,7 +183,7 @@ bool equals(const Field & lhs, const Field & rhs)
         if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible type ({} and {}), please verify that table constraints are "
+                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
                 "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
                 "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
                 lhs.getTypeName(),
