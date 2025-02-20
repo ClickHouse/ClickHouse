@@ -280,7 +280,7 @@ ORDER BY
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -389,7 +389,7 @@ ORDER BY
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -465,7 +465,7 @@ WHERE
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to a bug with Decimal addition. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70136
+As of February 2025, the query does not work out-of-the box due to a bug with Decimal addition. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70136
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -842,7 +842,7 @@ WHERE
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -993,7 +993,7 @@ ORDER BY
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 ::::
 
 **Q21**
@@ -1040,7 +1040,7 @@ ORDER BY
     s_name;
 ```
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 ::::
 
 **Q22**
@@ -1083,3 +1083,7 @@ GROUP BY
 ORDER BY
     cntrycode;
 ```
+
+::::note
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+::::
