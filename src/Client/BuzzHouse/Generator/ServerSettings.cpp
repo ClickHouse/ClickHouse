@@ -130,7 +130,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_uniq_to_count", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"optimize_use_implicit_projections", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"optimize_use_projections", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"optimize_using_constraints", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       /// {"optimize_using_constraints", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"os_thread_priority",
         CHSetting(
             [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
@@ -525,7 +525,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"materialize_statistics_on_insert", CHSetting(trueOrFalse, {}, false)},
     {"materialize_ttl_after_modify", CHSetting(trueOrFalse, {}, false)},
     {"materialized_views_ignore_errors", CHSetting(trueOrFalse, {}, false)},
-    /// {"max_bytes_in_distinct", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
+    /// {"max_bytes_in_distinct", CHSetting(highRange, {}, false)},
     /*{"max_bytes_in_join",
      CHSetting(
          [](RandomGenerator & rg)
@@ -571,11 +571,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_result_bytes", CHSetting(highRange, {}, false)},
     /// {"max_result_rows", CHSetting(highRange, {}, false)},
     /// {"max_rows_in_distinct", CHSetting(highRange, {}, false)},
-    {"max_rows_in_join",
+    /*{"max_rows_in_join",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); },
          {"0", "8", "32", "64", "1024", "10000"},
-         false)},
+         false)},*/
     /// {"max_rows_in_set", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_group_by",  CHSetting(highRange, {}, false)},
     /// {"max_rows_to_read", CHSetting(highRange, {}, false)},
