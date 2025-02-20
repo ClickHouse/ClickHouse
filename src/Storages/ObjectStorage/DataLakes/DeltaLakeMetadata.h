@@ -58,10 +58,14 @@ public:
         ContextPtr local_context,
         bool allow_experimental_delta_kernel_rs)
     {
+#if USE_DELTA_KERNEL_RS
         if (allow_experimental_delta_kernel_rs)
             return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
         else
             return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#else
+        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
+#endif
     }
 
 private:

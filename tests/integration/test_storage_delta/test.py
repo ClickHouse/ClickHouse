@@ -537,7 +537,7 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME}
-        AS deltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"""
+        AS deltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')"""
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
@@ -999,7 +999,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
             f"""
             DROP TABLE IF EXISTS {DB_NAME}.{TABLE_NAME};
             CREATE TABLE {DB_NAME}.{TABLE_NAME}
-            AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
+            AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', 'minio123')
             """
         )
 
