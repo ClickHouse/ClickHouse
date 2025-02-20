@@ -628,13 +628,17 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     }
 
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
-    hash_joins[0]->data->onBuildPhaseFinish();
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->onBuildPhaseFinish();
 
-    //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
-    for (size_t i = 1; i < slots; ++i)
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
-        hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
+        for (size_t i = 1; i < slots; ++i)
+        {
+            getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
+            hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        }
     }
 }
 }
