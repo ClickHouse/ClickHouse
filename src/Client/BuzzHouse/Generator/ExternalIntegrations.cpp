@@ -80,12 +80,11 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
+            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
             if (t.db->isReplicatedDatabase())
             {
                 deng->set_zoo_path(t.db->zoo_path_counter);
             }
-            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
-
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
         }
@@ -1333,14 +1332,12 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
     String buf;
+    std::error_code ec;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
-    if (std::remove(out_path.generic_string().c_str()) && errno != ENOENT)
+    if (!std::filesystem::remove(out_path, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(fc.flush_log_wait_time));
@@ -1348,7 +1345,8 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
             pt,
             fmt::format(
                 "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
-                "system.query_log WHERE used_privileges = [] ORDER BY event_time_microseconds DESC LIMIT 1;",
+                "system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC "
+                "LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
@@ -1382,6 +1380,13 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
     String buf;
     String replaced;
+    std::error_code ec;
+
+    if (!std::filesystem::remove(fc.fuzz_out, ec) && ec)
+    {
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
+        return;
+    }
     if (fc.processServerQuery(fmt::format(
             "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
             fc.fuzz_out.generic_string())))
