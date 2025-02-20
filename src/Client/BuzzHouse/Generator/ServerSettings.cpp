@@ -31,53 +31,53 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_optimize_predicate_expression", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"enable_optimize_predicate_expression_to_final_subquery", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"join_any_take_last_row", CHSetting(trueOrFalse, {"0", "1"}, false)},
-        {"join_algorithm",
-         CHSetting(
-             [](RandomGenerator & rg)
-             {
-                 String res;
-                 DB::Strings choices
-                     = {"auto",
-                        "default",
-                        "direct",
-                        "full_sorting_merge",
-                        "grace_hash",
-                        "hash",
-                        "parallel_hash",
-                        "partial_merge",
-                        "prefer_partial_merge"};
+       {"join_algorithm",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                String res;
+                DB::Strings choices
+                    = {"auto",
+                       "default",
+                       "direct",
+                       "full_sorting_merge",
+                       "grace_hash",
+                       "hash",
+                       "parallel_hash",
+                       "partial_merge",
+                       "prefer_partial_merge"};
 
-                 if (rg.nextBool())
-                 {
-                     res = rg.pickRandomlyFromVector(choices);
-                 }
-                 else
-                 {
-                     const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+                if (rg.nextBool())
+                {
+                    res = rg.pickRandomlyFromVector(choices);
+                }
+                else
+                {
+                    const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
 
-                     std::shuffle(choices.begin(), choices.end(), rg.generator);
-                     for (uint32_t i = 0; i < nalgo; i++)
-                     {
-                         if (i != 0)
-                         {
-                             res += ",";
-                         }
-                         res += choices[i];
-                     }
-                 }
-                 return "'" + res + "'";
-             },
-             {"'default'",
-              "'grace_hash'",
-              "'direct, hash'",
-              "'hash'",
-              "'parallel_hash'",
-              "'partial_merge'",
-              "'direct'",
-              "'auto'",
-              "'full_sorting_merge'",
-              "'prefer_partial_merge'"},
-             false)},
+                    std::shuffle(choices.begin(), choices.end(), rg.generator);
+                    for (uint32_t i = 0; i < nalgo; i++)
+                    {
+                        if (i != 0)
+                        {
+                            res += ",";
+                        }
+                        res += choices[i];
+                    }
+                }
+                return "'" + res + "'";
+            },
+            {"'default'",
+             "'grace_hash'",
+             "'direct, hash'",
+             "'hash'",
+             "'parallel_hash'",
+             "'partial_merge'",
+             "'direct'",
+             "'auto'",
+             "'full_sorting_merge'",
+             "'prefer_partial_merge'"},
+            false)},
        {"low_cardinality_use_single_dictionary_for_part", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"max_bytes_ratio_before_external_group_by",
         CHSetting(
@@ -534,7 +534,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
                  rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "1", "1000", "1000000"},
-         false)},
+         false)},*/
     /// {"max_bytes_in_set", CHSetting(highRange, {}, false)},
     /// {"max_bytes_to_read", CHSetting(highRange, {}, false)},
     /// {"max_bytes_to_read_leaf", CHSetting(highRange, {}, false)},
