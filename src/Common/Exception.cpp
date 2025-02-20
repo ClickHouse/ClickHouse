@@ -241,12 +241,12 @@ Exception::ThreadFramePointers::~ThreadFramePointers()
     can_use_thread_frame_pointers = false;
 }
 
-Exception::ThreadFramePointersBase Exception::getThreadFramePointers()
+const Exception::ThreadFramePointersBase & Exception::getThreadFramePointers()
 {
     if (can_use_thread_frame_pointers)
         return thread_frame_pointers.frame_pointers;
 
-    return {};
+    return dummy_frame_pointers;
 }
 
 void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
