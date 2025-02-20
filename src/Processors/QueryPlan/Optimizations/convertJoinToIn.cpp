@@ -21,7 +21,7 @@ namespace DB::Setting
 namespace DB::QueryPlanOptimizations
 {
 
-size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes[[maybe_unused]], const Optimization::ExtraSettings & /*settings*/)
+size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     auto & parent = parent_node->step;
     auto * join = typeid_cast<JoinStepLogical *>(parent.get());
@@ -49,59 +49,66 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (left && right)
         return 0;
 
-    return 0;
 
-    // std::cout<<"can optimize"<<std::endl;
+    ActionsDAG actions(left_input_header.getColumnsWithTypeAndName());
 
-    // auto context = join->getContext();
-
-
-    // ActionsDAG actions(left_input_header.getColumnsWithTypeAndName());
-
-    // std::vector<const ActionsDAG::Node *> left_columns = actions.getOutputs();
-    // const ActionsDAG::Node * in_lhs_arg = left_columns.front();
-
-    // // std::vector<ColumnWithTypeAndName> right_columns;
-
-    // // auto test_set = std::make_shared<FutureSetFromTuple>(Block(right_columns), context->getSettingsRef());
-    // // auto column_set = ColumnSet::create(1, std::move(test_set));
-    // // ColumnPtr set_col = ColumnConst::create(std::move(column_set), 0);
-
-    // // const ActionsDAG::Node * in_rhs_arg = &actions.addColumn({set_col, std::make_shared<DataTypeSet>(), {}});
-
-
-    // auto func_in = FunctionFactory::instance().get("in", context);
-    // actions.addFunction(func_in, {in_lhs_arg, nullptr/*in_rhs_arg*/}, {});
+    std::vector<const ActionsDAG::Node *> left_columns = actions.getOutputs();
+    const ActionsDAG::Node * in_lhs_arg = left_columns.front();
 
     // QueryPlan subquery_plan;
-    // auto where_step = std::make_unique<FilterStep>(subquery_plan.getCurrentHeader(),
-    //     std::move(actions),
-    //     "",
-    //     false);
-    // // appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
-    // where_step->setStepDescription("WHERE");
-    // subquery_plan.addStep(std::move(where_step));
+    // subquery_plan.addStep(std::move(parent_node->children[1]->step));
+    auto context = join->getContext();
+    const auto & settings = context->getSettingsRef();
+    auto future_set = std::make_shared<FutureSetFromSubquery>(
+        /*set.hash*/CityHash_v1_0_2::uint128(), nullptr,
+        // std::make_unique<QueryPlan>(std::move(subquery_plan)),
+        nullptr, nullptr,
+        settings[Setting::transform_null_in],
+        PreparedSets::getSizeLimitsForSet(settings),
+        settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
+    chassert(future_set->get() == nullptr);
+    auto column_set = ColumnSet::create(1, std::move(future_set));
+    ColumnPtr set_col = std::move(column_set);
+    const ActionsDAG::Node * in_rhs_arg = &actions.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 
-    // const auto & settings = context->getSettingsRef();
-    // auto future_set = std::make_shared<FutureSetFromSubquery>(
-    //     /*set.hash*/CityHash_v1_0_2::uint128(), nullptr,
-    //     std::make_unique<QueryPlan>(std::move(subquery_plan)),
-    //     nullptr, nullptr,
-    //     settings[Setting::transform_null_in],
-    //     PreparedSets::getSizeLimitsForSet(settings),
-    //     settings[Setting::use_index_for_in_with_subqueries_max_values]);
+    auto func_in = FunctionFactory::instance().get("in", context);
+    auto & in_node = actions.addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
+    actions.getOutputs().push_back(&in_node);
 
-    // PreparedSets::Subqueries subqueries;
-    // auto step = std::make_unique<DelayedCreatingSetsStep>(
-    //     output_header,
-    //     std::move(subqueries),
-    //     context);
+    auto where_step = std::make_unique<FilterStep>(left_input_header,
+        std::move(actions),
+        in_node.result_name,
+        false);
+    where_step->setStepDescription("WHERE");
 
-    // parent_node->step = std::move(step);
-    // // parent_node->children.swap(child_node->children);
+    /// fill in with future set
+    PreparedSets::Subqueries subqueries;
+    auto delayed_creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
+        output_header,
+        std::move(subqueries),
+        context);
+    delayed_creating_sets_step->setStepDescription("DelayedCreatingSetsStep");
 
-    // return 0;
+    /// replace JoinStepLogical with FilterStep
+    parent_node->step = std::move(where_step);
+    parent_node->children.pop_back();
+
+    /// DelayedCreatingSetsStep should be the root, so use swap
+    auto & last_node = nodes.back();
+    auto & new_node = nodes.emplace_back();
+    std::swap(last_node, new_node);
+    last_node.step = std::move(delayed_creating_sets_step);
+    last_node.children.push_back(&new_node);
+
+    // for (const auto & n : nodes)
+    // {
+    //     if (&n==parent_node) std::cout<<"same"<<"  ";
+    //     std::cout<<n.step->getName()<<" : "<<n.step->getStepDescription();
+    //     std::cout<<std::endl;
+    // }
+
+    return 1;
 }
 
 }
