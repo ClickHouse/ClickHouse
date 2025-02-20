@@ -48,7 +48,7 @@ void NATSHandler::runLoop()
     });
 
     auto error = uv_async_init(loop.getLoop(), &execute_tasks_scheduler, processTasks);
-    if(error)
+    if (error)
     {
         LOG_ERROR(log, "Can not create scheduler");
         std::lock_guard lock(loop_state_mutex);
@@ -76,14 +76,14 @@ void NATSHandler::runLoop()
 void NATSHandler::processTasks(uv_async_t* scheduler)
 {
     auto self_ptr = static_cast<NATSHandler *>(scheduler->data);
-    if(!self_ptr)
+    if (!self_ptr)
     {
         return;
     }
     self_ptr->executeTasks();
-    
+
     std::lock_guard lock(self_ptr->loop_state_mutex);
-    if(self_ptr->loop_state == Loop::STOP)
+    if (self_ptr->loop_state == Loop::STOP)
     {
         uv_stop(self_ptr->loop.getLoop());
     }
