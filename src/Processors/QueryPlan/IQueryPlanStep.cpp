@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Common/CurrentThread.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -32,6 +33,11 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
 
     input_headers[idx] = input_header;
     updateOutputHeader();
+}
+
+bool IQueryPlanStep::removeUnusedColumns(const Names & /*required_outputs*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
 }
 
 const Header & IQueryPlanStep::getOutputHeader() const

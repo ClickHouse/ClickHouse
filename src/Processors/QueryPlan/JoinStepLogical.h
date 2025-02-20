@@ -75,6 +75,9 @@ public:
 
     ContextPtr getContext() const { return query_context; }
 
+    bool canRemoveUnusedColumns() const override { return true; }
+    bool removeUnusedColumns(const Names & required_outputs) override;
+
 protected:
     void updateOutputHeader() override;
 
