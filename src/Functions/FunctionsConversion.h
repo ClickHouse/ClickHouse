@@ -1032,7 +1032,7 @@ template <>
 [[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
     time_t time = 0;
-    if (!tryReadDateTimeText(time, rb, *time_zone)) //
+    if (!tryReadTimeText(time, rb, *time_zone))
         return false;
     convertFromTime<DataTypeTime>(x, time);
     return true;
@@ -1305,6 +1305,18 @@ struct ConvertThroughParsing
                         parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
+                    }
                     else
                     {
                         time_t res;
@@ -1376,6 +1388,12 @@ struct ConvertThroughParsing
                         parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
+                    }
                     else
                     {
                         time_t res;
@@ -1385,11 +1403,23 @@ struct ConvertThroughParsing
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
-                    if constexpr (to_datetime64 || to_time64)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        DateTime64 res = 0;
+                        parsed = tryParseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
@@ -1400,10 +1430,16 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    if constexpr (to_datetime64 || to_time64)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
                         parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 value = 0;
+                        parsed = tryReadTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
@@ -3183,7 +3219,9 @@ public:
 
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+            if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                res = std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
             else if constexpr (to_decimal)
             {
