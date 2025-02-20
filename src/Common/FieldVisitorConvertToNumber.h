@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
 #include <base/demangle.h>

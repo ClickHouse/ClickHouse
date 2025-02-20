@@ -36,14 +36,14 @@ struct FileCacheSettings
 
     FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_empty_path = false);
     void loadFromCollection(const NamedCollection & collection);
     void dumpToSystemSettingsColumns(
         MutableColumnsAndConstraints & params,
         const std::string & cache_name,
         const FileCachePtr & cache) const;
 
-    void validate();
+    void validate(bool allow_empty_path = false);
 
 private:
     std::unique_ptr<FileCacheSettingsImpl> impl;
