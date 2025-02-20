@@ -61,19 +61,30 @@ ENGINE = MongoDB(uri, collection);
 
 ## Types mappings
 
-| MongoDB            | ClickHouse                                                            |
-|--------------------|-----------------------------------------------------------------------|
-| bool, int32, int64 | *any numeric type*, String                                            |
-| double             | Float64, String                                                       |
-| date               | Date, Date32, DateTime, DateTime64, String                            |
-| string             | String, UUID                                                          |
-| document           | String(as JSON)                                                       |
-| array              | Array, String(as JSON)                                                |
-| oid                | String                                                                |
-| binary             | String if in column, base64 encoded string if in an array or document |
-| *any other*        | String                                                                |
+| MongoDB                | ClickHouse                                                            |
+|------------------------|-----------------------------------------------------------------------|
+| bool, int32, int64     | *any numeric type*, String                                            |
+| double                 | Float64, String                                                       |
+| date                   | Date, Date32, DateTime, DateTime64, String                            |
+| string                 | String                                                                |
+| document               | String(as JSON)                                                       |
+| array                  | Array, String(as JSON)                                                |
+| oid                    | String                                                                |
+| binary                 | String if in column, base64 encoded string if in an array or document |
+| uuid(binary subtype 4) | UUID                                                                  |
+| *any other*            | String                                                                |
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
+ 
+## OID and _id in WHERE
+
+According to the [mapping table](#types-mappings) *oid* can be parsed only to the *String* type, like any other field,
+so there is no way to determine whether the field is *oid* or a *string*, and if the field is *oid*,
+but treated as a *string* in a filter, the condition will always fail.
+
+If *\_id* in a filter is a *String* and has correct format, it will be treated as *oid* in the query, otherwise,
+it will be treated as its original type.
+Other fields that have *oid* type will be successfully parsed to *String*, but shouldn't be used in WHERE clauses.
 
 ## Supported clauses
 

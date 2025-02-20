@@ -8,6 +8,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/SortNode.h>
 #include <Formats/BSONTypes.h>
@@ -48,9 +49,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
-
-using BSONCXXHelper::fieldAsBSONValue;
-using BSONCXXHelper::fieldAsOID;
 
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
@@ -202,11 +200,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
     {
         // Skip unknown columns, which don't belong to the table.
         const auto & table = column->getColumnSource()->as<TableNode>();
-        if (!table)
+        const auto & table_function = column->getColumnSource()->as<TableFunctionNode>();
+        if (!table && !table_function)
             return {};
 
         // Skip columns from other tables in JOIN queries.
-        if (table->getStorage()->getStorageID() != this->getStorageID())
+        if (table && table->getStorage()->getStorageID() != this->getStorageID())
+            return {};
+        if (table_function && table_function->getStorage()->getStorageID() != this->getStorageID())
             return {};
         if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
             return {};
@@ -224,6 +225,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         auto func_name = mongoFuncName(func->getFunctionName());
         if (func_name.empty())
         {
+            LOG_DEBUG(log, "MongoDB function name not found for '{}'", func->getFunctionName());
             on_error(func);
             return {};
         }
@@ -234,18 +236,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
 
             if (const auto & const_value = value->as<ConstantNode>())
             {
-                std::optional<bsoncxx::types::bson_value::value> func_value{};
-                if (column->getColumnName() == "_id")
-                    func_value = fieldAsOID(const_value->getValue());
-                else
-                    func_value = fieldAsBSONValue(const_value->getValue(), const_value->getResultType());
-
-                if (func_name == "$in" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
+                auto func_value = BSONCXXHelper::fieldAsBSONValue(const_value->getValue(), const_value->getResultType(),
+                    column->getColumnName() == "_id");
+                if (func_name == "$in" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
                     func_name = "$eq";
-                if (func_name == "$nin" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
+                if (func_name == "$nin" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
                     func_name = "$ne";
 
-                return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(*func_value)))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
             }
 
             if (const auto & func_value = value->as<FunctionNode>())

@@ -5,6 +5,10 @@
 #if USE_MONGODB
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
+#include "Columns/ColumnNullable.h"
+
+#include <bsoncxx/exception/exception.hpp>
+#include <bsoncxx/exception/error_code.hpp>
 
 namespace DB
 {
@@ -23,13 +27,43 @@ using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type)
+static bsoncxx::types::bson_value::value tryOid(const std::string & str)
 {
-    switch (type->getTypeId())
+    try
     {
+        return bsoncxx::oid(str);
+    } catch (bsoncxx::v_noabi::exception & e)
+    {
+        if (e.code() == bsoncxx::v_noabi::error_code::k_invalid_oid)
+            return bsoncxx::types::b_string{str};
+        throw;
+    }
+}
+
+static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type, const bool & shouldTryOid = false)
+{
+    if (field.isNull())
+        return bsoncxx::types::b_null{};
+
+    auto type_id = type->getTypeId();
+    if (type->isNullable())
+    {
+        if(const auto t = typeid_cast<const DataTypeNullable *>(type.get()))
+            type_id = t->getNestedType()->getTypeId();
+    }
+
+    switch (type_id)
+    {
+        case TypeIndex::Nothing:
+            return bsoncxx::types::b_null{};
         case TypeIndex::String:
+        {
+            if(shouldTryOid)
+                return tryOid(field.safeGet<String>());
             return bsoncxx::types::b_string{field.safeGet<String>()};
-        case TypeIndex::UInt8: {
+        }
+        case TypeIndex::UInt8:
+        {
             if (isBool(type))
                 return bsoncxx::types::b_bool{field.safeGet<UInt8>() != 0};
             return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8 &>())};
@@ -59,17 +93,32 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         case TypeIndex::DateTime:
             return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32 &>()}};
         case TypeIndex::UUID:
-            return bsoncxx::types::b_string{String{formatUUID(field.safeGet<UUID &>()).data()}};
-        case TypeIndex::Tuple: {
-            auto arr = array();
+        {
+            uint64_t uuid_numbers[2];
+            if constexpr (std::endian::native == std::endian::big)
+            {
+                uuid_numbers[0] = field.safeGet<UUID>().toUnderType().items[0];
+                uuid_numbers[1] = field.safeGet<UUID>().toUnderType().items[1];
+            } else
+            {
+                uuid_numbers[0] = std::byteswap(field.safeGet<UUID>().toUnderType().items[0]);
+                uuid_numbers[1] = std::byteswap(field.safeGet<UUID>().toUnderType().items[1]);
+            }
+            return bsoncxx::types::bson_value::value(reinterpret_cast<const uint8_t*>(&uuid_numbers[0]),
+                16, bsoncxx::binary_sub_type::k_uuid);
+        }
+        case TypeIndex::Tuple:
+        {
+            auto arr = bsoncxx::v_noabi::builder::basic::array();
             for (const auto & elem : field.safeGet<Tuple &>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem)));
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldTryOid));
             return arr.view();
         }
-        case TypeIndex::Array: {
-            auto arr = array();
+        case TypeIndex::Array:
+        {
+            auto arr = bsoncxx::v_noabi::builder::basic::array();
             for (const auto & elem : field.safeGet<Array &>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem)));
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldTryOid));
             return arr.view();
         }
         default:
@@ -278,7 +327,8 @@ static Array BSONArrayAsArray(
                     case TypeIndex::Float64:
                         arr.emplace_back(BSONElementAsNumber<Float64, bsoncxx::array::element>(value, name));
                         break;
-                    case TypeIndex::Date: {
+                    case TypeIndex::Date:
+                    {
                         if (value.type() != bsoncxx::type::k_date)
                             throw Exception(
                                 ErrorCodes::TYPE_MISMATCH,
@@ -289,7 +339,8 @@ static Array BSONArrayAsArray(
                         arr.emplace_back(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
                         break;
                     }
-                    case TypeIndex::Date32: {
+                    case TypeIndex::Date32:
+                    {
                         if (value.type() != bsoncxx::type::k_date)
                             throw Exception(
                                 ErrorCodes::TYPE_MISMATCH,
@@ -300,7 +351,8 @@ static Array BSONArrayAsArray(
                         arr.emplace_back(DateLUT::instance().toDayNum(value.get_date().to_int64() / 1000).toUnderType());
                         break;
                     }
-                    case TypeIndex::DateTime: {
+                    case TypeIndex::DateTime:
+                    {
                         if (value.type() != bsoncxx::type::k_date)
                             throw Exception(
                                 ErrorCodes::TYPE_MISMATCH,
@@ -311,7 +363,8 @@ static Array BSONArrayAsArray(
                         arr.emplace_back(static_cast<UInt32>(value.get_date().to_int64() / 1000));
                         break;
                     }
-                    case TypeIndex::DateTime64: {
+                    case TypeIndex::DateTime64:
+                    {
                         if (value.type() != bsoncxx::type::k_date)
                             throw Exception(
                                 ErrorCodes::TYPE_MISMATCH,
@@ -322,15 +375,21 @@ static Array BSONArrayAsArray(
                         arr.emplace_back(static_cast<Decimal64>(value.get_date().to_int64()));
                         break;
                     }
-                    case TypeIndex::UUID: {
-                        if (value.type() != bsoncxx::type::k_string)
-                            throw Exception(
-                                ErrorCodes::TYPE_MISMATCH,
-                                "Type mismatch, expected string (UUID), got {} for column {}.",
-                                bsoncxx::to_string(value.type()),
-                                name);
+                    case TypeIndex::UUID:
+                    {
+                        if (value.type() != bsoncxx::type::k_binary)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}.",
+                                            bsoncxx::to_string(value.type()), name);
+                        if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                            throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} with size cannot be parsed to UUID for column {}.",
+                                bsoncxx::to_string(value.get_binary().sub_type), name);
 
-                        arr.emplace_back(parse<UUID>(value.get_string().value.data()));
+                        UInt128 uuid_number;
+                        auto valBuf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+                        readBinaryBigEndian(uuid_number.items[0], valBuf);
+                        readBinaryBigEndian(uuid_number.items[1], valBuf);
+
+                        arr.emplace_back(UUID(std::move(uuid_number)));
                         break;
                     }
                     case TypeIndex::String:
@@ -347,29 +406,6 @@ static Array BSONArrayAsArray(
         }
     }
     return arr;
-}
-
-static bsoncxx::types::bson_value::value fieldAsOID(const Field & field)
-{
-    switch (field.getType())
-    {
-        case Field::Types::String:
-            return bsoncxx::oid(field.safeGet<String &>());
-        case Field::Types::Array: {
-            auto arr = array();
-            for (const auto & elem : field.safeGet<Array &>())
-                arr.append(fieldAsOID(elem));
-            return arr.view();
-        }
-        case Field::Types::Tuple: {
-            auto tuple = array();
-            for (const auto & elem : field.safeGet<Tuple &>())
-                tuple.append(fieldAsOID(elem));
-            return tuple.view();
-        }
-        default:
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "{} can't be converted to oid.", field.getType());
-    }
 }
 }
 
