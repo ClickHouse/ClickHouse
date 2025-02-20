@@ -1,5 +1,6 @@
-#include <IO/ConcatSeekableReadBuffer.h>
+#include <IO/ConcatReadBufferFromFile.h>
 
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -9,40 +10,58 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
-ConcatSeekableReadBuffer::BufferInfo::BufferInfo(BufferInfo && src) noexcept
+ConcatReadBufferFromFile::BufferInfo::BufferInfo(BufferInfo && src) noexcept
     : in(std::exchange(src.in, nullptr)), own_in(std::exchange(src.own_in, false)), size(std::exchange(src.size, 0))
 {
 }
 
-ConcatSeekableReadBuffer::BufferInfo::~BufferInfo()
+ConcatReadBufferFromFile::BufferInfo::~BufferInfo()
 {
     if (own_in)
         delete in;
 }
 
-ConcatSeekableReadBuffer::ConcatSeekableReadBuffer(std::unique_ptr<SeekableReadBuffer> buf1, size_t size1, std::unique_ptr<SeekableReadBuffer> buf2, size_t size2) : ConcatSeekableReadBuffer()
+ConcatReadBufferFromFile::ConcatReadBufferFromFile(std::string file_name_)
+    : ReadBufferFromFileBase()
+    , file_name(std::move(file_name_))
+{
+}
+
+ConcatReadBufferFromFile::ConcatReadBufferFromFile(std::string file_name_,
+    std::unique_ptr<SeekableReadBuffer> buf1,
+    size_t size1,
+    std::unique_ptr<SeekableReadBuffer> buf2,
+    size_t size2)
+    : ReadBufferFromFileBase()
+    , file_name(std::move(file_name_))
 {
     appendBuffer(std::move(buf1), size1);
     appendBuffer(std::move(buf2), size2);
 }
 
-ConcatSeekableReadBuffer::ConcatSeekableReadBuffer(SeekableReadBuffer & buf1, size_t size1, SeekableReadBuffer & buf2, size_t size2) : ConcatSeekableReadBuffer()
+ConcatReadBufferFromFile::ConcatReadBufferFromFile(std::string file_name_,
+    SeekableReadBuffer & buf1,
+    size_t size1,
+    SeekableReadBuffer & buf2,
+    size_t size2)
+    : ReadBufferFromFileBase()
+    , file_name(std::move(file_name_))
 {
     appendBuffer(buf1, size1);
     appendBuffer(buf2, size2);
 }
 
-void ConcatSeekableReadBuffer::appendBuffer(std::unique_ptr<SeekableReadBuffer> buffer, size_t size)
+void ConcatReadBufferFromFile::appendBuffer(std::unique_ptr<SeekableReadBuffer> buffer, size_t size)
 {
     appendBuffer(buffer.release(), true, size);
 }
 
-void ConcatSeekableReadBuffer::appendBuffer(SeekableReadBuffer & buffer, size_t size)
+void ConcatReadBufferFromFile::appendBuffer(SeekableReadBuffer & buffer, size_t size)
 {
     appendBuffer(&buffer, false, size);
 }
 
-void ConcatSeekableReadBuffer::appendBuffer(SeekableReadBuffer * buffer, bool own, size_t size)
+void ConcatReadBufferFromFile::appendBuffer(SeekableReadBuffer * buffer, bool own, size_t size)
 {
     BufferInfo info;
     info.in = buffer;
@@ -62,7 +81,7 @@ void ConcatSeekableReadBuffer::appendBuffer(SeekableReadBuffer * buffer, bool ow
     }
 }
 
-bool ConcatSeekableReadBuffer::nextImpl()
+bool ConcatReadBufferFromFile::nextImpl()
 {
     if (current < buffers.size())
     {
@@ -87,7 +106,7 @@ bool ConcatSeekableReadBuffer::nextImpl()
     return true;
 }
 
-off_t ConcatSeekableReadBuffer::getPosition()
+off_t ConcatReadBufferFromFile::getPosition()
 {
     size_t current_pos = current_start_pos;
     if (current < buffers.size())
@@ -95,7 +114,7 @@ off_t ConcatSeekableReadBuffer::getPosition()
     return current_pos;
 }
 
-off_t ConcatSeekableReadBuffer::seek(off_t off, int whence)
+off_t ConcatReadBufferFromFile::seek(off_t off, int whence)
 {
     off_t new_position;
     off_t current_position = getPosition();
@@ -104,7 +123,7 @@ off_t ConcatSeekableReadBuffer::seek(off_t off, int whence)
     else if (whence == SEEK_CUR)
         new_position = current_position + off;
     else
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ConcatSeekableReadBuffer::seek expects SEEK_SET or SEEK_CUR as whence");
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ConcatReadBufferFromFile::seek expects SEEK_SET or SEEK_CUR as whence");
 
     if (new_position < 0)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_SET underflow: off = {}", off);

@@ -137,7 +137,7 @@ Caching is not recommended because of potentially poor performance and difficult
 There are several ways to improve dictionary performance:
 
 - Call the function for working with the dictionary after `GROUP BY`.
-- Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+- Mark attributes to extract as injective. An attribute is called injective if different keys correspond to different attribute values. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
 
 ClickHouse generates an exception for errors with dictionaries. Examples of errors:
 
