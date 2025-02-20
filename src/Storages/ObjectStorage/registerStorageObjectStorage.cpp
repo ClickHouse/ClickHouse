@@ -259,7 +259,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             return createStorageObjectStorage(args, configuration);
         },
         {
-            .supports_settings = false,
+            .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,

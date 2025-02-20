@@ -2,27 +2,27 @@
 
 #include "config.h"
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataOld.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-
-namespace DeltaLake
-{
-class TableSnapshot;
-}
 
 namespace DB
 {
-namespace StorageObjectStorageSetting
+struct DataLakePartitionColumn
 {
-extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
-}
+    NameAndTypePair name_and_type;
+    Field value;
+
+    bool operator ==(const DataLakePartitionColumn & other) const = default;
+};
+
+/// Data file -> partition columns
+using DataLakePartitionColumns = std::unordered_map<std::string, std::vector<DataLakePartitionColumn>>;
+
 
 class DeltaLakeMetadata final : public IDataLakeMetadata
 {
@@ -32,37 +32,33 @@ public:
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
 
-    bool supportsUpdate() const override { return true; }
+    Strings getDataFiles() const override { return data_files; }
 
-    bool update(const ContextPtr & context) override;
+    NamesAndTypesList getTableSchema() const override { return schema; }
 
-    Strings getDataFiles() const override;
+    // const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
 
-    NamesAndTypesList getTableSchema() const override;
-
-    NamesAndTypesList getReadSchema() const override;
-
-    bool operator ==(const IDataLakeMetadata &) const override;
+    bool operator ==(const IDataLakeMetadata & other) const override
+    {
+        const auto * deltalake_metadata = dynamic_cast<const DeltaLakeMetadata *>(&other);
+        return deltalake_metadata
+            && !data_files.empty() && !deltalake_metadata->data_files.empty()
+            && data_files == deltalake_metadata->data_files;
+    }
 
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
         ContextPtr local_context,
-        bool allow_experimental_delta_kernel_rs)
+        bool)
     {
-        if (allow_experimental_delta_kernel_rs)
-            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-        else
-            return std::make_unique<DeltaLakeMetadataOld>(object_storage, configuration, local_context);
+        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
     }
 
-    bool supportsFileIterator() const override { return true; }
-
-    ObjectIterator iterate() const override;
-
 private:
-    const LoggerPtr log;
-    const std::shared_ptr<DeltaLake::TableSnapshot> table_snapshot;
+    mutable Strings data_files;
+    NamesAndTypesList schema;
+    DataLakePartitionColumns partition_columns;
 };
 
 }
