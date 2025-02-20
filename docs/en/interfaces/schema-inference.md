@@ -531,7 +531,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Result:
 
-```
+```response
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -544,7 +544,7 @@ DESC format(JSONEachRow, '{"array" : [{"a" : 42, "b" : "Hello"}, {}, {"c" : [1,2
 
 Result:
 
-```
+```markdown
 ┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
 └───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -567,7 +567,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}
 ```
 Result:
 
-```text
+```response
 Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
 Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
 You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
@@ -582,7 +582,7 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : 
 ```
 
 Result:
-```text
+```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -710,7 +710,7 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 ```
 
 Result:
-```
+```markdown
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1283,13 +1283,14 @@ data type for each value according to its escaping rule.
 **Example**
 
 Let's say we have a file `resultset` with the next content:
-```
+```bash
 <result_before_delimiter>
 ${data}<result_after_delimiter>
 ```
 
 And a file `row_format` with the next content:
-```
+
+```text
 <row_before_delimiter>${column_1:CSV}<field_delimiter_1>${column_2:Quoted}<field_delimiter_2>${column_3:JSON}<row_after_delimiter>
 ```
 
@@ -1569,7 +1570,7 @@ DESC format(JSONEachRow, $$
                          $$)
 ```
 
-```text
+```response
 ┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 │ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
@@ -2020,7 +2021,8 @@ Let's try to use schema inference on these 3 files:
 ```
 
 Result:
-```text
+
+```response
 ┌─name───┬─type─────────────┐
 │ field1 │ Nullable(Int64)  │
 │ field2 │ Nullable(String) │
@@ -2064,7 +2066,8 @@ Let's try to use schema inference on these 3 files:
 ```
 
 Result:
-```text
+
+```response
 ┌─name───┬─type───────────────────┐
 │ field1 │ Nullable(Int64)        │
 │ field2 │ Nullable(String)       │
@@ -2087,7 +2090,7 @@ If data format is not specified and cannot be determined by the file extension, 
 **Examples:**
 
 Let's say we have `data` with the following content:
-```
+```csv
 "a","b"
 1,"Data1"
 2,"Data2"
@@ -2099,7 +2102,7 @@ We can inspect and query this file without specifying format or structure:
 :) desc file(data);
 ```
 
-```text
+```repsonse
 ┌─name─┬─type─────────────┐
 │ a    │ Nullable(Int64)  │
 │ b    │ Nullable(String) │
@@ -2110,7 +2113,7 @@ We can inspect and query this file without specifying format or structure:
 :) select * from file(data);
 ```
 
-```text
+```response
 ┌─a─┬─b─────┐
 │ 1 │ Data1 │
 │ 2 │ Data2 │
