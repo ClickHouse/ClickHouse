@@ -85,6 +85,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
     {
         LOG_DEBUG(log, "Loaded metadata (empty)");
         metric_directorires.changeTo(0);
+        return;
     }
 
     try
