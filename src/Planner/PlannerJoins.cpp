@@ -1134,7 +1134,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
                     settings[Setting::max_size_to_preallocate_for_joins]};
                 return std::make_shared<ConcurrentHashJoin>(
-                    query_context,
                     table_join,
                     query_context->getSettingsRef()[Setting::max_threads],
                     right_table_expression_header,

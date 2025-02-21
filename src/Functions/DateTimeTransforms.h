@@ -13,6 +13,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -1210,12 +1211,12 @@ struct ToYearImpl
 
     static constexpr bool hasPreimage() { return true; }
 
-    static OptionalFieldInterval getPreimage(const IDataType & type, const Field & point)
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
     {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
+        if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year = point.safeGet<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
+        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -1223,7 +1224,7 @@ struct ToYearImpl
         auto end_time = date_lut.addYears(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
+            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
@@ -2013,16 +2014,16 @@ struct ToYYYYMMImpl
     }
     static constexpr bool hasPreimage() { return true; }
 
-    static OptionalFieldInterval getPreimage(const IDataType & type, const Field & point)
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
     {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
+        if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year_month = point.safeGet<UInt64>();
         auto year = year_month / 100;
         auto month = year_month % 100;
 
         if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
-            return std::nullopt;
+            return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -2030,7 +2031,7 @@ struct ToYYYYMMImpl
         auto end_time = date_lut.addMonths(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
+            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",

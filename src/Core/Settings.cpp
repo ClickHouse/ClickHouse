@@ -2827,6 +2827,9 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
+    DECLARE(Bool, restore_replicated_merge_tree_to_shared_merge_tree, false, R"(
+Replace table engine from Replicated*MergeTree -> Shared*MergeTree during RESTORE.
+)", 0) \
     \
     DECLARE(Bool, log_profile_events, true, R"(
 Log query performance statistics into the query_log, query_thread_log and query_views_log.
@@ -4544,7 +4547,14 @@ Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated dat
 Cloud mode
 )", 0) \
     DECLARE(UInt64, cloud_mode_engine, 1, R"(
-The engine family allowed in Cloud. 0 - allow everything, 1 - rewrite DDLs to use *ReplicatedMergeTree, 2 - rewrite DDLs to use SharedMergeTree. UInt64 to minimize public part
+The engine family allowed in Cloud.
+
+- 0 - allow everything
+- 1 - rewrite DDLs to use *ReplicatedMergeTree
+- 2 - rewrite DDLs to use SharedMergeTree
+- 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
+
+UInt64 to minimize public part
 )", 0) \
     DECLARE(UInt64, cloud_mode_database_engine, 1, R"(
 The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
@@ -4632,7 +4642,8 @@ Possible values:
     DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
-If the actual number of optimizations exceeds this setting, an exception is thrown.
+In the EXPLAIN PLAN query, stop applying optimizations after this limit is reached and return the plan as is.
+For regular query execution if the actual number of optimizations exceeds this setting, an exception is thrown.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.

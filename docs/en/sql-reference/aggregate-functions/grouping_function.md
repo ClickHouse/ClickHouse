@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/grouping_function
+slug: /sql-reference/aggregate-functions/grouping_function
 ---
 
 # GROUPING

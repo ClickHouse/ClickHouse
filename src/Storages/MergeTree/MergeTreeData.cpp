@@ -370,7 +370,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         if (disk->isBroken())
             continue;
 
-        if (need_create_directories)
+        if (need_create_directories && !disk->isReadOnly())
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
