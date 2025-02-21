@@ -8,7 +8,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -146,14 +145,12 @@ namespace ErrorCodes
 
 
 ConcurrentHashJoin::ConcurrentHashJoin(
-    ContextPtr context_,
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
     const Block & right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
-    : context(context_)
-    , table_join(table_join_)
+    : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,

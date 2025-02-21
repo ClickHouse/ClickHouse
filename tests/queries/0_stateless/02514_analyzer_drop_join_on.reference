@@ -10,115 +10,67 @@ Header: count() UInt64
           count() UInt64
     Expression (Before GROUP BY)
     Header: __table1.a2 String
-      Expression
+      Join
       Header: __table1.a2 String
         Join
         Header: __table1.a2 String
-          Expression
+                __table3.c1 UInt64
+          Join
           Header: __table1.a2 String
-                  __table3.c1 UInt64
-            Expression
-            Header: __table1.a2 String
-                    __table3.c1 UInt64
-              Join
-              Header: __table1.a2 String
-                      __table3.c1 UInt64
-                Expression
-                Header: __table1.a2 String
-                        __table2.b1 UInt64
-                  Expression
-                  Header: __table1.a2 String
-                          __table2.b1 UInt64
-                    Join
-                    Header: __table1.a2 String
-                            __table2.b1 UInt64
-                      Expression
-                      Header: __table1.a1 UInt64
-                              __table1.a2 String
-                        Expression (Change column names to column identifiers)
-                        Header: __table1.a1 UInt64
-                                __table1.a2 String
-                          ReadFromMemoryStorage
-                          Header: a1 UInt64
-                                  a2 String
-                      Expression
-                      Header: __table2.b1 UInt64
-                        Expression (Change column names to column identifiers)
-                        Header: __table2.b1 UInt64
-                          ReadFromMemoryStorage
-                          Header: b1 UInt64
-                Expression
-                Header: __table3.c1 UInt64
-                  Expression (Change column names to column identifiers)
-                  Header: __table3.c1 UInt64
-                    ReadFromMemoryStorage
-                    Header: c1 UInt64
-          Expression
-          Header: __table4.d1 UInt64
+                  __table2.b1 UInt64
             Expression (Change column names to column identifiers)
-            Header: __table4.d1 UInt64
+            Header: __table1.a1 UInt64
+                    __table1.a2 String
               ReadFromMemoryStorage
-              Header: d1 UInt64
+              Header: a1 UInt64
+                      a2 String
+            Expression (Change column names to column identifiers)
+            Header: __table2.b1 UInt64
+              ReadFromMemoryStorage
+              Header: b1 UInt64
+          Expression (Change column names to column identifiers)
+          Header: __table3.c1 UInt64
+            ReadFromMemoryStorage
+            Header: c1 UInt64
+        Expression (Change column names to column identifiers)
+        Header: __table4.d1 UInt64
+          ReadFromMemoryStorage
+          Header: d1 UInt64
 EXPLAIN PLAN header = 1
 SELECT a.a2, d.d2 FROM a JOIN b USING (k) JOIN c USING (k) JOIN d USING (k)
 ;
 Expression ((Project names + Projection))
 Header: a2 String
         d2 String
-  Expression
+  Join
   Header: __table1.a2 String
           __table4.d2 String
     Join
     Header: __table1.a2 String
-            __table4.d2 String
-      Expression
+            __table1.k UInt64
+      Join
       Header: __table1.a2 String
               __table1.k UInt64
-        Expression
+        Expression (Change column names to column identifiers)
         Header: __table1.a2 String
                 __table1.k UInt64
-          Join
-          Header: __table1.a2 String
-                  __table1.k UInt64
-            Expression
-            Header: __table1.a2 String
-                    __table1.k UInt64
-              Expression
-              Header: __table1.a2 String
-                      __table1.k UInt64
-                Join
-                Header: __table1.a2 String
-                        __table1.k UInt64
-                  Expression
-                  Header: __table1.a2 String
-                          __table1.k UInt64
-                    Expression (Change column names to column identifiers)
-                    Header: __table1.a2 String
-                            __table1.k UInt64
-                      ReadFromMemoryStorage
-                      Header: a2 String
-                              k UInt64
-                  Expression
-                  Header: __table2.k UInt64
-                    Expression (Change column names to column identifiers)
-                    Header: __table2.k UInt64
-                      ReadFromMemoryStorage
-                      Header: k UInt64
-            Expression
-            Header: __table3.k UInt64
-              Expression (Change column names to column identifiers)
-              Header: __table3.k UInt64
-                ReadFromMemoryStorage
-                Header: k UInt64
-      Expression
-      Header: __table4.d2 String
-              __table4.k UInt64
-        Expression (Change column names to column identifiers)
-        Header: __table4.d2 String
-                __table4.k UInt64
           ReadFromMemoryStorage
-          Header: d2 String
+          Header: a2 String
                   k UInt64
+        Expression (Change column names to column identifiers)
+        Header: __table2.k UInt64
+          ReadFromMemoryStorage
+          Header: k UInt64
+      Expression (Change column names to column identifiers)
+      Header: __table3.k UInt64
+        ReadFromMemoryStorage
+        Header: k UInt64
+    Expression (Change column names to column identifiers)
+    Header: __table4.d2 String
+            __table4.k UInt64
+      ReadFromMemoryStorage
+      Header: d2 String
+              k UInt64
 EXPLAIN PLAN header = 1
 SELECT b.bx FROM a
 JOIN (SELECT b1, b2 || 'x'  AS bx FROM b ) AS b ON b.b1 = a.a1
@@ -134,76 +86,43 @@ Header: bx String
     Expression ((Before ORDER BY + (Projection + )))
     Header: __table1.a2 String
             __table2.bx String
-      Expression
+      Join
       Header: __table1.a2 String
               __table2.bx String
               __table4.c2 String
-        Join
+        Expression
         Header: __table1.a2 String
                 __table2.bx String
+                __table4.c1 UInt64
                 __table4.c2 String
-          Expression
+          Join
           Header: __table1.a2 String
                   __table2.bx String
                   __table4.c1 UInt64
                   __table4.c2 String
-            Expression
+            Join
             Header: __table1.a2 String
+                    __table2.b1 UInt64
                     __table2.bx String
-                    __table4.c1 UInt64
-                    __table4.c2 String
-              Expression
-              Header: __table1.a2 String
+              Expression (Change column names to column identifiers)
+              Header: __table1.a1 UInt64
+                      __table1.a2 String
+                ReadFromMemoryStorage
+                Header: a1 UInt64
+                        a2 String
+              Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+              Header: __table2.b1 UInt64
                       __table2.bx String
-                      __table4.c1 UInt64
-                      __table4.c2 String
-                Join
-                Header: __table1.a2 String
-                        __table2.bx String
-                        __table4.c1 UInt64
-                        __table4.c2 String
-                  Expression
-                  Header: __table1.a2 String
-                          __table2.b1 UInt64
-                          __table2.bx String
-                    Expression
-                    Header: __table1.a2 String
-                            __table2.b1 UInt64
-                            __table2.bx String
-                      Join
-                      Header: __table1.a2 String
-                              __table2.b1 UInt64
-                              __table2.bx String
-                        Expression
-                        Header: __table1.a1 UInt64
-                                __table1.a2 String
-                          Expression (Change column names to column identifiers)
-                          Header: __table1.a1 UInt64
-                                  __table1.a2 String
-                            ReadFromMemoryStorage
-                            Header: a1 UInt64
-                                    a2 String
-                        Expression
-                        Header: __table2.b1 UInt64
-                                __table2.bx String
-                          Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-                          Header: __table2.b1 UInt64
-                                  __table2.bx String
-                            ReadFromMemoryStorage
-                            Header: b1 UInt64
-                                    b2 String
-                  Expression
-                  Header: __table4.c1 UInt64
-                          __table4.c2 String
-                    Filter (( + Change column names to column identifiers))
-                    Header: __table4.c1 UInt64
-                            __table4.c2 String
-                      ReadFromMemoryStorage
-                      Header: c1 UInt64
-                              c2 String
-          Expression
-          Header: __table5.d1 UInt64
-            Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-            Header: __table5.d1 UInt64
-              ReadFromSystemNumbers
-              Header: number UInt64
+                ReadFromMemoryStorage
+                Header: b1 UInt64
+                        b2 String
+            Filter (( + Change column names to column identifiers))
+            Header: __table4.c1 UInt64
+                    __table4.c2 String
+              ReadFromMemoryStorage
+              Header: c1 UInt64
+                      c2 String
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+        Header: __table5.d1 UInt64
+          ReadFromSystemNumbers
+          Header: number UInt64
