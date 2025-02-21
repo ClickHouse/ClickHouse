@@ -66,6 +66,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            {"merge_tree_min_rows_for_concurrent_read", 163840, 131072, "Tune the min_marks_for_concurrent_read to get better performance in high core count system"},
+            {"merge_tree_min_bytes_for_concurrent_read", 251658240, 167772160, "Tune the min_marks_for_concurrent_read to get better performance in high core count system"},
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
