@@ -188,7 +188,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
 
     /// Write serialization version.
     UInt64 serialization_version = ObjectSerializationVersion::Value::V2;
-    if (settings.write_json_as_string)
+    if (settings.native_format && settings.format_settings && settings.format_settings->native.write_json_as_string)
         serialization_version = ObjectSerializationVersion::Value::STRING;
     else if (settings.use_v1_object_and_dynamic_serialization)
         serialization_version = ObjectSerializationVersion::Value::V1;
@@ -441,7 +441,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
 
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
         WriteBufferFromOwnString buf;
-        FormatSettings format_settings;
+        FormatSettings format_settings = settings.format_settings ? *settings.format_settings : FormatSettings{};
         for (size_t i = offset; i != end; ++i)
         {
             serializeText(column, i, buf, format_settings);
@@ -592,7 +592,7 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Object data serialization in SerializationObject::deserializeBinaryBulkWithMultipleStreams");
 
         String data;
-        FormatSettings format_settings;
+        FormatSettings format_settings = settings.format_settings ? *settings.format_settings : FormatSettings{};
         for (size_t i = 0; i != limit; ++i)
         {
             readStringBinary(data, *data_stream);
