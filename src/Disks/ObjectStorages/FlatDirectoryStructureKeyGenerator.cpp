@@ -1,13 +1,11 @@
 #include "FlatDirectoryStructureKeyGenerator.h"
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
-#include "Common/ObjectStorageKey.h"
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
+#include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <optional>
-#include <shared_mutex>
 #include <string>
+
 
 namespace DB
 {

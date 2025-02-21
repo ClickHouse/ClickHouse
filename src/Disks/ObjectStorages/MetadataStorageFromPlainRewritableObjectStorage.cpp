@@ -3,14 +3,11 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
 
-#include <algorithm>
 #include <any>
 #include <cstddef>
 #include <exception>
 #include <iterator>
-#include <mutex>
 #include <optional>
-#include <unordered_map>
 #include <unordered_set>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
@@ -18,12 +15,9 @@
 #include <Poco/Timestamp.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/SharedMutex.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include "CommonPathPrefixKeyGenerator.h"
 
 #if USE_AZURE_BLOB_STORAGE
 #    include <azure/storage/common/storage_exception.hpp>
@@ -40,7 +34,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-extern const char plain_rewritable_object_storage_azure_not_found_on_init[];
+    extern const char plain_rewritable_object_storage_azure_not_found_on_init[];
 }
 
 namespace
@@ -48,19 +42,6 @@ namespace
 
 constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 constexpr auto METADATA_PATH_TOKEN = "__meta/";
-
-/// Use a separate layout for metadata if:
-/// 1. The disk endpoint does not contain any objects yet (empty), OR
-/// 2. The metadata is already stored behind a separate endpoint.
-/// Otherwise, store metadata along with regular data for backward compatibility.
-std::string getMetadataKeyPrefix(ObjectStoragePtr object_storage)
-{
-    const auto common_key_prefix = std::filesystem::path(object_storage->getCommonKeyPrefix());
-    const auto metadata_key_prefix = std::filesystem::path(common_key_prefix) / METADATA_PATH_TOKEN;
-    return !object_storage->existsOrHasAnyChild(metadata_key_prefix / "") && object_storage->existsOrHasAnyChild(common_key_prefix / "")
-        ? common_key_prefix
-        : metadata_key_prefix;
-}
 
 }
 
@@ -248,7 +229,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh()
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
-    , metadata_key_prefix(DB::getMetadataKeyPrefix(object_storage))
+    , metadata_key_prefix(std::filesystem::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
     , path_map(std::make_shared<InMemoryDirectoryPathMap>())
     , metric_directorires(object_storage->getMetadataStorageMetrics().directory_map_size)
 {
@@ -260,17 +241,9 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
 
     load();
 
-    if (useSeparateLayoutForMetadata())
-    {
-        /// Use flat directory structure if the metadata is stored separately from the table data.
-        auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
-        object_storage->setKeysGenerator(keys_gen);
-    }
-    else
-    {
-        auto keys_gen = std::make_shared<CommonPathPrefixKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
-        object_storage->setKeysGenerator(keys_gen);
-    }
+    /// Use flat directory structure if the metadata is stored separately from the table data.
+    auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), path_map);
+    object_storage->setKeysGenerator(keys_gen);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
@@ -319,11 +292,6 @@ MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const f
     path_map->iterateSubdirectories(local_path, [&](const auto & elem){ result.emplace(elem); });
     path_map->iterateFiles(local_path, [&](const auto & elem){ result.emplace(elem); });
     return result;
-}
-
-bool MetadataStorageFromPlainRewritableObjectStorage::useSeparateLayoutForMetadata() const
-{
-    return getMetadataKeyPrefix() != object_storage->getCommonKeyPrefix();
 }
 
 }
