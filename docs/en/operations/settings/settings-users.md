@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/settings/settings-users
+slug: /operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: User Settings
 ---

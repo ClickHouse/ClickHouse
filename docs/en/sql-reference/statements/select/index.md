@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/
+slug: /sql-reference/statements/select/
 sidebar_position: 32
 sidebar_label: SELECT
 ---

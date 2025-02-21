@@ -1,6 +1,6 @@
 ---
 description: "2.5 billion rows of climate data for the last 120 yrs"
-slug: /en/getting-started/example-datasets/noaa
+slug: /getting-started/example-datasets/noaa
 sidebar_label: NOAA Global Historical Climatology Network 
 sidebar_position: 1
 title: "NOAA Global Historical Climatology Network"
@@ -269,7 +269,7 @@ Reassuringly consistent with the [documented record](https://en.wikipedia.org/wi
 
 ### Best ski resorts
 
-Using a [list of ski resorts](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv) in the united states and their respective locations, we join these against the top 1000 weather stations with the most in any month in the last 5 yrs. Sorting this join by [geoDistance](/docs/en/sql-reference/functions/geo/coordinates/#geodistance) and restricting the results to those where the distance is less than 20km, we select the top result per resort and sort this by total snow. Note we also restrict resorts to those above 1800m, as a broad indicator of good skiing conditions.
+Using a [list of ski resorts](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv) in the united states and their respective locations, we join these against the top 1000 weather stations with the most in any month in the last 5 yrs. Sorting this join by [geoDistance](/docs/sql-reference/functions/geo/coordinates/#geodistance) and restricting the results to those where the distance is less than 20km, we select the top result per resort and sort this by total snow. Note we also restrict resorts to those above 1800m, as a broad indicator of good skiing conditions.
 
 ```sql
 SELECT
