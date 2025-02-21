@@ -81,6 +81,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     std::set<std::string> set_of_remote_paths;
 
+    if (!object_storage->existsOrHasAnyChild(metadata_key_prefix))
+    {
+        LOG_DEBUG(log, "Loaded metadata (empty)");
+        metric_directorires.changeTo(0);
+    }
+
     try
     {
         for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())

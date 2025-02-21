@@ -98,6 +98,7 @@ protected:
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
 
+
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction, private MetadataOperationsHolder
 {
 protected:
@@ -143,4 +144,5 @@ public:
 
     bool supportsChmod() const override { return false; }
 };
+
 }
