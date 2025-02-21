@@ -1,4 +1,4 @@
-set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libunwind")
+set(LIBUNWIND_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/libunwind")
 
 set(LIBUNWIND_CXX_SOURCES
     "${LIBUNWIND_SOURCE_DIR}/src/libunwind.cpp"
