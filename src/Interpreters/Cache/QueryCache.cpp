@@ -159,6 +159,7 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
+/// Does AST contain non-deterministic functions like rand() and now()?
 bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
@@ -166,6 +167,7 @@ bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
     return finder_data.has_non_deterministic_functions;
 }
 
+/// Does AST contain system tables like "system.processes"?
 bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 {
     HasSystemTablesMatcher::Data finder_data{context};
@@ -348,19 +350,13 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     /// Try to also add default values for extremes, max_result_bytes, max_result_rows from settings.
 
     if (!changed_settings.tryGet("extremes"))
-    {
         changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
-    }
 
     if (!changed_settings.tryGet("max_result_bytes"))
-    {
         changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
-    }
 
-    if (!changed_settings.tryGet("max_result_bytes"))
-    {
+    if (!changed_settings.tryGet("max_result_rows"))
         changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
-    }
 
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)

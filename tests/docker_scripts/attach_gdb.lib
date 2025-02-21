@@ -2,6 +2,8 @@
 
 # shellcheck source=./utils.lib
 source /repo/tests/docker_scripts/utils.lib
+# shellcheck disable=SC1091
+source /basic_helpers.sh
 
 function attach_gdb_to_clickhouse()
 {

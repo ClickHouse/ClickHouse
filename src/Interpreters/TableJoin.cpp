@@ -1077,8 +1077,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::ranges::none_of(
-            join_algorithms, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
+    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
     if (!right_storage_name.empty())
         return false;
@@ -1098,6 +1097,16 @@ ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsP
     ExpressionAnalyzer analyzer(expression_list, syntax_result, context);
     analyzer.getPreparedSets() = std::move(prepared_sets);
     return analyzer.getActionsDAG(true, false);
+}
+
+bool TableJoin::isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val)
+{
+    /// join_algorithm = 'default' has a hard-coded meaning as 'direct,hash' (it was deprecated with v24.12)
+    bool join_algorithm_is_default = std::ranges::find(join_algorithms, JoinAlgorithm::DEFAULT) != join_algorithms.end();
+    constexpr auto default_algorithms = std::array<JoinAlgorithm, 3>{JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::DIRECT};
+    if (join_algorithm_is_default && std::ranges::find(default_algorithms, val) != default_algorithms.end())
+        return true;
+    return std::ranges::find(join_algorithms, val) != join_algorithms.end();
 }
 
 size_t TableJoin::getMaxMemoryUsage() const

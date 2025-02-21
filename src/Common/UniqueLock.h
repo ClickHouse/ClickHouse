@@ -12,22 +12,22 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 };
 
-/** LockGuard provides RAII-style locking mechanism for a mutex.
+/** UniqueLock provides RAII-style locking mechanism for a mutex.
  ** It's intended to be used like std::unique_lock but with TSA annotations
   */
 template <typename Mutex>
-class TSA_SCOPED_LOCKABLE LockGuard
+class TSA_SCOPED_LOCKABLE UniqueLock
 {
 public:
-    explicit LockGuard(Mutex & mutex_) TSA_ACQUIRE(mutex_) : mutex(mutex_) { lock(); }
-    ~LockGuard() TSA_RELEASE() { if (locked) unlock(); }
+    explicit UniqueLock(Mutex & mutex_) TSA_ACQUIRE(mutex_) : unique_lock(mutex_) { }
+    ~UniqueLock() TSA_RELEASE() = default;
 
     void lock() TSA_ACQUIRE()
     {
         /// Don't allow recursive_mutex for now.
         if (locked)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't lock twice the same mutex");
-        mutex.lock();
+        unique_lock.lock();
         locked = true;
     }
 
@@ -35,26 +35,28 @@ public:
     {
         if (!locked)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't unlock the mutex without locking it first");
-        mutex.unlock();
+        unique_lock.unlock();
         locked = false;
     }
 
+    std::unique_lock<Mutex> & getUnderlyingLock() { return unique_lock; }
+
 private:
-    Mutex & mutex;
-    bool locked = false;
+    std::unique_lock<Mutex> unique_lock;
+    bool locked = true;
 };
 
-template <template<typename> typename TLockGuard, typename Mutex>
+template <template<typename> typename TUniqueLock, typename Mutex>
 class TSA_SCOPED_LOCKABLE LockAndOverCommitTrackerBlocker
 {
 public:
-    explicit LockAndOverCommitTrackerBlocker(Mutex & mutex_) TSA_ACQUIRE(mutex_) : lock(TLockGuard(mutex_)) {}
+    explicit LockAndOverCommitTrackerBlocker(Mutex & mutex_) TSA_ACQUIRE(mutex_) : lock(TUniqueLock(mutex_)) {}
     ~LockAndOverCommitTrackerBlocker() TSA_RELEASE() = default;
 
-    TLockGuard<Mutex> & getUnderlyingLock() { return lock; }
+    TUniqueLock<Mutex> & getUnderlyingLock() { return lock; }
 
 private:
-    TLockGuard<Mutex> lock;
+    TUniqueLock<Mutex> lock;
     OvercommitTrackerBlockerInThread blocker = {};
 };
 
