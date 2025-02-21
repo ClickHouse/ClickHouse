@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <bit>
 
+#include "Common/logger_useful.h"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -1059,9 +1060,11 @@ inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & b
     // using T = typename Time64::NativeType;
     // if (time64.value < 0 && components.fractional)
     // {
-        // components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
-        // --components.whole;
+    //     components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
+    //     --components.whole;
     // }
+
+    LOG_TRACE(getLogger("DEBUGGING TIME^$ DATA TYPE"), "components.whole = {}, components.fractional = {}", components.whole, components.fractional);
 
     LocalTime local_time(components.whole);
     writeTimeText<delimiter1>(local_time, buf);

@@ -63,7 +63,7 @@ private:
         {
             is_negative = true;
             s_copy = new char[length-1];
-            std::strcpy(s_copy, s + 1); // here if we have a minus sign at the beginning, we omit it to make less reuses
+            std::strcpy(s_copy, s + 1); // if we have a minus sign at the beginning, we remove it to omit code duplication
         }
 
         /// Here we should consider three cases: HHH:MM::SS, HH:MM:SS and H:MM:SS

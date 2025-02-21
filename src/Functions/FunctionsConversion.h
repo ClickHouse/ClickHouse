@@ -235,13 +235,13 @@ struct ToTimeImpl
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
-            return static_cast<UInt32>(time_zone.toTime(dt64));
+            return static_cast<Int32>(time_zone.toTime(dt64));
         else
         {
             if (dt64 >= MAX_TIME_TIMESTAMP) /// Add MIN_TIME_TIMESTAMP
             {
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    return std::numeric_limits<UInt32>::max();
+                    return std::numeric_limits<Int32>::max();
                 else
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
             }
@@ -475,7 +475,7 @@ struct ToTimeTransformSigned
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        return from;
+        return static_cast<ToType>(from);
     }
 };
 
@@ -644,7 +644,11 @@ struct ToTime64TransformSigned
 
     NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
     {
-        auto converted = time_zone.toTime(from);
+        Int8 negative_mult = 1;
+        if (from < 0)
+            negative_mult = -1;
+
+        auto converted = time_zone.toTime(from * negative_mult) * negative_mult;
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
             if (converted < MIN_DATETIME64_TIMESTAMP || converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
@@ -688,25 +692,25 @@ struct ToTime64Transform
 
     const Time64::NativeType scale_multiplier;
 
-    [[maybe_unused]]ToTime64Transform(UInt32 scale) /// NOLINT
+    ToTime64Transform(UInt32 scale) /// NOLINT
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
     {}
 
-    [[maybe_unused]]Time64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
+    Time64::NativeType execute(UInt16 d, const DateLUTImpl & time_zone) const
     {
         const auto dt = ToTimeImpl<>::execute(d, time_zone);
         return execute(dt, time_zone);
     }
 
-    [[maybe_unused]]Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
         Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(time_zone.toTime(dt), 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
     }
 
-    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
+    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(time_zone.toTime(dt), 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
     }
 };
 

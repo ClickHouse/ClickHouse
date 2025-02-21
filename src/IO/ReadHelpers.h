@@ -1134,8 +1134,8 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
     /// Optimistic path, when whole value is in buffer.
     const char * s = buf.position();
 
-    /// hhh:mm:ss
-    static constexpr auto time_broken_down_length = 9;
+    /// at least h:mm:ss
+    static constexpr auto time_broken_down_length = 7;
     bool optimistic_path_for_date_time_input = s + time_broken_down_length <= buf.buffer().end();
 
     if (optimistic_path_for_date_time_input)
@@ -1161,7 +1161,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             second = (s[7] - '0') * 10 + (s[8] - '0');
 
             datetime = date_lut.makeTime(hour, minute, second) * negative_multiplier;
-            buf.position() += time_broken_down_length;
+            buf.position() += time_broken_down_length + 2;
 
             return ReturnType(true);
         }
@@ -1182,7 +1182,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             second = (s[6] - '0') * 10 + (s[7] - '0');
 
             datetime = date_lut.makeTime(hour, minute, second) * negative_multiplier;
-            buf.position() += time_broken_down_length;
+            buf.position() += time_broken_down_length + 1;
 
             return ReturnType(true);
         }
@@ -1209,8 +1209,8 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
         }
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, t64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
-} /// TODO
+    return readTimeTextFallback<ReturnType, t64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+}
 
 template <typename ReturnType>
 inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)

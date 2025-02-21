@@ -1636,7 +1636,7 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
         ++buf.position();
     }
 
-    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    if (!t64_mode && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_time_size = time_broken_down_length - already_read_length;
