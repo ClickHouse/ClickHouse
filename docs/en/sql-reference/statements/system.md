@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/system
+slug: /sql-reference/statements/system
 sidebar_position: 36
 sidebar_label: SYSTEM
 ---
@@ -434,7 +434,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA
 
-Waits until the specified [replicated database](/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
+Waits until the specified [replicated database](/docs/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql

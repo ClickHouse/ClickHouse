@@ -1,6 +1,6 @@
 ---
 title : HiveText
-slug : /en/interfaces/formats/HiveText
+slug: /interfaces/formats/HiveText
 keywords : [HiveText]
 ---
 

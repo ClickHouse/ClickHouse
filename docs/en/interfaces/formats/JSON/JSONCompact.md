@@ -1,6 +1,6 @@
 ---
 title : JSONCompact
-slug : /en/interfaces/formats/JSONCompact
+slug: /interfaces/formats/JSONCompact
 keywords : [JSONCompact]
 input_format: true
 output_format: true

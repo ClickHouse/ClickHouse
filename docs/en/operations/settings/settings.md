@@ -1,7 +1,7 @@
 ---
 title: Session Settings
 sidebar_label: Session Settings
-slug: /en/operations/settings/settings
+slug: /operations/settings/settings
 toc_max_heading_level: 2
 --- 
 

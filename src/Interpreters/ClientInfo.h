@@ -1,8 +1,9 @@
 #pragma once
 
 #include <base/types.h>
-#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
+#include <time.h>
 
 namespace Poco::Net
 {
@@ -107,6 +108,9 @@ public:
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
+
+    /// For interserver in case initial query transport was authenticated via JWT.
+    String jwt;
 
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.

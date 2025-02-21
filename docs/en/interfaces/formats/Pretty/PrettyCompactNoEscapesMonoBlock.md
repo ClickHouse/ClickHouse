@@ -1,6 +1,6 @@
 ---
 title : PrettyCompactNoEscapesMonoBlock
-slug : /en/interfaces/formats/PrettyCompactNoEscapesMonoBlock
+slug: /interfaces/formats/PrettyCompactNoEscapesMonoBlock
 keywords : [PrettyCompactNoEscapesMonoBlock]
 input_format: false
 output_format: true

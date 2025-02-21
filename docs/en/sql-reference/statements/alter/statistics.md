@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/statistics
+slug: /sql-reference/statements/alter/statistics
 sidebar_position: 45
 sidebar_label: STATISTICS
 ---
