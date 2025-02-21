@@ -293,6 +293,13 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         if (opt.has_value())
             setIfSmaller(*opt);
     }
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    {
+        using U = NativeType<T>;
+        std::optional<U> opt = findExtremeMin(reinterpret_cast<const U *>(vec.getData().data()), row_begin, row_end);
+        if (opt.has_value())
+            setIfSmaller(T(*opt));
+    }
     else
     {
         for (size_t i = row_begin; i < row_end; i++)
@@ -313,8 +320,19 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         if (opt.has_value())
             setIfGreater(*opt);
     }
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    {
+        using U = NativeType<T>;
+        std::optional<U> opt = findExtremeMax(reinterpret_cast<const U *>(vec.getData().data()), row_begin, row_end);
+        if (opt.has_value())
+            setIfGreater(T(*opt));
+    }
     else
     {
+        for (size_t i = row_begin; i < row_end; i++)
+            setIfGreater(column, i, arena);
+
+        /*
         const auto * data = vec.getData().data();
         const auto * begin = data + row_begin;
         const auto * end = data + row_end;
@@ -328,6 +346,7 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         }
 
         setIfGreater(max_value);
+        */
     }
 }
 
@@ -358,6 +377,24 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
 
         if (opt.has_value())
             setIfSmaller(*opt);
+    }
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    {
+        using U = NativeType<T>;
+
+        std::optional<U> opt;
+        if (!if_map)
+            opt = findExtremeMinNotNull(reinterpret_cast<const U *>(vec.getData().data()), null_map, row_begin, row_end);
+        else if (!null_map)
+            opt = findExtremeMinIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
+        else
+        {
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMinIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
+        }
+
+        if (opt.has_value())
+            setIfSmaller(T(*opt));
     }
     else
     {
@@ -402,6 +439,23 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
 
         if (opt.has_value())
             setIfGreater(*opt);
+    }
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    {
+        using U = NativeType<T>;
+        std::optional<U> opt;
+        if (!if_map)
+            opt = findExtremeMaxNotNull(reinterpret_cast<const U *>(vec.getData().data()), null_map, row_begin, row_end);
+        else if (!null_map)
+            opt = findExtremeMaxIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
+        else
+        {
+            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
+            opt = findExtremeMaxIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
+        }
+
+        if (opt.has_value())
+            setIfGreater(T(*opt));
     }
     else
     {
