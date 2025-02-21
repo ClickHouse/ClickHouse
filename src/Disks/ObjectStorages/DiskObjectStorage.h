@@ -138,7 +138,7 @@ public:
 
     void startupImpl(ContextPtr context) override;
 
-    virtual void refresh() override
+    void refresh() override
     {
         metadata_storage->refresh();
     }
