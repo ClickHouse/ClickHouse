@@ -2,7 +2,6 @@
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
-#include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 
 namespace DB
@@ -106,7 +105,6 @@ bool ExecutionThreadContext::executeTask()
     catch (...)
     {
         node->exception = std::current_exception();
-        tryLogCurrentException(getLogger("ExecutionThreadContext::executeTask"));
     }
 
     if (profile_processors)
