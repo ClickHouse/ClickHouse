@@ -1,6 +1,6 @@
 ---
 title : JSONCompactStrings
-slug : /en/interfaces/formats/JSONCompactStrings
+slug: /interfaces/formats/JSONCompactStrings
 keywords : [JSONCompactStrings]
 input_format: false
 output_format: true

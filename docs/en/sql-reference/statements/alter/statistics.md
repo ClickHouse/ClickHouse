@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/statistics
+slug: /sql-reference/statements/alter/statistics
 sidebar_position: 45
 sidebar_label: STATISTICS
 ---
@@ -31,7 +31,7 @@ Also, they are replicated, syncing statistics metadata via ZooKeeper.
 
 Adding two statistics types to two columns:
 
-```
+```sql
 ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
 ```
 

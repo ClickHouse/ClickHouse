@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/newjson
+slug: /sql-reference/data-types/newjson
 sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
@@ -12,11 +12,11 @@ import BetaBadge from '@theme/badges/BetaBadge';
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
 :::note
-This feature is in beta and is not yet production-ready. If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead.
+This feature is in beta and is not yet production-ready. If you need to work with JSON documents, consider using [this guide](/docs/integrations/data-formats/json/overview) instead.
 
 If you want to use the `JSON` type, and for the examples on this page, please use:
 
-```
+```sql
 SET enable_json_type = 1
 ```
 
@@ -165,7 +165,7 @@ and **not**:
 
 The `JSON` type supports reading every path as a separate sub-column. 
 If the type of the requested path is not specified in the JSON type declaration, 
-then the sub column of the path will always have type [Dynamic](/docs/en/sql-reference/data-types/dynamic.md).
+then the sub column of the path will always have type [Dynamic](/docs/sql-reference/data-types/dynamic.md).
 
 For example:
 
@@ -311,19 +311,19 @@ Reading sub-objects as sub-columns may be inefficient, as this may require a nea
 ## Type inference for paths
 
 During parsing of `JSON`, ClickHouse tries to detect the most appropriate data type for each JSON path. 
-It works similarly to [automatic schema inference from input data](/docs/en/interfaces/schema-inference.md),
+It works similarly to [automatic schema inference from input data](/docs/interfaces/schema-inference.md),
 and is controlled by the same settings:
  
-- [input_format_try_infer_integers](/docs/en/interfaces/schema-inference.md#inputformattryinferintegers)
-- [input_format_try_infer_dates](/docs/en/interfaces/schema-inference.md#inputformattryinferdates)
-- [input_format_try_infer_datetimes](/docs/en/interfaces/schema-inference.md#inputformattryinferdatetimes)
-- [schema_inference_make_columns_nullable](/docs/en/interfaces/schema-inference.md#schemainferencemakecolumnsnullable)
-- [input_format_json_try_infer_numbers_from_strings](/docs/en/interfaces/schema-inference.md#inputformatjsontryinfernumbersfromstrings)
-- [input_format_json_infer_incomplete_types_as_strings](/docs/en/interfaces/schema-inference.md#inputformatjsoninferincompletetypesasstrings)
-- [input_format_json_read_numbers_as_strings](/docs/en/interfaces/schema-inference.md#inputformatjsonreadnumbersasstrings)
-- [input_format_json_read_bools_as_strings](/docs/en/interfaces/schema-inference.md#inputformatjsonreadboolsasstrings)
-- [input_format_json_read_bools_as_numbers](/docs/en/interfaces/schema-inference.md#inputformatjsonreadboolsasnumbers)
-- [input_format_json_read_arrays_as_strings](/docs/en/interfaces/schema-inference.md#inputformatjsonreadarraysasstrings)
+- [input_format_try_infer_integers](/docs/interfaces/schema-inference.md#inputformattryinferintegers)
+- [input_format_try_infer_dates](/docs/interfaces/schema-inference.md#inputformattryinferdates)
+- [input_format_try_infer_datetimes](/docs/interfaces/schema-inference.md#inputformattryinferdatetimes)
+- [schema_inference_make_columns_nullable](/docs/interfaces/schema-inference.md#schemainferencemakecolumnsnullable)
+- [input_format_json_try_infer_numbers_from_strings](/docs/interfaces/schema-inference.md#inputformatjsontryinfernumbersfromstrings)
+- [input_format_json_infer_incomplete_types_as_strings](/docs/interfaces/schema-inference.md#inputformatjsoninferincompletetypesasstrings)
+- [input_format_json_read_numbers_as_strings](/docs/interfaces/schema-inference.md#inputformatjsonreadnumbersasstrings)
+- [input_format_json_read_bools_as_strings](/docs/interfaces/schema-inference.md#inputformatjsonreadboolsasstrings)
+- [input_format_json_read_bools_as_numbers](/docs/interfaces/schema-inference.md#inputformatjsonreadboolsasnumbers)
+- [input_format_json_read_arrays_as_strings](/docs/interfaces/schema-inference.md#inputformatjsonreadarraysasstrings)
 
 Let's take a look at some examples:
 

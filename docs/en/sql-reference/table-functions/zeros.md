@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/zeros
+slug: /sql-reference/table-functions/zeros
 sidebar_position: 145
 sidebar_label: zeros
 ---
@@ -20,7 +20,7 @@ SELECT * FROM zeros_mt(10);
 SELECT * FROM system.zeros_mt LIMIT 10;
 ```
 
-```
+```response
 ┌─zero─┐
 │    0 │
 │    0 │

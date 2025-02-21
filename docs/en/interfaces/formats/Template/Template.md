@@ -1,6 +1,6 @@
 ---
 title : Template
-slug : /en/interfaces/formats/Template
+slug: /interfaces/formats/Template
 keywords : [Template]
 input_format: true
 output_format: true
@@ -34,7 +34,7 @@ It uses the following settings:
 
 The setting `format_template_row` specifies the path to the file which contains format strings for rows with the following syntax:
 
-```
+```text
 delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N
 ```
 
@@ -62,7 +62,7 @@ If an escaping rule is omitted, then `None` will be used. `XML` is suitable only
 
 Let's look at an example. Given the following format string:
 
-```
+```text
 Search phrase: ${s:Quoted}, count: ${c:Escaped}, ad price: $$${p:JSON};
 ```
 
@@ -78,7 +78,7 @@ For example:
 - If `INSERT`ing, the line below matches the expected template and would read values `bathroom interior design`, `2166`, `$3` into columns `Search phrase`, `count`, `ad price`.
 - If `SELECT`ing the line below is the output, assuming that values `bathroom interior design`, `2166`, `$3` are already stored in a table under columns `Search phrase`, `count`, `ad price`.  
 
-```
+```yaml
 Search phrase: 'bathroom interior design', count: 2166, ad price: $3;
 ```
 

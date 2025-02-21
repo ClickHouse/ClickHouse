@@ -1,10 +1,10 @@
 ---
 description: "System table containing information about executed queries, for example, start time, duration of processing, error messages."
-slug: /en/operations/system-tables/query_log
+slug: /operations/system-tables/query_log
 title: "query_log"
 keywords: ["system table", "query_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -61,7 +61,7 @@ Columns:
 - `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
-- `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identical hash value without the values of literals for similar queries.
+- `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
 - `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 - `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 - `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.

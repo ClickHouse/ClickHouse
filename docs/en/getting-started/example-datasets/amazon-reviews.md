@@ -1,5 +1,5 @@
 ---
-slug: /en/getting-started/example-datasets/amazon-reviews
+slug: /getting-started/example-datasets/amazon-reviews
 sidebar_label: Amazon customer reviews
 title: Amazon Customer Review
 description: Over 150M customer reviews of Amazon products
