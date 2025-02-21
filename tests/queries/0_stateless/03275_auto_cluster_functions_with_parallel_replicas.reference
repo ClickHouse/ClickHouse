@@ -5,11 +5,11 @@ Expression (Project names)
 CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Filter ((WHERE + Change column names to column identifiers))
-      S3Source
+      S3(_table_function.s3)Source
   CreatingSet (Create set for subquery)
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      S3Source
+      S3(_table_function.s3)Source
 Expression ((Project names + (Projection + Change column names to column identifiers)))
   ReadFromURL
 Expression ((Project names + (Projection + Change column names to column identifiers)))
-  S3Source
+  S3(_table_function.s3)Source
