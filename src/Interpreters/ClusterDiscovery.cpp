@@ -459,13 +459,13 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     if (nodes_info.empty())
     {
         removeCluster(cluster_info.name);
+        return on_exit();
     }
-    else
-    {
-        auto cluster = makeCluster(cluster_info);
-        std::lock_guard lock(mutex);
-        cluster_impls[cluster_info.name] = cluster;
-    }
+
+    auto cluster = makeCluster(cluster_info);
+    std::lock_guard lock(mutex);
+    cluster_impls[cluster_info.name] = cluster;
+
     return true;
 }
 
@@ -591,13 +591,6 @@ void ClusterDiscovery::findDynamicClusters(
             { /// Possible with several root paths, it's a configuration error
                 LOG_WARNING(log, "Found dynamic duplicate of cluster '{}' in Keeper, skipped record by path {}:{}",
                     cluster, path->zk_name, path->zk_path);
-                continue;
-            }
-
-            auto shards = zk->getChildren(getShardsListPath(path->zk_path + "/" + cluster));
-            if (shards.empty())
-            { /// When node suddenly goes off (crush, etc), ephemeral record in Keeper is removed, but root for cluster is not
-                LOG_TRACE(log, "Empty cluster '{}' in Keeper, skipped", cluster);
                 continue;
             }
 

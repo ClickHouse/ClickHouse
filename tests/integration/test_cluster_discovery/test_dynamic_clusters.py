@@ -35,7 +35,7 @@ def start_cluster():
 
 
 def get_clusters_hosts(node, expected):
-    count = 120
+    count = 30
     while True:
         resp = node.query("SELECT cluster, host_name FROM system.clusters ORDER BY cluster, host_name FORMAT JSONCompact")
         hosts = json.loads(resp)["data"]
