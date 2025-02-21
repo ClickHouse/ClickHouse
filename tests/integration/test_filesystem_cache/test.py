@@ -712,7 +712,7 @@ SELECT * FROM test;
         ))
 
 
-    size = = get_downloaded_size()
+    size = get_downloaded_size()
     assert size > 100
     assert size == get_queue_size()
 
