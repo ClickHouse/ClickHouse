@@ -1777,13 +1777,14 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                                 LOG_TRACE(log, "Adding back file segment after failed eviction: {}:{}",
                                           file_segment->key(), file_segment->offset());
 
-                                main_priority->add(
+                                auto queue_iterator = main_priority->add(
                                     key_metadata,
                                     file_segment->offset(),
                                     file_segment->getDownloadedSize(),
                                     getCommonUser(),
                                     cache_lock,
                                     false);
+                                file_segment->setQueueIterator(queue_iterator);
                             }
                         }
                     }
