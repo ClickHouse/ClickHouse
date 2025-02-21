@@ -62,6 +62,7 @@ class SystemLogs;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
+class Field;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
@@ -1259,6 +1260,9 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
+
+    using StoragePolicyCreator = std::function<StoragePolicyPtr(const StoragePoliciesMap & storage_policies_map)>;
+    StoragePolicyPtr getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;

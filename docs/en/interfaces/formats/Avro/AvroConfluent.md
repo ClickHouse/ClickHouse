@@ -1,6 +1,6 @@
 ---
 title : AvroConfluent
-slug : /en/interfaces/formats/AvroConfluent
+slug: /interfaces/formats/AvroConfluent
 keywords : [AvroConfluent]
 input_format: true
 output_format: false
@@ -25,7 +25,7 @@ Schemas are cached once resolved.
 
 ## Example Usage
 
-To quickly verify schema resolution, you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](/docs/en/operations/utilities/clickhouse-local.md):
+To quickly verify schema resolution, you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](/docs/operations/utilities/clickhouse-local.md):
 
 ```bash
 $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-local   --input-format AvroConfluent --format_avro_schema_registry_url 'http://schema-registry' -S "field1 Int64, field2 String"  -q 'select *  from table'
@@ -34,7 +34,7 @@ $ kafkacat -b kafka-broker  -C -t topic1 -o beginning -f '%s' -c 3 | clickhouse-
 3 c
 ```
 
-To use `AvroConfluent` with [Kafka](/docs/en/engines/table-engines/integrations/kafka.md):
+To use `AvroConfluent` with [Kafka](/docs/engines/table-engines/integrations/kafka.md):
 
 ```sql
 CREATE TABLE topic1_stream
@@ -58,7 +58,7 @@ SELECT * FROM topic1_stream;
 
 ## Format Settings
 
-The Schema Registry URL is configured with [`format_avro_schema_registry_url`](/docs/en/operations/settings/settings-formats.md/#format_avro_schema_registry_url).
+The Schema Registry URL is configured with [`format_avro_schema_registry_url`](/docs/operations/settings/settings-formats.md/#format_avro_schema_registry_url).
 
 :::note
 Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` to maintain it's value after a restart. Also you can use the `format_avro_schema_registry_url` setting of the `Kafka` table engine.

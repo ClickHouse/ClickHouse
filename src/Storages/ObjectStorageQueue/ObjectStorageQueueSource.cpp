@@ -520,31 +520,41 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Expected current processor {} to be equal to {} for bucket {}",
-                        current_processor,
-                        bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                        bucket);
+                    if (current_bucket_holder->isZooKeeperSessionExpired())
+                    {
+                        LOG_TRACE(log, "ZooKeeper session expired, bucket no longer held");
+                        current_bucket_holder = {};
+                    }
+                    else
+                    {
+                        throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Expected current processor {} to be equal to {} for bucket {}",
+                            current_processor,
+                            bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
+                            bucket);
+                    }
                 }
 
-                /// Take next key to process
-                if (!bucket_keys.empty())
+                if (current_bucket_holder)
                 {
-                    /// Take the key from the front, the order is important.
-                    auto [object_info, file_metadata] = bucket_keys.front();
-                    bucket_keys.pop_front();
+                    if (!bucket_keys.empty())
+                    {
+                        /// Take the key from the front, the order is important.
+                        auto [object_info, file_metadata] = bucket_keys.front();
+                        bucket_keys.pop_front();
 
-                    LOG_TEST(log, "Current bucket: {}, will process file: {}",
-                             bucket, object_info->getFileName());
+                            LOG_TEST(log, "Current bucket: {}, will process file: {}",
+                                    bucket, object_info->getFileName());
 
-                    return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
+                        return {object_info, file_metadata, current_bucket_holder->getBucketInfo()};
+                    }
+
+                    LOG_TEST(log, "Cache of bucket {} is empty", bucket);
+
+                    /// No more keys in bucket, remove it from cache.
+                    listed_keys_cache.erase(it);
                 }
-
-                LOG_TEST(log, "Cache of bucket {} is empty", bucket);
-
-                /// No more keys in bucket, remove it from cache.
-                listed_keys_cache.erase(it);
             }
             else
             {
@@ -558,6 +568,13 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 current_bucket_holder->setFinished();
             }
         }
+
+        if (current_bucket_holder && current_bucket_holder->isZooKeeperSessionExpired())
+        {
+            LOG_TRACE(log, "ZooKeeper session expired, bucket {} not longer hold", current_bucket_holder->getBucket());
+            current_bucket_holder = {};
+        }
+
         /// If processing thread has already acquired some bucket
         /// and while listing object storage directory gets a key which is in a different bucket,
         /// it puts the key into listed_keys_cache to allow others to process it,

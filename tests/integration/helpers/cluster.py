@@ -639,7 +639,7 @@ class ClickHouseCluster:
         # available when with_nginx == True
         self.nginx_host = "nginx"
         self.nginx_ip = None
-        self.nginx_port = 80
+        self._nginx_port = None
         self.nginx_id = self.get_instance_docker_id(self.nginx_host)
 
         # available when with_redis == True
@@ -772,6 +772,13 @@ class ClickHouseCluster:
 
     def compose_cmd(self, *args: str) -> List[str]:
         return ["docker", "compose", "--project-name", self.project_name, *args]
+
+    @property
+    def nginx_port(self):
+        if self._nginx_port:
+            return self._nginx_port
+        self._nginx_port = self.port_pool.get_port()
+        return self._nginx_port
 
     @property
     def kafka_port(self):
@@ -1491,6 +1498,7 @@ class ClickHouseCluster:
     def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_nginx = True
 
+        env_variables["NGINX_EXTERNAL_PORT"] = str(self.nginx_port)
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_nginx.yml")]
         )

@@ -95,6 +95,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes)
@@ -648,6 +649,7 @@ if (TARGET ch_contrib::minizip)
 endif ()
 
 if (TARGET ch_contrib::simdjson)
+    target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::simdjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
 endif()
 
