@@ -94,6 +94,7 @@ public:
 #else
     void doInsertRangeFrom(const IColumn &, size_t, size_t) override { throwMustBeDecompressed(); }
 #endif
+    void insertRangeSelective(const IColumn &, const Selector &, size_t, size_t) override { throwMustBeDecompressed(); }
     void insertData(const char *, size_t) override { throwMustBeDecompressed(); }
     void insertDefault() override { throwMustBeDecompressed(); }
     void popBack(size_t) override { throwMustBeDecompressed(); }

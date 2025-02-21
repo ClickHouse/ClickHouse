@@ -220,6 +220,11 @@ void ColumnMap::doInsertRangeFrom(const IColumn & src, size_t start, size_t leng
         start, length);
 }
 
+void ColumnMap::insertRangeSelective(const IColumn & src, const Selector & selector, size_t selector_start, size_t length)
+{
+    nested->insertRangeSelective(assert_cast<const ColumnMap &>(src).getNestedColumn(), selector, selector_start, length);
+}
+
 ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);

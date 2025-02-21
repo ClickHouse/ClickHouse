@@ -91,6 +91,8 @@ public:
 #else
     void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #endif
+    void insertRangeSelective(const IColumn & src, const Selector & selector, size_t selector_start, size_t length) override;
+    bool canBeInsideNullable() const override { return true; }
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

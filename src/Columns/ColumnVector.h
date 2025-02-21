@@ -272,6 +272,7 @@ public:
 
     void getExtremes(Field & min, Field & max) const override;
 
+    void insertRangeSelective(const IColumn & src, const IColumn::Selector & selector, size_t selector_start, size_t length) override;
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }

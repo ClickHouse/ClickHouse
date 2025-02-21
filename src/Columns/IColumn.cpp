@@ -216,6 +216,11 @@ void IColumn::updateAt(const IColumn &, size_t, size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());
 }
 
+void IColumn::insertRangeSelective(const IColumn & /*src*/, const Selector & /*selector*/, size_t /*selector_start*/, size_t /*length*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertRangeSelective is not implemented for {}", getName());
+}
+
 #if USE_EMBEDDED_COMPILER
 llvm::Value * IColumn::compileComparator(
     llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
