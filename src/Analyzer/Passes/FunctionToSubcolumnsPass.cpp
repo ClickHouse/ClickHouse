@@ -73,24 +73,25 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const IDataType & data_type)
 {
-    const auto & names = data_type_tuple.getElementNames();
-    const auto & types = data_type_tuple.getElements();
-
     if (value.getType() == Field::Types::String)
     {
         const auto & name = value.safeGet<String>();
-        auto pos = data_type_tuple.tryGetPositionByName(name);
+        auto subcolumn_type = data_type.tryGetSubcolumnType(name);
 
-        if (!pos)
+        if (!subcolumn_type)
             return {};
 
-        return NameAndTypePair{name, types[*pos]};
+        return NameAndTypePair{name, subcolumn_type};
     }
 
-    if (value.getType() == Field::Types::UInt64)
+    if (value.getType() == Field::Types::UInt64 && data_type.getTypeId() == TypeIndex::Tuple)
     {
+        const auto & data_type_tuple = assert_cast<const DataTypeTuple &>(data_type);
+        const auto & names = data_type_tuple.getElementNames();
+        const auto & types = data_type_tuple.getElements();
+
         size_t index = value.safeGet<UInt64>();
 
         if (index == 0 || index > types.size())
@@ -102,25 +103,11 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     return {};
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeVariant & data_type_variant)
-{
-    if (value.getType() != Field::Types::String)
-        return {};
-
-    const auto & name = value.safeGet<String>();
-    auto discr = data_type_variant.tryGetVariantDiscriminator(name);
-
-    if (!discr)
-        return {};
-
-    return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
-}
-
-template <typename DataType>
-void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+void optimizeSubcolumnFromSecondArgument(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
     /// Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)` with `tuple_argument.column_name`.
     /// Replace `variantElement(variant_argument, string_literal)` with `variant_argument.column_name`.
+    /// Replace `getSubcolumn(argument, string_literal)` with `argument.column_name`.
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
     if (function_arguments_nodes.size() != 2)
@@ -130,9 +117,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     if (!second_argument_constant_node)
         return;
 
-    const auto & data_type_concrete = assert_cast<const DataType &>(*ctx.column.type);
-    auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), data_type_concrete);
-
+    auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), *ctx.column.type);
     if (!subcolumn)
         return;
 
@@ -240,12 +225,22 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Tuple, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeTuple>,
+        {TypeIndex::Tuple, "tupleElement"}, optimizeSubcolumnFromSecondArgument,
     },
     {
-        {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
+        {TypeIndex::Variant, "variantElement"}, optimizeSubcolumnFromSecondArgument,
     },
 };
+
+NodeToSubcolumnTransformer getNodeToSubcolumnTransformer(const String & function_name, const IDataType & type)
+{
+    /// getSubcolumn function is supported for all data types.
+    if (function_name == "getSubcolumn")
+        return optimizeSubcolumnFromSecondArgument;
+
+    auto it = node_transformers.find({type.getTypeId(), function_name});
+    return it == node_transformers.end() ? nullptr : it->second;
+}
 
 std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
@@ -444,7 +439,7 @@ private:
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
         Identifier qualified_name({table_name, column.name});
 
-        if (node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
+        if (getNodeToSubcolumnTransformer(function_node.getFunctionName(), *column.type))
             ++optimized_identifiers_count[qualified_name];
     }
 };
@@ -481,12 +476,12 @@ public:
             return;
 
         auto result_type = function_node->getResultType();
-        auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
+        auto transformer = getNodeToSubcolumnTransformer(function_node->getFunctionName(), *column.type);
 
-        if (transformer_it != node_transformers.end())
+        if (transformer)
         {
             ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
-            transformer_it->second(node, *function_node, ctx);
+            transformer(node, *function_node, ctx);
 
             if (!result_type->equals(*node->getResultType()))
                 node = buildCastFunction(node, result_type, getContext());
