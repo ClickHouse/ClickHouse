@@ -143,19 +143,6 @@ private:
     DataLakeMetadataPtr current_metadata;
     LoggerPtr log = getLogger("DataLakeConfiguration");
 
-    std::pair<Block, Names> getHeaderAndNames(const NamesAndTypesList & columns)
-    {
-        Block header;
-        Names names;
-        names.reserve(columns.size());
-        for (const auto & name_type : columns)
-        {
-            header.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
-            names.push_back(name_type.name);
-        }
-        return {header, names};
-    }
-
     ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,
         const Strings & requested_columns,
@@ -178,24 +165,35 @@ private:
             /// "table schema" is a schema from data lake table metadata,
             /// while "read schema" is a schema from data files.
             /// In most cases they would be the same.
-            auto [header, names] = getHeaderAndNames(read_schema);
-            if (names != info.format_header.getNames())
-            {
-                LOG_TEST(
-                    log, "Format header: {}, source header: {}, read schema: {}",
-                    info.format_header.dumpNames(), info.source_header.dumpNames(), header.dumpNames());
 
+            const auto read_schema_names = read_schema.getNames();
+            const auto table_schema_names = current_metadata->getTableSchema().getNames();
+            chassert(read_schema_names.size() == table_schema_names.size());
+
+            if (read_schema_names != table_schema_names)
+            {
                 /// Go through requested columns and change column name
                 /// from table schema to column name from read schema.
-                std::vector<NameAndTypePair> read_columns;
-                for (const auto & [column_name, _] : info.requested_columns)
+
+                LOG_TEST(
+                    log, "Format header: {}, source header: {}, format header: {}",
+                    info.format_header.dumpNames(), info.source_header.dumpNames(), info.format_header.dumpNames());
+
+                auto mapping = [&]()
                 {
-                    const auto pos = info.format_header.getPositionByName(column_name);
-                    const auto & column = header.getByPosition(pos);
+                    std::map<std::string, std::string> result;
+                    for (size_t i = 0; i < read_schema_names.size(); ++i)
+                        result[read_schema_names[i]] = table_schema_names[i];
+                    return result;
+                }();
+
+                std::vector<NameAndTypePair> read_columns;
+                for (const auto & column_name : info.requested_columns)
+                {
+                    auto & column = info.format_header.getByName(column_name.name);
+                    column.name = mapping[column_name.name];
                     read_columns.emplace_back(column.name, column.type);
                 }
-
-                info.format_header = std::move(header);
                 info.requested_columns = NamesAndTypesList(read_columns.begin(), read_columns.end());
             }
         }
