@@ -106,7 +106,7 @@ inline const auto & getOptimizations()
         {tryAggregatePartitionsIndependently, "aggregatePartitionsIndependently", &QueryPlanOptimizationSettings::aggregate_partitions_independently},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearch, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
-        {tryRemoveUnusedColumns, "tryRemoveUnusedColumns", &QueryPlanOptimizationSettings::try_remove_unused_columns},
+        {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
     }};
 
     return optimizations;

@@ -42,7 +42,7 @@ struct QueryPlanOptimizationSettings
     bool aggregate_partitions_independently;
     bool remove_redundant_distinct;
     bool try_use_vector_search;
-    bool try_remove_unused_columns;
+    bool remove_unused_columns;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
