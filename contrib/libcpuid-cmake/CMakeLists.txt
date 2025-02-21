@@ -10,6 +10,8 @@ if (NOT ENABLE_CPUID)
     return()
 endif()
 
+add_definitions (-D_GNU_SOURCE)
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcpuid")
 
 set (SRCS
@@ -26,6 +28,6 @@ set (SRCS
 add_library (_cpuid ${SRCS})
 
 target_include_directories (_cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
-target_compile_definitions (_cpuid PRIVATE VERSION="v0.4.1")
+target_compile_definitions (_cpuid PRIVATE VERSION="v0.7.1")
 
 add_library(ch_contrib::cpuid ALIAS _cpuid)
