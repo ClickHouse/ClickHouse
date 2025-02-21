@@ -1,5 +1,6 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
