@@ -8,22 +8,24 @@ endif()
 set(RDKAFKA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
 
 set(SRCS
+#  "${RDKAFKA_SOURCE_DIR}/cJSON.c"    # see below
   "${RDKAFKA_SOURCE_DIR}/crc32c.c"
-#  "${RDKAFKA_SOURCE_DIR}/lz4.c"
-#  "${RDKAFKA_SOURCE_DIR}/lz4frame.c"
-#  "${RDKAFKA_SOURCE_DIR}/lz4hc.c"
+#  "${RDKAFKA_SOURCE_DIR}/lz4.c"      # WITH_LZ4_EXT
+#  "${RDKAFKA_SOURCE_DIR}/lz4frame.c" # WITH_LZ4_EXT
+#  "${RDKAFKA_SOURCE_DIR}/lz4hc.c"    # WITH_LZ4_EXT
   "${RDKAFKA_SOURCE_DIR}/rdaddr.c"
   "${RDKAFKA_SOURCE_DIR}/rdavl.c"
+  "${RDKAFKA_SOURCE_DIR}/rdbase64.c"
   "${RDKAFKA_SOURCE_DIR}/rdbuf.c"
   "${RDKAFKA_SOURCE_DIR}/rdcrc32.c"
-  "${RDKAFKA_SOURCE_DIR}/rddl.c"
+  #"${RDKAFKA_SOURCE_DIR}/rddl.c" #  WITH_LIBDL OR WIN32 - we don't want to support dynamic loading
   "${RDKAFKA_SOURCE_DIR}/rdfnv1a.c"
-  "${RDKAFKA_SOURCE_DIR}/rdgz.c"
-  "${RDKAFKA_SOURCE_DIR}/rdhdrhistogram.c"
-  "${RDKAFKA_SOURCE_DIR}/rdkafka_admin.c" # looks optional
+  "${RDKAFKA_SOURCE_DIR}/rdgz.c" # WITH_ZLIB
+  #"${RDKAFKA_SOURCE_DIR}/rdhdrhistogram.c" # WITH_HDRHISTOGRAM - allows to collect some better stats (not used so far)
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_admin.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_assignment.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_assignor.c"
-  "${RDKAFKA_SOURCE_DIR}/rdkafka_aux.c" # looks optional
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_aux.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_background.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_broker.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_buf.c"
@@ -35,6 +37,8 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_error.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_event.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_feature.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_fetcher.c"
+  # "${RDKAFKA_SOURCE_DIR}/rdhttp.c" #  WITH_CURL - needed for WITH_OAUTHBEARER_OIDC
   "${RDKAFKA_SOURCE_DIR}/rdkafka_header.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_idempotence.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_interceptor.c"
@@ -51,25 +55,35 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_op.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_partition.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_pattern.c"
-  "${RDKAFKA_SOURCE_DIR}/rdkafka_plugin.c"
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_plugin.c" # WITH_PLUGINS, we don't support plugins (dynamic loading)
   "${RDKAFKA_SOURCE_DIR}/rdkafka_queue.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_range_assignor.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_request.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_roundrobin_assignor.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c"
-#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c"        # optionally included below
-#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c"  # optionally included below
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c"            # WITH_SASL_CYRUS, see below
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c"      # WITH_SASL_OAUTHBEARER, see below
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer_oidc.c" # WITH_OAUTHBEARER_OIDC
   "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c"
-#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c"        # optionally included below
-#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_win32.c"
-#  "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c"               # optionally included below
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c"     # WITH_SASL_SCRAM, see below
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_win32.c"     # WIN32
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c"            # WITH_SSL, see below
   "${RDKAFKA_SOURCE_DIR}/rdkafka_sticky_assignor.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_subscription.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_telemetry.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_telemetry_decode.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_telemetry_encode.c"
+  "${RDKAFKA_SOURCE_DIR}/nanopb/pb_encode.c"
+  "${RDKAFKA_SOURCE_DIR}/nanopb/pb_decode.c"
+  "${RDKAFKA_SOURCE_DIR}/nanopb/pb_common.c"
+  "${RDKAFKA_SOURCE_DIR}/opentelemetry/metrics.pb.c"
+  "${RDKAFKA_SOURCE_DIR}/opentelemetry/common.pb.c"
+  "${RDKAFKA_SOURCE_DIR}/opentelemetry/resource.pb.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_timer.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_topic.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_transport.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_txnmgr.c"
-  "${RDKAFKA_SOURCE_DIR}/rdkafka_zstd.c"
+  "${RDKAFKA_SOURCE_DIR}/rdkafka_zstd.c" # WITH_ZSTD
   "${RDKAFKA_SOURCE_DIR}/rdlist.c"
   "${RDKAFKA_SOURCE_DIR}/rdlog.c"
   "${RDKAFKA_SOURCE_DIR}/rdmap.c"
@@ -81,7 +95,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdunittest.c"
   "${RDKAFKA_SOURCE_DIR}/rdvarint.c"
   "${RDKAFKA_SOURCE_DIR}/rdxxhash.c"
-  # "${RDKAFKA_SOURCE_DIR}/regexp.c"
+  # "${RDKAFKA_SOURCE_DIR}/regexp.c" # NOT HAVE_REGEX
   "${RDKAFKA_SOURCE_DIR}/snappy.c"
   "${RDKAFKA_SOURCE_DIR}/tinycthread.c"
   "${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c"
@@ -112,10 +126,19 @@ if(WITH_SASL_OAUTHBEARER)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c")
 endif()
 
+## there is a conflict with the cJSON library from aws-s3
+# so normally we link cJSON lirary from contrib/aws (which have some extra patches to be thread safe)
+# but if we don't use aws-s3, we need to link the cJSON library from librdkafka (hacky)
+# which is (potentially) not thread safe (see https://github.com/confluentinc/librdkafka/issues/4159 ),
+if(NOT ENABLE_AWS_S3)
+   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/cJSON.c")
+endif()
+
 add_library(_rdkafka ${SRCS})
 add_library(ch_contrib::rdkafka ALIAS _rdkafka)
-
 target_compile_options(_rdkafka PRIVATE -fno-sanitize=undefined)
+target_compile_definitions(_rdkafka PRIVATE -DCJSON_HIDE_SYMBOLS)
+
 # target_include_directories(_rdkafka SYSTEM PUBLIC include)
 target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include") # for "librdkafka/rdkafka.h"
 target_include_directories(_rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})                 # Because weird logic with "include_next" is used.
