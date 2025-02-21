@@ -11,6 +11,8 @@
 namespace DB
 {
 
+struct Settings;
+
 enum SessionLogElementType : int8_t
 {
     SESSION_LOGIN_FAILURE = 0,

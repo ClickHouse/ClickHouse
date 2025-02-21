@@ -1,6 +1,6 @@
 ---
 description: "System table containing licenses of third-party libraries that are located in the contrib directory of ClickHouse sources."
-slug: /en/operations/system-tables/licenses
+slug: /operations/system-tables/licenses
 title: "licenses"
 keywords: ["system table", "licenses"]
 ---

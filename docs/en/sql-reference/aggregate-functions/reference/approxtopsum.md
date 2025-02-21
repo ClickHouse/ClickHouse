@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/approxtopsum
+slug: /sql-reference/aggregate-functions/reference/approxtopsum
 sidebar_position: 108
 ---
 

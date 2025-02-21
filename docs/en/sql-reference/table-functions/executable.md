@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-functions/executable
+slug: /engines/table-functions/executable
 sidebar_position: 50
 sidebar_label:  executable
 keywords: [udf, user defined function, clickhouse, executable, table, function]

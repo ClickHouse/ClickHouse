@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantiles
+slug: /sql-reference/aggregate-functions/reference/quantiles
 sidebar_position: 177
 ---
 

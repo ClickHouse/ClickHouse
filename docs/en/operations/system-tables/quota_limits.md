@@ -1,6 +1,6 @@
 ---
 description: "System table containing information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota."
-slug: /en/operations/system-tables/quota_limits
+slug: /operations/system-tables/quota_limits
 title: "quota_limits"
 keywords: ["system table", "quota_limits"]
 ---

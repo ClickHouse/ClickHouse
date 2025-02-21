@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/corrstable
+slug: /sql-reference/aggregate-functions/reference/corrstable
 sidebar_position: 119
 ---
 

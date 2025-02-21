@@ -1,7 +1,7 @@
 ---
-slug: /en/operations/system-tables/latency_log
+slug: /operations/system-tables/latency_log
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 # latency_log
 
