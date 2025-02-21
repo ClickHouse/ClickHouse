@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/azureBlobStorageCluster
+slug: /sql-reference/table-functions/azureBlobStorageCluster
 sidebar_position: 15
 sidebar_label: azureBlobStorageCluster
 title: "azureBlobStorageCluster Table Function"
@@ -32,7 +32,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 **Examples**
 
-Similar to the [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
+Similar to the [AzureBlobStorage](/docs/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
 
 Select the count for the file `test_cluster_*.csv`, using all the nodes in the `cluster_simple` cluster:
 
@@ -50,4 +50,4 @@ SELECT count(*) from azureBlobStorageCluster(
 
 ## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
-See [azureBlobStorage](/docs/en/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
+See [azureBlobStorage](/docs/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.

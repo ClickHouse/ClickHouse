@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/conditional-functions
+slug: /sql-reference/functions/conditional-functions
 sidebar_position: 40
 sidebar_label: Conditional
 ---

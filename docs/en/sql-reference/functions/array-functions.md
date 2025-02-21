@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/array-functions
+slug: /sql-reference/functions/array-functions
 sidebar_position: 10
 sidebar_label: Arrays
 ---
@@ -836,7 +836,7 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 
 **Returned value**
 
-- The dot product of the two vectors. [Numeric](/docs/en/native-protocol/columns#numeric-types).
+- The dot product of the two vectors. [Numeric](/docs/native-protocol/columns#numeric-types).
 
 :::note
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/en/data_types/array/).
+- `array` – [Array](/docs/data_types/array/).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 **Example**
 
@@ -1652,7 +1652,7 @@ arrayDistinct(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/en/data_types/array/).
+- `array` – [Array](/docs/data_types/array/).
 
 **Returned values**
 
@@ -2776,7 +2776,7 @@ arrayCumSum(arr)
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 Example:
 
@@ -2808,7 +2808,7 @@ arrayCumSumNonNegative(arr)
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
