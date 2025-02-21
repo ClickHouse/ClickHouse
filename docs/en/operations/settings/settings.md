@@ -2,7 +2,7 @@
 title: Session Settings
 description: "Settings which are set from system.settings"
 sidebar_label: Session Settings
-slug: /en/operations/settings/settings
+slug: /operations/settings/settings
 toc_max_heading_level: 2
 --- 
 

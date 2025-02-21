@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/time_series
+slug: /engines/table-engines/special/time_series
 sidebar_position: 60
 sidebar_label: TimeSeries
 title: "TimeSeries Engine"

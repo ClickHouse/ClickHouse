@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/database-engines/lazy
+slug: /engines/database-engines/lazy
 sidebar_label: Lazy
 sidebar_position: 20
 title: "Lazy"

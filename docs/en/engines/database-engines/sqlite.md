@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/database-engines/sqlite
+slug: /engines/database-engines/sqlite
 sidebar_position: 55
 sidebar_label: SQLite
 title: "SQLite"

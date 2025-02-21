@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/domains/
+slug: /sql-reference/data-types/domains/
 sidebar_position: 56
 sidebar_label: Domains
 ---

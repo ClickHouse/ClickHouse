@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/
+slug: /engines/table-engines/special/
 sidebar_position: 50
 sidebar_label: Special
 ---

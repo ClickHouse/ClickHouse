@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/file
+slug: /engines/table-engines/special/file
 sidebar_position: 40
 sidebar_label:  File
 title: "File Table Engine"
@@ -17,7 +17,7 @@ Usage scenarios:
 - Updating data in ClickHouse via editing a file on a disk.
 
 :::note
-This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/docs/en/sql-reference/table-functions/s3.md).
+This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/docs/sql-reference/table-functions/s3.md).
 :::
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
@@ -97,7 +97,7 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 `PARTITION BY` — Optional.  It is possible to create separate files by partitioning the data on a partition key. In most cases, you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/en/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
 ## Virtual Columns {#virtual-columns}
 
@@ -108,8 +108,8 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 ## Settings {#settings}
 
-- [engine_file_empty_if_not_exists](/docs/en/operations/settings/settings.md#engine-file-empty_if-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
-- [engine_file_truncate_on_insert](/docs/en/operations/settings/settings.md#engine-file-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
-- [engine_file_allow_create_multiple_files](/docs/en/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [engine_file_skip_empty_files](/docs/en/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [storage_file_read_method](/docs/en/operations/settings/settings.md#engine-file-empty_if-not-exists) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
+- [engine_file_empty_if_not_exists](/docs/operations/settings/settings.md#engine-file-empty_if-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+- [engine_file_truncate_on_insert](/docs/operations/settings/settings.md#engine-file-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
+- [engine_file_allow_create_multiple_files](/docs/operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [engine_file_skip_empty_files](/docs/operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [storage_file_read_method](/docs/operations/settings/settings.md#engine-file-empty_if-not-exists) - method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.

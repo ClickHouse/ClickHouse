@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/settings/composable-protocols
+slug: /operations/settings/composable-protocols
 sidebar_position: 64
 sidebar_label: Composable Protocols
 title: "Composable Protocols"

@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/database-engines/atomic
+slug: /engines/database-engines/atomic
 sidebar_label: Atomic
 sidebar_position: 10
 title: "Atomic"

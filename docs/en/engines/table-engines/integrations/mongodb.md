@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/mongodb
+slug: /engines/table-engines/integrations/mongodb
 sidebar_position: 135
 sidebar_label: MongoDB
 title: "MongoDB"

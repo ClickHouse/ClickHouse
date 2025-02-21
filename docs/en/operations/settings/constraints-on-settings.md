@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/settings/constraints-on-settings
+slug: /operations/settings/constraints-on-settings
 sidebar_position: 62
 sidebar_label: Constraints on Settings
 title: "Constraints on Settings"

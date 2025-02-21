@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/postgresql
+slug: /engines/table-engines/integrations/postgresql
 title: "PostgreSQL Table Engine"
 sidebar_position: 160
 sidebar_label: PostgreSQL
@@ -45,7 +45,7 @@ The table structure can differ from the original PostgreSQL table structure:
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
-[Named collections](/docs/en/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
+[Named collections](/docs/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
 
 ```xml
 <named_collections>
@@ -138,7 +138,7 @@ postgresql> SELECT * FROM test;
 
 ### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above
 
-This example uses the [PostgreSQL table engine](/docs/en/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
+This example uses the [PostgreSQL table engine](/docs/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
 
 ``` sql
 CREATE TABLE default.postgresql_table
@@ -152,7 +152,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 
 ### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query
 
-The [postgresql table function](/docs/en/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
+The [postgresql table function](/docs/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
 
 ``` sql
 CREATE TABLE default.postgresql_copy

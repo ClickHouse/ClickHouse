@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions
+slug: /sql-reference/functions
 title: Functions
 description: Landing page for Functions
 sidebar: sqlreference

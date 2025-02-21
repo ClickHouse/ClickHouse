@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/memory
+slug: /engines/table-engines/special/memory
 sidebar_position: 110
 sidebar_label:  Memory
 title: "Memory Table Engine"
@@ -11,7 +11,7 @@ description: "The Memory engine stores data in RAM, in uncompressed form. Data i
 :::note
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
 - Execute all operations in the same session
-- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/en/interfaces/cli)
+- Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/interfaces/cli)
 :::
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.

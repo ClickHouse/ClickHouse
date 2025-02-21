@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/null
+slug: /engines/table-engines/special/null
 sidebar_position: 50
 sidebar_label:  'Null'
 title: "Null Table Engine"
