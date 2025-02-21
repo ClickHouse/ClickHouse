@@ -221,41 +221,46 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
     zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
-    GetResponseFutures ddl_task_futures;
-    ListResponseFutures active_nodes_futures;
-    ListResponseFutures finished_nodes_futures;
+
+    std::vector<std::string> ddl_task_full_paths;
+    ddl_task_full_paths.reserve(ddl_task_paths.size());
+    std::vector<std::string> ddl_task_status_paths;
+    ddl_task_status_paths.reserve(ddl_task_paths.size() * 2); // for active and finished
 
     for (const auto & task_path : ddl_task_paths)
     {
-        ddl_task_futures.push_back(zookeeper->asyncTryGet(ddl_zookeeper_path / task_path));
+        ddl_task_full_paths.push_back(ddl_zookeeper_path / task_path);
         /// List status dirs. Active host may become finished, so we list active first.
-        active_nodes_futures.push_back(zookeeper->asyncTryGetChildrenNoThrow(ddl_zookeeper_path / task_path / "active"));
-        finished_nodes_futures.push_back(zookeeper->asyncTryGetChildrenNoThrow(ddl_zookeeper_path / task_path / "finished"));
+        ddl_task_status_paths.push_back(ddl_zookeeper_path / task_path / "active");
+        ddl_task_status_paths.push_back(ddl_zookeeper_path / task_path / "finished");
     }
+
+    auto ddl_tasks_info = zookeeper->get(ddl_task_full_paths);
+    auto ddl_task_statuses = zookeeper->getChildren(ddl_task_status_paths);
 
     for (size_t i = 0; i < ddl_task_paths.size(); ++i)
     {
-        auto maybe_task = ddl_task_futures[i].get();
-        if (maybe_task.error != Coordination::Error::ZOK)
+        auto & task_info = ddl_tasks_info[i];
+        if (task_info.error != Coordination::Error::ZOK)
         {
             /// Task is removed
-            assert(maybe_task.error == Coordination::Error::ZNONODE);
+            assert(response.error == Coordination::Error::ZNONODE);
             continue;
         }
 
         DDLTask task{ddl_task_paths[i], ddl_zookeeper_path / ddl_task_paths[i]};
         try
         {
-            task.entry.parse(maybe_task.data);
+            task.entry.parse(task_info.data);
         }
         catch (Exception & e)
         {
-            e.addMessage("On parsing DDL entry {}: {}", task.entry_path, maybe_task.data);
+            e.addMessage("On parsing DDL entry {}: {}", task.entry_path, task_info.data);
             throw;
         }
 
         String cluster_name = clusterNameFromDDLQuery(context, task);
-        UInt64 query_create_time_ms = maybe_task.stat.ctime;
+        UInt64 query_create_time_ms = task_info.stat.ctime;
 
         size_t col = 0;
         fillCommonColumns(res_columns, col, task, cluster_name, query_create_time_ms);
@@ -274,16 +279,16 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         /// Also we should distinguish it from another case when status dirs are not created yet (extremely rare case).
         bool is_removing_task = false;
 
-        auto maybe_finished_hosts = finished_nodes_futures[i].get();
-        if (maybe_finished_hosts.error == Coordination::Error::ZOK)
+        auto & finished_hosts = ddl_task_statuses[i * 2 + 1];
+        if (finished_hosts.error == Coordination::Error::ZOK)
         {
             GetResponseFutures finished_status_futures;
-            for (const auto & host_id_str : maybe_finished_hosts.names)
+            for (const auto & host_id_str : finished_hosts.names)
                 finished_status_futures.push_back(zookeeper->asyncTryGet(fs::path(task.entry_path) / "finished" / host_id_str));
 
-            for (size_t host_idx = 0; host_idx < maybe_finished_hosts.names.size(); ++host_idx)
+            for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
             {
-                const auto & host_id_str = maybe_finished_hosts.names[host_idx];
+                const auto & host_id_str = finished_hosts.names[host_idx];
                 HostID host_id = HostID::fromString(host_id_str);
                 repeatValuesInCommonColumns(res_columns, col);
                 size_t rest_col = col;
@@ -292,7 +297,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
                 processed_hosts.insert(host_id_str);
             }
         }
-        else if (maybe_finished_hosts.error == Coordination::Error::ZNONODE)
+        else if (finished_hosts.error == Coordination::Error::ZNONODE)
         {
             /// Rare case: Either status dirs are not created yet or already removed.
             /// We can distinguish it by checking if task node exists, because "query-xxx" and "query-xxx/finished"
@@ -301,14 +306,14 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
         else
         {
-            throw Coordination::Exception::fromPath(maybe_finished_hosts.error, fs::path(task.entry_path) / "finished");
+            throw Coordination::Exception::fromPath(finished_hosts.error, fs::path(task.entry_path) / "finished");
         }
 
         /// Process active nodes
-        auto maybe_active_hosts = active_nodes_futures[i].get();
-        if (maybe_active_hosts.error == Coordination::Error::ZOK)
+        auto & active_hosts = ddl_task_statuses[i * 2];
+        if (active_hosts.error == Coordination::Error::ZOK)
         {
-            for (const auto & host_id_str : maybe_active_hosts.names)
+            for (const auto & host_id_str : active_hosts.names)
             {
                 if (processed_hosts.contains(host_id_str))
                     continue;
@@ -321,7 +326,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
                 processed_hosts.insert(host_id_str);
             }
         }
-        else if (maybe_active_hosts.error == Coordination::Error::ZNONODE)
+        else if (active_hosts.error == Coordination::Error::ZNONODE)
         {
             /// Rare case: Either status dirs are not created yet or task is currently removing.
             /// When removing a task, at first we remove "query-xxx/active" (not recursively),
@@ -333,7 +338,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         }
         else
         {
-            throw Coordination::Exception::fromPath(maybe_active_hosts.error, fs::path(task.entry_path) / "active");
+            throw Coordination::Exception::fromPath(active_hosts.error, fs::path(task.entry_path) / "active");
         }
 
         /// Process the rest hosts
