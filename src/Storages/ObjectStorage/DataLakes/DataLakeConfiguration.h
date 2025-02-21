@@ -129,7 +129,7 @@ public:
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
-#if USE_PARQUET
+#if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
         const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadata *>(current_metadata.get());
@@ -252,10 +252,8 @@ using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfigu
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-#if USE_AWS_S3
+#if USE_PARQUET && USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
-#endif
 #endif
 
 #if USE_AWS_S3
