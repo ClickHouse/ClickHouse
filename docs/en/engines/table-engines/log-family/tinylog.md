@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/log-family/tinylog
+slug: /engines/table-engines/log-family/tinylog
 toc_priority: 34
 toc_title: TinyLog
 ---

@@ -449,7 +449,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
-            String time_str = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+            String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
             ReadBufferFromString buf(time_str);
             time_t time;
             readDateTimeText(time, buf);
@@ -552,7 +552,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (ParserKeyword{Keyword::WITH_NAME}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
             {
-                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<String>();
             }
             else
             {
@@ -591,7 +591,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    custom_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+                    custom_name = ast->as<ASTLiteral &>().value.safeGet<String>();
                 }
 
                 return true;

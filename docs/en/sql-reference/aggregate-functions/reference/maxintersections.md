@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/maxintersections
+slug: /sql-reference/aggregate-functions/reference/maxintersections
 sidebar_position: 163
 title: maxIntersections
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/string
+slug: /sql-reference/data-types/string
 sidebar_position: 8
 sidebar_label: String
 ---
