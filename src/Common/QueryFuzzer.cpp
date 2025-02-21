@@ -310,12 +310,10 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     }
 
     ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()].second->clone();
-
-    new_ast = setIdentifierAliasOrNot(new_ast);
-    return new_ast;
+    return setIdentifierAliasOrNot(new_ast);
 }
 
-ASTPtr QueryFuzzer::getRandomExpressionList()
+ASTPtr QueryFuzzer::getRandomExpressionList(const size_t nproj)
 {
     if (column_like.empty())
     {
@@ -325,7 +323,9 @@ ASTPtr QueryFuzzer::getRandomExpressionList()
     ASTPtr new_ast = std::make_shared<ASTExpressionList>();
     for (size_t i = 0; i < fuzz_rand() % 5 + 1; ++i)
     {
-        new_ast->children.push_back(getRandomColumnLike());
+        /// Use Group by number in the projection
+        const auto new_child = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>(fuzz_rand() % nproj) : getRandomColumnLike();
+        new_ast->children.emplace_back(new_child);
     }
     return new_ast;
 }
@@ -358,7 +358,7 @@ void QueryFuzzer::fuzzOrderByElement(ASTOrderByElement * elem)
     }
 }
 
-void QueryFuzzer::fuzzOrderByList(IAST * ast)
+void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
 {
     if (!ast)
     {
@@ -384,12 +384,13 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
+        /// Order by one of the projections
         auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
-        auto col = getRandomColumnLike();
+        const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>(fuzz_rand() % nproj) : getRandomColumnLike();
         if (col)
         {
             auto elem = std::make_shared<ASTOrderByElement>();
-            elem->children.push_back(col);
+            elem->children.emplace_back(col);
             elem->direction = 1;
             elem->nulls_direction = 1;
             elem->nulls_direction_was_explicitly_specified = false;
@@ -1793,7 +1794,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             auto & def = fn->window_definition->as<ASTWindowDefinition &>();
             fuzzColumnLikeExpressionList(def.partition_by.get());
-            fuzzOrderByList(def.order_by.get());
+            fuzzOrderByList(def.order_by.get(), 0);
             fuzzWindowFrame(def);
         }
 
@@ -1915,7 +1916,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         else if (fuzz_rand() % 50 == 0)
         {
-            select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList());
+            select->setExpression(ASTSelectQuery::Expression::GROUP_BY, getRandomExpressionList(select->select()->children.size()));
         }
 
         if (select->where().get())
@@ -1983,7 +1984,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             addOrReplacePredicate(select, ASTSelectQuery::Expression::QUALIFY);
         }
 
-        fuzzOrderByList(select->orderBy().get());
+        fuzzOrderByList(select->orderBy().get(), select->select()->children.size());
         if (select->orderBy().get() && fuzz_rand() % 50 == 0)
         {
             select->order_by_all = !select->order_by_all;
