@@ -805,8 +805,8 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
             writeStringBinary(read->getSerializationName(), wbuf);
             if (const auto & snapshot = read->getStorageSnapshot())
                 writeStringBinary(snapshot->storage.getStorageID().getFullTableName(), wbuf);
-            if (const auto & dag = read->getFilterActionsDAG())
-                dag->serialize(ctx.out, ctx.registry);
+            if (const auto & dag = read->getPrewhereInfo())
+                dag->prewhere_actions.serialize(ctx.out, ctx.registry);
         }
         else if (const auto * uni = typeid_cast<const UnionStep *>(node.step.get()))
         {
@@ -818,7 +818,15 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
             if (!transform->getTransformTraits().preserves_number_of_rows)
             {
                 writeStringBinary(transform->getSerializationName(), wbuf);
-                transform->serialize(ctx);
+                try
+                {
+                    transform->serialize(ctx);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                        throw;
+                }
             }
         }
 
