@@ -36,6 +36,7 @@ target_link_libraries(clickhouse_dictionaries
     PRIVATE
         clickhouse_common_io
         dbms
+        Poco::Data
         Poco::Redis
 )
 
