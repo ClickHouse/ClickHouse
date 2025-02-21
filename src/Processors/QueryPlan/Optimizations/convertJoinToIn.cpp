@@ -55,20 +55,17 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     std::vector<const ActionsDAG::Node *> left_columns = actions.getOutputs();
     const ActionsDAG::Node * in_lhs_arg = left_columns.front();
 
-    // QueryPlan subquery_plan;
-    // subquery_plan.addStep(std::move(parent_node->children[1]->step));
     auto context = join->getContext();
     const auto & settings = context->getSettingsRef();
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        /*set.hash*/CityHash_v1_0_2::uint128(), nullptr,
-        // std::make_unique<QueryPlan>(std::move(subquery_plan)),
+        CityHash_v1_0_2::uint128(), nullptr,
         nullptr, nullptr,
         settings[Setting::transform_null_in],
         PreparedSets::getSizeLimitsForSet(settings),
         settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     chassert(future_set->get() == nullptr);
-    auto column_set = ColumnSet::create(1, std::move(future_set));
+    auto column_set = ColumnSet::create(1, future_set);
     ColumnPtr set_col = std::move(column_set);
     const ActionsDAG::Node * in_rhs_arg = &actions.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 
@@ -82,15 +79,14 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         false);
     where_step->setStepDescription("WHERE");
 
-    /// fill in with future set
-    PreparedSets::Subqueries subqueries;
+    PreparedSets::Subqueries subqueries(1, future_set);
     auto delayed_creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
         output_header,
         std::move(subqueries),
         context);
     delayed_creating_sets_step->setStepDescription("DelayedCreatingSetsStep");
 
-    /// replace JoinStepLogical with FilterStep
+    /// Replace JoinStepLogical with FilterStep
     parent_node->step = std::move(where_step);
     parent_node->children.pop_back();
 
@@ -100,13 +96,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     std::swap(last_node, new_node);
     last_node.step = std::move(delayed_creating_sets_step);
     last_node.children.push_back(&new_node);
-
-    // for (const auto & n : nodes)
-    // {
-    //     if (&n==parent_node) std::cout<<"same"<<"  ";
-    //     std::cout<<n.step->getName()<<" : "<<n.step->getStepDescription();
-    //     std::cout<<std::endl;
-    // }
 
     return 1;
 }
