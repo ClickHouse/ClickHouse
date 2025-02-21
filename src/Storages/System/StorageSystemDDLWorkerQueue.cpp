@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
@@ -151,7 +152,7 @@ static void repeatValuesInCommonColumns(MutableColumns & res_columns, size_t num
     }
 
     /// Copy values from previous row
-    assert(res_columns[num_filled_columns - 1]->size() == res_columns[num_filled_columns]->size());
+    chassert(res_columns[num_filled_columns - 1]->size() == res_columns[num_filled_columns]->size());
     for (size_t filled_col = 0; filled_col < num_filled_columns; ++filled_col)
         res_columns[filled_col]->insert((*res_columns[filled_col])[res_columns[filled_col]->size() - 1]);
 }
@@ -184,29 +185,28 @@ static void fillStatusColumnsWithNulls(MutableColumns & res_columns, size_t & co
 }
 
 static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
-                                GetResponseFuture & finished_data_future,
+                                Coordination::GetResponse & finished_data,
                                 UInt64 query_create_time_ms)
 {
-    auto maybe_finished_status = finished_data_future.get();
-    if (maybe_finished_status.error == Coordination::Error::ZNONODE)
+    if (finished_data.error == Coordination::Error::ZNONODE)
     {
         fillStatusColumnsWithNulls(res_columns, col, Status::REMOVING);
         return;
     }
 
     /// asyncTryGet should throw on other error codes
-    assert(maybe_finished_status.error == Coordination::Error::ZOK);
+    chassert(finished_data.error == Coordination::Error::ZOK);
 
     /// status
     res_columns[col++]->insert(static_cast<Int8>(Status::FINISHED));
 
-    auto execution_status = ExecutionStatus::fromText(maybe_finished_status.data);
+    auto execution_status = ExecutionStatus::fromText(finished_data.data);
     /// exception_code
     res_columns[col++]->insert(execution_status.code);
     /// exception_text
     res_columns[col++]->insert(execution_status.message);
 
-    UInt64 query_finish_time_ms = maybe_finished_status.stat.ctime;
+    UInt64 query_finish_time_ms = finished_data.stat.ctime;
     /// query_finish_time
     res_columns[col++]->insert(query_finish_time_ms / 1000);
     /// query_duration_ms
@@ -244,7 +244,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         if (task_info.error != Coordination::Error::ZOK)
         {
             /// Task is removed
-            assert(response.error == Coordination::Error::ZNONODE);
+            chassert(task_info.error == Coordination::Error::ZNONODE);
             continue;
         }
 
@@ -282,10 +282,12 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         auto & finished_hosts = ddl_task_statuses[i * 2 + 1];
         if (finished_hosts.error == Coordination::Error::ZOK)
         {
-            GetResponseFutures finished_status_futures;
+            std::vector<std::string> finished_status_paths;
+            finished_status_paths.reserve(finished_hosts.names.size());
             for (const auto & host_id_str : finished_hosts.names)
-                finished_status_futures.push_back(zookeeper->asyncTryGet(fs::path(task.entry_path) / "finished" / host_id_str));
+                finished_status_paths.push_back(fs::path(task.entry_path) / "finished" / host_id_str);
 
+            auto finished_statuses = zookeeper->get(finished_status_paths);
             for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
             {
                 const auto & host_id_str = finished_hosts.names[host_idx];
@@ -293,7 +295,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
                 repeatValuesInCommonColumns(res_columns, col);
                 size_t rest_col = col;
                 fillHostnameColumns(res_columns, rest_col, host_id);
-                fillStatusColumns(res_columns, rest_col, finished_status_futures[host_idx], query_create_time_ms);
+                fillStatusColumns(res_columns, rest_col, finished_statuses[host_idx], query_create_time_ms);
                 processed_hosts.insert(host_id_str);
             }
         }
