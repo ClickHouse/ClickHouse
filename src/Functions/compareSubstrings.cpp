@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 // compareSubstrings(str1, str2, offset1, offset2, num_bytes):
