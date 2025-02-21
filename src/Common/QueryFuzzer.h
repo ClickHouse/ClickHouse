@@ -93,7 +93,7 @@ private:
     // more interesting over time, as the queries mix.
     // The hash tables are used for collection, and the vectors are used for random access.
     std::unordered_map<std::string, ASTPtr> column_like_map;
-    std::vector<std::pair<std::string, ASTPtr>> column_like;
+    std::vector<std::pair<std::string, ASTPtr>> column_like, colids;
 
     std::unordered_map<std::string, ASTPtr> table_like_map;
     std::vector<std::pair<std::string, ASTPtr>> table_like;
@@ -130,6 +130,7 @@ private:
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
     ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
+    ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
     ASTPtr addJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);

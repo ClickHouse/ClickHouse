@@ -1138,19 +1138,44 @@ ASTPtr QueryFuzzer::tryNegateNextPredicate(const ASTPtr & pred, const int prob)
     return fuzz_rand() % prob == 0 ? makeASTFunction("not", pred) : pred;
 }
 
+ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
+{
+    auto * ident = typeid_cast<ASTIdentifier *>(exp.get());
+    const auto & alias = ident->tryGetAlias();
+
+    if (!alias.empty())
+    {
+        const int next_action = fuzz_rand() % 3;
+
+        if (next_action == 0)
+        {
+            /// Move alias to the end of the identifier (most of the time) or somewhere else
+            Strings clone_parts = ident->name_parts;
+            const int index = (fuzz_rand() % 2) == 0 ? (ident->name_parts.size() - 1) : (fuzz_rand() % ident->name_parts.size());
+
+            clone_parts[index] = alias;
+            return std::make_shared<ASTIdentifier>(std::move(clone_parts));
+        }
+        else if (next_action == 1)
+        {
+            /// Set the alias as the identifier
+            return std::make_shared<ASTIdentifier>(Strings{alias});
+        }
+    }
+    return exp;
+}
+
+static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); };
+
 ASTPtr QueryFuzzer::generatePredicate()
 {
     const int prob = fuzz_rand() % 3;
 
     if (prob == 0)
     {
-        decltype(column_like) colids;
-
-        std::copy_if(
-            column_like.begin(),
-            column_like.end(),
-            std::back_inserter(colids),
-            [](std::pair<std::string, ASTPtr> & p) { return typeid_cast<ASTIdentifier *>(p.second.get()); });
+        /// Add a predicate
+        colids.clear();
+        std::copy_if(column_like.begin(), column_like.end(), std::back_inserter(colids), identifier_lambda);
         if (!colids.empty())
         {
             ASTPtr predicate = nullptr;
@@ -1165,8 +1190,8 @@ ASTPtr QueryFuzzer::generatePredicate()
                 auto rand_col1 = colids.begin();
                 std::advance(rand_col1, fuzz_rand() % colids.size());
                 ASTPtr exp1 = rand_col1->second->clone();
-                exp1->setAlias("");
 
+                exp1 = setIdentifierAliasOrNot(exp1);
                 if (nprob == 0)
                 {
                     next_condition = makeASTFunction(fuzz_rand() % 2 == 0 ? "isNull" : "isNotNull", exp1);
@@ -1177,8 +1202,8 @@ ASTPtr QueryFuzzer::generatePredicate()
                     auto rand_col2 = column_like.begin();
                     std::advance(rand_col2, fuzz_rand() % column_like.size());
                     ASTPtr exp2 = rand_col2->second->clone();
-                    exp2->setAlias("");
 
+                    exp2 = setIdentifierAliasOrNot(exp2);
                     if (fuzz_rand() % 3 == 0)
                     {
                         /// Swap sides
@@ -1348,47 +1373,79 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
     }
 }
 
+static String getOldALias(const ASTPtr & input)
+{
+    if (const auto * sub = typeid_cast<const ASTWithAlias *>(input.get()))
+    {
+        return sub->tryGetAlias();
+    }
+    else if (const auto * texp = typeid_cast<const ASTTableExpression *>(input.get()))
+    {
+        const auto & child = texp->database_and_table_name ? texp->database_and_table_name
+                                                           : (texp->table_function ? texp->table_function : texp->subquery);
+        return typeid_cast<const ASTWithAlias *>(child.get())->tryGetAlias();
+    }
+    else
+    {
+        chassert(0);
+        return "";
+    }
+}
+
 ASTPtr QueryFuzzer::addJoinClause()
 {
-    decltype(table_like) tids;
-    decltype(column_like) colids;
-
     /// Add a join clause to the AST
-    std::copy_if(
-        table_like.begin(),
-        table_like.end(),
-        std::back_inserter(tids),
-        [](std::pair<std::string, ASTPtr> & p)
-        {
-            const auto * texp = typeid_cast<ASTTableExpression *>(p.second.get());
-            return texp && texp->database_and_table_name;
-        });
-    std::copy_if(
-        column_like.begin(),
-        column_like.end(),
-        std::back_inserter(colids),
-        [](std::pair<std::string, ASTPtr> & p)
-        {
-            const auto * identifier = typeid_cast<ASTIdentifier *>(p.second.get());
-            return identifier && !identifier->shortName().empty();
-        });
-
-    if (!tids.empty() && !colids.empty())
+    colids.clear();
+    std::copy_if(column_like.begin(), column_like.end(), std::back_inserter(colids), identifier_lambda);
+    if (!table_like.empty() && !colids.empty())
     {
+        ASTPtr table_exp;
+        ASTPtr join_condition;
         auto table_join = std::make_shared<ASTTableJoin>();
 
         fuzzJoinType(table_join.get());
         /// Add a table to the query
-        auto table_exp = std::make_shared<ASTTableExpression>();
-        auto rand_table1 = tids.begin();
-        std::advance(rand_table1, fuzz_rand() % tids.size());
+        auto rand_table = table_like.begin();
+        std::advance(rand_table, fuzz_rand() % table_like.size());
 
-        const std::string next_alias = "alias" + std::to_string(alias_counter++);
-        table_exp->database_and_table_name = typeid_cast<ASTTableExpression *>(rand_table1->second.get())->database_and_table_name->clone();
-        table_exp->database_and_table_name->setAlias(next_alias);
-        table_exp->children.emplace_back(table_exp->database_and_table_name);
+        const ASTPtr & input_table = rand_table->second;
+        const String next_alias = "alias" + std::to_string(alias_counter++);
+        const String old_alias = getOldALias(input_table);
 
-        ASTPtr join_condition = nullptr;
+        if (old_alias.empty() || fuzz_rand() % 2 == 0)
+        {
+            /// It has no alias or overwrite old one
+            table_exp = input_table->clone();
+            if (typeid_cast<ASTWithAlias *>(input_table.get()))
+            {
+                auto * otexp = typeid_cast<ASTWithAlias *>(table_exp.get());
+                otexp->setAlias(next_alias);
+            }
+            else if (typeid_cast<ASTTableExpression *>(input_table.get()))
+            {
+                auto * otexp = typeid_cast<ASTTableExpression *>(table_exp.get());
+                auto & otable_exp_child = otexp->database_and_table_name
+                    ? otexp->database_and_table_name
+                    : (otexp->table_function ? otexp->table_function : otexp->subquery);
+                auto * otable_exp_alias = typeid_cast<ASTWithAlias *>(otable_exp_child.get());
+                otable_exp_alias->setAlias(next_alias);
+            }
+            else
+            {
+                chassert(0);
+            }
+        }
+        else
+        {
+            /// It already has an alias, so make a reference to it
+            table_exp = std::make_shared<ASTTableExpression>();
+            auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
+            auto new_identifier = std::make_shared<ASTTableIdentifier>(old_alias);
+            new_identifier->setAlias(next_alias);
+            ntexp->database_and_table_name = new_identifier;
+            ntexp->children.emplace_back(ntexp->database_and_table_name);
+        }
+
         const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
         for (int i = 0; i < nconditions; i++)
         {
@@ -1401,10 +1458,11 @@ ASTPtr QueryFuzzer::addJoinClause()
             auto rand_col2 = colids.begin();
             std::advance(rand_col2, fuzz_rand() % colids.size());
 
-            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, id1->shortName()});
+            const String & nidentifier = (id1->tryGetAlias().empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1->tryGetAlias();
+            ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
             ASTPtr exp2 = rand_col2->second->clone();
 
-            exp2->setAlias("");
+            exp2 = setIdentifierAliasOrNot(exp2);
             if (fuzz_rand() % 3 == 0)
             {
                 /// Swap sides
