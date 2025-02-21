@@ -11,6 +11,7 @@ namespace DB
 
 class Chain;
 class ThreadStatus;
+class ReadBuffer;
 
 struct ThreadStatusesHolder;
 using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
@@ -65,7 +66,7 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.push_back(std::move(buffer)); }
+    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
 
     bool shouldAddSquashingForStorage(const StoragePtr & table) const;
 

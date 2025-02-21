@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Access/Common/SQLSecurityDefs.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnsDescription.h>
@@ -17,6 +17,8 @@
 
 namespace DB
 {
+
+class ASTSQLSecurity;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
 /// query from all storages, but only some subset used.

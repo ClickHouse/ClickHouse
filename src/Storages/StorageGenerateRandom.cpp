@@ -35,6 +35,7 @@
 #include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
+#include <pcg_random.hpp>
 
 
 namespace DB
