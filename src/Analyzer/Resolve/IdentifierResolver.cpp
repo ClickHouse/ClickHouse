@@ -7,6 +7,7 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
@@ -185,6 +186,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabas
     }
     if (!storage)
         return {};
+
+    if (auto * alias_storage = dynamic_cast<StorageAlias *>(storage.get()))
+        storage = alias_storage->getRefStorage(context);
 
     if (storage->hasExternalDynamicMetadata())
     {
