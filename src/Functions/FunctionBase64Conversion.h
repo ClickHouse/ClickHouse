@@ -2,6 +2,7 @@
 #include "config.h"
 
 #if USE_BASE64
+#    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnString.h>
 #    include <DataTypes/DataTypeString.h>
@@ -9,7 +10,6 @@
 #    include <Functions/IFunction.h>
 #    include <Interpreters/Context_fwd.h>
 #    include <libbase64.h>
-#    include <Common/MemorySanitizer.h>
 
 #    include <cstddef>
 #    include <string_view>

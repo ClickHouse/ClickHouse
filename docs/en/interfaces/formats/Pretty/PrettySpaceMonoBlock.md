@@ -1,6 +1,6 @@
 ---
 title : PrettySpaceMonoBlock
-slug : /en/interfaces/formats/PrettySpaceMonoBlock
+slug: /interfaces/formats/PrettySpaceMonoBlock
 keywords : [PrettySpaceMonoBlock]
 input_format: false
 output_format: true

@@ -1,6 +1,6 @@
 ---
 title : TabSeparatedWithNames
-slug : /en/interfaces/formats/TabSeparatedWithNames
+slug: /interfaces/formats/TabSeparatedWithNames
 keywords : [TabSeparatedWithNames]
 input_format: true
 output_format: true

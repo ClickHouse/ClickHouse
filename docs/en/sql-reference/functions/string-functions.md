@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/string-functions
+slug: /sql-reference/functions/string-functions
 sidebar_position: 170
 sidebar_label: Strings
 ---
