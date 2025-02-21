@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <chrono>
 
-
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
   * all translation units that use at least one constant (almost the whole project).
