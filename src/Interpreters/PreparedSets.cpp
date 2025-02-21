@@ -232,6 +232,26 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
     return plan;
 }
 
+std::unique_ptr<IQueryPlanStep> FutureSetFromSubquery::build(
+    const Header & input_header, const ContextPtr & context)
+{
+    if (set_and_key->set->isCreated())
+        return nullptr;
+
+    const auto & settings = context->getSettingsRef();
+
+    auto creating_set = std::make_unique<CreatingSetStep>(
+        input_header,
+        set_and_key,
+        nullptr,
+        SizeLimits(settings[Setting::max_rows_to_transfer],
+                   settings[Setting::max_bytes_to_transfer],
+                   settings[Setting::transfer_overflow_mode]),
+        context);
+    creating_set->setStepDescription("Create set for subquery");
+    return creating_set;
+}
+
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
     if (external_table_set)

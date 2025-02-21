@@ -34,8 +34,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (join->getJoinSettings().join_use_nulls)
         return 0;
 
-    const auto & left_input_header = join->getInputHeaders().front();
-    const auto & right_input_header = join->getInputHeaders().back();
+    auto left_input_header = join->getInputHeaders().front();
+    auto right_input_header = join->getInputHeaders().back();
     const auto & output_header = join->getOutputHeader();
 
     bool left = false;
@@ -79,23 +79,45 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         false);
     where_step->setStepDescription("WHERE");
 
-    PreparedSets::Subqueries subqueries(1, future_set);
-    auto delayed_creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
-        output_header,
-        std::move(subqueries),
-        context);
-    delayed_creating_sets_step->setStepDescription("DelayedCreatingSetsStep");
-
     /// Replace JoinStepLogical with FilterStep
     parent_node->step = std::move(where_step);
+    QueryPlan::Node * right_tree = parent_node->children[1];
     parent_node->children.pop_back();
 
-    /// DelayedCreatingSetsStep should be the root, so use swap
+    // PreparedSets::Subqueries subqueries(1, future_set);
+    // auto delayed_creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
+    //     output_header,
+    //     std::move(subqueries),
+    //     context);
+    // delayed_creating_sets_step->setStepDescription("DelayedCreatingSetsStep");
+
+    Headers input_headers{output_header};
+    auto creating_sets_step = std::make_unique<CreatingSetsStep>(input_headers);
+    creating_sets_step->setStepDescription("Create sets before main query execution");
+
+    // auto creating_set_step = std::make_unique<CreatingSetStep>(
+    //     plan->getCurrentHeader(),
+    //     set_and_key,
+    //     nullptr,
+    //     SizeLimits(settings[Setting::max_rows_to_transfer],
+    //                settings[Setting::max_bytes_to_transfer],
+    //                settings[Setting::transfer_overflow_mode]),
+    //     context);
+    // creating_set_step->setStepDescription("Create set for subquery");
+    auto creating_set_step = future_set->build(right_input_header, context);
+
+    /// CreatingSetsStep should be the root, so use swap
     auto & last_node = nodes.back();
     auto & new_node = nodes.emplace_back();
     std::swap(last_node, new_node);
-    last_node.step = std::move(delayed_creating_sets_step);
+    // last_node.step = std::move(delayed_creating_sets_step);
+    last_node.step = std::move(creating_sets_step);
     last_node.children.push_back(&new_node);
+
+    auto & creating_set_node = nodes.emplace_back();
+    creating_set_node.step = std::move(creating_set_step);
+    creating_set_node.children.push_back(right_tree);
+    last_node.children.push_back(&creating_set_node);
 
     return 1;
 }
