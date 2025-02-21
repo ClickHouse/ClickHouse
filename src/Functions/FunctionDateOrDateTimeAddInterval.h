@@ -645,14 +645,15 @@ template <typename FieldType, bool is_time = false> struct ResultDataTypeMap {};
 template <> struct ResultDataTypeMap<UInt16>           { using ResultDataType = DataTypeDate; };
 template <> struct ResultDataTypeMap<UInt32>           { using ResultDataType = DataTypeDateTime; };
 template <> struct ResultDataTypeMap<Int32>            { using ResultDataType = DataTypeDate32; };
+template <> struct ResultDataTypeMap<Int32, true>      { using ResultDataType = DataTypeTime; };
 template <> struct ResultDataTypeMap<DateTime64>       { using ResultDataType = DataTypeDateTime64; };
-template <> struct ResultDataTypeMap<DateTime64, true> { using ResultDataType = DataTypeTime64; };
+template <> struct ResultDataTypeMap<DateTime64, true> { using ResultDataType = DataTypeDateTime64; };
 template <> struct ResultDataTypeMap<Int64>            { using ResultDataType = DataTypeDateTime64; };
-template <> struct ResultDataTypeMap<UInt32, true>     { using ResultDataType = DataTypeTime; };
-template <> struct ResultDataTypeMap<Time64, false>    { using ResultDataType = DataTypeTime64; };
-template <> struct ResultDataTypeMap<Time64, true>     { using ResultDataType = DataTypeTime64; };
 template <> struct ResultDataTypeMap<Int64, true>      { using ResultDataType = DataTypeTime64; };
+template <> struct ResultDataTypeMap<Time64>           { using ResultDataType = DataTypeTime64; };
+template <> struct ResultDataTypeMap<Time64, true>     { using ResultDataType = DataTypeTime64; };
 template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = DataTypeInt8; }; // error
+template <> struct ResultDataTypeMap<Int8, true>       { using ResultDataType = DataTypeInt8; };
 }
 
 template <typename Transform>

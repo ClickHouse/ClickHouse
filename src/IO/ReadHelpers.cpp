@@ -1624,18 +1624,8 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
 
     if (!buf.eof() && *buf.position() == '-')
     {
-        if constexpr (t64_mode)
-        {
-            negative_multiplier = -1;
-            ++buf.position();
-        }
-        else
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse Time");
-            else
-                return false;
-        }
+        negative_multiplier = -1;
+        ++buf.position();
     }
 
     /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
@@ -1646,8 +1636,7 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
         ++buf.position();
     }
 
-    /// if negative, it is a timestamp with no ambiguity
-    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    if (s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         const auto already_read_length = s_pos - s;
         const size_t remaining_time_size = time_broken_down_length - already_read_length;
@@ -1695,7 +1684,7 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
             second = (s[7] - '0') * 10 + (s[8] - '0');
         }
 
-        time = date_lut.makeTime(hour, minute, second);
+        time = date_lut.makeTime(hour, minute, second) * negative_multiplier;
     }
     else
     {

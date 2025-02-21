@@ -29,7 +29,7 @@ namespace DB
   * Server time zone is the time zone specified in 'timezone' parameter in configuration file,
   *  or system time zone at the moment of server startup.
   */
-class DataTypeTime final : public DataTypeNumberBase<UInt32>, public TimezoneMixin
+class DataTypeTime final : public DataTypeNumberBase<Int32>, public TimezoneMixin
 {
 public:
     explicit DataTypeTime(const String & time_zone_name = "");
@@ -40,7 +40,7 @@ public:
     const char * getFamilyName() const override { return family_name; }
     String doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::Time; }
-    TypeIndex getColumnType() const override { return TypeIndex::UInt32; }
+    TypeIndex getColumnType() const override { return TypeIndex::Int32; }
 
     bool canBeUsedAsVersion() const override { return true; }
     bool canBeInsideNullable() const override { return true; }

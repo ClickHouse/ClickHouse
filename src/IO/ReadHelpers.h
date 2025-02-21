@@ -1108,20 +1108,27 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 /** In hhh:mm:ss format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-template <typename ReturnType = void, bool dt64_mode = false>
+template <typename ReturnType = void, bool t64_mode = false>
 inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    if constexpr (!dt64_mode)
+    if constexpr (!t64_mode)
     {
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
+        if (!buf.eof() && (!isNumericASCII(*buf.position()) && *buf.position() != '-'))
         {
             if constexpr (throw_exception)
-                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse time");
             else
                 return false;
         }
+    }
+
+    int negative_multiplier = 1;
+    if (!buf.eof() && *buf.position() == '-')
+    {
+        negative_multiplier = -1;
+        ++buf.position();
     }
 
     /// Optimistic path, when whole value is in buffer.
@@ -1153,7 +1160,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             minute = (s[4] - '0') * 10 + (s[5] - '0');
             second = (s[7] - '0') * 10 + (s[8] - '0');
 
-            datetime = date_lut.makeTime(hour, minute, second);
+            datetime = date_lut.makeTime(hour, minute, second) * negative_multiplier;
             buf.position() += time_broken_down_length;
 
             return ReturnType(true);
@@ -1174,7 +1181,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             minute = (s[3] - '0') * 10 + (s[4] - '0');
             second = (s[6] - '0') * 10 + (s[7] - '0');
 
-            datetime = date_lut.makeTime(hour, minute, second);
+            datetime = date_lut.makeTime(hour, minute, second) * negative_multiplier;
             buf.position() += time_broken_down_length;
 
             return ReturnType(true);
@@ -1195,14 +1202,14 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
             minute = (s[2] - '0') * 10 + (s[3] - '0');
             second = (s[5] - '0') * 10 + (s[6] - '0');
 
-            datetime = date_lut.makeTime(hour, minute, second);
+            datetime = date_lut.makeTime(hour, minute, second) * negative_multiplier;
             buf.position() += time_broken_down_length;
 
             return ReturnType(true);
         }
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextFallback<ReturnType, t64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
 } /// TODO
 
 template <typename ReturnType>

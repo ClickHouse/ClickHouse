@@ -1246,6 +1246,7 @@ public:
 
     struct TimeComponents
     {
+        bool is_negative = false;
         uint64_t hour;
         uint8_t minute;
         uint8_t second;
@@ -1302,21 +1303,21 @@ public:
     {
         TimeComponents res;
 
+        bool is_negative = false;
+
         if (unlikely(t < 0))
         {
-            res.second = 0;
-            res.minute = 0;
-            res.hour = 0;
+            is_negative = true;
+            t *= -1;
         }
-        else
-        {
-            res.second = t % 60;
-            res.minute = t / 60 % 60;
-            res.hour = t / 3600;
-        }
+        res.second = t % 60;
+        res.minute = t / 60 % 60;
+        res.hour = t / 3600;
 
         if (unlikely(res.hour > 999))
             res.hour = 999;
+
+        res.is_negative = is_negative;
 
         return res;
     }

@@ -30,7 +30,7 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 };
 
-class SerializationTime final : public SerializationNumber<UInt32>, public TimezoneMixin
+class SerializationTime final : public SerializationNumber<Int32>, public TimezoneMixin
 {
 public:
     explicit SerializationTime(const TimezoneMixin & time_zone_);

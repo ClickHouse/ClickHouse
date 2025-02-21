@@ -198,7 +198,7 @@ struct ToTimeImpl
 {
     static constexpr auto name = "toTime";
 
-    static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static Int32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -209,46 +209,44 @@ struct ToTimeImpl
         {
             d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
         }
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
+        return static_cast<Int32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
     }
 
-    static UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (d < 0)
-                return 0;
-            else if (d > MAX_DATETIME_DAY_NUM)
+            if (d > MAX_DATETIME_DAY_NUM)
                 d = MAX_DATETIME_DAY_NUM;
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (d < 0 || d > MAX_DATETIME_DAY_NUM) [[unlikely]]
+            if (d > MAX_DATETIME_DAY_NUM) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", d);
         }
-        return static_cast<UInt32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(d)))));
+        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(d)))));
     }
 
-    static UInt32 execute(UInt32 dt, const DateLUTImpl & time_zone)
+    static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
         return time_zone.toTime(static_cast<Int64>(dt));
     }
 
-    static UInt32 execute(Int64 dt64, const DateLUTImpl & time_zone)
+    static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
             return static_cast<UInt32>(time_zone.toTime(dt64));
         else
         {
-            if (dt64 < 0 || dt64 >= MAX_TIME_TIMESTAMP)
+            if (dt64 >= MAX_TIME_TIMESTAMP) /// Add MIN_TIME_TIMESTAMP
             {
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    return dt64 < 0 ? 0 : std::numeric_limits<UInt32>::max();
+                    return std::numeric_limits<UInt32>::max();
                 else
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
             }
             else
-                return static_cast<UInt32>(time_zone.toTime(dt64));
+                return static_cast<Int32>(time_zone.toTime(dt64));
         }
     }
 };
@@ -477,13 +475,6 @@ struct ToTimeTransformSigned
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
-        if (from < 0)
-        {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
-            else
-                return 0;
-        }
         return from;
     }
 };
@@ -501,8 +492,6 @@ struct ToTimeTransform64Signed
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
-        if (from < 0)
-            return 0;
         return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
     }
 };
@@ -902,12 +891,10 @@ inline void convertFromTime<DataTypeDateTime>(DataTypeDateTime::FieldType & x, t
 template <>
 inline void convertFromTime<DataTypeTime>(DataTypeTime::FieldType & x, time_t & time)
 {
-    if (unlikely(time < 0))
-        x = 0;
-    else if (unlikely(time > MAX_DATETIME_TIMESTAMP))
-        x = MAX_DATETIME_TIMESTAMP;
+    if (unlikely(time > MAX_TIME_TIMESTAMP))
+        x = MAX_TIME_TIMESTAMP;
     else
-        x = static_cast<UInt32>(time);
+        x = static_cast<Int32>(time);
 }
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
@@ -1032,7 +1019,7 @@ template <>
 [[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
 {
     time_t time = 0;
-    if (!tryReadDateTimeText(time, rb, *time_zone)) //
+    if (!tryReadTimeText(time, rb, *time_zone))
         return false;
     convertFromTime<DataTypeTime>(x, time);
     return true;
@@ -1574,7 +1561,7 @@ struct ConvertImpl
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
@@ -1588,7 +1575,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
@@ -1598,7 +1585,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1611,7 +1598,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr ((

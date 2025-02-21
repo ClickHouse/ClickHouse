@@ -18,6 +18,7 @@
 class LocalTime
 {
 private:
+    bool is_negative = false;
     uint64_t m_hour; /// NOLINT             /// Hours (0-999)
     unsigned char m_minute;                 /// Minutes (0-59)
     unsigned char m_second;                 /// Seconds (0-59)
@@ -35,6 +36,9 @@ private:
     {
         DateLUTImpl::TimeComponents components = time_zone.toTimeComponents(static_cast<DateLUTImpl::Time>(time));
 
+        if (time < 0)
+            is_negative = true;
+
         m_hour = components.hour;
         m_minute = components.minute;
         m_second = components.second;
@@ -51,31 +55,79 @@ private:
      */
     void init(const char * s, size_t length)
     {
-        if (length < 9)
+        if (length < 7)
             throw std::runtime_error("Cannot parse LocalTime: " + std::string(s, length));
 
-        // Expected format "HHHHH:MM:SS"
-        if (s[3] != ':' || s[6] != ':')
-            throw std::runtime_error("Invalid format for LocalTime: " + std::string(s, length));
-
-        // Parse hours: s[0] to s[2]
-        m_hour = 0;
-        for (int i = 0; i < 3; ++i)
+        char * s_copy = new char[length];
+        if (s[0] == '-')
         {
-            if (s[i] < '0' || s[i] > '9')
-                throw std::runtime_error("Invalid hour digit in LocalTime: " + std::string(s, length));
-            m_hour = m_hour * 10 + static_cast<unsigned int>(s[i] - '0');
+            is_negative = true;
+            s_copy = new char[length-1];
+            std::strcpy(s_copy, s + 1); // here if we have a minus sign at the beginning, we omit it to make less reuses
         }
 
-        // Parse minutes: s[4] to s[5]
-        if (s[4] < '0' || s[4] > '9' || s[5] < '0' || s[5] > '9')
-            throw std::runtime_error("Invalid minute digits in LocalTime: " + std::string(s, length));
-        m_minute = static_cast<unsigned char>((s[4] - '0') * 10 + (s[5] - '0'));
+        /// Here we should consider three cases: HHH:MM::SS, HH:MM:SS and H:MM:SS
+        if (s_copy[3] == ':' && s[6] == ':') /// Case 1
+        {
+            // Parse hours: s_copy[0] to s_copy[2]
+            m_hour = 0;
+            for (int i = 0; i < 3; ++i)
+            {
+                if (s_copy[i] < '0' || s_copy[i] > '9')
+                    throw std::runtime_error("Invalid hour digit in LocalTime: " + std::string(s, length));
+                m_hour = m_hour * 10 + static_cast<unsigned int>(s_copy[i] - '0');
+            }
 
-        // Parse seconds: s[7] to s[8]
-        if (s[7] < '0' || s[7] > '9' || s[8] < '0' || s[8] > '9')
-            throw std::runtime_error("Invalid second digits in LocalTime: " + std::string(s, length));
-        m_second = static_cast<unsigned char>((s[7] - '0') * 10 + (s[8] - '0'));
+            // Parse minutes: s_copy[4] to s_copy[5]
+            if (s_copy[4] < '0' || s_copy[4] > '9' || s_copy[5] < '0' || s_copy[5] > '9')
+                throw std::runtime_error("Invalid minute digits in LocalTime: " + std::string(s, length));
+            m_minute = static_cast<unsigned char>((s_copy[4] - '0') * 10 + (s_copy[5] - '0'));
+
+            // Parse seconds: s_copy[7] to s_copy[8]
+            if (s_copy[7] < '0' || s_copy[7] > '9' || s_copy[8] < '0' || s_copy[8] > '9')
+                throw std::runtime_error("Invalid second digits in LocalTime: " + std::string(s, length));
+            m_second = static_cast<unsigned char>((s_copy[7] - '0') * 10 + (s_copy[8] - '0'));
+        }
+        else if (s_copy[2] == ':' && s_copy[5] == ':') /// Case 2
+        {
+            // Parse hours: s[0] to s[1]
+            m_hour = 0;
+            for (int i = 0; i < 2; ++i)
+            {
+                if (s_copy[i] < '0' || s_copy[i] > '9')
+                    throw std::runtime_error("Invalid hour digit in LocalTime: " + std::string(s, length));
+                m_hour = m_hour * 10 + static_cast<unsigned int>(s_copy[i] - '0');
+            }
+
+            // Parse minutes: s_copy[3] to s_copy[4]
+            if (s_copy[3] < '0' || s_copy[3] > '9' || s_copy[4] < '0' || s_copy[4] > '9')
+                throw std::runtime_error("Invalid minute digits in LocalTime: " + std::string(s, length));
+            m_minute = static_cast<unsigned char>((s_copy[3] - '0') * 10 + (s_copy[4] - '0'));
+
+            // Parse seconds: s_copy[6] to s_copy[7]
+            if (s_copy[6] < '0' || s_copy[6] > '9' || s_copy[7] < '0' || s_copy[7] > '9')
+                throw std::runtime_error("Invalid second digits in LocalTime: " + std::string(s, length));
+            m_second = static_cast<unsigned char>((s_copy[6] - '0') * 10 + (s_copy[7] - '0'));
+        }
+        else if (s_copy[1] == ':' && s_copy[4] == ':') /// Case 3
+        {
+            // Parse hours: s_copy[0]
+            if (s_copy[0] < '0' || s_copy[0] > '9')
+                throw std::runtime_error("Invalid hour digit in LocalTime: " + std::string(s, length));
+            m_hour = static_cast<unsigned int>(s_copy[0] - '0');
+
+            // Parse minutes: s_copy[2] to s_copy[3]
+            if (s_copy[2] < '0' || s_copy[2] > '9' || s_copy[3] < '0' || s_copy[3] > '9')
+                throw std::runtime_error("Invalid minute digits in LocalTime: " + std::string(s, length));
+            m_minute = static_cast<unsigned char>((s_copy[2] - '0') * 10 + (s_copy[3] - '0'));
+
+            // Parse seconds: s_copy[5] to s_copy[6]
+            if (s_copy[5] < '0' || s_copy[5] > '9' || s_copy[6] < '0' || s_copy[6] > '9')
+                throw std::runtime_error("Invalid second digits in LocalTime: " + std::string(s, length));
+            m_second = static_cast<unsigned char>((s_copy[5] - '0') * 10 + (s_copy[6] - '0'));
+        }
+        else
+            throw std::runtime_error("Cannot parse LocalTime: " + std::string(s, length));    
 
         // Initialize padding
         std::memset(pad, 0, sizeof(pad));
@@ -100,8 +152,8 @@ public:
      * @param minute_ Minutes (0-59).
      * @param second_ Seconds (0-59).
      */
-    LocalTime(unsigned short hour_, unsigned char minute_, unsigned char second_) /// NOLINT
-        : m_hour(hour_), m_minute(minute_), m_second(second_)
+    LocalTime(bool is_negative_, unsigned short hour_, unsigned char minute_, unsigned char second_) /// NOLINT
+        : is_negative(is_negative_), m_hour(hour_), m_minute(minute_), m_second(second_)
     {
         std::memset(pad, 0, sizeof(pad));
     }
@@ -143,11 +195,13 @@ public:
     LocalTime & operator= (const LocalTime &) noexcept = default;
 
     // Accessor methods
+    bool negative() const { return is_negative; }
     unsigned short hour() const { return m_hour; } /// NOLINT
     unsigned char minute() const { return m_minute; }
     unsigned char second() const { return m_second; }
 
     // Mutator methods
+    void negative(bool b) {is_negative = b; }
     void hour(unsigned short x) { m_hour = x; } /// NOLINT
     void minute(unsigned char x) { m_minute = x; }
     void second(unsigned char x) { m_second = x; }

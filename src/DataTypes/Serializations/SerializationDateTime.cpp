@@ -336,7 +336,7 @@ bool SerializationTime::tryDeserializeWholeText(IColumn & column, ReadBuffer & i
     if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !istr.eof())
         return false;
 
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
 }
 
@@ -344,7 +344,7 @@ void SerializationTime::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 {
     time_t x = 0;
     readText(x, istr, settings, time_zone, utc_time_zone);
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
 bool SerializationTime::tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -352,7 +352,7 @@ bool SerializationTime::tryDeserializeTextEscaped(IColumn & column, ReadBuffer &
     time_t x = 0;
     if (!tryReadText(x, istr, settings, time_zone, utc_time_zone))
         return false;
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
 }
 
@@ -377,7 +377,7 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
     }
 
     /// It's important to do this at the end - for exception safety.
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
 bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -395,7 +395,7 @@ bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & 
     }
 
     /// It's important to do this at the end - for exception safety.
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
 }
 
@@ -436,7 +436,7 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
             return false;
     }
 
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
 }
 
@@ -483,7 +483,7 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
         }
     }
 
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
 }
 
 bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -518,7 +518,7 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
         }
     }
 
-    assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
+    assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
 }
 

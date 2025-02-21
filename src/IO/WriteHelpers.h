@@ -1056,12 +1056,12 @@ inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & b
 
     auto components = DecimalUtils::split(time64, scale);
 
-    using T = typename Time64::NativeType;
-    if (time64.value < 0 && components.fractional)
-    {
-        components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
-        --components.whole;
-    }
+    // using T = typename Time64::NativeType;
+    // if (time64.value < 0 && components.fractional)
+    // {
+        // components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
+        // --components.whole;
+    // }
 
     LocalTime local_time(components.whole);
     writeTimeText<delimiter1>(local_time, buf);
@@ -1093,6 +1093,9 @@ inline void writeText(const Time64 & x, WriteBuffer & buf)
 template <char delimiter1 = ':'>
 inline void writeTimeText(const LocalTime & local_time, WriteBuffer & buf)
 {
+    if (local_time.negative())
+        buf.write("-", 1);
+
     char buffer[9] = {
         static_cast<char>('0' + ((local_time.hour() / 100) % 10)), // H
         static_cast<char>('0' + ((local_time.hour() / 10) % 10)),  // H
@@ -1127,7 +1130,7 @@ inline void writeTimeTextISO(time_t time, WriteBuffer & buf, const DateLUTImpl &
     buf.write('Z');
 }
 
-// inline void writeTimeTextISO(DateTime64 time64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
+// inline void writeTimeTextISO(Time64 time64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
 // {
 //     writeTimeText<':'>(time64, scale, buf, utc_time_zone);
 //     buf.write('Z');
