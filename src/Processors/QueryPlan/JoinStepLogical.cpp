@@ -500,7 +500,12 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
     }
 }
 
-JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActionRef & right_filter, JoinActionRef & post_filter, bool is_explain_logical)
+JoinPtr JoinStepLogical::convertToPhysical(
+    JoinActionRef & left_filter,
+    JoinActionRef & right_filter,
+    JoinActionRef & post_filter,
+    bool is_explain_logical,
+    std::optional<UInt64> rhs_size_estimation)
 {
     const auto & settings = query_context->getSettingsRef();
 
@@ -712,12 +717,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & left_filter, JoinActi
     }
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join,
-        prepared_join_storage,
-        left_sample_block,
-        right_sample_block,
-        query_context,
-        hash_table_key_hash);
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, query_context, hash_table_key_hash, rhs_size_estimation);
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }

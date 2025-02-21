@@ -60,6 +60,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
 }
 
 namespace ServerSetting
@@ -1093,7 +1094,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     ContextPtr query_context,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    IQueryTreeNode::HashState hash_table_key_hash,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1118,16 +1120,26 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
+        const auto parallel_hash_threshold = query_context->getSettingsRef()[Setting::parallel_hash_join_threshold];
         if (table_join->allowParallelHashJoin())
         {
-            const auto & settings = query_context->getSettingsRef();
-            StatsCollectingParams params{
-                calculateCacheKey(table_join, hash_table_key_hash),
-                settings[Setting::collect_hash_table_stats_during_joins],
-                query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
-                settings[Setting::max_size_to_preallocate_for_joins]};
-            return std::make_shared<ConcurrentHashJoin>(
-                query_context, table_join, query_context->getSettingsRef()[Setting::max_threads], right_table_expression_header, params);
+            const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !rhs_size_estimation
+                || (*rhs_size_estimation >= parallel_hash_threshold);
+            if (use_parallel_hash)
+            {
+                const auto & settings = query_context->getSettingsRef();
+                StatsCollectingParams params{
+                    calculateCacheKey(table_join, hash_table_key_hash),
+                    settings[Setting::collect_hash_table_stats_during_joins],
+                    query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
+                    settings[Setting::max_size_to_preallocate_for_joins]};
+                return std::make_shared<ConcurrentHashJoin>(
+                    query_context,
+                    table_join,
+                    query_context->getSettingsRef()[Setting::max_threads],
+                    right_table_expression_header,
+                    params);
+            }
         }
 
         return std::make_shared<HashJoin>(
@@ -1169,7 +1181,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     ContextPtr query_context,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    IQueryTreeNode::HashState hash_table_key_hash,
+    std::optional<UInt64> rhs_size_estimation)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
@@ -1229,7 +1242,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             left_table_expression_header,
             right_table_expression_header,
             query_context,
-            hash_table_key_hash);
+            hash_table_key_hash,
+            rhs_size_estimation);
         if (join)
             return join;
     }
