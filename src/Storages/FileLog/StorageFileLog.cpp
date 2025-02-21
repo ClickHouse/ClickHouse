@@ -514,7 +514,7 @@ void StorageFileLog::openFilesAndSetPos()
                     "Last saved offsset for File {} is bigger than file size ({} > {})",
                     file,
                     meta.last_writen_position,
-                    file_end.state().__count);
+                    std::streamoff{file_end});
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
