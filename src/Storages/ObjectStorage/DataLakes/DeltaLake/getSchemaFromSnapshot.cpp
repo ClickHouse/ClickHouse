@@ -132,8 +132,8 @@ private:
 
     const LoggerPtr log = getLogger("SchemaVisitor");
 
-    using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelGlobalScanState = TemplatedKernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
+    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelGlobalScanState = KernelPointerWrapper<ffi::SharedGlobalScanState, ffi::free_global_scan_state>;
 
     KernelScan scan;
     KernelGlobalScanState scan_state;
@@ -147,8 +147,8 @@ private:
  */
 class SchemaVisitor
 {
-    using KernelSharedSchema = TemplatedKernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
-    using KernelStringSliceIterator = TemplatedKernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_global_read_schema>;
+    using KernelStringSliceIterator = KernelPointerWrapper<ffi::StringSliceIterator, ffi::free_string_slice_data>;
 public:
     static void visitTableSchema(ffi::SharedSnapshot * snapshot, SchemaVisitorData & data)
     {

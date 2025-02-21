@@ -53,9 +53,9 @@ public:
 
 private:
     class Iterator;
-    using KernelExternEngine = TemplatedKernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
-    using KernelSnapshot = TemplatedKernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
-    using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelExternEngine = KernelPointerWrapper<ffi::SharedExternEngine, ffi::free_engine>;
+    using KernelSnapshot = KernelPointerWrapper<ffi::SharedSnapshot, ffi::free_snapshot>;
+    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
 
     const KernelHelperPtr helper;
     const DB::ObjectStoragePtr object_storage;

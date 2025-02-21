@@ -30,20 +30,6 @@ namespace
 {
 struct KernelError : public ffi::EngineError
 {
-    [[noreturn]] void rethrow(const std::string & from)
-    {
-        auto error_message_copy = error_message;
-        auto etype_copy = etype;
-        /// This error was created by DeltaKernel by calling KernelUtils::allocateError.
-        /// We are responsible for deallocating it as well.
-        delete this;
-
-        throw DB::Exception(
-            DB::ErrorCodes::DELTA_KERNEL_ERROR,
-            "Received DeltaLake kernel error {}: {} (in {})",
-            etype_copy, error_message_copy, from);
-    }
-
     std::string error_message;
 };
 }
@@ -59,7 +45,14 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
 [[noreturn]] void KernelUtils::rethrow(ffi::EngineError * error, const std::string & from)
 {
     auto * kernel_error = static_cast<KernelError *>(error);
-    kernel_error->rethrow(from);
+    auto error_message_copy = kernel_error->error_message;
+    auto etype_copy = kernel_error->etype;
+    delete kernel_error;
+
+    throw DB::Exception(
+        DB::ErrorCodes::DELTA_KERNEL_ERROR,
+        "Received DeltaLake kernel error {}: {} (in {})",
+        etype_copy, error_message_copy, from);
 }
 
 }

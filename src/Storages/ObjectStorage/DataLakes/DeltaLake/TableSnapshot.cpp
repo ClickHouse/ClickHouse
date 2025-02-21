@@ -4,12 +4,12 @@
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ObjectInfoWithPartitionColumns.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLake/parseFieldFromString.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <IO/ReadBufferFromString.h>
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 
@@ -18,6 +18,31 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace DB
+{
+
+Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
+{
+    try
+    {
+        ReadBufferFromString buffer(value);
+        auto col = data_type->createColumn();
+        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
+        serialization->deserializeWholeText(*col, buffer, FormatSettings{});
+        return (*col)[0];
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot parse {} for data type {}: {}",
+            value, data_type->getName(), getCurrentExceptionMessage(false));
+    }
+}
+
 }
 
 namespace DeltaLake
@@ -102,12 +127,13 @@ public:
         DB::ObjectInfoWithPartitionColumns::PartitionColumnsInfo partitions_info;
         for (const auto & partition_column : context->partition_columns)
         {
-            auto * raw_value = ffi::get_from_string_map(
+            std::string * value = static_cast<std::string *>(ffi::get_from_string_map(
                 partition_map,
                 KernelUtils::toDeltaString(partition_column),
-                KernelUtils::allocateString);
+                KernelUtils::allocateString));
 
-            auto value = std::unique_ptr<std::string>(static_cast<std::string *>(raw_value));
+            SCOPE_EXIT({ delete value; });
+
             if (value)
             {
                 auto name_and_type = context->schema.tryGetByName(partition_column);
@@ -140,8 +166,8 @@ public:
     }
 
 private:
-    using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
-    using KernelScanDataIterator = TemplatedKernelPointerWrapper<ffi::SharedScanDataIterator, ffi::free_kernel_scan_data>;
+    using KernelScan = KernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
+    using KernelScanDataIterator = KernelPointerWrapper<ffi::SharedScanDataIterator, ffi::free_kernel_scan_data>;
 
     const KernelScan scan;
     const KernelScanDataIterator scan_data_iterator;

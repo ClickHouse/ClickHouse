@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Types.h>
+#include <boost/noncopyable.hpp>
 
 namespace DeltaLake
 {
@@ -9,19 +10,20 @@ namespace DeltaLake
  * and deletion functions for each of them.
  * This class represents a RAII wrapper to manage such objects.
  */
-template <typename KernelType>
-struct KernelPointerWrapper
+template <typename KernelType, void (*free_function)(KernelType *)>
+struct KernelPointerWrapper : boost::noncopyable
 {
     KernelPointerWrapper() : ptr(nullptr), free_func(nullptr) {}
 
-    KernelPointerWrapper(KernelType * ptr_, void (*free_func_)(KernelType *))
-        : ptr(ptr_), free_func(free_func_) {}
+    KernelPointerWrapper(KernelType * ptr_) : ptr(ptr_), free_func(free_function) {}
 
     KernelPointerWrapper(KernelPointerWrapper && other) noexcept
         : ptr(other.ptr)
     {
         other.ptr = nullptr;
     }
+
+    ~KernelPointerWrapper() { free(); }
 
     KernelPointerWrapper & operator=(KernelPointerWrapper && other) noexcept
     {
@@ -30,10 +32,12 @@ struct KernelPointerWrapper
         return *this;
     }
 
-    ~KernelPointerWrapper()
+    KernelPointerWrapper & operator=(KernelType * ptr_) noexcept
     {
-        if (ptr && free_func)
-            free_func(ptr);
+        free();
+        ptr = ptr_;
+        free_func = free_function;
+        return *this;
     }
 
     KernelType * get() const { return ptr; }
@@ -41,13 +45,14 @@ struct KernelPointerWrapper
 private:
     KernelType * ptr;
     void (*free_func)(KernelType *) = nullptr;
-};
 
-template <typename KernelType, void (*delete_function)(KernelType *)>
-struct TemplatedKernelPointerWrapper : public KernelPointerWrapper<KernelType>
-{
-    TemplatedKernelPointerWrapper() : KernelPointerWrapper<KernelType>() {}
-    TemplatedKernelPointerWrapper(KernelType * ptr) : KernelPointerWrapper<KernelType>(ptr, delete_function) {}
+    void free()
+    {
+        if (ptr && free_func)
+            free_func(ptr);
+        else if (ptr)
+            chassert(free_func);
+    }
 };
 
 }
