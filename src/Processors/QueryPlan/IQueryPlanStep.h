@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int NOT_IMPLEMENTED;
+}
+
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 using QueryPipelineBuilders = std::vector<QueryPipelineBuilderPtr>;
