@@ -779,8 +779,6 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
 
 void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root)
 {
-    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-
     WriteBufferFromOwnString wbuf;
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
@@ -824,7 +822,7 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
+                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::LOGICAL_ERROR)
                         throw;
                 }
             }
