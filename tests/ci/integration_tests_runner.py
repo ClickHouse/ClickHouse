@@ -32,8 +32,6 @@ NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
-CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
-CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 FLAKY_TRIES_COUNT = 3  # run whole pytest several times
 FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
@@ -372,14 +370,6 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
-        # logging.info("Unstripping binary")
-        # logging.info(
-        #     "Unstring %s",
-        #     subprocess.check_output(
-        #         "eu-unstrip /usr/bin/clickhouse {}".format(CLICKHOUSE_BINARY_PATH),
-        #         shell=True,
-        #     ),
-        # )
 
         logging.info("All packages installed")
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)

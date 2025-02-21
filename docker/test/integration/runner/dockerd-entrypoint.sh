@@ -63,10 +63,6 @@ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_CLIENT_BIN_PATH=/clickhouse
 export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=/clickhouse-config
 
-# These are preinstalled:
-export CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH=/usr/bin/clickhouse-odbc-bridge
-export CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH=/usr/bin/clickhouse-library-bridge
-
 export DOCKER_BASE_TAG=${DOCKER_BASE_TAG:=latest}
 export DOCKER_DOTNET_CLIENT_TAG=${DOCKER_DOTNET_CLIENT_TAG:=latest}
 export DOCKER_HELPER_TAG=${DOCKER_HELPER_TAG:=latest}

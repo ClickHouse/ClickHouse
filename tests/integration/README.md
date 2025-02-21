@@ -105,8 +105,6 @@ test_ssl_cert_authentication/test.py::test_create_user PASSED
 Path to binary and configs maybe specified via env variables:
 ```bash
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/programs/server/
-$ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/programs/clickhouse
-$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/programs/clickhouse-odbc-bridge
 $ ./runner 'test_odbc_interaction'
 $ # or ./runner '-v -ss'
 Start tests
