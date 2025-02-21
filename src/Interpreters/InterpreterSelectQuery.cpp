@@ -82,6 +82,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Columns/Collator.h>
@@ -574,6 +575,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
+        if (auto * alias_storage = dynamic_cast<StorageAlias *>(storage.get()))
+            storage = alias_storage->getRefStorage(context);
+
         if (storage->updateExternalDynamicMetadataIfExists(context))
         {
             metadata_snapshot = storage->getInMemoryMetadataPtr();
