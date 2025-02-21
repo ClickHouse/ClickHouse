@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/syntax
+slug: /sql-reference/syntax
 sidebar_position: 2
 sidebar_label: Syntax
 title: Syntax
@@ -345,7 +345,7 @@ Operators are converted to their corresponding functions during query parsing, t
 
 For example, the expression 
 
-```
+```text
 1 + 2 * 3 + 4
 ```
 
@@ -361,9 +361,9 @@ Data types and table engines in the `CREATE` query are written the same way as i
 In other words, they may or may not contain an argument list in brackets. 
 
 For more information, see the sections:
-- [Data types](/docs/en/sql-reference/data-types/index.md)
-- [Table engines](/docs/en/engines/table-engines/index.md)
-- [CREATE](/docs/en/sql-reference/statements/create/index.md).
+- [Data types](/docs/sql-reference/data-types/index.md)
+- [Table engines](/docs/engines/table-engines/index.md)
+- [CREATE](/docs/sql-reference/statements/create/index.md).
 
 ## Expressions
 
@@ -449,4 +449,4 @@ You can change this default behavior by setting [prefer_column_name_to_alias](..
 ## Asterisk
 
 In a `SELECT` query, an asterisk can replace the expression. 
-For more information, see the section [SELECT](/docs/en/sql-reference/statements/select/index.md#asterisk).
+For more information, see the section [SELECT](/docs/sql-reference/statements/select/index.md#asterisk).

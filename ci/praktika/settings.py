@@ -144,7 +144,13 @@ def _get_settings() -> _Settings:
     res = _Settings()
 
     directory = Path(_Settings.SETTINGS_DIRECTORY)
-    for py_file in directory.glob("*.py"):
+
+    py_files = list(directory.glob("*.py"))
+    # Support for overriding settings (if for whatever reason you need to override setting(s) in your fork)
+    # Sort: First files without "overrides", then files with "overrides"
+    sorted_files = sorted(py_files, key=lambda f: "_overrides" in f.name)
+
+    for py_file in sorted_files:
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"

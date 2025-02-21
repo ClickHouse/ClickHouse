@@ -20,7 +20,7 @@ namespace BuzzHouse
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
-    TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
+    TopSelect * ts = sq1.mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
     /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
@@ -68,9 +68,9 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 /// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
-    TopSelect * ts = sq2.mutable_inner_query()->mutable_select();
+    TopSelect * ts = sq2.mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.inner_query().select().sel().select_core());
+    SelectStatementCore & ssc1 = const_cast<SelectStatementCore &>(sq1.explain().inner_query().select().sel().select_core());
     SelectStatementCore * ssc2 = ts->mutable_sel()->mutable_select_core();
     SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
@@ -103,7 +103,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1)
 {
     bool first = true;
-    TopSelect * ts = sq1.mutable_inner_query()->mutable_select();
+    TopSelect * ts = sq1.mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * sel = ts->mutable_sel()->mutable_select_core();
     JoinedTable * jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
@@ -179,19 +179,17 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 {
     String buf;
     bool first = true;
-    Insert * ins = sq2.mutable_inner_query()->mutable_insert();
+    std::error_code ec;
+    Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
     /// Remove the file if exists
-    if (std::remove(nfile.generic_string().c_str()) && errno != ENOENT)
+    if (!std::filesystem::remove(nfile, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
     ff->set_path(nfile.generic_string());
 
@@ -236,7 +234,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 
 void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 {
-    Truncate * trunc = sq3.mutable_inner_query()->mutable_trunc();
+    Truncate * trunc = sq3.mutable_explain()->mutable_inner_query()->mutable_trunc();
     ExprSchemaTable * est = trunc->mutable_est();
 
     if (t.db)
@@ -248,9 +246,9 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 
 void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
-    Insert * ins = sq4.mutable_inner_query()->mutable_insert();
+    Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
-    const FileFunc & ff = sq2.inner_query().insert().tfunction().file();
+    const FileFunc & ff = sq2.explain().inner_query().insert().tfunction().file();
     ExprSchemaTable * est = ins->mutable_est();
 
     if (t.db)
@@ -297,7 +295,7 @@ void loadFuzzerOracleSettings(const FuzzConfig &)
 void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 {
     const uint32_t nsets = rg.nextBool() ? 1 : ((rg.nextSmallNumber() % 3) + 1);
-    SettingValues * sv = sq1.mutable_inner_query()->mutable_setting_values();
+    SettingValues * sv = sq1.mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
     nsettings.clear();
     for (uint32_t i = 0; i < nsets; i++)
@@ -331,8 +329,8 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
 
 void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 {
-    const SettingValues & osv = sq1.inner_query().setting_values();
-    SettingValues * sv = sq3.mutable_inner_query()->mutable_setting_values();
+    const SettingValues & osv = sq1.explain().inner_query().setting_values();
+    SettingValues * sv = sq3.mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
     for (size_t i = 0; i < nsettings.size(); i++)
     {
@@ -346,29 +344,35 @@ void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
-    InsertSelect * insel = nullptr;
+    std::error_code ec;
+    bool explain = false;
     Select * sel = nullptr;
+    InsertSelect * insel = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
+
     peer_query = pq;
-    measure_performance = fc.measure_performance && peer_query == PeerQuery::ClickHouseOnly && rg.nextBool();
-    const bool global_aggregate = !measure_performance && rg.nextSmallNumber() < 4;
+    if (peer_query == PeerQuery::ClickHouseOnly && (fc.measure_performance || fc.compare_explains) && rg.nextBool())
+    {
+        const uint32_t next_opt = rg.nextSmallNumber();
+
+        measure_performance = !fc.compare_explains || next_opt < 7;
+        explain = !fc.measure_performance || next_opt > 6;
+    }
+    const bool global_aggregate = !measure_performance && !explain && rg.nextSmallNumber() < 4;
 
     if (measure_performance)
     {
         /// When measuring performance, don't insert into file
-        sel = sq2.mutable_inner_query()->mutable_select()->mutable_sel();
+        sel = sq2.mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
     }
     else
     {
-        Insert * ins = sq2.mutable_inner_query()->mutable_insert();
+        Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
-        if (std::remove(qfile.generic_string().c_str()) && errno != ENOENT)
+        if (!std::filesystem::remove(qfile, ec) && ec)
         {
-            char buffer[1024];
-
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
@@ -380,20 +384,70 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     gen.enforceFinal(true);
     gen.generatingPeerQuery(pq);
     gen.setAllowEngineUDF(peer_query != PeerQuery::ClickHouseOnly);
+    if (explain)
+    {
+        /// INSERT INTO FILE EXPLAIN SELECT is not supported, so run
+        /// INSERT INTO FILE SELECT * FROM (EXPLAIN SELECT);
+        ExplainQuery * eq = sel->mutable_select_core()
+                                ->mutable_from()
+                                ->mutable_tos()
+                                ->mutable_join_clause()
+                                ->mutable_tos()
+                                ->mutable_joined_derived_query()
+                                ->mutable_select();
+
+        if (rg.nextBool())
+        {
+            ExplainOption * eopt = eq->add_opts();
+
+            eopt->set_opt(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_indexes);
+            eopt->set_val(1);
+        }
+        if (rg.nextBool())
+        {
+            ExplainOption * eopt = eq->add_opts();
+
+            eopt->set_opt(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_actions);
+            eopt->set_val(1);
+        }
+        eq->set_is_explain(true);
+        sel = eq->mutable_inner_query()->mutable_select()->mutable_sel();
+    }
     gen.generateSelect(rg, true, global_aggregate, ncols, std::numeric_limits<uint32_t>::max(), sel);
     gen.setAllowNotDetermistic(true);
     gen.enforceFinal(false);
     gen.generatingPeerQuery(PeerQuery::None);
     gen.setAllowEngineUDF(true);
 
-    if (!measure_performance && !global_aggregate)
+    if (!measure_performance && !explain && !global_aggregate)
     {
         /// If not global aggregate, use ORDER BY clause
         Select * osel = insel->release_select();
         SelectStatementCore * nsel = insel->mutable_select()->mutable_select_core();
-        nsel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_derived_query()->set_allocated_select(
-            osel);
+        nsel->mutable_from()
+            ->mutable_tos()
+            ->mutable_join_clause()
+            ->mutable_tos()
+            ->mutable_joined_derived_query()
+            ->mutable_select()
+            ->mutable_inner_query()
+            ->mutable_select()
+            ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
+    }
+    else if (measure_performance)
+    {
+        /// Add tag to find query later on
+        if (!sel->has_setting_values())
+        {
+            auto * news = sel->mutable_setting_values();
+            UNUSED(news);
+        }
+        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
     }
 }
 
@@ -427,8 +481,8 @@ void QueryOracle::findTablesWithPeersAndReplace(
     {
         auto & setq = static_cast<SetQuery &>(mes);
 
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1()), gen, replace);
-        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2()), gen, replace);
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()), gen, replace);
+        findTablesWithPeersAndReplace(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()), gen, replace);
     }
     else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
     {
@@ -496,7 +550,8 @@ void QueryOracle::findTablesWithPeersAndReplace(
         }
         else if (tos.has_joined_derived_query())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<Select &>(tos.joined_derived_query().select()), gen, replace);
+            findTablesWithPeersAndReplace(
+                rg, const_cast<Select &>(tos.joined_derived_query().select().inner_query().select().sel()), gen, replace);
         }
         else if (tos.has_joined_query())
         {
@@ -537,20 +592,18 @@ void QueryOracle::replaceQueryWithTablePeers(
 
     sq2.CopyFrom(sq1);
     Select & nsel = const_cast<Select &>(
-        measure_performance ? sq2.inner_query().select().sel() : sq2.inner_query().insert().insert_select().select());
+        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().insert_select().select());
     /// Replace references
     findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
-        FileFunc & ff = const_cast<FileFunc &>(sq2.inner_query().insert().tfunction().file());
+        std::error_code ec;
+        FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunction().file());
 
-        if (std::remove(qfile_peer.generic_string().c_str()) && errno != ENOENT)
+        if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
-            char buffer[1024];
-
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff.set_path(qfile_peer.generic_string());
     }
@@ -558,7 +611,7 @@ void QueryOracle::replaceQueryWithTablePeers(
     {
         SQLQuery next;
         const SQLTable & t = gen.tables.at(entry);
-        Insert * ins = next.mutable_inner_query()->mutable_insert();
+        Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
 
         // Then insert the data

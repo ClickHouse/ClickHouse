@@ -1,6 +1,11 @@
 #include "CatBoostLibraryHandler.h"
 
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
 namespace DB
@@ -239,9 +244,7 @@ void calcHashes(const ColumnRawPtrs & columns, size_t offset, size_t size, const
 ///  * CalcModelPredictionFlat if no cat features
 ///  * CalcModelPrediction if all cat features are strings
 ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
-ColumnFloat64::MutablePtr CatBoostLibraryHandler::evalImpl(
-    const ColumnRawPtrs & columns,
-    bool cat_features_are_strings) const
+MutableColumnPtr CatBoostLibraryHandler::evalImpl(const ColumnRawPtrs & columns, bool cat_features_are_strings) const
 {
     size_t column_size = columns.front()->size();
 
@@ -361,8 +364,10 @@ ColumnPtr CatBoostLibraryHandler::evaluate(const ColumnRawPtrs & columns) const
     if (tree_count == 1)
         return result;
 
+    auto * column = typeid_cast<ColumnFloat64 *>(result.get());
+
     size_t column_size = columns.front()->size();
-    auto * result_buf = result->getData().data();
+    auto * result_buf = column->getData().data();
 
     /// Multiple trees case. Copy data to several columns.
     MutableColumns mutable_columns(tree_count);
