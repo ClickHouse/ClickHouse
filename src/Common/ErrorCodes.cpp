@@ -722,6 +722,7 @@ namespace ErrorCodes
 
         return error_index;
     }
+
     void ErrorPairHolder::extendedMessage(bool remote, size_t error_index, const std::string & new_message)
     {
         std::lock_guard lock(mutex);

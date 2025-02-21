@@ -60,7 +60,7 @@ std::function<void(const std::string & msg, int code, bool remote, const Excepti
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-static size_t handle_error_code(const String & msg, int code, bool remote, const Exception::FramePointers & trace)
+static size_t handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -76,6 +76,7 @@ static size_t handle_error_code(const String & msg, int code, bool remote, const
 
     return ErrorCodes::increment(code, remote, msg, trace);
 }
+
 
 Exception::MessageMasked::MessageMasked(const std::string & msg_)
     : msg(msg_)
