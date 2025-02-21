@@ -17,7 +17,6 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
 NO_AUTH = ["NOSIGN"]
 
-SECONDS_TO_WAIT = 40
 
 def prepare_public_s3_bucket(started_cluster):
     def create_bucket(client, bucket_name, policy):
@@ -522,7 +521,7 @@ def test_failed_retry(started_cluster, mode, engine_name):
     create_mv(node, table_name, dst_table_name)
 
     failed_node_path = ""
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         zk = started_cluster.get_kazoo_client("zoo1")
         failed_nodes = zk.get_children(f"{keeper_path}/failed/")
         if len(failed_nodes) > 0:
@@ -533,7 +532,7 @@ def test_failed_retry(started_cluster, mode, engine_name):
     assert failed_node_path != ""
 
     retries = 0
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         data, stat = zk.get(failed_node_path)
         json_data = json.loads(data)
         print(f"Failed node metadata: {json_data}")
@@ -761,7 +760,7 @@ def test_streaming_to_many_views(started_cluster, mode):
     def check():
         return int(node.query(f"SELECT uniqExact(_path) FROM {dst_table_name}"))
 
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if check() == files_num:
             break
         time.sleep(1)
@@ -1776,7 +1775,7 @@ def test_processed_file_setting(started_cluster, processing_threads):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = 4
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -1787,7 +1786,7 @@ def test_processed_file_setting(started_cluster, processing_threads):
     time.sleep(10)
 
     expected_rows = 4
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -1837,7 +1836,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
         return int(node.query(query)) + int(node_2.query(query))
 
     expected_rows = 4
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -1848,7 +1847,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
 
     time.sleep(10)
     expected_rows = 4
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -1887,7 +1886,7 @@ def test_upgrade(started_cluster):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = 10
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -1930,7 +1929,7 @@ def test_exception_during_insert(started_cluster):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     def wait_for_rows(expected_rows):
-        for _ in range(SECONDS_TO_WAIT):
+        for _ in range(20):
             if expected_rows == get_count():
                 break
             time.sleep(1)
@@ -2139,7 +2138,7 @@ def test_upgrade_2(started_cluster):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = 10
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -2276,7 +2275,7 @@ def test_processing_threads(started_cluster):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = 10
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -2723,7 +2722,7 @@ def test_upgrade_3(started_cluster):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = 10
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -2852,7 +2851,7 @@ def test_migration(started_cluster, setting_prefix):
             )
 
         last_processed_path[0] = f"{use_prefix}_{expected_rows[0] - 1}.csv"
-        for _ in range(SECONDS_TO_WAIT):
+        for _ in range(20):
             if expected_rows[0] == get_count():
                 break
             time.sleep(1)
@@ -3020,14 +3019,14 @@ def test_filtering_files(started_cluster, mode):
         return int(node1.query(f"SELECT count() FROM default.{dst_table_name}"))
 
     expected_rows = files_to_generate
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if expected_rows == get_count():
             break
         time.sleep(1)
     assert expected_rows == get_count()
 
     create_mv(node2, f"r.{table_name}", dst_table_name)
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         if node2.contains_in_log(f"StorageS3Queue (r.{table_name}): Processed rows: 0"):
             break
         time.sleep(1)
@@ -3132,7 +3131,7 @@ def test_failed_commit(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
 
     processed = False
-    for _ in range(SECONDS_TO_WAIT):
+    for _ in range(20):
         node.query("SYSTEM FLUSH LOGS")
         processed = int(
             node.query(
