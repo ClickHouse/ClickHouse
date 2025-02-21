@@ -2186,12 +2186,12 @@ def test_replicated(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
+    create_mv(node1, f"r.{table_name}", dst_table_name)
+    create_mv(node2, f"r.{table_name}", dst_table_name)
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"r.{table_name}", dst_table_name)
-    create_mv(node2, f"r.{table_name}", dst_table_name)
 
     def get_count():
         return int(
@@ -2611,12 +2611,12 @@ def test_registry(started_cluster):
     for elem in expected:
         assert elem in str(registry)
 
+    create_mv(node1, f"{db_name}.{table_name}", dst_table_name)
+    create_mv(node2, f"{db_name}.{table_name}", dst_table_name)
+
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
-
-    create_mv(node1, f"{db_name}.{table_name}", dst_table_name)
-    create_mv(node2, f"{db_name}.{table_name}", dst_table_name)
 
     def get_count():
         return int(
@@ -2687,6 +2687,9 @@ def test_registry(started_cluster):
         assert elem in str(registry)
 
     node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
+
+    node1.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node2.query(f"DROP DATABASE IF EXISTS {db_name}")
 
     assert zk.exists(keeper_path) is None
 
