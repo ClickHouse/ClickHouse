@@ -89,6 +89,7 @@ BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
 BetaBadge
+Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
