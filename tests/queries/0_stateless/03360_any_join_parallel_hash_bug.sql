@@ -5,6 +5,6 @@ SELECT
     number
 FROM system.numbers
 ANY INNER JOIN system.numbers AS alias277 ON number = alias277.number
-LIMIT 1024000
+LIMIT 102400
 FORMAT `Null`
 SETTINGS join_algorithm = 'parallel_hash'

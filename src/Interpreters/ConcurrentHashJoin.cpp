@@ -628,6 +628,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
     }
 
     // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
+    // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
     for (const auto & hash_join : hash_joins)
         hash_join->data->onBuildPhaseFinish();
 
