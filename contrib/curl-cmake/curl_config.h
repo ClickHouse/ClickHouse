@@ -20,6 +20,7 @@
 #define HAVE_SIGSETJMP
 #define HAVE_SOCKET
 #define HAVE_STRUCT_TIMEVAL
+#define HAVE_POLL
 
 #define HAVE_RECV
 #define RECV_TYPE_ARG1 int

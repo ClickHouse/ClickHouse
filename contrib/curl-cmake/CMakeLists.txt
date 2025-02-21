@@ -33,7 +33,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_memrchr.c"
     "${LIBRARY_DIR}/lib/curl_multibyte.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_core.c"
-    "${LIBRARY_DIR}/lib/curl_path.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/curl_rtmp.c"
     "${LIBRARY_DIR}/lib/curl_sasl.c"
@@ -107,7 +106,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/sha256.c"
     "${LIBRARY_DIR}/lib/share.c"
     "${LIBRARY_DIR}/lib/slist.c"
-    "${LIBRARY_DIR}/lib/smb.c"
     "${LIBRARY_DIR}/lib/smtp.c"
     "${LIBRARY_DIR}/lib/socketpair.c"
     "${LIBRARY_DIR}/lib/socks.c"
@@ -143,6 +141,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vquic/vquic.c"
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
     "${LIBRARY_DIR}/lib/vssh/libssh2.c"
+    "${LIBRARY_DIR}/lib/vssh/curl_path.c"
     "${LIBRARY_DIR}/lib/vtls/bearssl.c"
     "${LIBRARY_DIR}/lib/vtls/gtls.c"
     "${LIBRARY_DIR}/lib/vtls/hostcheck.c"
@@ -165,7 +164,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
-    OS="${CMAKE_SYSTEM_NAME}"
+    CURL_OS="${CMAKE_SYSTEM_NAME}"
 )
 
 target_include_directories (_curl SYSTEM PUBLIC
