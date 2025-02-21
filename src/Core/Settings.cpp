@@ -5802,7 +5802,7 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
 )", BETA) \
     \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
-Analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even parallel reading from replicas is enabled. Using parallel replicas without enabled analyzer is not supported.
+The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
