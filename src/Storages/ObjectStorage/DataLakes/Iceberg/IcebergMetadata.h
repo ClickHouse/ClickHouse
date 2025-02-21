@@ -129,6 +129,7 @@ private:
 
     //Fields are needed only for providing dynamic polymorphism
     std::unordered_map<String, String> column_name_to_physical_name;
+    /// NOTE: Partition columns are unused
     DataLakePartitionColumns partition_columns;
 };
 

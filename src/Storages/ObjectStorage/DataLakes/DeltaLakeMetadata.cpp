@@ -340,10 +340,11 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                result.insert(fs::path(configuration_ptr->getPath()) / path);
+                auto full_path = fs::path(configuration_ptr->getPath()) / path;
+                result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
-                auto it = file_partition_columns.find(filename);
+                auto it = file_partition_columns.find(full_path);
                 if (it == file_partition_columns.end())
                 {
                     if (add_object->has("partitionValues"))
@@ -354,7 +355,7 @@ struct DeltaLakeMetadataImpl
 
                         if (partition_values->size())
                         {
-                            auto & current_partition_columns = file_partition_columns[filename];
+                            auto & current_partition_columns = file_partition_columns[full_path];
                             for (const auto & partition_name : partition_values->getNames())
                             {
                                 const auto value = partition_values->getValue<String>(partition_name);
@@ -589,7 +590,8 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto it = file_partition_columns.find(filename);
+            auto full_path = fs::path(configuration_ptr->getPath()) / path;
+            auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
                 Field map;
@@ -597,7 +599,7 @@ struct DeltaLakeMetadataImpl
                 auto partition_values_map = map.safeGet<Map>();
                 if (!partition_values_map.empty())
                 {
-                    auto & current_partition_columns = file_partition_columns[filename];
+                    auto & current_partition_columns = file_partition_columns[full_path];
                     for (const auto & map_value : partition_values_map)
                     {
                         const auto tuple = map_value.safeGet<Tuple>();

@@ -201,6 +201,7 @@ void StorageObjectStorageSource::lazyInitialize()
 
 Chunk StorageObjectStorageSource::generate()
 {
+
     lazyInitialize();
 
     while (true)
@@ -226,6 +227,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
+
             chassert(object_info->metadata);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -241,7 +243,7 @@ Chunk StorageObjectStorageSource::generate()
             const auto & partition_columns = configuration->getPartitionColumns();
             if (!partition_columns.empty() && chunk_size && chunk.hasColumns())
             {
-                auto partition_values = partition_columns.find(filename);
+                auto partition_values = partition_columns.find(object_info->getPath());
                 if (partition_values != partition_columns.end())
                 {
                     for (const auto & [name_and_type, value] : partition_values->second)
