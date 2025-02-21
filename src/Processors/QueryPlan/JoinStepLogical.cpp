@@ -28,6 +28,18 @@
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
+#include <IO/WriteHelpers.h>
+#include <Interpreters/SetSerialization.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Common/SipHash.h>
+
 namespace DB
 {
 
@@ -487,7 +499,6 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
     return concatConditionsWithFunction(all_conditions, expression_actions.post_join_actions, or_function);
 }
 
-void JoinStepLogical::setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_) { hash_table_key_hash = std::move(hash_table_key_hash_); }
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
 static Block blockWithColumns(ColumnsWithTypeAndName columns)
@@ -766,4 +777,80 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
     return {};
 }
 
+void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root)
+{
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+
+    WriteBufferFromOwnString wbuf;
+    SerializedSetsRegistry registry;
+    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
+
+    QueryPlanOptimizations::Stack stack;
+    stack.push_back({.node = &subtree_root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = QueryPlanOptimizations::Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+        const auto & node = *frame.node;
+
+        if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+        {
+            writeStringBinary(read->getSerializationName(), wbuf);
+            LOG_DEBUG(
+                &Poco::Logger::get("debug"),
+                "read->getStorageSnapshot()->storage.getStorageID().getFullTableName()={}",
+                read->getStorageSnapshot()->storage.getStorageID().getFullTableName());
+            writeStringBinary(read->getStorageSnapshot()->storage.getStorageID().getFullTableName(), wbuf);
+            if (const auto & dag = read->getFilterActionsDAG())
+                dag->serialize(ctx.out, ctx.registry);
+        }
+        else if (const auto * uni = typeid_cast<const UnionStep *>(node.step.get()))
+        {
+            writeStringBinary(uni->getSerializationName(), wbuf);
+            uni->serialize(ctx);
+        }
+        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        {
+            if (!transform->getTransformTraits().preserves_number_of_rows)
+            {
+                writeStringBinary(transform->getSerializationName(), wbuf);
+                transform->serialize(ctx);
+            }
+        }
+
+        stack.pop_back();
+    }
+
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "getExpressionActions().right_pre_join_actions->dumpActions());={}",
+        getExpressionActions().right_pre_join_actions->dumpDAG());
+
+    LOG_DEBUG(
+        &Poco::Logger::get("debug"),
+        "getJoinInfo().expression.condition.predicates.size()={}",
+        getJoinInfo().expression.condition.predicates.size());
+    for (const auto & pred : getJoinInfo().expression.condition.predicates)
+        LOG_DEBUG(&Poco::Logger::get("debug"), "pred.right_node.getColumnName()={}", pred.right_node.getColumnName());
+
+    writeStringBinary(getSerializationName(), wbuf);
+    getExpressionActions().right_pre_join_actions->serialize(ctx.out, ctx.registry);
+    writeBinary(getJoinInfo().expression.condition.predicates.size(), wbuf);
+    for (const auto & pred : getJoinInfo().expression.condition.predicates)
+    {
+        writeStringBinary(pred.right_node.getColumnName(), wbuf);
+        writeBinary(static_cast<UInt8>(pred.op), wbuf);
+    }
+
+    SipHash hash;
+    hash.update(wbuf.str());
+    hash_table_key_hash = hash.get64();
+}
 }
