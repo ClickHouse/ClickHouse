@@ -12,11 +12,5 @@ Const arguments
 [2,3]
 Array(Tuple(Nullable(UInt8), Array(Nullable(String))))
 Non-const arguments
-[(2,['c','']),(NULL,['c'])]
-[(3,['g','']),(NULL,['f'])]
-[(4,['j','']),(NULL,['i'])]
-[(5,['m','']),(NULL,['l'])]
-[]
-[]
-[]
-[]
+[(NULL,['c']),(2,['c',NULL])]
+[(NULL,['c']),(2,['c',NULL])]
