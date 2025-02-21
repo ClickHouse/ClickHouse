@@ -19,10 +19,13 @@ set (SRCS
     "${LIBRARY_DIR}/libcpuid/cpuid_main.c"
     "${LIBRARY_DIR}/libcpuid/libcpuid_util.c"
     "${LIBRARY_DIR}/libcpuid/msrdriver.c"
+    "${LIBRARY_DIR}/libcpuid/rdcpuid.c"
     "${LIBRARY_DIR}/libcpuid/rdmsr.c"
     "${LIBRARY_DIR}/libcpuid/rdtsc.c"
     "${LIBRARY_DIR}/libcpuid/recog_amd.c"
+    "${LIBRARY_DIR}/libcpuid/recog_arm.c"
     "${LIBRARY_DIR}/libcpuid/recog_intel.c"
+    "${LIBRARY_DIR}/libcpuid/recog_centaur.c"
 )
 
 add_library (_cpuid ${SRCS})
