@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/log-family/stripelog
+slug: /engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: StripeLog
 ---
