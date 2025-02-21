@@ -310,8 +310,8 @@ ASTPtr QueryFuzzer::getRandomColumnLike()
     }
 
     ASTPtr new_ast = column_like[fuzz_rand() % column_like.size()].second->clone();
-    new_ast->setAlias("");
 
+    new_ast = setIdentifierAliasOrNot(new_ast);
     return new_ast;
 }
 
