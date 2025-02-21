@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/grant
+slug: /sql-reference/statements/grant
 sidebar_position: 38
 sidebar_label: GRANT
 ---
@@ -634,7 +634,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/cloud/security/cloud-access-management#initial-settings) for further details.
 Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 

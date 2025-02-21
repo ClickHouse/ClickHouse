@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/zeros
+slug: /sql-reference/table-functions/zeros
 sidebar_position: 145
 sidebar_label: zeros
 ---

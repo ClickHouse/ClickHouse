@@ -775,7 +775,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (which.isTuple() && key_node_function_name == "tuple")
         {
-            const Tuple & tuple = value_field.safeGet<const Tuple &>();
+            const Tuple & tuple = value_field.safeGet<Tuple>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)

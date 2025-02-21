@@ -1157,7 +1157,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpr
         size_t nested_function_arguments_size = nested_function_arguments.size();
 
         const auto & nested_keys_names_constant_node = nested_function_arguments[0]->as<ConstantNode &>();
-        const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array &>();
+        const auto & nested_keys_names = nested_keys_names_constant_node.getValue().safeGet<Array>();
         size_t nested_keys_names_size = nested_keys_names.size();
 
         if (nested_keys_names_size == nested_function_arguments_size - 1)
@@ -1170,7 +1170,7 @@ QueryTreeNodePtr IdentifierResolver::tryResolveExpressionFromArrayJoinNestedExpr
                 auto array_join_column = std::make_shared<ColumnNode>(
                     array_join_column_expression_typed.getColumn(), array_join_column_expression_typed.getColumnSource());
 
-                const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String &>();
+                const auto & nested_key_name = nested_keys_names[i - 1].safeGet<String>();
                 Identifier nested_identifier = Identifier(nested_key_name);
                 return wrapExpressionNodeInTupleElement(array_join_column, nested_identifier, scope.context);
             }
