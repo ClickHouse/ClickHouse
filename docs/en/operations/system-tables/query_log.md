@@ -20,7 +20,7 @@ You can disable queries logging by setting [log_queries = 0](../../operations/se
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 

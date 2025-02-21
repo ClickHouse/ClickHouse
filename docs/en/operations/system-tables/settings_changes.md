@@ -32,5 +32,5 @@ changes: [('input_format_parquet_preserve_order','1','0','Allow Parquet reader t
 
 **See also**
 
-- [Settings](../../operations/settings/index.md#session-settings-intro)
+- [Settings](../../operations/settings/overview#session-settings-intro)
 - [system.settings](settings.md)
