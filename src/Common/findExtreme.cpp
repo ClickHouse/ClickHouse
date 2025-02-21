@@ -5,6 +5,11 @@
 #include <limits>
 #include <type_traits>
 
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
+
+
 namespace DB
 {
 
@@ -218,4 +223,78 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
 
 FOR_BASIC_NUMERIC_TYPES(INSTANTIATION)
 #undef INSTANTIATION
+
+
+DECLARE_AVX512F_SPECIFIC_CODE(
+template <bool is_min, bool add_all_elements, bool add_if_cond_zero>
+static std::optional<UInt256>
+findExtremeUInt256(const UInt256 * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
+{
+    const size_t count = end - start;
+    ptr += start;
+    if constexpr (!add_all_elements)
+        condition_map += start;
+
+    UInt256 ret{};
+    size_t i = 0;
+    for (; i < count; i++)
+    {
+        if (add_all_elements || !condition_map[i] == add_if_cond_zero)
+        {
+            ret = ptr[i];
+            break;
+        }
+    }
+    if (i >= count)
+        return std::nullopt;
+
+    __mmask8 mask = 0xFF;
+    __m256i extreme = _mm256_loadu_epi64(reinterpret_cast<const __m256i *>(&ret));
+    for (; i < count; ++i)
+    {
+        if constexpr (add_all_elements)
+        {
+            __m256i candidate = _mm256_loadu_epi64(reinterpret_cast<const __m256i *>(&ptr[i]));
+            __mmask8 less = _mm256_cmplt_epu64_mask(extreme, candidate);
+            __mmask8 greater = _mm256_cmpgt_epu64_mask(extreme, candidate);
+            bool candidate_is_greater = less > greater;
+            if constexpr (is_min)
+                extreme = _mm256_mask_blend_epi64(mask * (!candidate_is_greater), extreme, candidate);
+            else
+                extreme = _mm256_mask_blend_epi64(mask * (!!candidate_is_greater), extreme, candidate);
+        }
+    }
+    _mm256_storeu_epi64(reinterpret_cast<__m256i *>(&ret), extreme);
+    return ret;
+}
+)
+
+template <typename T, bool is_min, bool add_all_elements, bool add_if_cond_zero>
+static std::optional<T>
+findExtremeBigInt(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
+requires(is_big_int_v<T>)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512F))
+        if constexpr (std::is_same_v<T, UInt256> && std::endian::native == std::endian::little)
+            return TargetSpecific::AVX512F::findExtremeUInt256<is_min, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+#endif
+    return std::nullopt;
+}
+
+template <typename T>
+requires(is_big_int_v<T>)
+std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, size_t start, size_t end)
+{
+    return findExtremeBigInt<T, true, true, false>(ptr, nullptr, start, end);
+}
+
+template <typename T>
+requires(is_big_int_v<T>)
+std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, size_t start, size_t end)
+{
+    return findExtremeBigInt<T, false, true, false>(ptr, nullptr, start, end);
+
+}
+
 }
