@@ -37,6 +37,36 @@ UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
 }
 
 
+DB::ReadWriteBufferFromHTTPPtr UnityCatalog::createReadBuffer(
+    const std::string & endpoint,
+    const Poco::URI::QueryParameters & params,
+    const DB::HTTPHeaderEntries & headers) const
+{
+    const auto & context = getContext();
+
+    Poco::URI url(base_url / endpoint);
+    if (!params.empty())
+        url.setQueryParameters(params);
+
+    auto create_buffer = [&]()
+    {
+        return DB::BuilderRWBufferFromHTTP(url)
+            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
+            .withSettings(getContext()->getReadSettings())
+            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+            .withHostFilter(&getContext()->getRemoteHostFilter())
+            .withHeaders(headers)
+            .withDelayInit(false)
+            .withSkipNotFound(false)
+            .create(credentials);
+    };
+
+    LOG_TEST(log, "Requesting: {}", url.toString());
+
+    return create_buffer();
+}
+
+
 bool UnityCatalog::empty() const
 {
 
@@ -82,7 +112,7 @@ bool UnityCatalog::tryGetTableMetadata(
     TableMetadata & result) const
 {
     auto full_table_name = warehouse + "." + schema_name + "." + table_name;
-    auto buf = createReadBuffer(base_url / TABLES_ENDPOINT / full_table_name);
+    auto buf = createReadBuffer(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
     if (buf->eof())
         return false;
 
@@ -113,7 +143,9 @@ bool UnityCatalog::tryGetTableMetadata(
                     const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                     std::string name = column_json->getValue<String>("name");
                     auto is_nullable = column_json->getValue<bool>("nullable");
-                    auto data_type = DB::DeltaLakeMetadata::getFieldType(column_json, "type", is_nullable);
+                    LOG_WARNING(log, "Column json {}", fmt::join(column_json->getNames(), ","));
+                    auto type_json_str = column_json->get("type_json").extract<String>();
+                    auto data_type = DB::DeltaLakeMetadata::getFieldType(parser.parse(type_json_str).extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                     schema.push_back({name, data_type});
                 }
 
@@ -129,11 +161,17 @@ bool UnityCatalog::tryGetTableMetadata(
         e.addMessage("while parsing JSON: " + json_str);
         throw;
     }
+    catch (const Poco::Exception & poco_ex)
+    {
+        DB::Exception our_ex(DB::Exception::CreateFromPocoTag{}, poco_ex);
+        our_ex.addMessage("Cannot parse json {}", json_str);
+        throw our_ex;
+    }
 }
 
 bool UnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
-    auto buf = createReadBuffer(base_url / TABLES_ENDPOINT / (warehouse + "." + schema_name + "." + table_name));
+    auto buf = createReadBuffer(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
     if (buf->eof())
         return false;
 
@@ -165,7 +203,7 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
     DB::Names tables;
     do
     {
-        auto buf = createReadBuffer(base_url / TABLES_ENDPOINT, params);
+        auto buf = createReadBuffer(TABLES_ENDPOINT, params);
         if (buf->eof())
             return {};
 
@@ -195,7 +233,7 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
             if (limit && tables.size() >= limit)
                 break;
 
-            if (object->has("next_page_token"))
+            if (object->has("next_page_token") && !object->get("next_page_token").isEmpty())
             {
                 auto continuation_token = object->get("next_page_token").extract<String>();
 
@@ -231,7 +269,7 @@ Iceberg::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base_
     Iceberg::ICatalog::Namespaces schemas;
     do
     {
-        auto buf = createReadBuffer(base_url / SCHEMAS_ENDPOINT, params);
+        auto buf = createReadBuffer(SCHEMAS_ENDPOINT, params);
         if (buf->eof())
             return {};
 
@@ -263,7 +301,7 @@ Iceberg::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base_
             if (limit && schemas.size() > limit)
                 break;
 
-            if (object->has("next_page_token"))
+            if (object->has("next_page_token") && !object->get("next_page_token").isEmpty())
             {
                 auto continuation_token = object->get("next_page_token").extract<String>();
 

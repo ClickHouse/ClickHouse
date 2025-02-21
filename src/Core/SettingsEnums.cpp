@@ -282,6 +282,7 @@ IMPLEMENT_SETTING_ENUM(
      {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
 
 IMPLEMENT_SETTING_ENUM(DatabaseIcebergCatalogType, ErrorCodes::BAD_ARGUMENTS,
-                       {{"rest", DatabaseIcebergCatalogType::REST}})
+                       {{"rest", DatabaseIcebergCatalogType::REST},
+                        {"unity", DatabaseIcebergCatalogType::UNITY}})
 
 }

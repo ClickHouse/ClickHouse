@@ -19,6 +19,13 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     /// Table location in catalog metadata always starts with one of s3://, file://, etc.
     /// So just extract this part of the path and deduce storage type from it.
 
+    auto capitalize_first_letter = [] (const std::string & s)
+    {
+        auto result = Poco::toLower(s);
+        result[0] = std::toupper(result[0]);
+        return result;
+    };
+
     auto pos = location.find("://");
     if (pos == std::string::npos)
     {
@@ -28,7 +35,10 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     }
 
     auto storage_type_str = location.substr(0, pos);
-    auto storage_type = magic_enum::enum_cast<StorageType>(Poco::toUpper(storage_type_str));
+    if (capitalize_first_letter(storage_type_str) == "File")
+        storage_type_str = "Local";
+
+    auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
     if (!storage_type)
     {

@@ -39,6 +39,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory);
 
 #if USE_AVRO
 void registerDatabaseIceberg(DatabaseFactory & factory);
+void registerDatabaseDeltaLake(DatabaseFactory & factory);
 #endif
 
 void registerDatabases()
@@ -75,6 +76,7 @@ void registerDatabases()
 
 #if USE_AVRO
     registerDatabaseIceberg(factory);
+    registerDatabaseDeltaLake(factory);
 #endif
 }
 }

@@ -126,6 +126,10 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDeltaLake::getConfi
             return std::make_shared<StorageS3DeltaLakeConfiguration>();
         }
 #endif
+        case DB::DatabaseIcebergStorageType::Local:
+        {
+            return std::make_shared<StorageLocalDeltaLakeConfiguration>();
+        }
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Server does not contain support for storage type {}",
@@ -174,6 +178,10 @@ StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr contex
 
     /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
     auto table_endpoint = getStorageEndpointForTable(table_metadata);
+    LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
+    if (table_endpoint.starts_with("file:/"))
+        table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+
     args[0] = std::make_shared<ASTLiteral>(table_endpoint);
 
     /// We either fetch storage credentials from catalog
@@ -304,6 +312,10 @@ ASTPtr DatabaseDeltaLake::getCreateTableQueryImpl(
     }
 
     auto table_endpoint = getStorageEndpointForTable(table_metadata);
+    if (table_endpoint.starts_with("file:/"))
+        table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+
+    LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
     storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
 
     return create_table_query;

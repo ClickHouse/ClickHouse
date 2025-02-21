@@ -190,6 +190,9 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 #if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
 #endif
+
+
+using StorageLocalDeltaLakeConfiguration = DataLakeConfiguration<StorageLocalConfiguration, DeltaLakeMetadata>;
 #endif
 
 #if USE_AWS_S3
