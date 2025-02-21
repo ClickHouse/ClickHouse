@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Interpreters/JoinInfo.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Interpreters/JoinInfo.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/SipHash.h>
@@ -60,7 +60,6 @@ public:
 
     bool hasPreparedJoinStorage() const;
     void setPreparedJoinStorage(PreparedJoinStorage storage);
-    void setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_);
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
     const JoinInfo & getJoinInfo() const { return join_info; }
@@ -77,6 +76,10 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
 
+    bool needsToCalculateHashesFromSubtree() const override { return true; }
+
+    void calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root) override;
+
 protected:
     void updateOutputHeader() override;
 
@@ -89,7 +92,7 @@ protected:
     Names required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
-    IQueryTreeNode::HashState hash_table_key_hash;
+    UInt64 hash_table_key_hash;
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;

@@ -63,12 +63,22 @@ struct ExplainPlanOptions
     SettingsChanges toSettingsChanges() const;
 };
 
+/// Tree node. Step and it's children.
+struct QueryPlanNode
+{
+    QueryPlanStepPtr step;
+    std::vector<QueryPlanNode *> children = {};
+};
+
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
 /// QueryPlan let delay pipeline creation which is helpful for pipeline-level optimizations.
 class QueryPlan
 {
 public:
+    using Node = QueryPlanNode;
+    using Nodes = std::list<QueryPlanNode>;
+
     QueryPlan();
     ~QueryPlan();
     QueryPlan(QueryPlan &&) noexcept;
@@ -119,16 +129,7 @@ public:
     void setConcurrencyControl(bool concurrency_control_) { concurrency_control = concurrency_control_; }
     bool getConcurrencyControl() const { return concurrency_control; }
 
-    /// Tree node. Step and it's children.
-    struct Node
-    {
-        QueryPlanStepPtr step;
-        std::vector<Node *> children = {};
-    };
-
-    using Nodes = std::list<Node>;
-
-    Node * getRootNode() const { return root; }
+    QueryPlanNode * getRootNode() const { return root; }
     static std::pair<Nodes, QueryPlanResourceHolder> detachNodesAndResources(QueryPlan && plan);
 
 private:
@@ -142,7 +143,7 @@ private:
 
     QueryPlanResourceHolder resources;
     Nodes nodes;
-    Node * root = nullptr;
+    QueryPlanNode * root = nullptr;
 
     void checkInitialized() const;
     void checkNotCompleted() const;

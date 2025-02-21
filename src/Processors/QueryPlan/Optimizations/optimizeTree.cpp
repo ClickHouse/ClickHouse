@@ -142,6 +142,10 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         stack.pop_back();
     }
 
+    // At this point the plan tree is supposed to be fixed (modulo join sides reordering), filters pushed down, etc.
+    // We now can calculate hashes that depend on subtree nodes (e.g. tables to be read, filters calculated on top of them).
+    calculateHashesFromSubtree(root, nodes, optimization_settings);
+
     stack.push_back({.node = &root});
     while (!stack.empty())
     {
@@ -273,5 +277,14 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
     }
 }
 
+void calculateHashesFromSubtree(
+    QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    for (auto & child : node.children)
+        calculateHashesFromSubtree(*child, nodes, optimization_settings);
+
+    if (node.step->needsToCalculateHashesFromSubtree())
+        node.step->calculateHashesFromSubtree(node);
+}
 }
 }

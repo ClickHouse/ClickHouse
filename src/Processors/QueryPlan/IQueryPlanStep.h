@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Common/Exception.h>
 
 #include <fmt/core.h>
 
@@ -19,7 +18,10 @@ class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
-namespace JSONBuilder { class JSONMap; }
+namespace JSONBuilder
+{
+class JSONMap;
+}
 
 class QueryPlan;
 using QueryPlanRawPtrs = std::list<QueryPlan *>;
@@ -30,6 +32,8 @@ using Header = Block;
 using Headers = std::vector<Header>;
 
 struct ExplainPlanOptions;
+
+struct QueryPlanNode;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -62,7 +66,7 @@ public:
     struct Serialization;
     struct Deserialization;
 
-    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
+    virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const { }
     virtual void serialize(Serialization & /*ctx*/) const;
     virtual const SortDescription & getSortDescription() const;
 
@@ -76,18 +80,18 @@ public:
     };
 
     /// Get detailed description of step actions. This is shown in EXPLAIN query with options `actions = 1`.
-    virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const {}
-    virtual void describeActions(FormatSettings & /*settings*/) const {}
+    virtual void describeActions(JSONBuilder::JSONMap & /*map*/) const { }
+    virtual void describeActions(FormatSettings & /*settings*/) const { }
 
     /// Get detailed description of read-from-storage step indexes (if any). Shown in with options `indexes = 1`.
-    virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
-    virtual void describeIndexes(FormatSettings & /*settings*/) const {}
+    virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const { }
+    virtual void describeIndexes(FormatSettings & /*settings*/) const { }
 
     /// Get description of the distributed plan. Shown in with options `distributed = 1
-    virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
+    virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) { }
 
     /// Get description of processors added in current step. Should be called after updatePipeline().
-    virtual void describePipeline(FormatSettings & /*settings*/) const {}
+    virtual void describePipeline(FormatSettings & /*settings*/) const { }
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
     virtual QueryPlanRawPtrs getChildPlans() { return {}; }
@@ -102,6 +106,12 @@ public:
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
+
+    virtual bool needsToCalculateHashesFromSubtree() const { return false; }
+    virtual void calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "calculateHashesFromSubtree is not implemented");
+    }
 
 protected:
     virtual void updateOutputHeader() = 0;

@@ -124,6 +124,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+void calculateHashesFromSubtree(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
 bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 

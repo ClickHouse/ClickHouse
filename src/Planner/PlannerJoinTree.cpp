@@ -1414,7 +1414,9 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, planner_context->getQueryContext(), std::move(hash_table_stat_cache_key));
+    const auto cache_key = calculateCacheKey(table_join, hash_table_stat_cache_key);
+    auto join_algorithm
+        = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, planner_context->getQueryContext(), cache_key);
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -2054,7 +2056,6 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     join_step_logical->setPreparedJoinStorage(
         tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
-    join_step_logical->setHashTableCacheKey(preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info));
 
     auto & join_expression_actions = join_step_logical->getExpressionActions();
     appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
