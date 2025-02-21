@@ -111,12 +111,12 @@ private:
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
-    ASTPtr getRandomExpressionList(const size_t nproj);
+    ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
     void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
-    void fuzzOrderByList(IAST * ast, const size_t nproj);
+    void fuzzOrderByList(IAST * ast, size_t nproj);
     void fuzzColumnLikeExpressionList(IAST * ast);
     void fuzzNullsAction(NullsAction & action);
     void fuzzWindowFrame(ASTWindowDefinition & def);
