@@ -324,9 +324,9 @@ ASTPtr QueryFuzzer::getRandomExpressionList(const size_t nproj)
     ASTPtr new_ast = std::make_shared<ASTExpressionList>();
     for (size_t i = 0; i < fuzz_rand() % 5 + 1; ++i)
     {
-        /// Use Group by number in the projection
-        const auto new_child = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>(fuzz_rand() % nproj) : getRandomColumnLike();
-        new_ast->children.emplace_back(new_child);
+        /// Use Group by number in the projection, starting from position 1
+        new_ast->children.emplace_back(
+            nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike());
     }
     return new_ast;
 }
@@ -385,9 +385,9 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast, const size_t nproj)
     // Add element
     if (fuzz_rand() % 50 == 0)
     {
-        /// Order by one of the projections
+        /// Order by one of the projections, starting from position 1
         auto * pos = list->children.empty() ? list->children.begin() : list->children.begin() + fuzz_rand() % list->children.size();
-        const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>(fuzz_rand() % nproj) : getRandomColumnLike();
+        const auto col = nproj && (fuzz_rand() % 4 == 0) ? std::make_shared<ASTLiteral>((fuzz_rand() % nproj) + 1) : getRandomColumnLike();
         if (col)
         {
             auto elem = std::make_shared<ASTOrderByElement>();
