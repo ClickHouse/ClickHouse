@@ -38,7 +38,7 @@ private:
 
     NATSOptionsPtr createOptions();
 
-    void setLoopState(UInt8 loop_state_);
+    bool isRunning();
 
     void resetThreadLocalLoop();
 
