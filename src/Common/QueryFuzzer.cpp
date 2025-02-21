@@ -1452,7 +1452,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                     child = ntexp->database_and_table_name = input_table->clone();
                 }
                 child->setAlias(next_alias);
-                ntexp->children.emplace_back(child);
+                ntexp->children.push_back(child);
             }
             else
             {
@@ -1467,7 +1467,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             auto new_identifier = std::make_shared<ASTTableIdentifier>(old_alias);
             new_identifier->setAlias(next_alias);
             ntexp->database_and_table_name = new_identifier;
-            ntexp->children.emplace_back(ntexp->database_and_table_name);
+            ntexp->children.push_back(ntexp->database_and_table_name);
         }
 
         const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
