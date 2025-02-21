@@ -64,16 +64,16 @@ CREATE TABLE distributed (d Date, x UInt32) ENGINE = Distributed('test_cluster',
             "CREATE TABLE local_source (d Date, x UInt32) ENGINE = Memory"
         )
         instance_test_inserts_local_cluster.query(
+            """
+CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
+"""
+        )
+        instance_test_inserts_local_cluster.query(
             "CREATE MATERIALIZED VIEW local_view to distributed_on_local AS SELECT d,x FROM local_source"
         )
         instance_test_inserts_local_cluster.query(
             "CREATE TABLE local (d Date, x UInt32) ENGINE = MergeTree(d, x, 8192)",
             settings={"allow_deprecated_syntax_for_merge_tree": 1},
-        )
-        instance_test_inserts_local_cluster.query(
-            """
-CREATE TABLE distributed_on_local (d Date, x UInt32) ENGINE = Distributed('test_local_cluster', 'default', 'local')
-"""
         )
 
         yield cluster
