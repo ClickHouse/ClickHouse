@@ -37,6 +37,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <pcg_random.hpp>
 #include <Common/SipHash.h>
@@ -2152,9 +2153,13 @@ void QueryFuzzer::collectFuzzInfoRecurse(ASTPtr ast)
     {
         addColumnLike(ast);
     }
-    else if (typeid_cast<ASTFunction *>(ast.get()))
+    else if (const auto * fn = typeid_cast<const ASTFunction *>(ast.get()))
     {
         addColumnLike(ast);
+        if (TableFunctionFactory::instance().isTableFunctionName(fn->name))
+        {
+            addTableLike(ast);
+        }
     }
     else if (typeid_cast<ASTTableExpression *>(ast.get()))
     {
