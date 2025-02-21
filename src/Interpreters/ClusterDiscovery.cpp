@@ -34,7 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int KEEPER_EXCEPTION;
-    extern const int LOGICAL_ERROR;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
@@ -54,67 +53,17 @@ fs::path getShardsListPath(const String & zk_root)
 
 }
 
-/*
- * Holds boolean flags for fixed set of keys.
- * Flags can be concurrently set from different threads, and consumer can wait for it.
- */
 template <typename T>
-class ClusterDiscovery::ConcurrentFlags
+class ClusterDiscovery::Flags
 {
 public:
     template <typename It>
-    ConcurrentFlags(It begin, It end)
+    Flags(It begin, It end)
     {
         for (auto it = begin; it != end; ++it)
             flags.emplace(*it, false);
     }
 
-    void set(const T & key)
-    {
-        auto it = flags.find(key);
-        if (it == flags.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", key);
-        it->second = true;
-        any_need_update = true;
-        cv.notify_one();
-    }
-
-    /// waits unit at least one flag is set
-    /// caller should handle all set flags (or set it again manually)
-    /// note: keys of returen map should not be changed!
-    /// @param finished - output parameter indicates that stop() was called
-    std::unordered_map<T, std::atomic_bool> & wait(std::chrono::milliseconds timeout, bool & finished)
-    {
-        std::unique_lock<std::mutex> lk(mu);
-        cv.wait_for(lk, timeout, [this]() -> bool { return any_need_update || stop_flag; });
-        finished = stop_flag;
-
-        /// all set flags expected to be handled by caller
-        any_need_update = false;
-        return flags;
-    }
-
-    void stop()
-    {
-        std::unique_lock<std::mutex> lk(mu);
-        stop_flag = true;
-        cv.notify_one();
-    }
-
-private:
-    std::condition_variable cv;
-    std::mutex mu;
-
-    /// flag indicates that update is required
-    std::unordered_map<T, std::atomic_bool> flags;
-    std::atomic_bool any_need_update = true;
-    bool stop_flag = false;
-};
-
-template <typename T>
-class ClusterDiscovery::Flags
-{
-public:
     void set(const T & key, bool value = true)
     {
         std::unique_lock<std::mutex> lk(mu);
@@ -254,8 +203,7 @@ ClusterDiscovery::ClusterDiscovery(
         clusters_info_names.emplace_back(e.first);
 
     LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
-    clusters_to_update = std::make_shared<UpdateConcurrentFlags>(clusters_info_names.begin(), clusters_info_names.end());
-    dynamic_clusters_to_update = std::make_shared<UpdateFlags>();
+    clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
 
     /// Init get_nodes_callbacks after init clusters_to_update.
     for (const auto & e : clusters_info)
@@ -285,7 +233,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
                 cluster_name,
                 zk_root_index,
-                my_clusters_to_update = dynamic_clusters_to_update,
+                my_clusters_to_update = clusters_to_update,
                 my_discovery_paths = multicluster_discovery_paths
                 ](auto)
                 {
@@ -479,7 +427,7 @@ void ClusterDiscovery::removeCluster(const String & name)
         cluster_impls.erase(name);
     }
     clusters_info.erase(name);
-    dynamic_clusters_to_update->remove(name);
+    clusters_to_update->remove(name);
     LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
 }
 
@@ -536,13 +484,10 @@ void ClusterDiscovery::initialUpdate()
         if (!upsertCluster(info))
         {
             LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", info.name);
-            if (info.zk_root_index)
-                dynamic_clusters_to_update->set(info.name);
-            else
-                clusters_to_update->set(info.name);
+            clusters_to_update->set(info.name);
         }
         else if (info.zk_root_index)
-            dynamic_clusters_to_update->set(info.name, false);
+            clusters_to_update->set(info.name, false);
     }
 
     LOG_DEBUG(log, "Initialized");
@@ -685,123 +630,86 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     {
         bool all_up_to_date = true;
 
-        if (!multicluster_discovery_paths->empty())
+        std::unordered_map<String, ClusterInfo> new_dynamic_clusters_info;
+        std::unordered_set<size_t> unchanged_roots;
+        findDynamicClusters(new_dynamic_clusters_info, &unchanged_roots);
+
+        std::unordered_set<String> clusters_to_insert;
+        std::unordered_set<String> clusters_to_remove;
+
+        for (const auto & [cluster_name, info] : clusters_info)
         {
-            std::unordered_map<String, ClusterInfo> new_dynamic_clusters_info;
-            std::unordered_set<size_t> unchanged_roots;
-            findDynamicClusters(new_dynamic_clusters_info, &unchanged_roots);
-
-            std::unordered_set<String> clusters_to_insert;
-            std::unordered_set<String> clusters_to_remove;
-
-            for (const auto & [cluster_name, info] : clusters_info)
+            if (!info.zk_root_index)
+                continue;
+            if (!new_dynamic_clusters_info.erase(cluster_name))
             {
-                if (!info.zk_root_index)
-                    continue;
-                auto p = new_dynamic_clusters_info.find(cluster_name);
-                if (p != new_dynamic_clusters_info.end())
-                    new_dynamic_clusters_info.erase(p);
-                else
-                {
-                    if (!unchanged_roots.contains(info.zk_root_index))
-                        clusters_to_remove.insert(cluster_name);
-                }
+                if (!unchanged_roots.contains(info.zk_root_index))
+                    clusters_to_remove.insert(cluster_name);
             }
-            /// new_dynamic_clusters_info now contains only new clusters
+        }
+        /// new_dynamic_clusters_info now contains only new clusters
 
-            for (const auto & [cluster_name, _] : new_dynamic_clusters_info)
-                clusters_to_insert.insert(cluster_name);
+        for (const auto & [cluster_name, _] : new_dynamic_clusters_info)
+            clusters_to_insert.insert(cluster_name);
 
-            for (const auto & cluster_name : clusters_to_remove)
-                removeCluster(cluster_name);
+        for (const auto & cluster_name : clusters_to_remove)
+            removeCluster(cluster_name);
 
-            clusters_info.merge(new_dynamic_clusters_info);
+        clusters_info.merge(new_dynamic_clusters_info);
 
-            auto clusters = dynamic_clusters_to_update->wait(5s, finished);
-            for (auto & [cluster_name, need_update] : clusters)
+        auto clusters = clusters_to_update->wait(5s, finished);
+        for (auto & [cluster_name, need_update] : clusters)
+        {
+            auto cluster_info_it = clusters_info.find(cluster_name);
+            if (cluster_info_it == clusters_info.end())
             {
-                auto cluster_info_it = clusters_info.find(cluster_name);
-                if (cluster_info_it == clusters_info.end())
-                {
-                    LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
-                    continue;
-                }
-
-                auto & cluster_info = cluster_info_it->second;
-                if (!need_update)
-                {
-                    /// force updating periodically
-                    bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
-                    if (!force_update)
-                        continue;
-                }
-
-                if (upsertCluster(cluster_info))
-                {
-                    cluster_info.watch.restart();
-                }
-                else
-                {
-                    all_up_to_date = false;
-                }
+                LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
+                continue;
             }
 
-            for (const auto & cluster_name : clusters_to_insert)
+            auto & cluster_info = cluster_info_it->second;
+            if (!need_update)
             {
-                auto cluster_info_it = clusters_info.find(cluster_name);
-                if (cluster_info_it == clusters_info.end())
-                {
-                    LOG_ERROR(log, "Unknown dynamic cluster '{}'", cluster_name);
+                /// force updating periodically
+                bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
+                if (!force_update)
                     continue;
-                }
-                auto & cluster_info = cluster_info_it->second;
-                if (upsertCluster(cluster_info))
-                {
-                    cluster_info.watch.restart();
-                    LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
-                }
-                else
-                {
-                    all_up_to_date = false;
-                    /// no need to trigger convar, will retry after timeout in `wait`
-                    clusters_to_update->set(cluster_name);
-                    LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
-                }
+            }
+
+            if (upsertCluster(cluster_info))
+            {
+                cluster_info.watch.restart();
+                LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+            }
+            else
+            {
+                all_up_to_date = false;
+                /// no need to trigger convar, will retry after timeout in `wait`
+                need_update = true;
+                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
             }
         }
 
+        for (const auto & cluster_name : clusters_to_insert)
         {
-            auto & clusters = clusters_to_update->wait(5s, finished);
-            for (auto & [cluster_name, need_update] : clusters)
+            auto cluster_info_it = clusters_info.find(cluster_name);
+            if (cluster_info_it == clusters_info.end())
             {
-                auto cluster_info_it = clusters_info.find(cluster_name);
-                if (cluster_info_it == clusters_info.end())
-                {
-                    LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
-                    continue;
-                }
-                auto & cluster_info = cluster_info_it->second;
-
-                if (!need_update.exchange(false))
-                {
-                    /// force updating periodically
-                    bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
-                    if (!force_update)
-                        continue;
-                }
-
-                if (upsertCluster(cluster_info))
-                {
-                    cluster_info.watch.restart();
-                    LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
-                }
-                else
-                {
-                    all_up_to_date = false;
-                    /// no need to trigger convar, will retry after timeout in `wait`
-                    need_update = true;
-                    LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
-                }
+                LOG_ERROR(log, "Unknown dynamic cluster '{}'", cluster_name);
+                continue;
+            }
+            auto & cluster_info = cluster_info_it->second;
+            if (upsertCluster(cluster_info))
+            {
+                cluster_info.watch.restart();
+                LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
+            }
+            else
+            {
+                all_up_to_date = false;
+                /// no need to trigger convar, will retry after timeout in `wait`
+                clusters_to_update->set(cluster_name);
+                LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
             }
         }
 
@@ -833,7 +741,6 @@ void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
     clusters_to_update->stop();
-    dynamic_clusters_to_update->stop();
 
     if (main_thread.joinable())
         main_thread.join();

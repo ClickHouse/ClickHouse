@@ -160,8 +160,7 @@ private:
     /// Cluster names to update.
     /// The `shared_ptr` is used because it's passed to watch callback.
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
-    std::shared_ptr<UpdateConcurrentFlags> clusters_to_update;
-    std::shared_ptr<UpdateFlags> dynamic_clusters_to_update;
+    std::shared_ptr<UpdateFlags> clusters_to_update;
 
     /// Hold the callback pointers of each cluster.
     /// To avoid registering callbacks for the same path multiple times.
