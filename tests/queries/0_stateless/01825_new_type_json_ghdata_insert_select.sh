@@ -19,7 +19,7 @@ cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} -q "INSERT INTO
 
 ${CLICKHOUSE_CLIENT} --max_memory_usage 10G -q "INSERT INTO ghdata_2_from_string SELECT data FROM ghdata_2_string"
 
-${CLICKHOUSE_CLIENT} -q "SELECT \
+${CLICKHOUSE_CLIENT} --max_execution_time 300 -q "SELECT \
     (SELECT mapSort(groupUniqArrayMap(JSONAllPathsWithTypes(data))), sum(cityHash64(toString(data))) FROM ghdata_2_from_string) = \
     (SELECT mapSort(groupUniqArrayMap(JSONAllPathsWithTypes(data))), sum(cityHash64(toString(data))) FROM ghdata_2)"
 
