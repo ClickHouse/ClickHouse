@@ -1,5 +1,5 @@
 ---
-slug: /en/guides/developer/transactional
+slug: /guides/developer/transactional
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -87,7 +87,7 @@ These examples are with a single node ClickHouse server with ClickHouse Keeper e
 #### Basic configuration for a single ClickHouse server node with ClickHouse Keeper enabled
 
 :::note
-See the [deployment](docs/en/deployment-guides/terminology.md) documentation for details on deploying ClickHouse server and a proper quorum of ClickHouse Keeper nodes.  The configuration shown here is for experimental purposes.
+See the [deployment](/deployment-guides/terminology.md) documentation for details on deploying ClickHouse server and a proper quorum of ClickHouse Keeper nodes.  The configuration shown here is for experimental purposes.
 :::
 
 ```xml title=/etc/clickhouse-server/config.d/config.xml

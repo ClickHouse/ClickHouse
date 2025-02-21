@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/database-engines/backup
+slug: /engines/database-engines/backup
 sidebar_position: 60
 sidebar_label: Backup
 ---

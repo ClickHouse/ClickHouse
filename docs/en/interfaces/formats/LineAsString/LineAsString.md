@@ -1,6 +1,6 @@
 ---
 title : LineAsString
-slug : /en/interfaces/formats/LineAsString
+slug: /interfaces/formats/LineAsString
 keywords : [LineAsString]
 input_format: true
 output_format: true
@@ -14,8 +14,8 @@ alias: []
 ## Description
 
 The `LineAsString` format interprets every line of input data as a single string value. 
-This format can only be parsed for a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). 
-The remaining columns must be set to [`DEFAULT`](/docs/en/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted.
+This format can only be parsed for a table with a single field of type [String](/docs/sql-reference/data-types/string.md). 
+The remaining columns must be set to [`DEFAULT`](/docs/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/docs/sql-reference/statements/create/table.md/#materialized), or omitted.
 
 ## Example Usage
 

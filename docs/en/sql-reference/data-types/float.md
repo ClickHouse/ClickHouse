@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/float
+slug: /sql-reference/data-types/float
 sidebar_position: 4
 sidebar_label: Float32 | Float64 | BFloat16
 title: Float32 | Float64 | BFloat16 Types
