@@ -2155,19 +2155,20 @@ def test_replicated(started_cluster):
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     mv_name = f"{table_name}_mv"
+    db_name = f"r"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1000
 
-    node1.query("DROP DATABASE IF EXISTS r")
-    node2.query("DROP DATABASE IF EXISTS r")
+    node1.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node2.query(f"DROP DATABASE IF EXISTS {db_name}")
 
     node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
     )
     node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
     )
 
     create_table(
