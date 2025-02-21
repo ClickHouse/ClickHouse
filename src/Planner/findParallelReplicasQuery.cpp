@@ -23,7 +23,6 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include "mysqlxx/Query.h"
 
 namespace DB
 {
