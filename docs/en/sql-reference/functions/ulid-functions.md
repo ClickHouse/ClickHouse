@@ -6,7 +6,7 @@ sidebar_label: ULID
 
 # Functions for Working with ULID
 
-## generateULID
+## generateULID {#generateulid}
 
 Generates the [ULID](https://github.com/ulid/spec).
 
@@ -48,7 +48,7 @@ SELECT generateULID(1), generateULID(2)
 └────────────────────────────┴────────────────────────────┘
 ```
 
-## ULIDStringToDateTime
+## ULIDStringToDateTime {#ulidstringtodatetime}
 
 This function extracts the timestamp from a ULID.
 
@@ -79,6 +79,6 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
 └────────────────────────────────────────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [UUID](../../sql-reference/functions/uuid-functions.md)

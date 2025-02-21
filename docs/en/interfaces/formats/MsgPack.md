@@ -11,11 +11,11 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
 
-## Data Types Matching
+## Data Types Matching {#data-types-matching}
 
 | MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
 |--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
@@ -40,7 +40,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 | `int 64`                                                           | [`Decimal64`](/docs/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
 | `bin 8`                                                            | [`Decimal128`/`Decimal256`](/docs/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Writing to a file ".msgpk":
 
@@ -50,7 +50,7 @@ $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 2
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                    | Description                                                                                    | Default |
 |--------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|---------|

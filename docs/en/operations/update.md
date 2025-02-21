@@ -4,32 +4,32 @@ sidebar_title: Self-managed Upgrade
 title: Self-managed Upgrade
 ---
 
-## ClickHouse upgrade overview
+## ClickHouse upgrade overview {#clickhouse-upgrade-overview}
 
 This document contains:
 - general guidelines
 - a recommended plan
 - specifics for upgrading the binaries on your systems
 
-## General guidelines
+## General guidelines {#general-guidelines}
 
 These notes should help you with planning, and to understand why we make the recommendations that we do later in the document.
 
-### Upgrade ClickHouse server separately from ClickHouse Keeper or ZooKeeper
+### Upgrade ClickHouse server separately from ClickHouse Keeper or ZooKeeper {#upgrade-clickhouse-server-separately-from-clickhouse-keeper-or-zookeeper}
 Unless there is a security fix needed for ClickHouse Keeper or Apache ZooKeeper it is not necessary to upgrade Keeper when you upgrade ClickHouse server.  Keeper stability is required during the upgrade process, so complete the ClickHouse server upgrades before considering an upgrade of Keeper.
 
-### Minor version upgrades should be adopted often
+### Minor version upgrades should be adopted often {#minor-version-upgrades-should-be-adopted-often}
 It is highly recommended to always upgrade to the newest minor version as soon as it is released. Minor releases do not have breaking changes but do have important bug fixes (and may have security fixes).
 
 
-### Test experimental features on a separate ClickHouse server running the target version
+### Test experimental features on a separate ClickHouse server running the target version {#test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version}
 
 The compatibility of experimental features can be broken at any moment in any way.  If you are using experimental features, then check the changelogs and consider setting up a separate ClickHouse server with the target version installed and test your use of the experimental features there.
 
-### Downgrades
+### Downgrades {#downgrades}
 If you upgrade and then realize that the new version is not compatible with some feature that you depend on you may be able to downgrade to a recent (less than one year old) version if you have not started to use any of the new features.  Once the new features are used the downgrade will not work.
 
-### Multiple ClickHouse server versions in a cluster
+### Multiple ClickHouse server versions in a cluster {#multiple-clickhouse-server-versions-in-a-cluster}
 
 We make an effort to maintain a one-year compatibility window (which includes 2 LTS versions). This means that any two versions should be able to work together in a cluster if the difference between them is less than one year (or if there are less than two LTS versions between them). However, it is recommended to upgrade all members of a cluster to the same version as quickly as possible, as some minor issues are possible (like slowdown of distributed queries, retriable errors in some background operations in ReplicatedMergeTree, etc).
 
@@ -40,7 +40,7 @@ We never recommend running different versions in the same cluster when the relea
 - arbitrary errors/warnings may appear in the logs
 - it may be impossible to downgrade
 
-### Incremental upgrades
+### Incremental upgrades {#incremental-upgrades}
 
 If the difference between the current version and the target version is more than one year, then it is recommended to either:
 - Upgrade with downtime (stop all servers, upgrade all servers, run all servers).
@@ -48,7 +48,7 @@ If the difference between the current version and the target version is more tha
 
 
 
-## Recommended plan
+## Recommended plan {#recommended-plan}
 
 These are the recommended steps for a zero-downtime ClickHouse upgrade:
 
@@ -76,7 +76,7 @@ byte-identical to data on another replicas.
 :::
 
 
-## ClickHouse server binary upgrade process
+## ClickHouse server binary upgrade process {#clickhouse-server-binary-upgrade-process}
 
 If ClickHouse was installed from `deb` packages, execute the following commands on the server:
 

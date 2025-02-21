@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 [Apache ORC](https://orc.apache.org/) is a columnar storage format widely used in the [Hadoop](https://hadoop.apache.org/) ecosystem.
 
@@ -44,7 +44,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 - The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ### Inserting Data {#inserting-data-orc}
 
@@ -62,7 +62,7 @@ You can select data from a ClickHouse table and save them into some file in the 
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.orc}
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                                                                      | Description                                                                            | Default |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------|---------|

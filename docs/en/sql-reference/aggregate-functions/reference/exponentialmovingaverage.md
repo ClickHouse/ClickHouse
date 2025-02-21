@@ -4,7 +4,7 @@ sidebar_position: 132
 title: exponentialMovingAverage
 ---
 
-## exponentialMovingAverage
+## exponentialMovingAverage {#exponentialmovingaverage}
 
 Calculates the exponential moving average of values for the determined time.
 

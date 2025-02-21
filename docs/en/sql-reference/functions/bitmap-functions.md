@@ -8,7 +8,7 @@ sidebar_label: Bitmap
 
 Bitmaps can be constructed in two ways. The first way is constructed by aggregation function groupBitmap with `-State`, the other way is to constructed a bitmap from an Array object.
 
-## bitmapBuild
+## bitmapBuild {#bitmapbuild}
 
 Builds a bitmap from an unsigned integer array.
 
@@ -34,7 +34,7 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 └─────┴──────────────────────────────────────────────┘
 ```
 
-## bitmapToArray
+## bitmapToArray {#bitmaptoarray}
 
 Converts bitmap to an integer array.
 
@@ -62,7 +62,7 @@ Result:
 └─────────────┘
 ```
 
-## bitmapSubsetInRange
+## bitmapSubsetInRange {#bitmapsubsetinrange}
 
 Returns the subset of a bitmap with bits within a value interval.
 
@@ -92,7 +92,7 @@ Result:
 └───────────────────┘
 ```
 
-## bitmapSubsetLimit
+## bitmapSubsetLimit {#bitmapsubsetlimit}
 
 Returns a subset of a bitmap with smallest bit value `range_start` and at most `cardinality_limit` elements.
 
@@ -122,7 +122,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## subBitmap
+## subBitmap {#subbitmap}
 
 Returns a subset of the bitmap, starting from position `offset`. The maximum cardinality of the returned bitmap is `cardinality_limit`.
 
@@ -152,7 +152,7 @@ Result:
 └─────────────────────────────────┘
 ```
 
-## bitmapContains
+## bitmapContains {#bitmapcontains}
 
 Checks whether the bitmap contains an element.
 
@@ -184,7 +184,7 @@ Result:
 └─────┘
 ```
 
-## bitmapHasAny
+## bitmapHasAny {#bitmaphasany}
 
 Checks whether two bitmaps intersect.
 
@@ -220,7 +220,7 @@ Result:
 └─────┘
 ```
 
-## bitmapHasAll
+## bitmapHasAll {#bitmaphasall}
 
 Returns 1 if the first bitmap contains all elements of the second bitmap, otherwise 0.
 If the second bitmap is empty, returns 1.
@@ -252,7 +252,7 @@ Result:
 └─────┘
 ```
 
-## bitmapCardinality
+## bitmapCardinality {#bitmapcardinality}
 
 Returns the cardinality of a bitmap.
 
@@ -280,7 +280,7 @@ Result:
 └─────┘
 ```
 
-## bitmapMin
+## bitmapMin {#bitmapmin}
 
 Computes the smallest bit set in a bitmap, or UINT32_MAX if the bitmap is empty.
 
@@ -308,7 +308,7 @@ Result:
  └─────┘
 ```
 
-## bitmapMax
+## bitmapMax {#bitmapmax}
 
 Computes the greatest bit set in a bitmap, or 0 if the bitmap is empty.
 
@@ -336,7 +336,7 @@ Result:
  └─────┘
 ```
 
-## bitmapTransform
+## bitmapTransform {#bitmaptransform}
 
 Replaces at most N bits in a bitmap. The old and new value of the i-th replaced bit is given by `from_array[i]` and `to_array[i]`.
 
@@ -368,7 +368,7 @@ Result:
  └───────────────────────┘
 ```
 
-## bitmapAnd
+## bitmapAnd {#bitmapand}
 
 Computes the logical conjunction of two bitmaps.
 
@@ -396,7 +396,7 @@ Result:
 └─────┘
 ```
 
-## bitmapOr
+## bitmapOr {#bitmapor}
 
 Computes the logical disjunction of two bitmaps.
 
@@ -424,7 +424,7 @@ Result:
 └─────────────┘
 ```
 
-## bitmapXor
+## bitmapXor {#bitmapxor}
 
 Xor-s two bitmaps.
 
@@ -452,7 +452,7 @@ Result:
 └───────────┘
 ```
 
-## bitmapAndnot
+## bitmapAndnot {#bitmapandnot}
 
 Computes the logical conjunction of two bitmaps and negates the result.
 
@@ -480,7 +480,7 @@ Result:
 └───────┘
 ```
 
-## bitmapAndCardinality
+## bitmapAndCardinality {#bitmapandcardinality}
 
 Returns the cardinality of the logical conjunction of two bitmaps.
 
@@ -508,7 +508,7 @@ Result:
 └─────┘
 ```
 
-## bitmapOrCardinality
+## bitmapOrCardinality {#bitmaporcardinality}
 
 Returns the cardinality of the logical disjunction of two bitmaps.
 
@@ -534,7 +534,7 @@ Result:
 └─────┘
 ```
 
-## bitmapXorCardinality
+## bitmapXorCardinality {#bitmapxorcardinality}
 
 Returns the cardinality of the XOR of two bitmaps.
 
@@ -560,7 +560,7 @@ Result:
 └─────┘
 ```
 
-## bitmapAndnotCardinality
+## bitmapAndnotCardinality {#bitmapandnotcardinality}
 
 Returns the cardinality of the AND-NOT operation of two bitmaps.
 

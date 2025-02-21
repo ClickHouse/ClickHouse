@@ -17,7 +17,7 @@ For this approach, Kerberos must be configured in the system and must be enabled
 
 To enable Kerberos, one should include `kerberos` section in `config.xml`. This section may contain additional parameters.
 
-#### Parameters:
+#### Parameters: {#parameters}
 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
     - This parameter is optional, if omitted, the default principal will be used.

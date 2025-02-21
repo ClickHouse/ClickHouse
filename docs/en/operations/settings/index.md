@@ -21,7 +21,7 @@ Read about [global server settings](/docs/operations/server-configuration-parame
 
 Read about [session settings](/docs/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the session level.
 
-## See non-default settings
+## See non-default settings {#see-non-default-settings}
 
 To view which settings have been changed from their default value:
 

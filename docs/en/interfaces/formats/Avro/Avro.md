@@ -13,18 +13,18 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 [Apache Avro](https://avro.apache.org/) is a row-oriented data serialization framework developed within Apache's Hadoop project.
 ClickHouse's `Avro` format supports reading and writing [Avro data files](https://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-## Data Types Matching
+## Data Types Matching {#data-types-matching}
 
 <DataTypesMatching/>
 
-## Example Usage
+## Example Usage {#example-usage}
 
-### Inserting Data
+### Inserting Data {#inserting-data}
 
 To insert data from an Avro file into a ClickHouse table:
 
@@ -41,7 +41,7 @@ Data types of ClickHouse table columns can differ from the corresponding fields 
 
 While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/docs/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
-### Selecting Data
+### Selecting Data {#selecting-data}
 
 To select data from a ClickHouse table into an Avro file:
 
@@ -56,7 +56,7 @@ Column names must:
 
 Output Avro file compression and sync interval can be configured with settings [`output_format_avro_codec`](/docs/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/docs/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
 
-### Example Data
+### Example Data {#example-data}
 
 Using the ClickHouse [`DESCRIBE`](/docs/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. 
 This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
@@ -83,7 +83,7 @@ DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/h
 └────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                     | Description                                                                                         | Default |
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|

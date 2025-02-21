@@ -11,13 +11,13 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 In this format, all data is represented as a single JSON Object, with each row represented as a separate field of this object similar to the [`JSONEachRow`](./JSONEachRow.md) format.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-### Basic Example
+### Basic Example {#basic-example}
 
 Given some JSON:
 
@@ -32,7 +32,7 @@ Given some JSON:
 To use an object name as a column value you can use the special setting [`format_json_object_each_row_column_for_object_name`](/docs/operations/settings/settings-formats.md/#format_json_object_each_row_column_for_object_name). 
 The value of this setting is set to the name of a column, that is used as JSON key for a row in the resulting object.
 
-#### Output
+#### Output {#output}
 
 Let's say we have the table `test` with two columns:
 
@@ -58,7 +58,7 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 }
 ```
 
-#### Input
+#### Input {#input}
 
 Let's say we stored the output from the previous example in a file named `data.json`:
 
@@ -101,7 +101,7 @@ ClickHouse allows:
 
 ClickHouse ignores spaces between elements and commas after the objects. You can pass all the objects in one line. You do not have to separate them with line breaks.
 
-#### Omitted values processing
+#### Omitted values processing {#omitted-values-processing}
 
 ClickHouse substitutes omitted values with the default values for the corresponding [data types](/docs/sql-reference/data-types/index.md).
 
@@ -207,7 +207,7 @@ SELECT * FROM json_each_row_nested
 └───────────────┴────────┘
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                                            | Description                                                                                                                                                             | Default  | Notes                                                                                                                                                                                         |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

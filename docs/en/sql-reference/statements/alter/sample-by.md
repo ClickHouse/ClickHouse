@@ -9,7 +9,7 @@ title: "Manipulating Sampling-Key Expressions"
 
 The following operations are available:
 
-## MODIFY
+## MODIFY {#modify}
 
 ``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
@@ -17,7 +17,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 
 The command changes the [sampling key](../../../engines/table-engines/mergetree-family/mergetree.md) of the table to `new_expression` (an expression or a tuple of expressions). The primary key must contain the new sample key.
 
-## REMOVE
+## REMOVE {#remove}
 
 ``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY

@@ -74,7 +74,7 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 ```
 
 
-## Globs in Path
+## Globs in Path {#globs-in-path}
 
 All patterns supported by [File](../../sql-reference/table-functions/file.md#globs-in-path) table function are supported by FileCluster.
 

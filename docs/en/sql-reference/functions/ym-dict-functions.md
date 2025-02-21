@@ -14,7 +14,7 @@ As such, the examples shown in this section will throw an exception in [ClickHou
 
 For information about creating reference lists, see the section ["Dictionaries"](../dictionaries#embedded-dictionaries).
 
-## Multiple Geobases
+## Multiple Geobases {#multiple-geobases}
 
 ClickHouse supports working with multiple alternative geobases (regional hierarchies) simultaneously, in order to support various perspectives on which countries certain regions belong to.
 

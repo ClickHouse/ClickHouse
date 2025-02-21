@@ -11,7 +11,7 @@ alias: ['TSVRawWithNames', 'RawWithNames']
 |-------|--------|-----------------------------------|
 | ✔     | ✔      | `TSVRawWithNames`, `RawWithNames` |
 
-## Description
+## Description {#description}
 
 Differs from the [`TabSeparatedWithNames`](./TabSeparatedWithNames.md) format, 
 in that the rows are written without escaping.
@@ -20,6 +20,6 @@ in that the rows are written without escaping.
 When parsing with this format, tabs or line-feeds are not allowed in each field.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

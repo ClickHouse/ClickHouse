@@ -11,12 +11,12 @@ alias: []
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format 
 but prints two header rows: one with column names, the other with types.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ```sql
 CREATE TABLE example (
@@ -38,4 +38,4 @@ Jane	25
 Peter	35
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

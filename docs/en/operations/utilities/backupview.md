@@ -14,7 +14,7 @@ This module provides functions to
 - get useful information in readable form about databases, tables, parts contained in a backup
 - check integrity of a backup
 
-## Example:
+## Example: {#example}
 
 ```python
 from clickhouse_backupview import open_backup, S3, FileInfo

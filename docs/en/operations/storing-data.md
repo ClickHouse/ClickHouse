@@ -427,7 +427,7 @@ Examples of working configurations can be found in integration tests directory (
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
 :::
 
-## Using HDFS storage (Unsupported)
+## Using HDFS storage (Unsupported) {#using-hdfs-storage-unsupported}
 
 In this sample configuration:
 - the disk is of type `hdfs` (unsupported)

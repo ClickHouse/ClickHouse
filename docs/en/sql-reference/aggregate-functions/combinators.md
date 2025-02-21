@@ -8,7 +8,7 @@ sidebar_label: Combinators
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
-## -If
+## -If {#-if}
 
 The suffix -If can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument – a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 
@@ -16,7 +16,7 @@ Examples: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTi
 
 With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, conditional aggregate functions can be used to implement the segment comparison functionality.
 
-## -Array
+## -Array {#-array}
 
 The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)' type (arrays) instead of 'T' type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
@@ -26,7 +26,7 @@ Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr
 
 -If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
 
-## -Map
+## -Map {#-map}
 
 The -Map suffix can be appended to any aggregate function. This will create an aggregate function which gets Map type as an argument, and aggregates values of each key of the map separately using the specified aggregate function. The result is also of a Map type.
 
@@ -59,7 +59,7 @@ GROUP BY timeslot;
 └─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-## -SimpleState
+## -SimpleState {#-simplestate}
 
 If you apply this combinator, the aggregate function returns the same value but with a different type. This is a [SimpleAggregateFunction(...)](../../sql-reference/data-types/simpleaggregatefunction.md) that can be stored in a table to work with [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) tables.
 
@@ -93,7 +93,7 @@ Result:
 └──────────────────────────────────────┴───┘
 ```
 
-## -State
+## -State {#-state}
 
 If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
@@ -109,24 +109,24 @@ To work with these states, use:
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.
 
-## -Merge
+## -Merge {#-merge}
 
 If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
 
-## -MergeState
+## -MergeState {#-mergestate}
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it does not return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
-## -ForEach
+## -ForEach {#-foreach}
 
 Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
 
-## -Distinct
+## -Distinct {#-distinct}
 
 Every unique combination of arguments will be aggregated only once. Repeating values are ignored.
 Examples: `sum(DISTINCT x)` (or `sumDistinct(x)`), `groupArray(DISTINCT x)` (or `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (or `corrStableDistinct(x, y)`) and so on.
 
-## -OrDefault
+## -OrDefault {#-ordefault}
 
 Changes behavior of an aggregate function.
 
@@ -186,7 +186,7 @@ Result:
 └───────────────────────────────────┘
 ```
 
-## -OrNull
+## -OrNull {#-ornull}
 
 Changes behavior of an aggregate function.
 
@@ -249,7 +249,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## -Resample
+## -Resample {#-resample}
 
 Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 
@@ -317,16 +317,16 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-## -ArgMin
+## -ArgMin {#-argmin}
 
 The suffix -ArgMin can be appended to the name of any aggregate function. In this case, the aggregate function accepts an additional argument, which should be any comparable expression. The aggregate function processes only the rows that have the minimum value for the specified extra expression.
 
 Examples: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` and so on.
 
-## -ArgMax
+## -ArgMax {#-argmax}
 
 Similar to suffix -ArgMin but processes only the rows that have the maximum value for the specified extra expression.
 
-## Related Content
+## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

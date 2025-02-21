@@ -4,7 +4,7 @@ sidebar_label: SVG
 title: "Functions for Generating SVG images from Geo data"
 ---
 
-## Svg
+## Svg {#svg}
 
 Returns a string of select SVG element tags from Geo data.
 

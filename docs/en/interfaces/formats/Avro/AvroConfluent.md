@@ -13,7 +13,7 @@ import DataTypesMatching from './_snippets/data-types-matching.md'
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
-## Description
+## Description {#description}
 
 AvroConfluent supports decoding single-object Avro messages commonly used with [Kafka](https://kafka.apache.org/) and [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html).
 Each Avro message embeds a schema ID that can be resolved to the actual schema with the help of the Schema Registry.
@@ -23,7 +23,7 @@ Schemas are cached once resolved.
 
 <DataTypesMatching/>
 
-## Example Usage
+## Example Usage {#example-usage}
 
 To quickly verify schema resolution, you can use [kafkacat](https://github.com/edenhill/kafkacat) with [clickhouse-local](/docs/operations/utilities/clickhouse-local.md):
 
@@ -56,7 +56,7 @@ SET format_avro_schema_registry_url = 'http://schema-registry';
 SELECT * FROM topic1_stream;
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 The Schema Registry URL is configured with [`format_avro_schema_registry_url`](/docs/operations/settings/settings-formats.md/#format_avro_schema_registry_url).
 

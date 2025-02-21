@@ -11,7 +11,7 @@ alias: ['TSVRaw', 'Raw']
 |-------|--------|-----------------|
 | ✔     | ✔      | `TSVRaw`, `Raw` |
 
-## Description
+## Description {#description}
 
 Differs from the [`TabSeparated`](/interfaces/formats/TabSeparated) format in that rows are written without escaping.
 
@@ -21,7 +21,7 @@ When parsing with this format, tabs or line-feeds are not allowed in each field.
 
 For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](../RawBLOB.md/#raw-formats-comparison)
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 

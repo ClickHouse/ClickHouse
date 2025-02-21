@@ -4,13 +4,13 @@ slug: /interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes
 keywords : [JSONCompactStringsEachRowWithNamesAndTypes]
 ---
 
-## Description
+## Description {#description}
 
 Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/docs/interfaces/formats/TabSeparatedRawWithNamesAndTypes).
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 :::note
 If setting [input_format_with_names_use_header](/docs/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,

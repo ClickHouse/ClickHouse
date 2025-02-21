@@ -27,7 +27,7 @@ The first two commands are lightweight in a sense that they only change metadata
 
 Also, they are replicated, syncing statistics metadata via ZooKeeper.
 
-## Example:
+## Example: {#example}
 
 Adding two statistics types to two columns:
 

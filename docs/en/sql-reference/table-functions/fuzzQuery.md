@@ -22,7 +22,7 @@ fuzzQuery(query[, max_query_length[, random_seed]])
 
 A table object with a single column containing perturbed query strings.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ```sql
 SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2;

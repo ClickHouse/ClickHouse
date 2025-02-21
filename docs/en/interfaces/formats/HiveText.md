@@ -4,8 +4,8 @@ slug: /interfaces/formats/HiveText
 keywords : [HiveText]
 ---
 
-## Description
+## Description {#description}
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

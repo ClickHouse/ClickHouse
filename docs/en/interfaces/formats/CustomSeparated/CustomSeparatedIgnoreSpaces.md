@@ -4,8 +4,8 @@ slug: /interfaces/formats/CustomSeparatedIgnoreSpaces
 keywords : [CustomSeparatedIgnoreSpaces]
 ---
 
-## Description
+## Description {#description}
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

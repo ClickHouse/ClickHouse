@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `Values` format prints every row in brackets. 
 
@@ -31,9 +31,9 @@ The minimum set of characters that you need to escape when passing data in the `
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|

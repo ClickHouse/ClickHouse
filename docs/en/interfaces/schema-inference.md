@@ -13,7 +13,7 @@ can control it.
 
 Schema inference is used when ClickHouse needs to read the data in a specific data format and the structure is unknown.
 
-## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md).
+## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md). {#table-functions-file-s3-url-hdfs-azureblobstorage}
 
 These table functions have the optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -55,7 +55,7 @@ DESCRIBE file('hobbies.jsonl')
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md)
+## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md) {#table-engines-file-s3-url-hdfs-azureblobstorage}
 
 If the list of columns is not specified in `CREATE TABLE` query, the structure of the table will be inferred automatically from the data.
 
@@ -91,7 +91,7 @@ DESCRIBE TABLE hobbies
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## clickhouse-local
+## clickhouse-local {#clickhouse-local}
 
 `clickhouse-local` has an optional parameter `-S/--structure` with the structure of input data. If this parameter is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -494,7 +494,7 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 
 #### JSON settings {#json-settings}
 
-##### input_format_json_try_infer_numbers_from_strings
+##### input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
 
 Enabling this setting allows inferring numbers from string values.
 
@@ -515,7 +515,7 @@ DESC format(JSONEachRow, $$
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_try_infer_named_tuples_from_objects
+##### input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
 
 Enabling this setting allows inferring named Tuples from JSON objects. The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
 It can be useful when JSON data is not sparse so the sample of data will contain all possible object keys.
@@ -550,7 +550,7 @@ Result:
 └───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects {#input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects}
 
 Enabling this setting allows to use String type for ambiguous paths during named tuples inference from JSON objects (when `input_format_json_try_infer_named_tuples_from_objects` is enabled) instead of an exception.
 It allows to read JSON objects as named Tuples even if there are ambiguous paths.
@@ -592,7 +592,7 @@ Result:
 └─────────────────────┘
 ```
 
-##### input_format_json_read_objects_as_strings
+##### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
 
 Enabling this setting allows reading nested JSON objects as strings.
 This setting can be used to read nested JSON objects without using JSON object type.
@@ -615,7 +615,7 @@ DESC format(JSONEachRow, $$
 ```
 
 
-##### input_format_json_read_numbers_as_strings
+##### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
 
 Enabling this setting allows reading numeric values as strings.
 
@@ -636,7 +636,7 @@ DESC format(JSONEachRow, $$
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_read_bools_as_numbers
+##### input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
 
 Enabling this setting allows reading Bool values as numbers.
 
@@ -657,7 +657,7 @@ DESC format(JSONEachRow, $$
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_read_bools_as_strings
+##### input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
 
 Enabling this setting allows reading Bool values as strings.
 
@@ -677,7 +677,7 @@ DESC format(JSONEachRow, $$
 │ value │ Nullable(String) │              │                    │         │                  │                │
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-##### input_format_json_read_arrays_as_strings
+##### input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
 
 Enabling this setting allows reading JSON array values as strings.
 
@@ -695,7 +695,7 @@ SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow
 └───────────────────────┴─────────────────┴───────────────────────────────────────────┘
 ```
 
-##### input_format_json_infer_incomplete_types_as_strings
+##### input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
 
 Enabling this setting allows to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String if all corresponding settings are enabled (they are all enabled by default), and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
@@ -900,7 +900,7 @@ $$)
 
 #### CSV settings {#csv-settings}
 
-##### input_format_csv_try_infer_numbers_from_strings
+##### input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
 
 Enabling this setting allows inferring numbers from string values.
 

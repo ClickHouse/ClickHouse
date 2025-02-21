@@ -7,7 +7,7 @@ title: "OnTime"
 
 This dataset contains data from Bureau of Transportation Statistics.
 
-## Creating a table
+## Creating a table {#creating-a-table}
 
 ``` sql
 CREATE TABLE `ontime`
@@ -141,7 +141,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 
 (if you will have memory shortage or other issues on your server, remove the `-P $(nproc)` part)
 
-## Import from a saved copy
+## Import from a saved copy {#import-from-a-saved-copy}
 
 Alternatively, you can import data from a saved copy by the following query:
 

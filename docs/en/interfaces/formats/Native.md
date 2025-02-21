@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `Native` format is ClickHouse's most efficient format because it is truly "columnar" 
 in that it does not convert columns to rows.  
@@ -26,6 +26,6 @@ You can use this format to quickly generate dumps that can only be read by the C
 It might not be practical to work with this format yourself.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

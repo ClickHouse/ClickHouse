@@ -11,11 +11,11 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 Differs from [`JSONEachRow`](./JSONEachRow.md) only in that data rows are output as arrays, not as objects.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Example:
 
@@ -25,5 +25,5 @@ Example:
 [44, "hello", [0,1,2,3]]
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 

@@ -11,11 +11,11 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not as objects.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ```json
 {
@@ -55,5 +55,5 @@ Differs from [JSON](./JSON.md) only in that data rows are output as arrays, not 
 }
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 

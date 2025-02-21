@@ -12,7 +12,7 @@ For dictionaries created with [DDL queries](../../sql-reference/statements/creat
 
 For information on connecting and configuring dictionaries, see [Dictionaries](../../sql-reference/dictionaries/index.md).
 
-## dictGet, dictGetOrDefault, dictGetOrNull
+## dictGet, dictGetOrDefault, dictGetOrNull {#dictget-dictgetordefault-dictgetornull}
 
 Retrieves values from a dictionary.
 
@@ -228,7 +228,7 @@ Result:
 
 - [Dictionaries](../../sql-reference/dictionaries/index.md)
 
-## dictHas
+## dictHas {#dicthas}
 
 Checks whether a key is present in a dictionary.
 
@@ -246,7 +246,7 @@ dictHas('dict_name', id_expr)
 - 0, if there is no key. [UInt8](../data-types/int-uint.md).
 - 1, if there is a key. [UInt8](../data-types/int-uint.md).
 
-## dictGetHierarchy
+## dictGetHierarchy {#dictgethierarchy}
 
 Creates an array, containing all the parents of a key in the [hierarchical dictionary](../../sql-reference/dictionaries/index.md#hierarchical-dictionaries).
 
@@ -265,7 +265,7 @@ dictGetHierarchy('dict_name', key)
 
 - Parents for the key. [Array(UInt64)](../data-types/array.md).
 
-## dictIsIn
+## dictIsIn {#dictisin}
 
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
@@ -284,7 +284,7 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 - 0, if `child_id_expr` is not a child of `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
 - 1, if `child_id_expr` is a child of `ancestor_id_expr` or if `child_id_expr` is an `ancestor_id_expr`. [UInt8](../data-types/int-uint.md).
 
-## dictGetChildren
+## dictGetChildren {#dictgetchildren}
 
 Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
 
@@ -331,7 +331,7 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 └──────────────────────────────────────────────────────┘
 ```
 
-## dictGetDescendant
+## dictGetDescendant {#dictgetdescendant}
 
 Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.
 
@@ -394,7 +394,7 @@ SELECT dictGetDescendants('hierarchy_flat_dictionary', number, 1) FROM system.nu
 ```
 
 
-## dictGetAll
+## dictGetAll {#dictgetall}
 
 Retrieves the attribute values of all nodes that matched each key in a [regular expression tree dictionary](../../sql-reference/dictionaries/index.md#regexp-tree-dictionary).
 
@@ -471,7 +471,7 @@ SELECT dictGetAll('regexp_dict', 'tag', 'foobarbaz', 2);
 └──────────────────────────────────────────────────┘
 ```
 
-## Other Functions
+## Other Functions {#other-functions}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
 

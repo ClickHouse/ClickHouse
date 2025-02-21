@@ -29,6 +29,6 @@ The synchronicity of the query processing is defined by the [mutations_sync](/do
 - [Synchronicity of ALTER Queries](/docs/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 - [mutations_sync](/docs/operations/settings/settings.md/#mutations_sync) setting
 
-## Related content
+## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

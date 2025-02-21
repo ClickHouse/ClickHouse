@@ -11,13 +11,13 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `LineAsString` format interprets every line of input data as a single string value. 
 This format can only be parsed for a table with a single field of type [String](/docs/sql-reference/data-types/string.md). 
 The remaining columns must be set to [`DEFAULT`](/docs/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/docs/sql-reference/statements/create/table.md/#materialized), or omitted.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ```sql title="Query"
 DROP TABLE IF EXISTS line_as_string;
@@ -32,4 +32,4 @@ SELECT * FROM line_as_string;
 └───────────────────────────────────────────────────┘
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

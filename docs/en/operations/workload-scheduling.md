@@ -202,14 +202,14 @@ Also note that workload or resource could not be dropped if it is referenced fro
 ## Workloads and resources storage {#workload_entity_storage}
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.
 
-## Strict resource access
+## Strict resource access {#strict-resource-access}
 To enforce all queries to follow resource scheduling policies there is a server setting `throw_on_unknown_workload`. If it is set to `true` then every query is required to use valid `workload` query setting, otherwise `RESOURCE_ACCESS_DENIED` exception is thrown. If it is set to `false` then such a query does not use resource scheduler, i.e. it will get unlimited access to any `RESOURCE`.
 
 :::note
 Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default` is executed. It could lead to server startup issues if a query without explicit setting `workload` is executed during startup.
 :::
 
-## See also
+## See also {#see-also}
  - [system.scheduler](/docs/operations/system-tables/scheduler.md)
  - [system.workloads](/docs/operations/system-tables/workloads.md)
  - [system.resources](/docs/operations/system-tables/resources.md)
