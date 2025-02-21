@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
+slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
 sidebar_position: 176
 ---
 

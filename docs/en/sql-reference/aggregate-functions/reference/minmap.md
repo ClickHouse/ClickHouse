@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/minmap
+slug: /sql-reference/aggregate-functions/reference/minmap
 sidebar_position: 169
 ---
 

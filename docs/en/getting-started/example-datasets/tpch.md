@@ -1,6 +1,6 @@
 ---
 description:  "The TPC-H benchmark data set and queries."
-slug: /en/getting-started/example-datasets/tpch
+slug: /getting-started/example-datasets/tpch
 sidebar_label: TPC-H
 title: "TPC-H (1999)"
 ---
@@ -280,7 +280,7 @@ ORDER BY
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -389,7 +389,7 @@ ORDER BY
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -465,7 +465,7 @@ WHERE
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to a bug with Decimal addition. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70136
+As of February 2025, the query does not work out-of-the box due to a bug with Decimal addition. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/70136
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -654,19 +654,20 @@ WHERE
     AND s_nationkey = n_nationkey
     AND n_name = 'GERMANY'
 GROUP BY
-    ps_partkey HAVING
-        sum(ps_supplycost * ps_availqty) > (
-            SELECT
-                sum(ps_supplycost * ps_availqty) * 0.0001
-            FROM
-                partsupp,
-                supplier,
-                nation
-            WHERE
-                ps_suppkey = s_suppkey
-                AND s_nationkey = n_nationkey
-                AND n_name = 'GERMANY'
-        )
+    ps_partkey
+HAVING
+    sum(ps_supplycost * ps_availqty) > (
+        SELECT
+            sum(ps_supplycost * ps_availqty) * 0.0001
+        FROM
+            partsupp,
+            supplier,
+            nation
+        WHERE
+            ps_suppkey = s_suppkey
+            AND s_nationkey = n_nationkey
+            AND n_name = 'GERMANY'
+    )
 ORDER BY
     value DESC;
 ```
@@ -842,7 +843,7 @@ WHERE
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 
 This alternative formulation works and was verified to return the reference results.
 
@@ -993,7 +994,7 @@ ORDER BY
 ```
 
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 ::::
 
 **Q21**
@@ -1040,7 +1041,7 @@ ORDER BY
     s_name;
 ```
 ::::note
-As of October 2024, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
 ::::
 
 **Q22**
@@ -1083,3 +1084,7 @@ GROUP BY
 ORDER BY
     cntrycode;
 ```
+
+::::note
+As of February 2025, the query does not work out-of-the box due to correlated subqueries. Corresponding issue: https://github.com/ClickHouse/ClickHouse/issues/6697
+::::

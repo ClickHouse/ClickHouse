@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/external-data
+slug: /engines/table-engines/special/external-data
 sidebar_position: 130
 sidebar_label: External Data
 ---
