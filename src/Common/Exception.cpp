@@ -77,6 +77,28 @@ static size_t handle_error_code(const std::string & msg, int code, bool remote, 
     return ErrorCodes::increment(code, remote, msg, trace);
 }
 
+static size_t handle_error_code(
+    const std::string & msg,
+    int code,
+    bool remote,
+    const Exception::FramePointers & trace,
+    const std::string & query_id)
+{
+    // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
+    // Log the message before we fail.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    if (code == ErrorCodes::LOGICAL_ERROR)
+    {
+        abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+    }
+#endif
+
+    if (Exception::callback)
+        Exception::callback(msg, code, remote, trace);
+
+    return ErrorCodes::increment(code, remote, msg, trace, query_id);
+}
+
 
 Exception::MessageMasked::MessageMasked(const std::string & msg_)
     : msg(msg_)
@@ -110,6 +132,26 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
     error_index = handle_error_code(message(), code, remote, getStackFramePointers());
+}
+
+Exception::Exception(MessageMasked && msg_masked, int code, bool remote_, const String & query_id)
+    : Poco::Exception(msg_masked.msg, code)
+    , remote(remote_)
+{
+    if (terminate_on_any_exception)
+        std::_Exit(terminate_status_code);
+    capture_thread_frame_pointers = getThreadFramePointers();
+    error_index = handle_error_code(message(), code, remote, getStackFramePointers(), query_id);
+}
+
+Exception::Exception(MessageMasked & msg_masked, int code, bool remote_, const String & query_id)
+    : Poco::Exception(msg_masked.msg, code)
+    , remote(remote_)
+{
+    if (terminate_on_any_exception)
+        std::_Exit(terminate_status_code);
+    capture_thread_frame_pointers = getThreadFramePointers();
+    error_index = handle_error_code(message(), code, remote, getStackFramePointers(), query_id);
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)

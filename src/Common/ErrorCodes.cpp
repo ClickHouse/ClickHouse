@@ -681,6 +681,23 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
+    size_t increment(
+        ErrorCode error_code,
+        bool remote,
+        const std::string & message,
+        const FramePointers & trace,
+        const std::string & query_id)
+    {
+        if (error_code < 0 || error_code >= end())
+        {
+            /// For everything outside the range, use END.
+            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
+            error_code = end() - 1;
+        }
+
+        return values[error_code].increment(remote, message, trace, query_id);
+    }
+
     size_t increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
@@ -716,6 +733,22 @@ namespace ErrorCodes
         error.message = message;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
+        return error_index;
+    }
+
+    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace, const std::string & query_id)
+    {
+        const auto now = std::chrono::system_clock::now();
+
+        std::lock_guard lock(mutex);
+        auto & error = remote ? value.remote : value.local;
+
+        size_t error_index = error.count++;
+        error.message = message;
+        error.trace = trace;
+        error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        error.query_id = query_id;
 
         return error_index;
     }
