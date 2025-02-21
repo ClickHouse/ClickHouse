@@ -1387,9 +1387,9 @@ static String getOldALias(const ASTPtr & input)
     {
         const auto & child = texp->database_and_table_name ? texp->database_and_table_name
                                                            : (texp->table_function ? texp->table_function : texp->subquery);
-        return typeid_cast<const ASTWithAlias *>(child.get())->tryGetAlias();
+        return dynamic_cast<const ASTWithAlias *>(child.get())->tryGetAlias();
     }
-    else if (const auto * sub = typeid_cast<const ASTWithAlias *>(input.get()))
+    else if (const auto * sub = dynamic_cast<const ASTWithAlias *>(input.get()))
     {
         return sub->tryGetAlias();
     }
@@ -1433,7 +1433,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 auto * otable_exp_alias = typeid_cast<ASTWithAlias *>(otable_exp_child.get());
                 otable_exp_alias->setAlias(next_alias);
             }
-            else if (typeid_cast<ASTWithAlias *>(input_table.get()))
+            else if (dynamic_cast<ASTWithAlias *>(input_table.get()))
             {
                 ASTPtr child = nullptr;
                 table_exp = std::make_shared<ASTTableExpression>();
@@ -1585,10 +1585,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {
         fuzz(tables->children);
-        if (!tables->children.empty() && fuzz_rand() % 20 == 0)
-        {
-            std::shuffle(tables->children.begin(), tables->children.end(), fuzz_rand);
-        }
     }
     else if (auto * tables_element = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
@@ -1874,13 +1870,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 auto & children = select->refTables()->children;
 
                 children.erase(children.begin() + (fuzz_rand() % children.size()));
-            }
-            if (!select->tables().get()->children.empty() && fuzz_rand() % 20 == 0)
-            {
-                /// Permute FROM list
-                auto & children = select->refTables()->children;
-
-                std::shuffle(children.begin(), children.end(), fuzz_rand);
             }
         }
         if (select->groupBy().get())
