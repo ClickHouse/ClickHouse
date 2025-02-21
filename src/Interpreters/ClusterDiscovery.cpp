@@ -118,6 +118,8 @@ public:
     void set(const T & key, bool value = true)
     {
         std::unique_lock<std::mutex> lk(mu);
+        if (stop_flag)
+            return;
         flags[key] = value;
         any_need_update |= value;
         cv.notify_one();
@@ -126,7 +128,8 @@ public:
     void remove(const T & key)
     {
         std::unique_lock<std::mutex> lk(mu);
-        flags.erase(key);
+        if (!stop_flag)
+            flags.erase(key);
     }
 
     std::unordered_map<T, bool> wait(std::chrono::milliseconds timeout, bool & finished)
@@ -210,7 +213,7 @@ ClusterDiscovery::ClusterDiscovery(
                     /* zk_path */ zk_root,
                     /* is_secure_connection */ config.getBool(cluster_config_prefix + ".secure", false),
                     /* username */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
-                    /* password */ password, 
+                    /* password */ password,
                     /* cluster_secret */ cluster_secret
                 );
 
@@ -555,7 +558,7 @@ void ClusterDiscovery::findDynamicClusters(
     constexpr auto force_update_interval = 2min;
 
     size_t zk_root_index = 0;
-    
+
     for (auto & path : (*multicluster_discovery_paths))
     {
         ++zk_root_index;
@@ -587,7 +590,7 @@ void ClusterDiscovery::findDynamicClusters(
                 continue;
             }
 
-            if (info.count(cluster))
+            if (info.contains(cluster))
             { /// Possible with several root paths, it's a configuration error
                 LOG_WARNING(log, "Found dynamic duplicate of cluster '{}' in Keeper, skipped record by path {}:{}",
                     cluster, path->zk_name, path->zk_path);
@@ -700,7 +703,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                     new_dynamic_clusters_info.erase(p);
                 else
                 {
-                    if (!unchanged_roots.count(info.zk_root_index))
+                    if (!unchanged_roots.contains(info.zk_root_index))
                         clusters_to_remove.insert(cluster_name);
                 }
             }
@@ -830,6 +833,7 @@ void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
     clusters_to_update->stop();
+    dynamic_clusters_to_update->stop();
 
     if (main_thread.joinable())
         main_thread.join();
