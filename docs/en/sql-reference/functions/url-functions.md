@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/url-functions
+slug: /sql-reference/functions/url-functions
 sidebar_position: 200
 sidebar_label: URLs
 ---
@@ -36,7 +36,7 @@ symbols marked `*` are sub-delimiters in RFC 3986 and allowed for user info foll
 
 ## Functions that Extract Parts of a URL
 
-If the relevant part isn’t present in a URL, an empty string is returned.
+If the relevant part isn't present in a URL, an empty string is returned.
 
 ### protocol
 
@@ -277,7 +277,7 @@ Result:
 
 Returns the "first significant subdomain".
 The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
-For example, `firstSignificantSubdomain ('https://news.clickhouse.com/’) = 'clickhouse’, firstSignificantSubdomain ('https://news.clickhouse.com.tr/’) = 'clickhouse’`.
+For example, `firstSignificantSubdomain ('https://news.clickhouse.com/') = 'clickhouse', firstSignificantSubdomain ('https://news.clickhouse.com.tr/') = 'clickhouse'`.
 The list of "insignificant" second-level domains and other implementation details may change in the future.
 
 **Syntax**
@@ -314,7 +314,7 @@ Result:
 
 Returns the "first significant subdomain".
 The first significant subdomain is a second-level domain for `com`, `net`, `org`, or `co`, otherwise it is a third-level domain.
-For example, `firstSignificantSubdomain ('https://news.clickhouse.com/’) = 'clickhouse’, firstSignificantSubdomain ('https://news.clickhouse.com.tr/’) = 'clickhouse’`.
+For example, `firstSignificantSubdomain ('https://news.clickhouse.com/') = 'clickhouse', firstSignificantSubdomain ('https://news.clickhouse.com.tr/') = 'clickhouse'`.
 The list of "insignificant" second-level domains and other implementation details may change in the future.
 Similar to [firstSignficantSubdomain](#firstsignificantsubdomain) but conforms to RFC 1034.
 
@@ -628,6 +628,7 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### cutToFirstSignificantSubdomainCustomWithWWWRFC
 
@@ -654,6 +655,7 @@ cutToFirstSignificantSubdomainCustomWithWWWRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustom
 
@@ -706,6 +708,7 @@ Result:
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### firstSignificantSubdomainCustomRFC
 
@@ -732,6 +735,7 @@ firstSignificantSubdomainCustomRFC(url, tld)
 **See Also**
 
 - [firstSignificantSubdomain](#firstsignificantsubdomain).
+- [top_level_domains_list](../../operations/server-configuration-parameters/settings.md/#top_level_domains_list)
 
 ### port
 
@@ -1006,7 +1010,7 @@ If the URL does not have anything similar, the URL remains unchanged.
 
 ### cutWWW
 
-Removes leading `www.` (if present) from the URL’s domain.
+Removes leading `www.` (if present) from the URL's domain.
 
 ### cutQueryString
 

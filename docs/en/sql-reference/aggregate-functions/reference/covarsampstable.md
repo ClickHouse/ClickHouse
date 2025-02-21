@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarsampstable
+slug: /sql-reference/aggregate-functions/reference/covarsampstable
 sidebar_position: 126
 ---
 

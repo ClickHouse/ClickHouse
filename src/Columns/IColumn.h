@@ -4,7 +4,6 @@
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
 #include <Common/COW.h>
-#include <Common/Exception.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
@@ -22,13 +21,6 @@ namespace llvm
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_GET_SIZE_OF_FIELD;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_COLLATION;
-}
 
 class Arena;
 class ColumnGathererStream;
@@ -129,7 +121,7 @@ public:
     /// Creates column with the same type and specified size.
     /// If size is less than current size, then data is cut.
     /// If size is greater, then default values are appended.
-    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
+    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const;
 
     /// Returns number of values in column.
     [[nodiscard]] virtual size_t size() const = 0;
@@ -153,36 +145,21 @@ public:
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const;
 
     /// If column stores native numeric type, it returns n-th element cast to Float64
     /// Is used in regression methods to cast each features into uniform type
-    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const;
 
-    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const;
 
     /** If column is numeric, return value of n-th element, cast to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getUInt is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const;
 
-    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInt is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const;
 
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
@@ -191,10 +168,7 @@ public:
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual bool getBool(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual bool getBool(size_t /*n*/) const;
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
@@ -290,38 +264,23 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
-    }
+    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
 
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
-    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
-    }
+    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual StringRef
-    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
-    }
+    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
 
-    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
-    }
+    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const;
 
     /// Calculate all the sizes of serialized data in column, then added to `sizes`.
     /// If `is_null` is not nullptr, also take null bit into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
-    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
-    }
+    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
@@ -395,20 +354,13 @@ public:
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
 
-    [[nodiscard]] virtual llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual llvm::Value * compileComparator(
+        llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const;
 
 #endif
 
     /// Equivalent to compareAt, but collator is used to compare values.
-    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing it.");
-    }
+    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const;
 
     /// Compare the whole column with single value from rhs column.
     /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
@@ -458,21 +410,22 @@ public:
     /** Equivalent to getPermutation and updatePermutation but collator is used to compare values.
       * Supported for String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
       */
-    virtual void getPermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing them.");
-    }
+    virtual void getPermutationWithCollation(
+        const Collator & /*collator*/,
+        PermutationSortDirection /*direction*/,
+        PermutationSortStability /*stability*/,
+        size_t /*limit*/,
+        int /*nan_direction_hint*/,
+        Permutation & /*res*/) const;
 
-    virtual void updatePermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/, EqualRanges & /*equal_ranges*/) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing them.");
-    }
+    virtual void updatePermutationWithCollation(
+        const Collator & /*collator*/,
+        PermutationSortDirection /*direction*/,
+        PermutationSortStability /*stability*/,
+        size_t /*limit*/,
+        int /*nan_direction_hint*/,
+        Permutation & /*res*/,
+        EqualRanges & /*equal_ranges*/) const;
 
     /// Estimate the cardinality (number of unique values) of the values in 'equal_range' after permutation, formally: |{ column[permutation[r]] : r in equal_range }|.
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
@@ -579,10 +532,7 @@ public:
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
-    [[nodiscard]] virtual bool structureEquals(const IColumn &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual bool structureEquals(const IColumn &) const;
 
     /// Returns ratio of values in column, that are equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
@@ -685,10 +635,10 @@ public:
     [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName()); }
+    [[nodiscard]] virtual std::string_view getRawData() const;
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
-    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName()); }
+    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
     [[nodiscard]] virtual bool isNumeric() const { return false; }

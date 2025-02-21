@@ -21,6 +21,7 @@
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -243,6 +244,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool enforce_index_structure_match_on_partition_manipulation;
     extern const MergeTreeSettingsUInt64 min_bytes_to_prewarm_caches;
+    extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
 }
 
 namespace ServerSetting
@@ -368,7 +370,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         if (disk->isBroken())
             continue;
 
-        if (need_create_directories)
+        if (need_create_directories && !disk->isReadOnly())
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
@@ -2071,7 +2073,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-    calculateColumnAndSecondaryIndexSizesImpl();
+    are_columns_and_secondary_inices_sizes_calculated = false;
+    if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
 
     PartLoadingTreeNodes unloaded_parts;
 
@@ -3299,7 +3303,7 @@ void MergeTreeData::dropAllData()
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    column_sizes.clear();
+    resetColumnSizes();
 
     auto detached_parts = getDetachedParts();
     for (const auto & part : detached_parts)
@@ -5262,17 +5266,33 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
     part->removeVersionMetadata();
 }
 
-void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
+void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
 {
+    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
+    if (are_columns_and_secondary_inices_sizes_calculated)
+        return;
+
     column_sizes.clear();
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
     for (const auto & part : committed_parts_range)
-        addPartContributionToColumnAndSecondaryIndexSizes(part);
+        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+
+    are_columns_and_secondary_inices_sizes_calculated = true;
 }
 
-void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
+void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
+{
+    /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
+    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
+    if (!are_columns_and_secondary_inices_sizes_calculated)
+        return;
+
+    addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+}
+
+void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
 {
     for (const auto & column : part->getColumns())
     {
@@ -5291,8 +5311,13 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     }
 }
 
-void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part)
+void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
+    /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
+    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
+    if (!are_columns_and_secondary_inices_sizes_calculated)
+        return;
+
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
@@ -8030,6 +8055,8 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     size_t parts_processed = 0;
     for (const auto & part : data_parts)
     {
+        if (local_context->isCurrentQueryKilled())
+            return result;
         if (!matcher(part->info.partition_id))
             continue;
 

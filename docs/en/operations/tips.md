@@ -1,10 +1,10 @@
 ---
-slug: /en/operations/tips
+slug: /operations/tips
 sidebar_position: 58
 sidebar_label: Usage Recommendations
 title: "Usage Recommendations"
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
 
@@ -137,13 +137,13 @@ After that, run the `sudo update-grub` command then reboot to take effect.
 ## Hypervisor configuration
 
 If you are using OpenStack, set
-```
+```ini
 cpu_mode=host-passthrough
 ```
 in `nova.conf`.
 
 If you are using libvirt, set
-```
+```xml
 <cpu mode='host-passthrough'/>
 ```
 in XML configuration.

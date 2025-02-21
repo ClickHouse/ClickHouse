@@ -15,6 +15,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <base/defines.h>
 
 #include "config.h"
 
@@ -330,13 +331,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}, maximum: {}."
+                    "would use {} (attempt to allocate chunk of {} bytes){}, maximum: {}."
                     "{}{}",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
                     size,
-                    level == VariableContext::Global ? formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)) : "N/A",
+                    level == VariableContext::Global ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                     overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
                     overcommit_result_ignore ? "" : toDescription(overcommit_result));
@@ -610,6 +611,20 @@ void MemoryTracker::setParent(MemoryTracker * elem)
         DB::current_thread->flushUntrackedMemory();
 
     parent.store(elem, std::memory_order_relaxed);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    bool found_total_memory_tracker = false;
+    const auto * next = this;
+    do
+    {
+        if (found_total_memory_tracker)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Double total in the MemoryTracker chains. It is a bug.");
+        if (next == &total_memory_tracker)
+            found_total_memory_tracker = true;
+    } while ((next = next->parent.load(std::memory_order_relaxed)));
+    if (!found_total_memory_tracker)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot found total MemoryTracker. Bug in nesting.");
+#endif
 }
 
 bool canEnqueueBackgroundTask()

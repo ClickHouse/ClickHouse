@@ -1,11 +1,11 @@
 ---
-slug: /en/sql-reference/dictionaries
+slug: /sql-reference/dictionaries
 sidebar_label: Defining Dictionaries
 sidebar_position: 35
 ---
 
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
-import CloudDetails from '@site/docs/en/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+import CloudDetails from '@site/docs/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Dictionaries
@@ -21,7 +21,7 @@ ClickHouse supports:
 
 
 :::tip Tutorial
-If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
+If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/tutorial.md).
 :::
 
 You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Dictionary Sources](#dictionary-sources)".
@@ -137,7 +137,7 @@ Caching is not recommended because of potentially poor performance and difficult
 There are several ways to improve dictionary performance:
 
 - Call the function for working with the dictionary after `GROUP BY`.
-- Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+- Mark attributes to extract as injective. An attribute is called injective if different keys correspond to different attribute values. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
 
 ClickHouse generates an exception for errors with dictionaries. Examples of errors:
 
@@ -2452,7 +2452,7 @@ clickhouse client \
     FORMAT CSV" < regexp_dict.csv
 ```
 
-You can see how to [Insert Local Files](https://clickhouse.com/docs/en/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
+You can see how to [Insert Local Files](/docs/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
 
 ``` sql
 CREATE DICTIONARY regexp_dict

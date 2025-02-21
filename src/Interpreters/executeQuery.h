@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>

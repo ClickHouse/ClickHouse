@@ -1,6 +1,6 @@
 ---
 description: "Ingest and query Tab Separated Value data in 5 steps"
-slug: /en/getting-started/example-datasets/nypd_complaint_data
+slug: /getting-started/example-datasets/nypd_complaint_data
 sidebar_label: NYPD Complaint Data
 title: "NYPD Complaint Data"
 ---
@@ -55,7 +55,7 @@ CMPLNT_FR_TM                Nullable(String)
 ```
 
 :::tip
-Most of the time the above command will let you know which fields in the input data are numeric, and which are strings, and which are tuples.  This is not always the case.  Because ClickHouse is routineley used with datasets containing billions of records there is a default number (100) of rows examined to [infer the schema](/en/integrations/data-formats/json/inference) in order to avoid parsing billions of rows to infer the schema. The response below may not match what you see, as the dataset is updated several times each year. Looking at the Data Dictionary you can see that CMPLNT_NUM is specified as text, and not numeric.  By overriding the default of 100 rows for inference with the setting `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
+Most of the time the above command will let you know which fields in the input data are numeric, and which are strings, and which are tuples.  This is not always the case.  Because ClickHouse is routineley used with datasets containing billions of records there is a default number (100) of rows examined to [infer the schema](/integrations/data-formats/json/inference) in order to avoid parsing billions of rows to infer the schema. The response below may not match what you see, as the dataset is updated several times each year. Looking at the Data Dictionary you can see that CMPLNT_NUM is specified as text, and not numeric.  By overriding the default of 100 rows for inference with the setting `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
 you can get a better idea of the content.
 
 Note: as of version 22.5 the default is now 25,000 rows for inferring the schema, so only change the setting if you are on an older version or if you need more than 25,000 rows to be sampled.
@@ -407,12 +407,12 @@ Result:
 ```
 Ordering by cardinality, the `ORDER BY` becomes:
 
-```
+```sql
 ORDER BY ( BORO_NM, OFNS_DESC, RPT_DT )
 ```
 :::note
 The table below will use more easily read column names, the above names will be mapped to
-```
+```sql
 ORDER BY ( borough, offense_description, date_reported )
 ```
 :::
@@ -651,4 +651,4 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 
 ## Next Steps
 
-[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/en/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
