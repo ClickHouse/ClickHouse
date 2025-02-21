@@ -1,11 +1,18 @@
+#include <Columns/IColumn.h>
 #include <Core/Range.h>
-#include <Common/FieldVisitorToString.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 
 namespace DB
 {
+
+FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
+    : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
+{
+}
 
 Range::Range(const FieldRef & point) /// NOLINT
     : left(point), right(point), left_included(true), right_included(true) {}
@@ -64,12 +71,12 @@ void Range::shrinkToIncludedIfPossible()
     {
         if (left.getType() == Field::Types::UInt64 && left.safeGet<UInt64>() != std::numeric_limits<UInt64>::max())
         {
-            ++left.safeGet<UInt64 &>();
+            ++left.safeGet<UInt64>();
             left_included = true;
         }
         if (left.getType() == Field::Types::Int64 && left.safeGet<Int64>() != std::numeric_limits<Int64>::max())
         {
-            ++left.safeGet<Int64 &>();
+            ++left.safeGet<Int64>();
             left_included = true;
         }
     }
@@ -77,12 +84,12 @@ void Range::shrinkToIncludedIfPossible()
     {
         if (right.getType() == Field::Types::UInt64 && right.safeGet<UInt64>() != std::numeric_limits<UInt64>::min())
         {
-            --right.safeGet<UInt64 &>();
+            --right.safeGet<UInt64>();
             right_included = true;
         }
         if (right.getType() == Field::Types::Int64 && right.safeGet<Int64>() != std::numeric_limits<Int64>::min())
         {
-            --right.safeGet<Int64 &>();
+            --right.safeGet<Int64>();
             right_included = true;
         }
     }

@@ -1,11 +1,12 @@
 ---
-slug: /en/development/build-cross-s390x
-sidebar_position: 69
-title: How to Build, Run and Debug ClickHouse on Linux for s390x (zLinux)
+slug: /development/build-cross-s390x
+sidebar_position: 30
 sidebar_label: Build on Linux for s390x (zLinux)
 ---
 
-At the time of writing (2024 May), support for the s390x platform is considered experimental, i.e. some features are disabled or broken on s390x.
+# Build on Linux for s390x (zLinux)
+
+ClickHouse has experimental support for s390x.
 
 ## Building ClickHouse for s390x
 
@@ -60,6 +61,7 @@ qemu-s390x-static -g 31338 -L /usr/s390x-linux-gnu ./clickhouse
 ```
 
 In another shell run LLDB and attach, replace `<Clickhouse Parent Directory>` and `<build directory>` with the values corresponding to your environment.
+
 ```bash
 lldb-15
 (lldb) target create ./clickhouse

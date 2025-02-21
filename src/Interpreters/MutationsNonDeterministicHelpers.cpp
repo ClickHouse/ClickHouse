@@ -1,10 +1,12 @@
-#include "Parsers/IAST_fwd.h"
+#include <Core/Block.h>
+#include <Parsers/IAST_fwd.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/MutationCommands.h>
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>

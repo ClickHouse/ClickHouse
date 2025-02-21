@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
@@ -80,6 +81,7 @@ QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
     const std::unique_ptr<IInterpreter> & interpreter,
@@ -95,7 +97,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
+    QueryCacheUsage query_cache_usage,
     bool internal);
 
 void logQueryException(
@@ -109,6 +111,7 @@ void logQueryException(
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,

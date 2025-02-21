@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/hdfs
+slug: /sql-reference/table-functions/hdfs
 sidebar_position: 80
 sidebar_label: hdfs
 ---
@@ -58,12 +58,12 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 
 1.  Suppose that we have several files with following URIs on HDFS:
 
-- ‘hdfs://hdfs1:9000/some_dir/some_file_1’
-- ‘hdfs://hdfs1:9000/some_dir/some_file_2’
-- ‘hdfs://hdfs1:9000/some_dir/some_file_3’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_1’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_2’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+- 'hdfs://hdfs1:9000/some_dir/some_file_1'
+- 'hdfs://hdfs1:9000/some_dir/some_file_2'
+- 'hdfs://hdfs1:9000/some_dir/some_file_3'
+- 'hdfs://hdfs1:9000/another_dir/some_file_1'
+- 'hdfs://hdfs1:9000/another_dir/some_file_2'
+- 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 2.  Query the amount of rows in these files:
 
@@ -98,8 +98,8 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns
 
-- `_path` — Path to the file. Type: `LowCardinalty(String)`.
-- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
@@ -117,10 +117,10 @@ SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 ## Storage Settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](/docs/en/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [ignore_access_denied_multidirectory_globs](/docs/en/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) - allows to ignore permission denied errors for multi-directory globs.
+- [hdfs_truncate_on_insert](/docs/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_new_file_on_insert](/docs/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/docs/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [ignore_access_denied_multidirectory_globs](/docs/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) - allows to ignore permission denied errors for multi-directory globs.
 
 **See Also**
 

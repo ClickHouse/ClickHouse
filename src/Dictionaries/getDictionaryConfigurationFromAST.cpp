@@ -5,6 +5,7 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
@@ -484,8 +485,13 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
             /// It's not possible to have a function in a dictionary definition since 22.10,
             /// because query must be normalized on dictionary creation. It's possible only when we load old metadata.
             /// For debug builds allow it only during server startup to avoid crash in BC check in Stress Tests.
-            assert(Context::getGlobalContextInstance()->getApplicationType() != Context::ApplicationType::SERVER
-                   || !Context::getGlobalContextInstance()->isServerCompletelyStarted());
+            if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER &&
+                Context::getGlobalContextInstance()->isServerCompletelyStarted())
+            {
+                throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION,
+                    "The dictionary definition contains unsupported elements. "
+                    "Please update the dictionary definition to remove function usage");
+            }
             auto builder = FunctionFactory::instance().tryGet(func->name, context);
             auto function = builder->build({});
             function->prepare({});

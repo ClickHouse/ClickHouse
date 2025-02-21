@@ -6,7 +6,8 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <IO/WriteBufferFromString.h>
+
+#include <city.h>
 
 #include <algorithm>
 #include <set>
@@ -250,6 +251,7 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
+        std::string create_engine_name;
         const IAST * current_select = nullptr;
     };
 
@@ -361,7 +363,8 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
-        AsyncInsertFlush
+        AsyncInsertFlush,
+        ParallelWithQuery,
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/avg
+slug: /sql-reference/aggregate-functions/reference/avg
 sidebar_position: 112
 ---
 
@@ -52,7 +52,7 @@ Get the arithmetic mean:
 
 Query:
 
-```
+```sql
 SELECT avg(t) FROM test;
 ```
 

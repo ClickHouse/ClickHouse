@@ -103,8 +103,10 @@ public:
     void stopQuery() { query_interrupt_handler.stop(); }
 
     ASTPtr parseQuery(const char *& pos, const char * end, const Settings & settings, bool allow_multi_statements);
-    void processTextAsSingleQuery(const String & full_query);
+    /// Returns true if query succeeded
+    bool processTextAsSingleQuery(const String & full_query);
 
+    std::string getConnectionHostAndPortForFuzzing() const;
 protected:
     void runInteractive();
     void runNonInteractive();
@@ -138,6 +140,8 @@ protected:
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
 
+    ASTPtr parseQuery(const char *& pos, const char * end, bool allow_multi_statements) const;
+
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
@@ -158,8 +162,25 @@ protected:
     };
 
     virtual void updateLoggerLevel(const String &) {}
-    virtual void printHelpMessage(const OptionsDescription & options_description, bool verbose) = 0;
-    virtual void addOptions(OptionsDescription & options_description) = 0;
+
+    void printHelpOrVersionIfNeeded(const CommandLineOptions & options);
+    /// Prints the help message. The fact whether it is verbose or not depends on the contents of
+    /// the OptionsDescription object.
+    virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
+    /// Add options that are common for the embedded client, regular client or clickhouse-local.
+    void addCommonOptions(OptionsDescription & options_description);
+    /// Add user-level or MergeTree-level settings to the list of possible command line options.
+    /// In case if any of that will appear during options parsing the corresponding setting will be
+    /// changed in the cmd_settings or in cmd_merge_tree_settings object.
+    void addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescription & options_description);
+    /// Add extra options depending on the application (e.g. clickhouse-local or clickhouse-client)
+    virtual void addExtraOptions(OptionsDescription & options_description) = 0;
+    /// Move options from the boost::program_options structure to the one returned by
+    /// getClientConfiguration(). Missing options are filled in with the defaults.
+    /// NB: This happens only for options that are common for the embedded client,
+    /// regular client and clickhouse-local. For any other specific option
+    /// please use processOptions method.
+    void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments,
@@ -168,13 +189,6 @@ protected:
 
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
-
-    virtual void readArguments(
-        int argc,
-        char ** argv,
-        Arguments & common_arguments,
-        std::vector<Arguments> & external_tables_arguments,
-        std::vector<Arguments> & hosts_and_ports_arguments) = 0;
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
@@ -215,6 +229,8 @@ private:
 
     void initQueryIdFormats();
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
+
+    void applySettingsFromServerIfNeeded();
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
@@ -265,11 +281,18 @@ protected:
 
     /// Should be one of the first, to be destroyed the last,
     /// since other members can use them.
+    /// This holder may not be initialized in case if we run the client in the embedded mode (SSH).
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
 
     /// Client context is a context used only by the client to parse queries, process query parameters and to connect to clickhouse-server.
     ContextMutablePtr client_context;
+
+    String default_database;
+    String query_id;
+    Int32 suggestion_limit;
+    bool enable_highlight = true;
+    bool multiline = false;
 
     std::unique_ptr<TerminalKeystrokeInterceptor> keystroke_interceptor;
 
@@ -305,8 +328,7 @@ protected:
     bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool select_into_file_and_stdout = false; /// If writing result INTO OUTFILE AND STDOUT. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
-    size_t format_max_block_size = 0; /// Max block size for console output.
-    size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
+    std::optional<size_t> insert_format_max_block_size_from_config; /// Max block size when reading INSERT data.
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
@@ -319,6 +341,7 @@ protected:
     MergeTreeSettings cmd_merge_tree_settings;
 
     /// thread status should be destructed before shared context because it relies on process list.
+    /// This field may not be initialized in case if we run the client in the embedded mode (SSH).
     std::optional<ThreadStatus> thread_status;
 
     ServerConnectionPtr connection;
@@ -340,6 +363,7 @@ protected:
     std::unique_ptr<InternalTextLogs> logs_out_stream;
 
     /// /dev/tty if accessible or std::cerr - for progress bar.
+    /// But running embedded into server, we write the progress to given tty file dexcriptor.
     /// We prefer to output progress bar directly to tty to allow user to redirect stdout and stderr and still get the progress indication.
     std::unique_ptr<WriteBufferFromFileDescriptor> tty_buf;
     std::mutex tty_mutex;
@@ -354,6 +378,9 @@ protected:
     String server_version;
     String prompt;
     String server_display_name;
+
+    /// Settings received from the server, if any. Populated by connect().
+    SettingsChanges settings_from_server;
 
     ProgressIndication progress_indication;
     ProgressTable progress_table;

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/tuple-map-functions
+slug: /sql-reference/functions/tuple-map-functions
 sidebar_position: 120
 sidebar_label: Maps
 ---
@@ -79,7 +79,7 @@ select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
 
 Result:
 
-```
+```response
 ┌─mapFromArrays(['a', 'b', 'c'], [1, 2, 3])─┐
 │ {'a':1,'b':2,'c':3}                       │
 └───────────────────────────────────────────┘
@@ -93,7 +93,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 
 Result:
 
-```
+```response
 ┌─mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))─┐
 │ {1:('a',1),2:('b',2),3:('c',3)}                       │
 └───────────────────────────────────────────────────────┘
@@ -105,7 +105,7 @@ SELECT mapFromArrays(map('a', 1, 'b', 2, 'c', 3), [1, 2, 3])
 
 Result:
 
-```
+```response
 ┌─mapFromArrays(map('a', 1, 'b', 2, 'c', 3), [1, 2, 3])─┐
 │ {('a',1):1,('b',2):2,('c',3):3}                       │
 └───────────────────────────────────────────────────────┘
@@ -121,7 +121,7 @@ Keys and values can be quoted.
 
 **Syntax**
 
-``` sql
+```sql
 extractKeyValuePairs(data[, key_value_delimiter[, pair_delimiter[, quoting_character]]])
 ```
 
@@ -144,7 +144,7 @@ Alias:
 
 Query
 
-``` sql
+```sql
 SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 ```
 
@@ -158,7 +158,7 @@ Result:
 
 With a single quote `'` as quoting character:
 
-``` sql
+```sql
 SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 ```
 
@@ -172,7 +172,7 @@ Result:
 
 Escape sequences without escape sequences support:
 
-``` sql
+```sql
 SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 ```
 
@@ -196,7 +196,7 @@ FORMAT Vertical;
 
 Result:
 
-```
+```response
 Row 1:
 ──────
 m:              {'John':'33','Paula':'31'}
@@ -210,7 +210,7 @@ Same as `extractKeyValuePairs` but supports escaping.
 
 Supported escape sequences: `\x`, `\N`, `\a`, `\b`, `\e`, `\f`, `\n`, `\r`, `\t`, `\v` and `\0`.
 Non standard escape sequences are returned as it is (including the backslash) unless they are one of the following:
-`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c <= 31).
+`\\`, `'`, `"`, `backtick`, `/`, `=` or ASCII control characters (c &lt;= 31).
 
 This function will satisfy the use case where pre-escaping and post-escaping are not suitable. For instance, consider the following
 input string: `a: "aaaa\"bbb"`. The expected output is: `a: aaaa\"bbbb`.
@@ -223,13 +223,13 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
 
 Escape sequences with escape sequence support turned on:
 
-``` sql
+```sql
 SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 ```
 
 Result:
 
-``` result
+```response
 ┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
 └───────────────────┘

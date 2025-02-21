@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/revoke
+slug: /sql-reference/statements/revoke
 sidebar_position: 39
 sidebar_label: REVOKE
 ---
@@ -46,4 +46,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/settings/settings/)
+[Original article](/docs/operations/settings/settings/)

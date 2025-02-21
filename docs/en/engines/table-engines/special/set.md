@@ -1,15 +1,15 @@
 ---
-slug: /en/engines/table-engines/special/set
+slug: /engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
 ---
 
 # Set Table Engine
 
-A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section “IN operators”).
+A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section "IN operators").
 
 You can use `INSERT` to insert data in the table. New elements will be added to the data set, while duplicates will be ignored.
-But you can’t perform `SELECT` from the table. The only way to retrieve data is by using it in the right half of the `IN` operator.
+But you can't perform `SELECT` from the table. The only way to retrieve data is by using it in the right half of the `IN` operator.
 
 Data is always located in RAM. For `INSERT`, the blocks of inserted data are also written to the directory of tables on the disk. When starting the server, this data is loaded to RAM. In other words, after restarting, the data remains in place.
 
@@ -21,7 +21,7 @@ When creating a table, the following settings are applied:
 
 #### persistent
 
-Disables persistency for the Set and [Join](/docs/en/engines/table-engines/special/join.md/#join) table engines.
+Disables persistency for the Set and [Join](/docs/engines/table-engines/special/join.md/#join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 

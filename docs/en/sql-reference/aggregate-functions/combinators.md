@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/combinators
+slug: /sql-reference/aggregate-functions/combinators
 sidebar_position: 37
 sidebar_label: Combinators
 ---
@@ -18,13 +18,13 @@ With conditional aggregate functions, you can calculate aggregates for several c
 
 ## -Array
 
-The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the ‘Array(T)’ type (arrays) instead of ‘T’ type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
+The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the 'Array(T)' type (arrays) instead of 'T' type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
 
-Example 1: `sumArray(arr)` - Totals all the elements of all ‘arr’ arrays. In this example, it could have been written more simply: `sum(arraySum(arr))`.
+Example 1: `sumArray(arr)` - Totals all the elements of all 'arr' arrays. In this example, it could have been written more simply: `sum(arraySum(arr))`.
 
-Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘arr’ arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it’s not always possible to add ‘arrayJoin’ to a query.
+Example 2: `uniqArray(arr)` – Counts the number of unique elements in all 'arr' arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it's not always possible to add 'arrayJoin' to a query.
 
--If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
+-If and -Array can be combined. However, 'Array' must come first, then 'If'. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the 'cond' argument won't be an array.
 
 ## -Map
 
@@ -146,7 +146,7 @@ If an aggregate function does not have input values, with this combinator it ret
 
 **Returned values**
 
-Returns the default value of an aggregate function’s return type if there is nothing to aggregate.
+Returns the default value of an aggregate function's return type if there is nothing to aggregate.
 
 Type depends on the aggregate function used.
 
@@ -284,9 +284,9 @@ Consider the `people` table with the following data:
 └────────┴─────┴──────┘
 ```
 
-Let’s get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
+Let's get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
 
-To aggregate names in an array, we use the [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it’s the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
+To aggregate names in an array, we use the [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
@@ -300,9 +300,9 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 
 Consider the results.
 
-`John` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
+`John` is out of the sample because he's too young. Other people are distributed according to the specified age intervals.
 
-Now let’s count the total number of people and their average wage in the specified age intervals.
+Now let's count the total number of people and their average wage in the specified age intervals.
 
 ``` sql
 SELECT

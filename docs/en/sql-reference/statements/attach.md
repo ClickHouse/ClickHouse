@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/attach
+slug: /sql-reference/statements/attach
 sidebar_position: 40
 sidebar_label: ATTACH
 title: "ATTACH Statement"
@@ -100,7 +100,7 @@ Get ZooKeeper path and replica name for table:
 SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
 ```
 Result:
-```
+```sql
 ┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
 │ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
 └──────────────┴────────────────────────────────────────────────────────────┘

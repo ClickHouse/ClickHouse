@@ -1,25 +1,36 @@
 ---
-slug: /en/engines/database-engines/atomic
+slug: /engines/database-engines/atomic
 sidebar_label: Atomic
 sidebar_position: 10
 ---
 
 # Atomic 
 
-It supports non-blocking [DROP TABLE](#drop-detach-table) and [RENAME TABLE](#rename-table) queries and atomic [EXCHANGE TABLES](#exchange-tables) queries. `Atomic` database engine is used by default. Note that on ClickHouse Cloud, the `Replicated` database engine is used by default.
+The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default. 
+
+:::note
+On ClickHouse Cloud, the `Replicated` database engine is used by default.
+:::
 
 ## Creating a Database {#creating-a-database}
 
-``` sql
+```sql
 CREATE DATABASE test [ENGINE = Atomic];
 ```
 
-## Specifics and recommendations {#specifics-and-recommendations}
+## Specifics and Recommendations {#specifics-and-recommendations}
 
 ### Table UUID {#table-uuid}
 
-All tables in database `Atomic` have persistent [UUID](../../sql-reference/data-types/uuid.md) and store data in directory `/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`, where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is UUID of the table.
-Usually, the UUID is generated automatically, but the user can also explicitly specify the UUID in the same way when creating the table (this is not recommended). 
+Each table in the `Atomic` database has a persistent [UUID](../../sql-reference/data-types/uuid.md) and stores its data in the following directory:
+
+```text
+/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
+```
+
+Where `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` is the UUID of the table.
+
+By default, the UUID is generated automatically. However, users can explicitly specify the UUID when creating a table, though this is not recommended.
 
 For example:
 
@@ -33,29 +44,29 @@ You can use the [show_table_uuid_in_table_create_query_if_not_nil](../../operati
 
 ### RENAME TABLE {#rename-table}
 
-[RENAME](../../sql-reference/statements/rename.md) queries are performed without changing the UUID or moving table data. These queries do not wait for the completion of queries using the table and are executed instantly.
+[`RENAME`](../../sql-reference/statements/rename.md) queries do not modify the UUID or move table data. These queries execute immediately and do not wait for other queries that are using the table to complete.
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
-On `DROP TABLE` no data is removed, database `Atomic` just marks table as dropped by moving metadata to `/clickhouse_path/metadata_dropped/` and notifies background thread. Delay before final table data deletion is specified by the [database_atomic_delay_before_drop_table_sec](../../operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec) setting.
-You can specify synchronous mode using `SYNC` modifier. Use the [database_atomic_wait_for_drop_and_detach_synchronously](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously) setting to do this. In this case `DROP` waits for running `SELECT`, `INSERT` and other queries which are using the table to finish. Table will be actually removed when it's not in use.
+When using `DROP TABLE`, no data is removed. The `Atomic` engine just marks the table as dropped by moving it's metadata to `/clickhouse_path/metadata_dropped/` and notifies the background thread. The delay before the final table data deletion is specified by the [`database_atomic_delay_before_drop_table_sec`](../../operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec) setting.
+You can specify synchronous mode using `SYNC` modifier. Use the [`database_atomic_wait_for_drop_and_detach_synchronously`](../../operations/settings/settings.md#database_atomic_wait_for_drop_and_detach_synchronously) setting to do this. In this case `DROP` waits for running `SELECT`, `INSERT` and other queries which are using the table to finish. The table will be removed when it's not in use.
 
 ### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
 
-[EXCHANGE](../../sql-reference/statements/exchange.md) query swaps tables or dictionaries atomically. For instance, instead of this non-atomic operation:
+The [`EXCHANGE`](../../sql-reference/statements/exchange.md) query swaps tables or dictionaries atomically. For instance, instead of this non-atomic operation:
 
-```sql
+```sql title="Non-atomic"
 RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
 ```
-you can use one atomic query:
+you can use an atomic one:
 
-``` sql
+```sql title="Atomic"
 EXCHANGE TABLES new_table AND old_table;
 ```
 
 ### ReplicatedMergeTree in Atomic Database {#replicatedmergetree-in-atomic-database}
 
-For [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) tables, it is recommended not to specify engine parameters - path in ZooKeeper and replica name. In this case, configuration parameters [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use `{uuid}` macros. This is useful so that unique paths are automatically generated for each table in ZooKeeper.
+For [`ReplicatedMergeTree`](../table-engines/mergetree-family/replication.md#table_engines-replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [`default_replica_name`](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
 ## See Also
 

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/limit
+slug: /sql-reference/statements/select/limit
 sidebar_label: LIMIT
 ---
 
@@ -64,4 +64,4 @@ it returns another rows set
 └───┘
 ```
 
-cause row number 6 have same value “2” for field `n` as row number 5
+cause row number 6 have same value "2" for field `n` as row number 5

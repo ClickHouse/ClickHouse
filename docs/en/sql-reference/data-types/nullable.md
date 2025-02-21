@@ -1,16 +1,16 @@
 ---
-slug: /en/sql-reference/data-types/nullable
+slug: /sql-reference/data-types/nullable
 sidebar_position: 44
 sidebar_label: Nullable(T)
 ---
 
 # Nullable(T)
 
-Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes “missing value” alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
+Allows to store special marker ([NULL](../../sql-reference/syntax.md)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
-`T` can’t be any of the composite data types [Array](../../sql-reference/data-types/array.md), [Map](../../sql-reference/data-types/map.md) and [Tuple](../../sql-reference/data-types/tuple.md) but composite data types can contain `Nullable` type values, e.g. `Array(Nullable(Int8))`.
+`T` can't be any of the composite data types [Array](../../sql-reference/data-types/array.md), [Map](../../sql-reference/data-types/map.md) and [Tuple](../../sql-reference/data-types/tuple.md) but composite data types can contain `Nullable` type values, e.g. `Array(Nullable(Int8))`.
 
-A `Nullable` type field can’t be included in table indexes.
+A `Nullable` type field can't be included in table indexes.
 
 `NULL` is the default value for any `Nullable` type, unless specified otherwise in the ClickHouse server configuration.
 

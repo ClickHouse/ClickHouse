@@ -1,6 +1,8 @@
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/Impl/JSONEachRowWithProgressRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 
@@ -81,7 +83,6 @@ void JSONEachRowWithProgressRowOutputFormat::writeProgress(const Progress & valu
     writeCString("{\"progress\":", *ostr);
     value.writeJSON(*ostr);
     writeCString("}\n", *ostr);
-    ostr->next();
 }
 
 void JSONEachRowWithProgressRowOutputFormat::finalizeImpl()

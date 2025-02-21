@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/url
+slug: /sql-reference/table-functions/url
 sidebar_position: 200
 sidebar_label: url
 ---
@@ -53,8 +53,8 @@ Character `|` inside patterns is used to specify failover addresses. They are it
 
 ## Virtual Columns
 
-- `_path` — Path to the `URL`. Type: `LowCardinalty(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinalty(String)`.
+- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
 - `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
@@ -73,9 +73,9 @@ SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _d
 
 ## Storage Settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/docs/en/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [engine_url_skip_empty_files](/docs/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/docs/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
 
 **See Also**
 
-- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/docs/engines/table-engines/index.md#table_engines-virtual_columns)

@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/numbers
+description: "System table containing a single UInt64 column named `number` that contains almost all the natural numbers starting from zero."
+slug: /operations/system-tables/numbers
+title: "numbers"
+keywords: ["system table", "numbers"]
 ---
-# numbers
 
 This table contains a single UInt64 column named `number` that contains almost all the natural numbers starting from zero.
 

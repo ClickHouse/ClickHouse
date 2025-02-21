@@ -1,5 +1,5 @@
 #include <Access/AccessControl.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
@@ -30,7 +30,7 @@ namespace DB
 // clang-format off
 
 #define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(UInt64, bg_reconnect_mysql_dict_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
+    DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
     DECLARE(UInt64, shutdown_wait_unfinished, 5, R"(Delay in seconds to wait for unfinished queries)", 0) \
@@ -78,6 +78,20 @@ namespace DB
     A value of `0` means unlimited.
     :::
     )", 0) \
+    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_size, 100, R"(
+    ClickHouse uses threads from the prefixes deserialization Thread pool for parallel reading of metadata of columns and subcolumns from file prefixes in Wide parts in MergeTree. `max_prefixes_deserialization_thread_pool_size` limits the maximum number of threads in the pool.
+    )", 0) \
+    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_free_size, 0, R"(
+    If the number of **idle** threads in the prefixes deserialization Thread pool exceeds `max_prefixes_deserialization_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+    )", 0) \
+    DECLARE(UInt64, prefixes_deserialization_thread_pool_thread_pool_queue_size, 10000, R"(
+    The maximum number of jobs that can be scheduled on the prefixes deserialization Thread pool.
+
+    :::note
+    A value of `0` means unlimited.
+    :::
+    )", 0) \
+    DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
@@ -234,20 +248,20 @@ namespace DB
     DECLARE(UInt64, aggregate_function_group_array_max_element_size, 0xFFFFFF, R"(Max array element size in bytes for groupArray function. This limit is checked at serialization and help to avoid large state size.)", 0) \
     DECLARE(GroupArrayActionWhenLimitReached, aggregate_function_group_array_action_when_limit_is_reached, GroupArrayActionWhenLimitReached::THROW, R"(Action to execute when max array element size is exceeded in groupArray: `throw` exception, or `discard` extra values)", 0) \
     DECLARE(UInt64, max_server_memory_usage, 0, R"(
-    Limit on total memory usage.
-    The default [`max_server_memory_usage`](#max_server_memory_usage) value is calculated as `memory_amount * max_server_memory_usage_to_ram_ratio`.
+    The maximum amount of memory the server is allowed to use, expressed in bytes.
 
     :::note
-    A value of `0` (default) means unlimited.
+    The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage_to_ram_ratio`.
     :::
+
+    As a special case, a value of `0` (default) means the server may consume all available memory (excluding further restrictions imposed by `max_server_memory_usage_to_ram_ratio`).
     )", 0) \
     DECLARE(Double, max_server_memory_usage_to_ram_ratio, 0.9, R"(
-    Same as [`max_server_memory_usage`](#max_server_memory_usage) but in a ratio to physical RAM. Allows lowering the memory usage on low-memory systems.
-
-    On hosts with low RAM and swap, you possibly need setting [`max_server_memory_usage_to_ram_ratio`](#max_server_memory_usage_to_ram_ratio) larger than 1.
+    The maximum amount of memory the server is allowed to use, expressed as a ratio to all available memory.
+    For example, a value of `0.9` (default) means that the server may consume 90% of the available memory.
 
     :::note
-    A value of `0` means unlimited.
+    The maximum memory consumption of the server is further restricted by setting `max_server_memory_usage`.
     :::
     )", 0) \
     DECLARE(UInt64, merges_mutations_memory_usage_soft_limit, 0, R"(
@@ -352,7 +366,7 @@ namespace DB
     A value of `0` means "never". The default value corresponds to 1 day.
     :::
     )", 0) \
-    DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case if drop table failed, ClickHouse will wait for this timeout before retrying the operation.)", 0) \
+    DECLARE(UInt64, database_catalog_drop_error_cooldown_sec, 5, R"(In case of a failed table drop, ClickHouse will wait for this time-out before retrying the operation.)", 0) \
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     \
     \
@@ -418,7 +432,7 @@ namespace DB
     DECLARE(Double, cache_size_to_ram_max_ratio, 0.5, R"(Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.)", 0) \
     DECLARE(String, uncompressed_cache_policy, DEFAULT_UNCOMPRESSED_CACHE_POLICY, R"(Uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, uncompressed_cache_size, DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
-    Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+    Maximum size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
     There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -430,24 +444,28 @@ namespace DB
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue in the uncompressed cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-    Size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
+    Maximum size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
 
     :::note
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue in the mark cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
     DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache policy name.)", 0) \
-    DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for primary index (index of MergeTree family of tables).)", 0) \
-    DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue in the primary index cache relative to the cache's total size.)", 0) \
+    DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
+    DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
+    DECLARE(String, skipping_index_cache_policy, DEFAULT_SKIPPING_INDEX_CACHE_POLICY, "Skipping index cache policy name.", 0) \
+    DECLARE(UInt64, skipping_index_cache_size, DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE, "Size of cache for secondary index in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, skipping_index_cache_max_entries, DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES, "Size of cache for secondary index in entries. Zero means disabled.", 0) \
+    DECLARE(Double, skipping_index_cache_size_ratio, DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
-    Size of cache for uncompressed blocks of `MergeTree` indices.
+    Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
     :::note
     A value of `0` means disabled.
@@ -455,10 +473,10 @@ namespace DB
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache policy name.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
-    Size of cache for index marks.
+    Maximum size of cache for index marks.
 
     :::note
 
@@ -467,7 +485,7 @@ namespace DB
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue in the secondary index mark cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
     DECLARE(UInt64, page_cache_chunk_size, 2 << 20, R"(Bytes per chunk in userspace page cache. Rounded up to a multiple of page size (typically 4 KiB) or huge page size (typically 2 MiB, only if page_cache_use_thp is enabled).)", 0) \
     DECLARE(UInt64, page_cache_mmap_size, 1 << 30, R"(Bytes per memory mapping in userspace page cache. Not important.)", 0) \
     DECLARE(UInt64, page_cache_size, 0, R"(Amount of virtual memory to map for userspace page cache. If page_cache_use_madv_free is enabled, it's recommended to set this higher than the machine's RAM size. Use 0 to disable userspace page cache.)", 0) \
@@ -491,8 +509,8 @@ namespace DB
     :::
     )", 0) \
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
-    DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
     \
+    DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
@@ -503,7 +521,7 @@ namespace DB
     DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
     Restriction on deleting tables.
 
-    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
+    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
 
     :::note
     A value of `0` means that you can delete all tables without any restrictions.
@@ -520,7 +538,7 @@ namespace DB
     DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
     Restriction on dropping partitions.
 
-    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
     This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
     :::note
@@ -743,7 +761,7 @@ namespace DB
     A value of `0` means all available CPUs will be used.
     :::
     )", 0) \
-    DECLARE(Bool, async_load_databases, false, R"(
+    DECLARE(Bool, async_load_databases, true, R"(
     Asynchronous loading of databases and tables.
 
     - If `true` all non-system databases with `Ordinary`, `Atomic` and `Replicated` engine will be loaded asynchronously after the ClickHouse server start up. See `system.asynchronous_loader` table, `tables_loader_background_pool_size` and `tables_loader_foreground_pool_size` server settings. Any query that tries to access a table, that is not yet loaded, will wait for exactly this table to be started up. If load job fails, query will rethrow an error (instead of shutting down the whole server in case of `async_load_databases = false`). The table that is waited for by at least one query will be loaded with higher priority. DDL queries on a database will wait for exactly that database to be started up. Also consider setting a limit `max_waiting_queries` for the total number of waiting queries.
@@ -823,7 +841,7 @@ namespace DB
     )", 0) \
     DECLARE(UInt32, max_database_replicated_create_table_thread_pool_size, 1, R"(The number of threads to create tables during replica recovery in DatabaseReplicated. Zero means number of threads equal number of cores.)", 0) \
     DECLARE(Bool, database_replicated_allow_detach_permanently, true, R"(Allow detaching tables permanently in Replicated databases)", 0) \
-    DECLARE(Bool, format_alter_operations_with_parentheses, false, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
+    DECLARE(Bool, format_alter_operations_with_parentheses, true, R"(If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.)", 0) \
     DECLARE(String, default_replica_path, "/clickhouse/tables/{uuid}/{shard}", R"(
     The path to the table in ZooKeeper.
 
@@ -867,6 +885,21 @@ namespace DB
     **See Also**
     - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
     )", 0) \
+    DECLARE(Bool, throw_on_unknown_workload, false, R"(
+    Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
+
+    - If `true`, RESOURCE_ACCESS_DENIED exception is thrown from a query that is trying to access unknown workload. Useful to enforce resource scheduling for all queries after WORKLOAD hierarchy is established and contains WORKLOAD default.
+    - If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
+
+    **Example**
+
+    ``` xml
+    <throw_on_unknown_workload>true</throw_on_unknown_workload>
+    ```
+
+    **See Also**
+    - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+    )", 0) \
     DECLARE(String, series_keeper_path, "/clickhouse/series", R"(
     Path in Keeper with auto-incremental numbers, generated by the `generateSerialID` function. Each series will be a node under this path.
     )", 0) \
@@ -878,6 +911,9 @@ namespace DB
     )", 0) \
     DECLARE(UInt64, memory_worker_period_ms, 0, R"(
     Tick period of background memory worker which corrects memory tracker memory usages and cleans up unused pages during higher memory usage. If set to 0, default value will be used depending on the memory usage source
+    )", 0) \
+    DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
+    Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
@@ -896,9 +932,6 @@ namespace DB
     )", 0) \
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
-    )", 0) \
-    DECLARE(Bool, send_settings_to_client, true, R"(
-    Send user settings from server configuration to clients (in the server Hello message).
     )", 0) \
     \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
@@ -958,6 +991,7 @@ namespace DB
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
+    DECLARE(Bool, storage_shared_set_join_use_inner_uuid, false, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0)
 
 
 // clang-format on
@@ -994,10 +1028,18 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
     for (const auto & setting : all())
     {
         const auto & name = setting.getName();
-        if (config.has(name))
-            set(name, config.getString(name));
-        else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
-            set(name, config.getString("profiles.default." + name));
+        try
+        {
+            if (config.has(name))
+                set(name, config.getString(name));
+            else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + name))
+                set(name, config.getString("profiles.default." + name));
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while parsing setting '{}' value", name);
+            throw;
+        }
     }
 }
 
@@ -1055,6 +1097,8 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_concurrent_select_queries",
             {std::to_string(context->getProcessList().getMaxSelectQueriesAmount()), ChangeableWithoutRestart::Yes}},
             {"max_waiting_queries", {std::to_string(context->getProcessList().getMaxWaitingQueriesAmount()), ChangeableWithoutRestart::Yes}},
+            {"concurrent_threads_soft_limit_num", {std::to_string(context->getConcurrentThreadsSoftLimitNum()), ChangeableWithoutRestart::Yes}},
+            {"concurrent_threads_soft_limit_ratio_to_cores", {std::to_string(context->getConcurrentThreadsSoftLimitRatioToCores()), ChangeableWithoutRestart::Yes}},
 
             {"background_buffer_flush_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
@@ -1074,10 +1118,16 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+            {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"config_reload_interval_ms", {std::to_string(context->getConfigReloaderInterval()), ChangeableWithoutRestart::Yes}},
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
+
+            {"max_remote_read_network_bandwidth_for_server",
+             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_remote_write_network_bandwidth_for_server",
+             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())

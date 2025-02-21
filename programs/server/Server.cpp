@@ -1,6 +1,7 @@
 #include "Server.h"
 
 #include <memory>
+#include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -30,7 +31,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -55,6 +56,8 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -71,6 +74,8 @@
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -111,7 +116,6 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -131,6 +135,9 @@
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
+#    include <Server/SSH/SSHPtyHandlerFactory.h>
+#    include <Common/LibSSHInitializer.h>
+#    include <Common/LibSSHLogger.h>
 #endif
 
 #if USE_GRPC
@@ -217,6 +224,10 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString skipping_index_cache_policy;
+    extern const ServerSettingsUInt64 skipping_index_cache_size;
+    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
+    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -225,6 +236,7 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_size;
@@ -242,6 +254,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
@@ -253,6 +267,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_view_num_to_warn;
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
+    extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
@@ -280,6 +295,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_sample_min_allocation_size;
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
+    extern const ServerSettingsBool throw_on_unknown_workload;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -289,6 +305,9 @@ namespace ServerSetting
     extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
+    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
+    extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
 }
 
 }
@@ -302,6 +321,7 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
+    extern const Metric IsServerShuttingDown;
 }
 
 namespace ProfileEvents
@@ -763,6 +783,17 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         {
             std::string full_prefix = "startup_scripts." + key;
 
+            auto user = config.getString(full_prefix + ".user", "");
+            auto startup_context = Context::createCopy(context);
+
+            if (!user.empty())
+            {
+                auto & access_control = startup_context->getAccessControl();
+                startup_context->setUser(access_control.getID<User>(user));
+            }
+
+            startup_context->makeQueryContext();
+
             if (config.has(full_prefix + ".condition"))
             {
                 auto condition = config.getString(full_prefix + ".condition");
@@ -770,8 +801,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                auto startup_context = Context::createCopy(context);
-                startup_context->makeQueryContext();
+                startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
@@ -792,8 +822,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
-            auto startup_context = Context::createCopy(context);
-            startup_context->makeQueryContext();
+            startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
@@ -872,6 +901,11 @@ try
 {
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
+#endif
+
+#if USE_SSL
+    ::ssh::LibSSHInitializer::instance();
+    ::ssh::libsshLogger::initialize();
 #endif
 
     Stopwatch startup_watch;
@@ -1077,7 +1111,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(global_context->getServerSettings()[ServerSetting::memory_worker_period_ms]);
+    MemoryWorker memory_worker(
+        server_settings[ServerSetting::memory_worker_period_ms], server_settings[ServerSetting::memory_worker_correct_memory_tracker]);
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1183,6 +1218,11 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
+    getFetchPartitionThreadPool().initialize(
+        server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
+        0, // FETCH PARTITION is relatively rare, no need to keep threads
+        server_settings[ServerSetting::max_fetch_partition_thread_pool_size]);
+
     getActivePartsLoadingThreadPool().initialize(
         server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
         0, // We don't need any threads once all the parts will be loaded
@@ -1225,6 +1265,11 @@ try
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
+
+    getMergeTreePrefixesDeserializationThreadPool().initialize(
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+        server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1516,13 +1561,11 @@ try
     {
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
-        fs::create_directories(dictionaries_lib_path);
     }
 
     {
         std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
-        fs::create_directories(user_scripts_path);
     }
 
     /// top_level_domains_lists
@@ -1639,6 +1682,17 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
+    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
+    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
+    size_t skipping_index_cache_max_entries = server_settings[ServerSetting::skipping_index_cache_max_entries];
+    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
+    if (skipping_index_cache_size > max_cache_size)
+    {
+        skipping_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
+    }
+    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_entries, skipping_index_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -1723,16 +1777,15 @@ try
             new_server_settings.loadSettingsFromConfig(*config);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
-            double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
-
-            size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
-            size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
+            const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+            const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
+            const size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
-                    " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                LOG_INFO(log, "Changed setting 'max_server_memory_usage' to {}"
+                    " ({} available memory * {:.2f} max_server_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
@@ -1740,10 +1793,9 @@ try
             else if (max_server_memory_usage > default_max_server_memory_usage)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
-                    " because the system has low amount of memory. The amount was"
-                    " calculated as {} available"
-                    " * {:.2f} max_server_memory_usage_to_ram_ratio",
+                LOG_INFO(log, "Lowered setting 'max_server_memory_usage' to {}"
+                    " because the system has too little memory. The new value was"
+                    " calculated as {} available memory * {:.2f} max_server_memory_usage_to_ram_ratio",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
@@ -1813,20 +1865,22 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+
+            size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
+            size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
+
+            global_context->reloadRemoteThrottlerConfig(read_bandwidth,write_bandwidth);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", read_bandwidth);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", write_bandwidth);
+
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] > 0 && new_server_settings[ServerSetting::concurrent_threads_soft_limit_num] < concurrent_threads_soft_limit)
-                concurrent_threads_soft_limit = new_server_settings[ServerSetting::concurrent_threads_soft_limit_num];
-            if (new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] > 0)
-            {
-                auto value = new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores] * getNumberOfCPUCoresToUse();
-                if (value > 0 && value < concurrent_threads_soft_limit)
-                    concurrent_threads_soft_limit = value;
-            }
-            ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}", concurrent_threads_soft_limit);
+            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
@@ -1885,6 +1939,11 @@ try
                 new_server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
                 new_server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
+            getFetchPartitionThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
+                0, // FETCH PARTITION is relatively rare, no need to keep threads
+                new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size]);
+
             getActivePartsLoadingThreadPool().reloadConfiguration(
                 new_server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
                 0, // We don't need any threads once all the parts will be loaded
@@ -1905,9 +1964,14 @@ try
                 0, // We don't need any threads one all the parts will be deleted
                 new_server_settings[ServerSetting::max_parts_cleaning_thread_pool_size]);
 
+            getMergeTreePrefixesDeserializationThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
+                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
+                new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
+            global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
 
             if (config->has("resources"))
             {
@@ -1940,6 +2004,7 @@ try
             global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
+            global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
 
@@ -2508,6 +2573,8 @@ try
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
 
+            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
+
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
@@ -2528,6 +2595,8 @@ try
                 }
             }
 
+            global_context->getRefreshSet().setRefreshesStopped(true);
+
             if (current_connections)
                 LOG_WARNING(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
             else
@@ -2543,14 +2612,19 @@ try
             if (!server_settings[ServerSetting::shutdown_wait_unfinished_queries])
                 global_context->getProcessList().killAllQueries();
 
+            size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
+            auto wait_start = std::chrono::steady_clock::now();
+
             if (current_connections)
-                current_connections = waitServersToFinish(servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
+                current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
                     " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
+
+            global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
 
             dns_cache_updater.reset();
 
@@ -2858,6 +2932,37 @@ void Server::createServers(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
     #endif
             });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::TCP_SSH))
+        {
+            port_name = "tcp_ssh_port";
+            createServer(
+                config,
+                listen_host,
+                port_name,
+                listen_try,
+                start_servers,
+                servers,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if 0 && USE_SSH && defined(OS_LINUX) /// SSH server is insecure until and it is disabled until all special cases are fixed.
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "SSH PTY: " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new SSHPtyHandlerFactory(*this, config),
+                            server_pool,
+                            socket,
+                            new Poco::Net::TCPServerParams));
+#else
+                UNUSED(port);
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
+#endif
+                });
         }
 
         if (server_type.shouldStart(ServerType::Type::MYSQL))

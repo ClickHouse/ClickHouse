@@ -1,10 +1,11 @@
 ---
-sidebar_label: Query-level Settings
-title: Query-level Settings
-slug: /en/operations/settings/query-level
+sidebar_label: Query-level Session Settings
+title: Query-level Session Settings
+slug: /operations/settings/query-level
 ---
 
-There are multiple ways to set ClickHouse query-level settings. Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
+There are multiple ways to run statements with specific settings.
+Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
 
 The order of priority for defining a setting is:
 
