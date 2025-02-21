@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: Depends on AWS
+-- Tag no-fasttest: Depends on Minio
 
 SET enable_parallel_replicas=1;
 SET max_parallel_replicas=4;
