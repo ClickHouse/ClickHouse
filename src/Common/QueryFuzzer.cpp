@@ -1382,15 +1382,15 @@ void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
 
 static String getOldALias(const ASTPtr & input)
 {
-    if (const auto * sub = typeid_cast<const ASTWithAlias *>(input.get()))
-    {
-        return sub->tryGetAlias();
-    }
-    else if (const auto * texp = typeid_cast<const ASTTableExpression *>(input.get()))
+    if (const auto * texp = typeid_cast<const ASTTableExpression *>(input.get()))
     {
         const auto & child = texp->database_and_table_name ? texp->database_and_table_name
                                                            : (texp->table_function ? texp->table_function : texp->subquery);
         return typeid_cast<const ASTWithAlias *>(child.get())->tryGetAlias();
+    }
+    else if (const auto * sub = typeid_cast<const ASTWithAlias *>(input.get()))
+    {
+        return sub->tryGetAlias();
     }
     else
     {
@@ -1422,20 +1422,36 @@ ASTPtr QueryFuzzer::addJoinClause()
         if (old_alias.empty() || fuzz_rand() % 2 == 0)
         {
             /// It has no alias or overwrite old one
-            table_exp = input_table->clone();
-            if (typeid_cast<ASTWithAlias *>(input_table.get()))
+            if (typeid_cast<ASTTableExpression *>(input_table.get()))
             {
-                auto * otexp = typeid_cast<ASTWithAlias *>(table_exp.get());
-                otexp->setAlias(next_alias);
-            }
-            else if (typeid_cast<ASTTableExpression *>(input_table.get()))
-            {
+                table_exp = input_table->clone();
                 auto * otexp = typeid_cast<ASTTableExpression *>(table_exp.get());
                 auto & otable_exp_child = otexp->database_and_table_name
                     ? otexp->database_and_table_name
                     : (otexp->table_function ? otexp->table_function : otexp->subquery);
                 auto * otable_exp_alias = typeid_cast<ASTWithAlias *>(otable_exp_child.get());
                 otable_exp_alias->setAlias(next_alias);
+            }
+            else if (typeid_cast<ASTWithAlias *>(input_table.get()))
+            {
+                ASTPtr child = nullptr;
+                table_exp = std::make_shared<ASTTableExpression>();
+                auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
+
+                if (typeid_cast<ASTSubquery *>(input_table.get()))
+                {
+                    child = ntexp->subquery = input_table->clone();
+                }
+                else if (typeid_cast<ASTFunction *>(input_table.get()))
+                {
+                    child = ntexp->table_function = input_table->clone();
+                }
+                else
+                {
+                    child = ntexp->database_and_table_name = input_table->clone();
+                }
+                child->setAlias(next_alias);
+                ntexp->children.emplace_back(child);
             }
             else
             {
