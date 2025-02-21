@@ -152,8 +152,6 @@ private:
 
     String current_node_name;
 
-    template <typename T> class ConcurrentFlags;
-    using UpdateConcurrentFlags = ConcurrentFlags<std::string>;
     template <typename T> class Flags;
     using UpdateFlags = Flags<std::string>;
 

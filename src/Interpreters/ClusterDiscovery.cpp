@@ -409,8 +409,10 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     if (nodes_info.empty())
     {
-        removeCluster(cluster_info.name);
-        return on_exit();
+        String name = cluster_info.name;
+        /// cluster_info removed inside removeCluster, can't use reference to name.
+        removeCluster(name);
+        return true;
     }
 
     auto cluster = makeCluster(cluster_info);
@@ -426,7 +428,6 @@ void ClusterDiscovery::removeCluster(const String & name)
         std::lock_guard lock(mutex);
         cluster_impls.erase(name);
     }
-    clusters_info.erase(name);
     clusters_to_update->remove(name);
     LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
 }
@@ -658,7 +659,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
         clusters_info.merge(new_dynamic_clusters_info);
 
         auto clusters = clusters_to_update->wait(5s, finished);
-        for (auto & [cluster_name, need_update] : clusters)
+        for (const auto & [cluster_name, need_update] : clusters)
         {
             auto cluster_info_it = clusters_info.find(cluster_name);
             if (cluster_info_it == clusters_info.end())
@@ -685,7 +686,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             {
                 all_up_to_date = false;
                 /// no need to trigger convar, will retry after timeout in `wait`
-                need_update = true;
+                clusters_to_update->set(cluster_name);
                 LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
             }
         }
