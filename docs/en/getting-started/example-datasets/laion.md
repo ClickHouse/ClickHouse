@@ -1,6 +1,6 @@
 ---
 description: "Dataset containing 400 million images with English image captions"
-slug: /en/getting-started/example-datasets/laion-400m-dataset
+slug: /getting-started/example-datasets/laion-400m-dataset
 sidebar_label: Laion-400M dataset
 title: "Laion-400M dataset"
 ---

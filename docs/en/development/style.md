@@ -1,5 +1,5 @@
 ---
-slug: /en/development/style
+slug: /development/style
 sidebar_position: 70
 sidebar_label: C++ Style Guide
 ---

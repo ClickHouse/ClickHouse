@@ -1,6 +1,6 @@
 ---
 title : ArrowStream
-slug : /en/interfaces/formats/ArrowStream
+slug: /interfaces/formats/ArrowStream
 keywords : [ArrowStream]
 input_format: true
 output_format: true
