@@ -35,7 +35,7 @@ private:
     /// Execute task on event loop thread
     void post(Task task);
     void executeTasks();
-
+        
     NATSOptionsPtr createOptions();
 
     bool isRunning();
