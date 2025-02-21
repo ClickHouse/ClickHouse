@@ -281,6 +281,8 @@ void DisksApp::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void DisksApp::parseAndCheckOptions(

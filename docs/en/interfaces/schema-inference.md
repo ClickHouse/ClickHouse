@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/schema-inference
+slug: /interfaces/schema-inference
 sidebar_position: 21
 sidebar_label: Schema inference
 title: Automatic schema inference from input data
@@ -124,7 +124,7 @@ there is an option to use the structure from the insertion table instead of extr
 It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has an optimized schema, so
 no conversions between types will be performed.
 
-There is a special setting [use_structure_from_insertion_table_in_table_functions](/docs/en/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
+There is a special setting [use_structure_from_insertion_table_in_table_functions](/docs/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
 - 0 - table function will extract the structure from the data.
 - 1 - table function will use the structure from the insertion table.
@@ -531,7 +531,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Result:
 
-```text
+```response
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -567,7 +567,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}
 ```
 Result:
 
-```text
+```response
 Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
 Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
 You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
@@ -582,7 +582,7 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : 
 ```
 
 Result:
-```text
+```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -1289,6 +1289,7 @@ ${data}<result_after_delimiter>
 ```
 
 And a file `row_format` with the next content:
+
 ```text
 <row_before_delimiter>${column_1:CSV}<field_delimiter_1>${column_2:Quoted}<field_delimiter_2>${column_3:JSON}<row_after_delimiter>
 ```
@@ -1569,14 +1570,14 @@ DESC format(JSONEachRow, $$
                          $$)
 ```
 
-```text
+```response
 ┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ datetime   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 │ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings-formats.md#date_time_input_format)
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/operations/settings/settings-formats.md#date_time_input_format)
 
 #### input_format_try_infer_dates
 
@@ -2020,7 +2021,8 @@ Let's try to use schema inference on these 3 files:
 ```
 
 Result:
-```text
+
+```response
 ┌─name───┬─type─────────────┐
 │ field1 │ Nullable(Int64)  │
 │ field2 │ Nullable(String) │
@@ -2064,7 +2066,8 @@ Let's try to use schema inference on these 3 files:
 ```
 
 Result:
-```text
+
+```response
 ┌─name───┬─type───────────────────┐
 │ field1 │ Nullable(Int64)        │
 │ field2 │ Nullable(String)       │
@@ -2099,7 +2102,7 @@ We can inspect and query this file without specifying format or structure:
 :) desc file(data);
 ```
 
-```text
+```repsonse
 ┌─name─┬─type─────────────┐
 │ a    │ Nullable(Int64)  │
 │ b    │ Nullable(String) │
@@ -2110,7 +2113,7 @@ We can inspect and query this file without specifying format or structure:
 :) select * from file(data);
 ```
 
-```text
+```response
 ┌─a─┬─b─────┐
 │ 1 │ Data1 │
 │ 2 │ Data2 │

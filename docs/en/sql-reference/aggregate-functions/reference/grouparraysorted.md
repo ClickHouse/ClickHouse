@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/grouparraysorted
+slug: /sql-reference/aggregate-functions/reference/grouparraysorted
 sidebar_position: 146
 ---
 

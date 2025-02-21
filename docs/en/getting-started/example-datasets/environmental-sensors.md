@@ -1,6 +1,6 @@
 ---
 description: "Over 20 billion records of data from Sensor.Community, a contributors-driven global sensor network that creates Open Environmental Data."
-slug: /en/getting-started/example-datasets/environmental-sensors
+slug: /getting-started/example-datasets/environmental-sensors
 sidebar_label: Environmental Sensors Data
 title: "Environmental Sensors Data"
 ---

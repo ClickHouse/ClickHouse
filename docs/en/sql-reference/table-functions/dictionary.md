@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/dictionary
+slug: /sql-reference/table-functions/dictionary
 sidebar_position: 47
 sidebar_label: dictionary
 title: dictionary
