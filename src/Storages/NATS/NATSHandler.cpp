@@ -27,6 +27,13 @@ NATSHandler::NATSHandler(LoggerPtr log_)
     : log(log_)
     , loop_state(Loop::CREATED)
 {
+    auto error = uv_async_init(loop.getLoop(), &execute_tasks_scheduler, processTasks);
+    if (error)
+    {
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not create scheduler");
+    }
+
+    execute_tasks_scheduler.data = this;
 }
 
 void NATSHandler::runLoop()
@@ -37,44 +44,39 @@ void NATSHandler::runLoop()
         {
             return;
         }
-
-        natsLibuv_Init();
-        natsLibuv_SetThreadLocalLoop(loop.getLoop());
-
-        loop_state = Loop::RUN;
     }
+
+    natsLibuv_Init();
+    natsLibuv_SetThreadLocalLoop(loop.getLoop());
+
     SCOPE_EXIT({
         nats_ReleaseThreadMemory();
         resetThreadLocalLoop();
     });
 
+    setLoopState(Loop::RUN);
     LOG_DEBUG(log, "Background loop started");
 
-    int num_pending_callbacks = 0;
-    while (isRunning() || num_pending_callbacks != 0)
-    {
-        std::queue<Task> executed_tasks;
-        {
-            std::lock_guard<std::mutex> lock(tasks_mutex);
-            std::swap(executed_tasks, tasks);
-        }
-
-        while (!executed_tasks.empty())
-        {
-            auto task = std::move(executed_tasks.front());
-            executed_tasks.pop();
-            task();
-        }
-
-        num_pending_callbacks = uv_run(loop.getLoop(), UV_RUN_NOWAIT);
-    }
-
-    {
-        std::lock_guard lock(loop_state_mutex);
-        loop_state = Loop::CLOSED;
-    }
+    uv_run(loop.getLoop(), UV_RUN_DEFAULT);
+    setLoopState(Loop::CLOSED);
 
     LOG_DEBUG(log, "Background loop ended");
+}
+
+void NATSHandler::processTasks(uv_async_t* scheduler)
+{
+    auto * self_ptr = static_cast<NATSHandler *>(scheduler->data);
+    if (!self_ptr)
+    {
+        return;
+    }
+    self_ptr->executeTasks();
+
+    std::lock_guard lock(self_ptr->loop_state_mutex);
+    if (self_ptr->loop_state == Loop::STOP)
+    {
+        uv_stop(self_ptr->loop.getLoop());
+    }
 }
 
 void NATSHandler::stopLoop()
@@ -88,6 +90,8 @@ void NATSHandler::stopLoop()
 
     LOG_DEBUG(log, "Implicit loop stop");
     loop_state = Loop::STOP;
+
+    uv_async_send(&execute_tasks_scheduler);
 }
 
 void NATSHandler::post(Task task)
@@ -98,6 +102,23 @@ void NATSHandler::post(Task task)
         throw Exception(ErrorCodes::INVALID_STATE, "Can not post task to event loop: event loop stopped");
 
     tasks.push(std::move(task));
+
+    uv_async_send(&execute_tasks_scheduler);
+}
+void NATSHandler::executeTasks()
+{
+    std::queue<Task> executed_tasks;
+    {
+        std::lock_guard<std::mutex> lock(tasks_mutex);
+        std::swap(executed_tasks, tasks);
+    }
+
+    while (!executed_tasks.empty())
+    {
+        auto task = std::move(executed_tasks.front());
+        executed_tasks.pop();
+        task();
+    }
 }
 
 std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfiguration & configuration)
@@ -177,10 +198,10 @@ NATSOptionsPtr NATSHandler::createOptions()
     return result;
 }
 
-bool NATSHandler::isRunning()
+void NATSHandler::setLoopState(UInt8 loop_state_)
 {
-    std::scoped_lock lock(loop_state_mutex, tasks_mutex);
-    return loop_state == Loop::RUN || !tasks.empty();
+    std::lock_guard lock(loop_state_mutex);
+    loop_state = loop_state_;
 }
 
 void NATSHandler::resetThreadLocalLoop()
