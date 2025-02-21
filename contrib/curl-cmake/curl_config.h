@@ -2,6 +2,7 @@
 #define CURL_DISABLE_FTP
 #define CURL_DISABLE_TFTP
 #define CURL_DISABLE_LDAP
+#define CURL_DISABLE_SMB
 #define CURL_EXTERN_SYMBOL __attribute__ ((__visibility__ ("default")))
 
 #define SIZEOF_SHORT 2
