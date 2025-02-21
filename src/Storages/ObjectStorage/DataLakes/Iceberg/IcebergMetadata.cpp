@@ -51,7 +51,7 @@ parseTableSchemaFromManifestFile(const avro::DataFileReaderBase & manifest_file_
     if (avro_schema_it == avro_metadata.end())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Cannot read Iceberg table: manifest file {} doesn't have table schema in its metadata",
+            "Cannot read Iceberg table: manifest file '{}' doesn't have table schema in its metadata",
             manifest_file_name);
     std::vector<uint8_t> schema_json = avro_schema_it->second;
     String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
@@ -270,7 +270,7 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            return std::filesystem::path(path).filename();
+            return getFilePath(std::string_view(path), configuration_ptr->getPath());
         }
     }
     return std::nullopt;
@@ -326,8 +326,7 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
     auto context = getContext();
-    StorageObjectStorageSource::ObjectInfo object_info(
-        std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
+    StorageObjectStorageSource::ObjectInfo object_info(manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
     auto manifest_list_file_reader
@@ -350,10 +349,9 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
     std::vector<ManifestFileEntry> manifest_files;
     for (size_t i = 0; i < col_str->size(); ++i)
     {
-        const auto file_path = col_str->getDataAt(i).toView();
-        const auto filename = std::filesystem::path(file_path).filename();
-        String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
-        auto manifest_file_it = manifest_files_by_name.find(manifest_file);
+        const std::string_view file_path = col_str->getDataAt(i).toView();
+        const auto filename = getFilePath(std::string_view(file_path), configuration_ptr->getPath());
+        auto manifest_file_it = manifest_files_by_name.find(filename);
         if (manifest_file_it != manifest_files_by_name.end())
         {
             manifest_files.emplace_back(manifest_file_it);
@@ -367,12 +365,13 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
 
 ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const
 {
-    String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
+    LOG_DEBUG(log, "Initializing manifest file: {}", filename);
+    String manifest_file = filename;
 
     StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
     auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
     auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
-    auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
+    auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, manifest_file);
     schema_processor.addIcebergTableSchema(schema_object);
     auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
         std::move(manifest_file_reader),

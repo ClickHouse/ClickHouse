@@ -1,0 +1,57 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "b00d4b67-6eba-4209-96ce-3228ccdece8a",
+  "location" : "s3a://test/est",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1740151604189,
+  "last-column-id" : 4,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "order_number",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "product_code",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "year_id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "month_id",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "divanik",
+    "option.format-version" : "2",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : { },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ ],
+  "metadata-log" : [ ]
+}
