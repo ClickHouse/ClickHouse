@@ -8,6 +8,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTRefreshStrategy.h>
+#include <Parsers/queryNormalization.h>
 
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
