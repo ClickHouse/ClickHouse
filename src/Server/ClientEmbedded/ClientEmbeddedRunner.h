@@ -26,14 +26,14 @@ public:
 
     bool hasStarted() { return started.test(); }
     bool hasFinished() { return finished.test(); }
-    void run(const NameToNameMap & envs, const String & starting_query = "");
+    void run(const String & starting_query = "");
     IClientDescriptorSet::DescriptorSet getDescriptorsForServer() { return client_descriptors->getDescriptorsForServer(); }
     bool hasPty() const { return client_descriptors->isPty(); }
     // Sets new window size for tty. Works only if IClientDescriptorSet is pty
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
 
 private:
-    void clientRoutine(NameToNameMap envs, String starting_query);
+    void clientRoutine(String starting_query);
 
     // This is used by server thread and client thread, be sure that server only gets them via getDescriptorsForServer.
     std::unique_ptr<IClientDescriptorSet> client_descriptors;

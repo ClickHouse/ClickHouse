@@ -316,7 +316,6 @@ std_cerr_cout_excludes=(
     /tests/
     _fuzzer
     # OK
-    base/base/ask.cpp
     src/Common/ProgressIndication.cpp
     src/Common/ProgressTable.cpp
     # only under #ifdef DBMS_HASH_MAP_DEBUG_RESIZES, that is used only in tests
@@ -345,6 +344,7 @@ std_cerr_cout_excludes=(
     src/Loggers/Loggers.cpp
     src/Common/GWPAsan.cpp
     src/Common/ProgressIndication.h
+    src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \
