@@ -97,6 +97,9 @@ public:
         /// compute the tag from the query AST.
         const String tag;
 
+        /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
+        const bool is_subquery;
+
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             const String & current_database,
@@ -106,14 +109,16 @@ public:
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            bool is_subquery_);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_subquery_);
 
         bool operator==(const Key & other) const;
     };

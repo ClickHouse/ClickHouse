@@ -1355,7 +1355,7 @@ static BlockIO executeQueryImpl(
             {
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryCacheReader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1466,7 +1466,8 @@ static BlockIO executeQueryImpl(
                             context->getUserID(), context->getCurrentRoles(),
                             settings[Setting::query_cache_share_between_users],
                             std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
-                            settings[Setting::query_cache_compress_entries]);
+                            settings[Setting::query_cache_compress_entries],
+                            /* is_subquery = */ false);
 
                         const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])

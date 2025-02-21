@@ -1497,7 +1497,7 @@ void Planner::buildPlanForQueryNode()
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryCacheStep instead of building the rest of the plan.
     if (can_use_query_cache && settings[Setting::query_cache_for_subqueries] && settings[Setting::enable_reads_from_query_cache])
     {
-        QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles());
+        QueryCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
         auto reader = std::make_shared<QueryCacheReader>(query_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
@@ -1912,7 +1912,8 @@ void Planner::buildPlanForQueryNode()
             query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(),
             settings[Setting::query_cache_share_between_users],
             std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
-            settings[Setting::query_cache_compress_entries]);
+            settings[Setting::query_cache_compress_entries],
+            /* is_subquery = */ true);
 
         const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])

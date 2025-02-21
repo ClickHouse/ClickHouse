@@ -316,11 +316,12 @@ ASTPtr removeTableAliases(ASTPtr ast)
     return ast;
 }
 
-IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery)
 {
     ast = ast->clone();
     ast = removeQueryCacheSettings(ast);
-    ast = removeTableAliases(ast);
+    if (is_subquery)
+        ast = removeTableAliases(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -390,17 +391,20 @@ QueryCache::Key::Key(
     const std::vector<UUID> & current_user_roles_,
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_)
-    : ast_hash(calculateAstHash(ast_, current_database, settings))
+    bool is_compressed_,
+    bool is_subquery_)
+    : ast_hash(calculateAstHash(ast_, current_database, settings, is_subquery_))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
-    , query_string(queryStringFromAST(ast_))
+    , query_string(is_subquery_ ? queryStringFromAST(removeTableAliases(ast_->clone())) : queryStringFromAST(ast_))
+    /// ^^ if subquery, remove unnecessary aliases first for more convenient display in system.query_cache
     , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
+    , is_subquery(is_subquery_)
 {
 }
 
@@ -410,9 +414,10 @@ QueryCache::Key::Key(
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
-    /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
+    const std::vector<UUID> & current_user_roles_,
+    bool is_subquery_)
+    : QueryCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false, is_subquery_)
+    /// ^^ dummy values for everything except AST, current database, query_id, user name/roles, is_subquery
 {
 }
 
