@@ -333,6 +333,8 @@
     M(StorageBufferLayerLockReadersWaitMilliseconds, "Time for waiting for Buffer layer during reading.", ValueType::Milliseconds) \
     M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers).", ValueType::Milliseconds) \
     \
+    M(SystemLogErrorOnFlush, "Number of times any of the system logs have failed to flush to the corresponding system table. Attempts to flush are repeated.", ValueType::Number) \
+    \
     M(DictCacheKeysRequested, "Number of keys requested from the data source for the dictionaries of 'cache' types.", ValueType::Number) \
     M(DictCacheKeysRequestedMiss, "Number of keys requested from the data source for dictionaries of 'cache' types but not found in the data source.", ValueType::Number) \
     M(DictCacheKeysRequestedFound, "Number of keys requested from the data source for dictionaries of 'cache' types and found in the data source.", ValueType::Number) \
@@ -769,6 +771,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(BackupsOpenedForRead, "Number of backups opened for reading", ValueType::Number) \
     M(BackupsOpenedForWrite, "Number of backups opened for writing", ValueType::Number) \
+    M(BackupsOpenedForUnlock, "Number of backups opened for unlocking", ValueType::Number) \
     M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file", ValueType::Microseconds) \
     M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file", ValueType::Microseconds) \
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \

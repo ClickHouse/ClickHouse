@@ -1,7 +1,7 @@
 ---
 title: Format Settings
 sidebar_label: Format Settings
-slug: /en/operations/settings/formats
+slug: /operations/settings/formats
 toc_max_heading_level: 2
 ---
 

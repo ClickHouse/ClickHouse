@@ -1,6 +1,7 @@
 #include "StorageObjectStorageSource.h"
 #include <memory>
 #include <optional>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
@@ -265,7 +266,8 @@ Chunk StorageObjectStorageSource::generate()
             return chunk;
         }
 
-        if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (reader.getInputFormat() && read_context->getSettingsRef()[Setting::use_cache_for_count_from_files]
+            && (!key_condition || key_condition->alwaysUnknownOrTrue()))
             addNumRowsToCache(*reader.getObjectInfo(), total_rows_in_file);
 
         total_rows_in_file = 0;

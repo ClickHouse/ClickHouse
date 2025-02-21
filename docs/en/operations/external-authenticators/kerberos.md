@@ -1,8 +1,8 @@
 ---
-slug: /en/operations/external-authenticators/kerberos
+slug: /operations/external-authenticators/kerberos
 ---
 # Kerberos
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 
@@ -113,7 +113,7 @@ Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in
 
 ### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
 
-When [SQL-driven Access Control and Account Management](/docs/en/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/docs/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'

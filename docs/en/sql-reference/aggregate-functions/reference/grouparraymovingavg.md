@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingavg
+slug: /sql-reference/aggregate-functions/reference/grouparraymovingavg
 sidebar_position: 143
 ---
 

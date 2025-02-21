@@ -77,10 +77,10 @@ public:
         return *this;
     }
 
-    hdfsBuilder * get() { return hdfs_builder; }
+    hdfsBuilder * get() const { return hdfs_builder; }
 
     #if USE_KRB5
-    void runKinit();
+    void runKinit() const;
     #endif // USE_KRB5
 
 private:

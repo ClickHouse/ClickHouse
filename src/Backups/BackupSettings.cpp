@@ -41,6 +41,7 @@ namespace ErrorCodes
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
     M(Bool, internal) \
+    M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid) \
     /// M(Int64, compression_level)
@@ -144,7 +145,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-            const auto & replicas = array_of_replicas->value.safeGet<const Array &>();
+            const auto & replicas = array_of_replicas->value.safeGet<Array>();
             res[i].resize(replicas.size());
             for (size_t j = 0; j != replicas.size(); ++j)
             {
@@ -153,7 +154,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                         "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.safeGet<const String &>();
+                res[i][j] = replica.safeGet<String>();
             }
         }
     }

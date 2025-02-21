@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/delete
+slug: /sql-reference/statements/delete
 sidebar_position: 36
 sidebar_label: DELETE
 description: Lightweight deletes simplify the process of deleting data from the database.
@@ -13,7 +13,7 @@ The lightweight `DELETE` statement removes rows from the table `[db.]table` that
 DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
 ```
 
-It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELETE](/en/sql-reference/statements/alter/delete) command, which is a heavyweight process.
+It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command, which is a heavyweight process.
 
 ## Examples
 
@@ -24,25 +24,25 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 ## Lightweight `DELETE` does not delete data immediately
 
-Lightweight `DELETE` is implemented as a [mutation](/en/sql-reference/statements/alter#mutations) that marks rows as deleted but does not immediately physically delete them.
+Lightweight `DELETE` is implemented as a [mutation](/sql-reference/statements/alter#mutations) that marks rows as deleted but does not immediately physically delete them.
 
-By default, `DELETE` statements wait until marking the rows as deleted is completed before returning. This can take a long time if the amount of data is large. Alternatively, you can run it asynchronously in the background using the setting [`lightweight_deletes_sync`](/en/operations/settings/settings#lightweight_deletes_sync). If disabled, the `DELETE` statement is going to return immediately, but the data can still be visible to queries until the background mutation is finished.
+By default, `DELETE` statements wait until marking the rows as deleted is completed before returning. This can take a long time if the amount of data is large. Alternatively, you can run it asynchronously in the background using the setting [`lightweight_deletes_sync`](/operations/settings/settings#lightweight_deletes_sync). If disabled, the `DELETE` statement is going to return immediately, but the data can still be visible to queries until the background mutation is finished.
 
 The mutation does not physically delete the rows that have been marked as deleted, this will only happen during the next merge. As a result, it is possible that for an unspecified period, data is not actually deleted from storage and is only marked as deleted.
 
-If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](https://clickhouse.com/docs/en/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/en/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
+If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](/docs/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
 
 ## Deleting large amounts of data
 
-Large deletes can negatively affect ClickHouse performance. If you are attempting to delete all rows from a table, consider using the [`TRUNCATE TABLE`](/en/sql-reference/statements/truncate) command.
+Large deletes can negatively affect ClickHouse performance. If you are attempting to delete all rows from a table, consider using the [`TRUNCATE TABLE`](/sql-reference/statements/truncate) command.
 
-If you anticipate frequent deletes, consider using a [custom partitioning key](/en/engines/table-engines/mergetree-family/custom-partitioning-key). You can then use the [`ALTER TABLE ... DROP PARTITION`](/en/sql-reference/statements/alter/partition#drop-partitionpart) command to quickly drop all rows associated with that partition.
+If you anticipate frequent deletes, consider using a [custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key). You can then use the [`ALTER TABLE ... DROP PARTITION`](/sql-reference/statements/alter/partition#drop-partitionpart) command to quickly drop all rows associated with that partition.
 
 ## Limitations of lightweight `DELETE`
 
 ### Lightweight `DELETE`s with projections
 
-By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](https://clickhouse.com/docs/en/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
+By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](/docs/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
 
 ## Performance considerations when using lightweight `DELETE`
 
