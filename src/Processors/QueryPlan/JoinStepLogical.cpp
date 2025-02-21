@@ -803,11 +803,8 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
         if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
         {
             writeStringBinary(read->getSerializationName(), wbuf);
-            LOG_DEBUG(
-                &Poco::Logger::get("debug"),
-                "read->getStorageSnapshot()->storage.getStorageID().getFullTableName()={}",
-                read->getStorageSnapshot()->storage.getStorageID().getFullTableName());
-            writeStringBinary(read->getStorageSnapshot()->storage.getStorageID().getFullTableName(), wbuf);
+            if (const auto & snapshot = read->getStorageSnapshot())
+                writeStringBinary(snapshot->storage.getStorageID().getFullTableName(), wbuf);
             if (const auto & dag = read->getFilterActionsDAG())
                 dag->serialize(ctx.out, ctx.registry);
         }
@@ -828,19 +825,8 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
         stack.pop_back();
     }
 
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "getExpressionActions().right_pre_join_actions->dumpActions());={}",
-        getExpressionActions().right_pre_join_actions->dumpDAG());
-
-    LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "getJoinInfo().expression.condition.predicates.size()={}",
-        getJoinInfo().expression.condition.predicates.size());
-    for (const auto & pred : getJoinInfo().expression.condition.predicates)
-        LOG_DEBUG(&Poco::Logger::get("debug"), "pred.right_node.getColumnName()={}", pred.right_node.getColumnName());
-
     writeStringBinary(getSerializationName(), wbuf);
+    chassert(getExpressionActions().right_pre_join_actions);
     getExpressionActions().right_pre_join_actions->serialize(ctx.out, ctx.registry);
     writeBinary(getJoinInfo().expression.condition.predicates.size(), wbuf);
     for (const auto & pred : getJoinInfo().expression.condition.predicates)
