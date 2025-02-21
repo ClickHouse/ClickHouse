@@ -12,12 +12,12 @@ namespace ErrorCodes
 }
 
 DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
-    ObjectStoragePtr,
+    ObjectStoragePtr object_storage,
     ConfigurationObserverPtr configuration_,
     ContextPtr)
     : log(getLogger("DeltaLakeMetadata"))
     , table_snapshot(
-        std::make_shared<DeltaLake::TableSnapshot>(getKernelHelper(configuration_.lock()), log))
+        std::make_shared<DeltaLake::TableSnapshot>(getKernelHelper(configuration_.lock()), object_storage, log))
 {
 }
 

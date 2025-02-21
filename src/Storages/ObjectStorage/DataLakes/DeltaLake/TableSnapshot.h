@@ -26,7 +26,10 @@ class TableSnapshot
 public:
     using ConfigurationWeakPtr = DB::StorageObjectStorage::ConfigurationObserverPtr;
 
-    explicit TableSnapshot(KernelHelperPtr helper_, LoggerPtr log_);
+    explicit TableSnapshot(
+        KernelHelperPtr helper_,
+        DB::ObjectStoragePtr object_storage_,
+        LoggerPtr log_);
 
     /// Get snapshot version.
     size_t getVersion() const;
@@ -55,6 +58,7 @@ private:
     using KernelScan = TemplatedKernelPointerWrapper<ffi::SharedScan, ffi::free_scan>;
 
     const KernelHelperPtr helper;
+    const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
 
     mutable KernelExternEngine engine;

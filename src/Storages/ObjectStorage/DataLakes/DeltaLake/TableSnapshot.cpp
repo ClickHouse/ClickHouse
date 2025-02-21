@@ -32,6 +32,7 @@ public:
         const std::string & data_prefix_,
         const DB::NamesAndTypesList & schema_,
         const DB::Names & partition_columns_,
+        DB::ObjectStoragePtr object_storage_,
         LoggerPtr log_)
         : scan(KernelUtils::unwrapResult(ffi::scan(snapshot_.get(), engine_.get(), /* predicate */{}), "scan"))
         , scan_data_iterator(KernelUtils::unwrapResult(
@@ -40,6 +41,7 @@ public:
         , data_prefix(data_prefix_)
         , schema(schema_)
         , partition_columns(partition_columns_)
+        , object_storage(object_storage_)
         , log(log_)
     {
     }
@@ -127,11 +129,12 @@ public:
             "Scanned file: {}, size: {}, num records: {}, partition columns: {}",
             full_path, size, stats->num_records, partitions_info.size());
 
+        auto metadata = context->object_storage->getObjectMetadata(full_path);
         DB::ObjectInfoPtr object;
         if (partitions_info.empty())
-            object = std::make_shared<DB::ObjectInfo>(std::move(full_path), size);
+            object = std::make_shared<DB::ObjectInfo>(std::move(full_path), metadata);
         else
-            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), std::move(full_path), size);
+            object = std::make_shared<DB::ObjectInfoWithPartitionColumns>(std::move(partitions_info), std::move(full_path), metadata);
 
         context->data_files.push_back(std::move(object));
     }
@@ -145,6 +148,7 @@ private:
     const std::string data_prefix;
     const DB::NamesAndTypesList & schema;
     const DB::Names & partition_columns;
+    const DB::ObjectStoragePtr object_storage;
     const LoggerPtr log;
 
     std::deque<DB::ObjectInfoPtr> data_files;
@@ -152,8 +156,12 @@ private:
 };
 
 
-TableSnapshot::TableSnapshot(KernelHelperPtr helper_, LoggerPtr log_)
+TableSnapshot::TableSnapshot(
+    KernelHelperPtr helper_,
+    DB::ObjectStoragePtr object_storage_,
+    LoggerPtr log_)
     : helper(helper_)
+    , object_storage(object_storage_)
     , log(log_)
 {
 }
@@ -210,6 +218,7 @@ DB::ObjectIterator TableSnapshot::iterate()
         helper->getDataPath(),
         getTableSchema(),
         getPartitionColumns(),
+        object_storage,
         log);
 }
 

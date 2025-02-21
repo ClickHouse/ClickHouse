@@ -76,11 +76,6 @@ struct RelativePathWithMetadata
         , metadata(std::move(metadata_))
     {}
 
-    explicit RelativePathWithMetadata(String relative_path_, size_t size_)
-        : relative_path(std::move(relative_path_))
-        , metadata(ObjectMetadata{ .size_bytes = size_, .last_modified = {}, .etag = {}, .attributes = {} })
-    {}
-
     virtual ~RelativePathWithMetadata() = default;
 
     virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
