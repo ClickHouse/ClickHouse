@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/crash-log
+description: "System table containing information about stack traces for fatal errors."
+slug: /operations/system-tables/crash-log
+title: "crash_log"
+keywords: ["system table", "crash_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# crash_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

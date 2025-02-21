@@ -100,6 +100,8 @@
 #include <Storages/System/StorageSystemDNSCache.h>
 #include <Storages/System/StorageSystemLatencyBuckets.h>
 
+#include <Poco/Util/LayeredConfiguration.h>
+
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
 #endif

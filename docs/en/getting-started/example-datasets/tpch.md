@@ -1,10 +1,9 @@
 ---
-slug: /en/getting-started/example-datasets/tpch
-sidebar_label: TPC-H
 description:  "The TPC-H benchmark data set and queries."
+slug: /getting-started/example-datasets/tpch
+sidebar_label: TPC-H
+title: "TPC-H (1999)"
 ---
-
-# TPC-H (1999)
 
 A popular benchmark which models the internal data warehouse of a wholesale supplier.
 The data is stored into a 3rd normal form representation, requiring lots of joins at query runtime.
@@ -728,35 +727,6 @@ ORDER BY
     custdist DESC,
     c_count DESC;
 ```
-
-::::note
-This alternative formulation works and was verified to return the reference results.
-
-```sql
-WITH CustomerOrderCounts AS (
-    SELECT
-        c.c_custkey,
-        count(o.o_orderkey) AS order_count
-    FROM
-        customer c
-    LEFT OUTER JOIN
-        orders o ON c.c_custkey = o.o_custkey
-        AND o.o_comment NOT LIKE '%special%requests%'
-    GROUP BY
-        c.c_custkey
-)
-SELECT
-    order_count AS c_count,
-    count(*) AS custdist
-FROM
-    CustomerOrderCounts
-GROUP BY
-    order_count
-ORDER BY
-    custdist DESC,
-    c_count DESC;
-```
-::::
 
 **Q14**
 

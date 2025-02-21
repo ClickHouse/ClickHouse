@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/show
+slug: /sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 title: SHOW Statements
@@ -9,10 +9,10 @@ title: SHOW Statements
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
 
-- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select) (server setting)
-- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats#format_display_secrets_in_show_and_select) (format setting)  
+- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
+- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
 
-Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md#display-secrets) privilege.
+Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md/#displaysecretsinshowandselect) privilege.
 :::
 
 ## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
@@ -23,13 +23,11 @@ containing the `CREATE` query used for creating the specified object.
 ### Syntax
 
 ```sql title="Syntax"
-SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW [CREATE] TABLE | TEMPORARY TABLE | DICTIONARY | VIEW | DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
-
 :::note
-if you use this statement to get the `CREATE` query of system tables,
+If you use this statement to get the `CREATE` query of system tables,
 you will get a *fake* query, which only declares the table structure,
 but cannot be used to create a table.
 :::
@@ -336,7 +334,7 @@ SHOW INDEX FROM 'tbl'
 
 ## SHOW PROCESSLIST
 
-Outputs the content of the [`system.processes`](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+Outputs the content of the [`system.processes`](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that are being processed at the moment, excluding `SHOW PROCESSLIST` queries.
 
 ### Syntax 
 

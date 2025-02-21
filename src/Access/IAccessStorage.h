@@ -9,7 +9,6 @@
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
 
-#include <atomic>
 #include <functional>
 #include <optional>
 #include <vector>

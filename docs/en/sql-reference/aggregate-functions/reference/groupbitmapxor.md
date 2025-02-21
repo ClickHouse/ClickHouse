@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupbitmapxor
+slug: /sql-reference/aggregate-functions/reference/groupbitmapxor
 sidebar_position: 151
 title: groupBitmapXor
 ---

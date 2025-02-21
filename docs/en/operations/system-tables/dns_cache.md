@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/dns_cache
+description: "System table containing information about cached DNS records."
+slug: /operations/system-tables/dns_cache
+title: "dns_cache"
+keywords: ["system table", "dns_cache"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# dns_cache
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

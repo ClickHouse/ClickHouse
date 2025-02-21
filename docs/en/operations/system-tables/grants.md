@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/grants
+description: "System table showing which privileges are granted to ClickHouse user accounts."
+slug: /operations/system-tables/grants
+title: "grants"
+keywords: ["system table", "grants"]
 ---
-# grants
 
 Privileges granted to ClickHouse user accounts.
 
