@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/truncate
+slug: /sql-reference/statements/truncate
 sidebar_position: 52
 sidebar_label: TRUNCATE
 ---
