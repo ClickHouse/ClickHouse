@@ -3766,10 +3766,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                 auto hints = TypoCorrection::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
-                throw Exception(
-                    scope.context->getInitialQueryId(),
-                    ErrorCodes::UNKNOWN_IDENTIFIER,
-                    "Unknown {}{} identifier {} in scope {}{}",
+                throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),

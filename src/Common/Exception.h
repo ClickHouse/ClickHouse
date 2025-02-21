@@ -99,13 +99,9 @@ protected:
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
     Exception(MessageMasked && msg_masked, int code, bool remote_);
-    Exception(MessageMasked & msg_masked, int code, bool remote_, const std::string & query_id);
-    Exception(MessageMasked && msg_masked, int code, bool remote_, const std::string & query_id);
 
     // delegating constructor to mask sensitive information from the message
     Exception(const std::string & msg, int code, bool remote_ = false): Exception(MessageMasked(msg), code, remote_) {}
-    Exception(const std::string & msg, int code, const std::string & query_id, bool remote_ = false)
-        : Exception(MessageMasked(msg), code, remote_, query_id) {}
     Exception(std::string && msg, int code, bool remote_ = false): Exception(MessageMasked(std::move(msg)), code, remote_) {}
 
 public:
@@ -125,9 +121,6 @@ public:
     // Format message with fmt::format, like the logging functions.
     template <typename... Args>
     Exception(int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt.format(std::forward<Args>(args)...), code) {}
-
-    template <typename... Args>
-    Exception(const String & query_id, int code, FormatStringHelper<Args...> fmt, Args &&... args) : Exception(fmt.format(std::forward<Args>(args)...), code, query_id) {}
 
     struct CreateFromPocoTag {};
     struct CreateFromSTDTag {};

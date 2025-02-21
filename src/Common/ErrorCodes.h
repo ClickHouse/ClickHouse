@@ -56,7 +56,6 @@ namespace ErrorCodes
     public:
         ErrorPair get();
         size_t increment(bool remote, const std::string & message, const FramePointers & trace);
-        size_t increment(bool remote, const std::string & message, const FramePointers & trace, const std::string & query_id);
         void extendedMessage(bool remote, size_t error_index, const std::string & new_message);
 
     private:
