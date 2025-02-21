@@ -1761,7 +1761,14 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
 
                             auto locked_key = key_metadata->tryLock();
                             if (!locked_key)
-                                continue; /// Key was removed.
+                            {
+                                /// Key cannot be removed,
+                                /// because if we failed to remove something from it above,
+                                /// then we did not remove it from key metadata,
+                                /// so key lock must remain valid.
+                                chassert(false);
+                                continue;
+                            }
 
                             for (const auto & candidate : key_candidates)
                             {
