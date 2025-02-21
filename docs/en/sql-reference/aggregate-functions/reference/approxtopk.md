@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/approxtopk
+slug: /sql-reference/aggregate-functions/reference/approxtopk
 sidebar_position: 107
 ---
 

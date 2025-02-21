@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <Core/Field.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ParallelReadBuffer.h>

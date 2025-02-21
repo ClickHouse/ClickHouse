@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/generate
+slug: /engines/table-engines/special/generate
 sidebar_position: 140
 sidebar_label:  GenerateRandom
 title: "GenerateRandom Table Engine"

@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/system-tables/parts
+slug: /operations/system-tables/parts
 title: "parts"
 keywords: ["system table", "parts"]
 ---

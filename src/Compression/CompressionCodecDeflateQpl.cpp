@@ -1,15 +1,15 @@
+#include <cstdio>
+#include <thread>
+#include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecDeflateQpl.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionInfo.h>
+#include <Parsers/IAST.h>
+#include <base/getPageSize.h>
+#include <base/scope_guard.h>
 #include <Poco/Logger.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/logger_useful.h>
 #include <Common/randomSeed.h>
-#include <Parsers/IAST.h>
-#include <base/scope_guard.h>
-#include <base/getPageSize.h>
-#include <cstdio>
-#include <thread>
 
 #if USE_QPL
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 
 namespace DB
