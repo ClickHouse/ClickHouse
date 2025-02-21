@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/ssh
+slug: /interfaces/ssh
 sidebar_label: SSH Interface
 sidebar_position: 60
 keywords: [client, ssh, putty]

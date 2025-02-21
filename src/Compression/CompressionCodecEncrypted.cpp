@@ -1,11 +1,11 @@
 #include <string_view>
+#include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/VarInt.h>
 #include <Parsers/IAST.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
 #include "config.h"

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/group-by
+slug: /sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 ---
 
@@ -117,7 +117,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 **See also**
 
-- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+- [group_by_use_nulls](/docs/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## CUBE Modifier
 
@@ -212,7 +212,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 **See also**
 
-- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+- [group_by_use_nulls](/docs/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## WITH TOTALS Modifier
 
@@ -360,7 +360,7 @@ GROUPING SETS
 
 **See also**
 
-- [group_by_use_nulls](/docs/en/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
+- [group_by_use_nulls](/docs/operations/settings/settings.md#group_by_use_nulls) setting for SQL standard compatibility.
 
 ## Implementation Details
 
