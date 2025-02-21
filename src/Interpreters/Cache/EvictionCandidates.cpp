@@ -198,7 +198,9 @@ void EvictionCandidates::evict()
 
             key_candidates.candidates.pop_back();
         }
-        failed_candidates.failed_candidates_per_key.push_back(failed_key_candidates);
+
+        if (!failed_key_candidates.candidates.empty())
+            failed_candidates.failed_candidates_per_key.push_back(failed_key_candidates);
     }
 }
 

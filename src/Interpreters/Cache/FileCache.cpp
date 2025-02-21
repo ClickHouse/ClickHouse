@@ -1757,6 +1757,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                         /// Add failed candidates back to queue.
                         for (const auto & [key_metadata, key_candidates] : failed_candidates.failed_candidates_per_key)
                         {
+                            chassert(!key_candidates.empty());
+
                             auto locked_key = key_metadata->tryLock();
                             if (!locked_key)
                                 continue; /// Key was removed.
