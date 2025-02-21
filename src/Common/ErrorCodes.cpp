@@ -684,9 +684,9 @@ namespace ErrorCodes
     size_t increment(
         ErrorCode error_code,
         bool remote,
-        const std::string & message,
+        const String & message,
         const FramePointers & trace,
-        const std::string & query_id)
+        const String & query_id)
     {
         if (error_code < 0 || error_code >= end())
         {
@@ -737,7 +737,7 @@ namespace ErrorCodes
         return error_index;
     }
 
-    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace, const std::string & query_id)
+    size_t ErrorPairHolder::increment(bool remote, const String & message, const FramePointers & trace, const String & query_id)
     {
         const auto now = std::chrono::system_clock::now();
 
