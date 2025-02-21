@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/qualify
+slug: /sql-reference/statements/select/qualify
 sidebar_label: QUALIFY
 ---
 

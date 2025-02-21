@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-keeper-client
+slug: /operations/utilities/clickhouse-keeper-client
 sidebar_label: clickhouse-keeper-client
 ---
 

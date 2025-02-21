@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/uniqhll12
+slug: /sql-reference/aggregate-functions/reference/uniqhll12
 sidebar_position: 208
 ---
 

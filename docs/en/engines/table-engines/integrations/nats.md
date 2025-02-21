@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/nats
+slug: /engines/table-engines/integrations/nats
 sidebar_position: 140
 sidebar_label: NATS
 ---

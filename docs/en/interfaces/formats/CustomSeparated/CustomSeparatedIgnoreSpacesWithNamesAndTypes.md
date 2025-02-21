@@ -1,6 +1,6 @@
 ---
 title : CustomSeparatedIgnoreSpacesWithNamesAndTypes
-slug : /en/interfaces/formats/CustomSeparatedIgnoreSpacesWithNamesAndTypes
+slug: /interfaces/formats/CustomSeparatedIgnoreSpacesWithNamesAndTypes
 keywords : [CustomSeparatedIgnoreSpacesWithNamesAndTypes]
 ---
 
