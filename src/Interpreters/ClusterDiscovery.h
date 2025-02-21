@@ -89,6 +89,7 @@ private:
         String cluster_secret;
 
         /// For dynamic clusters, index+1 in multicluster_discovery_paths where cluster was found
+        /// 0 for static ckusters
         size_t zk_root_index;
 
         ClusterInfo(const String & name_,
@@ -165,7 +166,6 @@ private:
     /// Hold the callback pointers of each cluster.
     /// To avoid registering callbacks for the same path multiple times.
     std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
-    std::unordered_map<String, Coordination::WatchCallbackPtr> get_dynamic_nodes_callbacks;
 
     mutable std::mutex mutex;
     std::unordered_map<String, ClusterPtr> cluster_impls;
@@ -207,8 +207,6 @@ private:
     };
 
     std::shared_ptr<std::vector<std::shared_ptr<MulticlusterDiscovery>>> multicluster_discovery_paths;
-    mutable std::mutex dynamic_clusters_mutex;
-    std::unordered_map<String, ClusterInfo> dynamic_clusters_info;
 };
 
 }
