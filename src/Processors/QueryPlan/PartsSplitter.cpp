@@ -25,6 +25,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 
+#include <fmt/ranges.h>
+
 using namespace DB;
 
 namespace

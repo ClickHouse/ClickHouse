@@ -21,6 +21,8 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {

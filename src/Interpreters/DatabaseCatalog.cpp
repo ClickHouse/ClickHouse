@@ -36,6 +36,7 @@
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
+#include <fmt/ranges.h>
 
 #include "config.h"
 

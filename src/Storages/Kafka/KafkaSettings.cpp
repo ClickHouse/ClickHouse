@@ -128,14 +128,14 @@ void KafkaSettings::sanityCheck() const
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be less then rescheduled interval ({})",
-            impl->kafka_consumers_pool_ttl_ms,
+            impl->kafka_consumers_pool_ttl_ms.value,
             KAFKA_RESCHEDULE_MS);
 
     if (impl->kafka_consumers_pool_ttl_ms > KAFKA_CONSUMERS_POOL_TTL_MS_MAX)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be too big (greater then {}), since this may cause live memory leaks",
-            impl->kafka_consumers_pool_ttl_ms,
+            impl->kafka_consumers_pool_ttl_ms.value,
             KAFKA_CONSUMERS_POOL_TTL_MS_MAX);
 }
 
