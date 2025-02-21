@@ -1140,27 +1140,33 @@ ASTPtr QueryFuzzer::tryNegateNextPredicate(const ASTPtr & pred, const int prob)
 
 ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
 {
-    auto * ident = typeid_cast<ASTIdentifier *>(exp.get());
-    const auto & alias = ident->tryGetAlias();
-
-    if (!alias.empty())
+    if (const auto * ident = typeid_cast<const ASTIdentifier *>(exp.get()))
     {
-        const int next_action = fuzz_rand() % 3;
+        const auto & alias = ident->tryGetAlias();
 
-        if (next_action == 0)
+        if (!alias.empty())
         {
-            /// Move alias to the end of the identifier (most of the time) or somewhere else
-            Strings clone_parts = ident->name_parts;
-            const int index = (fuzz_rand() % 2) == 0 ? (ident->name_parts.size() - 1) : (fuzz_rand() % ident->name_parts.size());
+            const int next_action = fuzz_rand() % 3;
 
-            clone_parts[index] = alias;
-            return std::make_shared<ASTIdentifier>(std::move(clone_parts));
+            if (next_action == 0)
+            {
+                /// Move alias to the end of the identifier (most of the time) or somewhere else
+                Strings clone_parts = ident->name_parts;
+                const int index = (fuzz_rand() % 2) == 0 ? (ident->name_parts.size() - 1) : (fuzz_rand() % ident->name_parts.size());
+
+                clone_parts[index] = alias;
+                return std::make_shared<ASTIdentifier>(std::move(clone_parts));
+            }
+            else if (next_action == 1)
+            {
+                /// Set the alias as the identifier
+                return std::make_shared<ASTIdentifier>(Strings{alias});
+            }
         }
-        else if (next_action == 1)
-        {
-            /// Set the alias as the identifier
-            return std::make_shared<ASTIdentifier>(Strings{alias});
-        }
+    }
+    else if (fuzz_rand() % 100 != 0)
+    {
+        exp->setAlias("");
     }
     return exp;
 }
