@@ -47,7 +47,11 @@ public:
             ffi::set_builder_option(builder, KernelUtils::toDeltaString(name), KernelUtils::toDeltaString(value));
         };
 
-        /// TODO: support role arn.
+        /// The delta-kernel-rs integration is currently under experimental flag,
+        /// because we wait for delta-kernel maintainers to provide ffi api
+        /// which will allow us to provide our own s3 client to delta-kernel.
+        /// For now it uses its own client, which would lake all the auth options
+        /// which our own client supports.
 
         set_option("aws_access_key_id", access_key_id);
         set_option("aws_secret_access_key", secret_access_key);

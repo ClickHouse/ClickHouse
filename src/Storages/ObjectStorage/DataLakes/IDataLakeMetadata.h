@@ -47,9 +47,10 @@ public:
     /// Update metadata to the latest version.
     virtual bool update(const ContextPtr &) { return false; }
 
+    /// Whether schema evolution is supported.
     virtual bool supportsExternalMetadataChange() const { return false; }
 
-private:
+protected:
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Method `{}` is not implemented", method);

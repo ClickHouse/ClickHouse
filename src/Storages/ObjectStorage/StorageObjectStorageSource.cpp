@@ -270,7 +270,11 @@ Chunk StorageObjectStorageSource::generate()
                 else
                 {
 #if USE_PARQUET && USE_AWS_S3
-                    /// This is a bad crutch until old implementation of DeltaLake (without delta-kernel) is removed.
+                    /// This is an awful temporary crutch,
+                    /// which will be removed once DeltaKernel is used by default for DeltaLake.
+                    /// By release 25.3.
+                    /// (Because it does not make sense to support it in a nice way
+                    /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
                     {
                         /// Delta lake supports only s3.

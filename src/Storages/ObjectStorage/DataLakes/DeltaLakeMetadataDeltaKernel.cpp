@@ -34,9 +34,7 @@ bool DeltaLakeMetadataDeltaKernel::update(const ContextPtr &)
 
 Strings DeltaLakeMetadataDeltaKernel::getDataFiles() const
 {
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "getDataFiles() is not implemented, you should use iterate() method instead");
+    throwNotImplemented("getDataFiles()");
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate() const
@@ -52,6 +50,10 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema() const
 NamesAndTypesList DeltaLakeMetadataDeltaKernel::getReadSchema() const
 {
     auto schema = table_snapshot->getReadSchema();
+
+    /// Read schema does not contain partition columns
+    /// because they are not present in the actual data.
+    /// We have to add them here.
     auto partition_columns = table_snapshot->getPartitionColumns();
     if (!partition_columns.empty())
     {

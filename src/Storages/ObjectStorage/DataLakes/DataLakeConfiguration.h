@@ -129,6 +129,8 @@ public:
     /// This is an awful temporary crutch,
     /// which will be removed once DeltaKernel is used by default for DeltaLake.
     /// By release 25.3.
+    /// (Because it does not make sense to support it in a nice way
+    /// because the code will be removed ASAP anyway)
 #if USE_PARQUET && USE_AWS_S3
     DeltaLakePartitionColumns getDeltaLakePartitionColumns() const
     {
@@ -175,10 +177,6 @@ private:
                 /// Go through requested columns and change column name
                 /// from table schema to column name from read schema.
 
-                LOG_TEST(
-                    log, "Format header: {}, source header: {}, format header: {}",
-                    info.format_header.dumpNames(), info.source_header.dumpNames(), info.format_header.dumpNames());
-
                 auto mapping = [&]()
                 {
                     std::map<std::string, std::string> result;
@@ -220,7 +218,12 @@ private:
             return current_metadata->update(context);
         }
 
-        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context, BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
+        auto new_metadata = DataLakeMetadata::create(
+            object_storage,
+            weak_from_this(),
+            context,
+            BaseStorageConfiguration::allow_experimental_delta_kernel_rs);
+
         if (*current_metadata != *new_metadata)
         {
             current_metadata = std::move(new_metadata);
