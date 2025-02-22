@@ -397,6 +397,14 @@ namespace
         rights.makeIntersection(current_user_rights);
     }
 
+    void removeDeprecatedGrants(const AccessControl & access_control, AccessRightsElements & elements_to_grant)
+    {
+        std::erase_if(elements_to_grant, [&](const AccessRightsElement & element)
+        {
+            return !access_control.doesTableEnginesRequireGrant() && element.access_flags == AccessType::TABLE_ENGINE;
+        });
+    }
+
     /// Updates grants of a specified user or role.
     void updateFromQuery(IAccessEntity & grantee, const ASTGrantQuery & query)
     {
@@ -445,6 +453,8 @@ BlockIO InterpreterGrantQuery::execute()
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
+
+    removeDeprecatedGrants(access_control, elements_to_grant);
 
     /// Executing on cluster.
     if (!query.cluster.empty())
