@@ -244,6 +244,20 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
     out.finalize();
 }
 
+String MergeTreeDataPartChecksums::getDebugString() const
+{
+    WriteBufferFromOwnString out;
+
+    for (const auto & [name, sum] : files)
+    {
+        writeString(name, out);
+        writeChar(' ', out);
+    }
+
+    out.finalize();
+    return out.str();
+}
+
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
     files[file_name] = Checksum(file_size, file_hash);

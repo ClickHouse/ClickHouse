@@ -1926,6 +1926,8 @@ private:
 
     void finalize()
     {
+        size_t files_count = ctx->hardlinked_files.hardlinks_from_source_part.size();
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -1934,6 +1936,9 @@ private:
             auto changed_checksums =
                 static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
                     ctx->new_data_part, ctx->new_data_part->checksums);
+
+            files_count += changed_checksums.files.size();
+
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
             static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
@@ -1943,6 +1948,9 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+            if (!rename_to.empty())
+                ++files_count;
+
             if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
@@ -1953,6 +1961,14 @@ private:
                 ctx->new_data_part->checksums.files.erase(rename_from);
             }
         }
+
+        ctx->new_data_part->checksums.files.erase(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+
+        if (files_count != ctx->new_data_part->checksums.files.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid files count in checksums, checksums has {} files, new part has {} files, files in checksums: {}",
+                ctx->new_data_part->checksums.files.size(),
+                files_count,
+                ctx->new_data_part->checksums.getDebugString());
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
     }
