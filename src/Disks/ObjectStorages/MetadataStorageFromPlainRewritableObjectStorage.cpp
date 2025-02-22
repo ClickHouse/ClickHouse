@@ -84,7 +84,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
     if (!object_storage->existsOrHasAnyChild(metadata_key_prefix))
     {
         LOG_DEBUG(log, "Loaded metadata (empty)");
-        metric_directorires.changeTo(0);
         return;
     }
 
@@ -224,8 +223,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed)",
         num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed);
-
-    metric_directorires.changeTo(num_dirs_in_memory);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh()
@@ -237,8 +234,9 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
     , metadata_key_prefix(std::filesystem::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
-    , path_map(std::make_shared<InMemoryDirectoryPathMap>())
-    , metric_directorires(object_storage->getMetadataStorageMetrics().directory_map_size)
+    , path_map(std::make_shared<InMemoryDirectoryPathMap>(
+        object_storage->getMetadataStorageMetrics().directory_map_size,
+        object_storage->getMetadataStorageMetrics().file_count))
 {
     if (object_storage->isWriteOnce())
         throw Exception(

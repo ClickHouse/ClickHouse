@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <base/defines.h>
 
+#include <Common/CurrentMetrics.h>
+
 
 namespace DB
 {
@@ -15,6 +17,11 @@ namespace DB
 class InMemoryDirectoryPathMap
 {
 public:
+    InMemoryDirectoryPathMap(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name)
+        : metric_directories(metric_directories_name, 0), metric_files(metric_files_name, 0)
+    {
+    }
+
     /// Breadth-first order.
     struct PathComparator
     {
@@ -62,7 +69,11 @@ public:
         auto res = map.emplace(std::move(path), std::move(info));
 
         if (res.second)
+        {
             remote_directories.emplace(remote_path);
+            metric_directories.add(1);
+            metric_files.add(info.files.size());
+        }
 
         return res;
     }
@@ -77,7 +88,8 @@ public:
         auto it = map.find(dir);
         if (it == map.end())
             return false;
-        it->second.files.emplace(file);
+        if (it->second.files.emplace(file).second)
+            metric_files.add(1);
         return true;
     }
 
@@ -91,6 +103,7 @@ public:
         auto it = map.find(dir);
         if (it == map.end())
             return false;
+        metric_files.sub(1);
         return it->second.files.erase(file);
     }
 
@@ -114,6 +127,9 @@ public:
         if (map.end() == it)
             return false;
 
+        metric_files.sub(it->second.files.size());
+        metric_directories.sub(1);
+
         remote_directories.erase(it->second.path);
         map.erase(it);
         return true;
@@ -131,6 +147,9 @@ public:
             }
             else
             {
+                metric_files.sub(it->second.files.size());
+                metric_directories.sub(1);
+
                 remote_directories.erase(it->second.path);
                 it = map.erase(it);
                 ++num_removed;
@@ -190,6 +209,9 @@ private:
 
     /// A set of known storage paths (randomly-assigned names).
     FileNames TSA_GUARDED_BY(mutex) remote_directories;
+
+    CurrentMetrics::Increment metric_directories;
+    CurrentMetrics::Increment metric_files;
 };
 
 }

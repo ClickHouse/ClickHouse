@@ -55,8 +55,6 @@ private:
     const std::string metadata_key_prefix;
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
 
-    CurrentMetrics::Increment metric_directorires;
-
     void load();
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }

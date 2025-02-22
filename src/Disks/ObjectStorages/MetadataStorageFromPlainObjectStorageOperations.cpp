@@ -92,21 +92,13 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute(std:
     [[maybe_unused]] auto result
         = path_map.addPathIfNotExists(base_path, InMemoryDirectoryPathMap::RemotePathInfo{object_key_prefix, Poco::Timestamp{}.epochTime(), {}});
     chassert(result.second);
-
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo(std::unique_lock<SharedMutex> &)
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory creation for path '{}'", path);
     const auto base_path = path.parent_path();
-    if (path_map.removePathIfExists(base_path))
-    {
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::sub(metric, 1);
-    }
-
+    path_map.removePathIfExists(base_path);
     auto metadata_object_key = createMetadataObjectKey(object_key_prefix, metadata_key_prefix);
     object_storage->removeObjectIfExists(StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME));
 }
@@ -244,9 +236,6 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute(std:
 
     if (path_map.removePathIfExists(base_path))
     {
-        auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-        CurrentMetrics::sub(metric, 1);
-
         auto event = object_storage->getMetadataStorageMetrics().directory_removed;
         ProfileEvents::increment(event);
     }
@@ -261,8 +250,6 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageCreateDirectoryOperation"), "Reversing directory removal for '{}'", path);
     path_map.addPathIfNotExists(path.parent_path(), info);
-    auto metric = object_storage->getMetadataStorageMetrics().directory_map_size;
-    CurrentMetrics::add(metric, 1);
 
     auto metadata_object_key = createMetadataObjectKey(info.path, metadata_key_prefix);
     auto metadata_object = StoredObject(metadata_object_key.serialize(), path / PREFIX_PATH_FILE_NAME);
@@ -291,8 +278,6 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
     if (path_map.addFile(path))
     {
         written = true;
-        auto metric = object_storage->getMetadataStorageMetrics().file_count;
-        CurrentMetrics::add(metric, 1);
     }
     else
     {
@@ -309,11 +294,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::undo(std::unique_l
     if (!written)
         return;
 
-    if (path_map.removeFile(path))
-    {
-        auto metric = object_storage->getMetadataStorageMetrics().file_count;
-        CurrentMetrics::sub(metric, 1);
-    }
+    path_map.removeFile(path);
 }
 
 MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -334,11 +315,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute(s
         remote_path);
 
     if (path_map.removeFile(path))
-    {
         unlinked = true;
-        auto metric = object_storage->getMetadataStorageMetrics().file_count;
-        CurrentMetrics::sub(metric, 1);
-    }
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std::unique_lock<SharedMutex> &)
@@ -346,12 +323,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
     if (!unlinked)
         return;
 
-    if (path_map.addFile(path))
-    {
-        auto metric = object_storage->getMetadataStorageMetrics().file_count;
-        CurrentMetrics::add(metric, 1);
-    }
-    else
+    if (!path_map.addFile(path))
     {
         /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
         LOG_TRACE(
