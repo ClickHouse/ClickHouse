@@ -102,10 +102,10 @@ SYSTEM DISABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;
 "
 
 
-# cheche that parts aren't stuck in Deleting state when excpetion at patrs remove occurs
+# Check that parts aren't stuck in Deleting state when exception at parts remove occurs
 
 # It is important to select _state column from system.parts,
-# otherway parts with Deleting state are omitted in the select results
+# otherwise parts with Deleting state are omitted in the select results
 
 active_count=$(${CLICKHOUSE_CLIENT} --query "
 select countIf(active) from system.parts
@@ -123,6 +123,8 @@ INSERT INTO test_s3_mt_fault (*) VALUES (1, 2), (2, 2), (3, 1), (4, 7), (5, 10),
 OPTIMIZE TABLE test_s3_mt_fault FINAL;
 "
 
+# Now there is one inactive part, that is not cleaned up yet.
+
 inactive_count=$(${CLICKHOUSE_CLIENT} --query "
 select count() from system.parts
 where database = '${CLICKHOUSE_DATABASE}' and table = 'test_s3_mt_fault' and $STATE_CONDITION")
@@ -132,8 +134,10 @@ then
     exit 2
 fi
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
+# Now we enable the cleanup, but also make an exception while attempting to remove the directory
+# (all directories are removed via moving first)
 
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT plain_object_storage_write_fail_on_directory_move;"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause;"
 
 wait_for_part_remove_rolled_back test_s3_mt_fault

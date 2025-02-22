@@ -69,21 +69,29 @@ public:
 
     bool addFile(const std::string & local_path)
     {
+        auto path = std::filesystem::path(local_path);
+        auto dir = path.parent_path();
+        auto file = path.filename();
+
         std::lock_guard lock(mutex);
-        auto it = map.find(std::filesystem::path(local_path).parent_path());
+        auto it = map.find(dir);
         if (it == map.end())
             return false;
-        it->second.files.emplace(local_path);
+        it->second.files.emplace(file);
         return true;
     }
 
     bool removeFile(const std::string & local_path)
     {
+        auto path = std::filesystem::path(local_path);
+        auto dir = path.parent_path();
+        auto file = path.filename();
+
         std::lock_guard lock(mutex);
-        auto it = map.find(std::filesystem::path(local_path).parent_path());
+        auto it = map.find(dir);
         if (it == map.end())
             return false;
-        return it->second.files.erase(local_path);
+        return it->second.files.erase(file);
     }
 
     std::optional<RemotePathInfo> getRemotePathInfoIfExists(const std::string & path) const

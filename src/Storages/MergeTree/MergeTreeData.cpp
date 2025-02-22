@@ -2744,7 +2744,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 || force
                 || (part->version.creation_csn == Tx::RolledBackCSN && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
             {
-                if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLBACKED)
+                if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLED_BACK)
                     part->removal_state.store(DataPartRemovalState::REMOVE_RETRY, std::memory_order_relaxed);
                 else
                     part->removal_state.store(DataPartRemovalState::REMOVE, std::memory_order_relaxed);
@@ -2785,7 +2785,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
         modifyPartState(part, DataPartState::Outdated);
-        part->removal_state.store(DataPartRemovalState::REMOVE_ROLLBACKED, std::memory_order_relaxed);
+        part->removal_state.store(DataPartRemovalState::REMOVE_ROLLED_BACK, std::memory_order_relaxed);
     }
 }
 
