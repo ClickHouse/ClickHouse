@@ -1,10 +1,12 @@
 #pragma once
 
-#include <Common/CurrentMetrics.h>
-#include "config.h"
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
+#include <Common/CurrentMetrics.h>
 #include "IServer.h"
+#include "config.h"
+
+#include <Core/Mongo/MongoProtocol.h>
 
 namespace DB
 {
@@ -41,7 +43,7 @@ private:
 
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
-    std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
+    std::shared_ptr<MongoProtocol::MessageTransport> message_transport;
 
     ProfileEvents::Event read_event;
     ProfileEvents::Event write_event;

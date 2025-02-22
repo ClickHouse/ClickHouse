@@ -1,14 +1,17 @@
 #include "ParserMongoFunction.h"
+#include <memory>
 
 #include <Core/Field.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
 
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
+#include "Parsers/ASTExpressionList.h"
 
 namespace DB
 {
@@ -180,6 +183,58 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
     return false;
 }
 
+bool MongoSetFunction::parseImpl(ASTPtr & node)
+{
+    if (!data.IsObject())
+        return false;
+
+    auto expression_list = std::make_shared<ASTExpressionList>();
+    node = expression_list;
+
+    for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
+    {
+        auto assignment_ast = std::make_shared<ASTAssignment>();
+        assignment_ast->column_name = it->name.GetString();
+        std::cerr << "SET NAME " << it->name.GetString() << '\n';
+        ASTPtr assigment_expr;
+        auto parser = createParser(it->value.GetObject(), metadata, "$arithmetic_function_element");
+        if (!parser->parseImpl(assigment_expr))
+            return false;
+        assignment_ast->children.push_back(assigment_expr);
+        expression_list->children.push_back(assignment_ast);
+    }
+
+    return true;
+}
+
+bool MongoIncrementFunction::parseImpl(ASTPtr & node)
+{
+    if (!data.IsObject())
+        return false;
+
+    auto expression_list = std::make_shared<ASTExpressionList>();
+    node = expression_list;
+
+    for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
+    {
+        auto assignment_ast = std::make_shared<ASTAssignment>();
+        assignment_ast->column_name = it->name.GetString();
+
+        ASTPtr column_identifier;
+        if (!MongoArithmeticFunctionElement(it->name.GetObject(), metadata, "").parseImpl(column_identifier))
+            return false;
+
+        ASTPtr value_literal;
+        if (!MongoArithmeticFunctionElement(it->value.GetObject(), metadata, "").parseImpl(value_literal))
+            return false;
+        auto increment = makeASTFunction("plus", column_identifier, value_literal);
+
+        assignment_ast->children.push_back(increment);
+        expression_list->children.push_back(assignment_ast);
+    }
+
+    return true;
+}
 
 }
 

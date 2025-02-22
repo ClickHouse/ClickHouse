@@ -8,13 +8,8 @@ namespace DB
 {
 
 MongoHandlerFactory::MongoHandlerFactory(
-    IServer & server_,
-    const ProfileEvents::Event & read_event_,
-    const ProfileEvents::Event & write_event_)
-    : server(server_)
-    , log(getLogger("PostgreSQLHandlerFactory"))
-    , read_event(read_event_)
-    , write_event(write_event_)
+    IServer & server_, const ProfileEvents::Event & read_event_, const ProfileEvents::Event & write_event_)
+    : server(server_), log(getLogger("MongoHandlerFactory")), read_event(read_event_), write_event(write_event_)
 {
     std::cerr << "mongo constructor\n";
 }

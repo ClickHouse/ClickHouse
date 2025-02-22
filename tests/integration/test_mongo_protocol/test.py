@@ -25,7 +25,7 @@ cluster.add_instance(
     env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
 
-server_port = 5433
+server_port = 27017
 
 
 @pytest.fixture(scope="module")
@@ -44,11 +44,28 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_pymongo_client(started_cluster):
+def test_count_query(started_cluster):
     node = cluster.instances["node"]
     client = pymongo.MongoClient(node.ip_address, server_port)
-    db = client.your_database_name
-    collection = db.your_collection_name
-    cursor = collection.find({})
-    for document in cursor:
-        print(document) 
+    db = client['db']
+    collection = db['count']
+
+    assert len(db.list_collection_names()) > 0
+    assert len(client.list_databases_names()) > 0
+
+    documents = [
+        {"name": "Bob Johnson", "age": 32, "city": "New York"},
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
+        {"name": "David Williams", "age": 40, "city": "Chicago"}
+    ]
+    collection.insert_many(documents)
+
+    assert collection.estimated_document_count({}) == 3
+
+    for doc in collection.find():
+        print(doc)
+
+    collection.delete_many({"age" : 24})
+
+    assert collection.estimated_document_count({}) == 2
+

@@ -3,6 +3,7 @@
 #include <string>
 
 #include <Parsers/Mongo/ParserMongoSelectQuery.h>
+#include "Parsers/Mongo/ParserMongoQuery.h"
 
 namespace DB
 {
@@ -149,6 +150,30 @@ public:
     bool parseImpl(ASTPtr & node) override;
 };
 
+class MongoSetFunction : public IMongoFunction
+{
+public:
+    std::string getFunctionName() const override { return "$set"; }
+    bool parseImpl(ASTPtr & node) override;
+
+    explicit MongoSetFunction(rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
+    {
+    }
+};
+
+class MongoIncrementFunction : public IMongoFunction
+{
+public:
+    std::string getFunctionName() const override { return "$inc"; }
+    bool parseImpl(ASTPtr & node) override;
+
+    explicit MongoIncrementFunction(
+        rapidjson::Value array_elements_, std::shared_ptr<QueryMetadata> metadata_, const std::string & edge_name_)
+        : IMongoFunction(std::move(array_elements_), metadata_, edge_name_)
+    {
+    }
+};
 
 }
 

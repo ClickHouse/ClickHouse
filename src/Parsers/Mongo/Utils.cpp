@@ -64,6 +64,7 @@ std::optional<rapidjson::Value> findField(const rapidjson::Value & value, const 
 rapidjson::Value parseData(const char * begin, const char * end)
 {
     std::string input(begin, end);
+    input = "[" + input + "]";
     std::replace(input.begin(), input.end(), '\'', '"');
 
     rapidjson::Document document;

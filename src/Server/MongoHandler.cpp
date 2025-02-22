@@ -1,24 +1,26 @@
 #include "MongoHandler.h"
+#include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
+#include <Poco/Util/LayeredConfiguration.h>
 #include "Common/Exception.h"
 #include <Common/CurrentThread.h>
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
-#include <Core/Settings.h>
+#include "Processors/QueryPlan/IQueryPlanStep.h"
 
-#include <Core/MongoProtocol.h>
+#include <Core/Mongo/Handler.h>
+#include <Core/Mongo/MongoProtocol.h>
 
 #include <bson/bson.h>
 
@@ -26,16 +28,16 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_settings_after_format_in_insert;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_query_size;
-    extern const SettingsBool implicit_select;
+extern const SettingsBool allow_settings_after_format_in_insert;
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
+extern const SettingsBool implicit_select;
 }
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
+extern const int SYNTAX_ERROR;
 }
 
 MongoHandler::MongoHandler(
@@ -61,35 +63,14 @@ void MongoHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
-    message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
-}
-
-std::string bsonToJson(const std::string& bsonData) {
-    bson_t b;
-    //bson_error_t error;
-
-    if (!bson_init_static(&b, reinterpret_cast<const uint8_t*>(bsonData.data()), bsonData.size())) {
-        throw std::runtime_error("Failed to initialize BSON data");
-    }
-
-    char* json_str = bson_as_canonical_extended_json(&b, nullptr);
-    if (!json_str) {
-      // Try to get the error message and throw it
-      //char *err_msg = bson_error_to_string(&error, "bson_as_canonical_extended_json() failed: ");
-      //std::string error_message(err_msg);
-      //bson_free(err_msg);
-      throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect bson");
-    }
-
-
-    std::string json(json_str);
-    bson_free(json_str);
-
-    return json;
+    message_transport = std::make_shared<MongoProtocol::MessageTransport>(in.get(), out.get());
 }
 
 void MongoHandler::run()
 {
+    //const char* msg1 = "I\1\0\0\5\0\0\0sH3f\1\0\0\0";
+    //const char* msg2 = "\10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1\0\0\0%\1\0\0\10helloOk\0\1\10ismaster\0\1\3topologyVersion\0-\0\0\0\7processId\0g\257\264\205\352\214\273t_{g-\22counter\0\0\0\0\0\0\0\0\0\0\20maxBsonObjectSize\0\0\0\0\1\20maxMessageSizeBytes\0\0l\334\2\20maxWriteBatchSize\0\240\206\1\0\tlocalTime\0\1<Y\6\225\1\0\0\20logicalSessionTimeoutMinutes\0\36\0\0\0\20connectionId\0\3\0\0\0\20minWireVersion\0\0\0\0\0\20maxWireVersion\0\31\0\0\0\10readOnly\0\0\1ok\0\0\0\0\0\0\0\360?\0";
+
     setThreadName("PostgresHandler");
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MONGO);
@@ -104,35 +85,60 @@ void MongoHandler::run()
 
         while (tcp_server.isOpen())
         {
+            constexpr size_t connection_check_timeout = 1; // 1 second
+            while (!in->poll(1000000 * connection_check_timeout))
+                if (!tcp_server.isOpen())
+                    return;
+
+            std::cerr << "want to read new header\n";
             auto header_bytes = message_transport->receive<MongoProtocol::Header>();
-            std::cerr << "recieved from message " << header_bytes->message_length << ' ' << header_bytes->request_id << ' ' <<  header_bytes->operation_code << ' ' << header_bytes->response_to << '\n';
-            if (header_bytes->operation_code == static_cast<int>(MongoProtocol::OperationCode::OP_QUERY))
-            {
-                std::cerr << "OP QUERY\n";
-
-                auto content_bytes = message_transport->receive<MongoProtocol::OperationQuery>();
-                std::cerr << "query " << content_bytes->size_query << ' ' << content_bytes->query << '\n';
-
-                std::cerr << "decoded query " << bsonToJson(content_bytes->query) << '\n';
-            }
+            MongoProtocol::handle(*header_bytes, message_transport, session);
         }
     }
-    catch (const Poco::Exception &exc)
+    catch (const Poco::Exception & exc)
     {
         log->log(exc);
     }
-
 }
 
 bool MongoHandler::startup()
 {
+    session->authenticate("default", "123", socket().peerAddress());
+    //Int32 payload_size;
+    //Int32 info;
+    /*
+    const auto & user_name = start_up_msg->user;
+    authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
+
+    try
+    {
+        session->makeSessionContext();
+        session->sessionContext()->setDefaultFormat("PostgreSQLWire");
+        if (!start_up_msg->database.empty())
+            session->sessionContext()->setCurrentDatabase(start_up_msg->database);
+    }
+    catch (const Exception & exc)
+    {
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "XX000", exc.message()),
+            true);
+        throw;
+    }
+
+    sendParameterStatusData(*start_up_msg);
+
+    message_transport->send(
+        PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
+*/
+    LOG_DEBUG(log, "Successfully finished Startup stage");
     return true;
 }
 
 void MongoHandler::cancelRequest()
 {
-    std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg =
-        message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
+    std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg
+        = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
 
     String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
     ReadBufferFromString replacement(query);

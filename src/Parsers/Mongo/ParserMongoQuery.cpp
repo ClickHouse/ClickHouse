@@ -6,25 +6,27 @@
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IParserBase.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
+#include <Parsers/IParserBase.h>
 
+#include <Parsers/Mongo/Metadata.h>
+#include <Parsers/Mongo/ParserMongoCompareFunctions.h>
+#include <Parsers/Mongo/ParserMongoDeleteQuery.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
 #include <Parsers/Mongo/ParserMongoFunction.h>
-#include <Parsers/Mongo/ParserMongoSelectQuery.h>
-#include <Parsers/Mongo/Metadata.h>
 #include <Parsers/Mongo/ParserMongoInsertQuery.h>
+#include <Parsers/Mongo/ParserMongoSelectQuery.h>
+#include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 #include <Parsers/Mongo/Utils.h>
-#include <Parsers/Mongo/ParserMongoCompareFunctions.h>
 
 namespace DB
 {
@@ -36,17 +38,20 @@ bool ParserMongoQuery::parseImpl(Pos & /*pos*/, ASTPtr & node, Expected & /*expe
 {
     switch (metadata->getQueryType())
     {
-        case QueryMetadata::QueryType::select:
-        {
-            return ParserMongoSelectQuery(std::move(data), metadata).parseImpl(node);
+        case QueryMetadata::QueryType::select: {
+            return ParserMongoSelectQuery(std::move(*data.GetArray().Begin()), metadata).parseImpl(node);
         }
-        case QueryMetadata::QueryType::insert_many:
-        {
-            return ParserMongoInsertManyQuery(std::move(data), metadata).parseImpl(node);
+        case QueryMetadata::QueryType::insert_many: {
+            return ParserMongoInsertManyQuery(std::move(*data.GetArray().Begin()), metadata).parseImpl(node);
         }
-        case QueryMetadata::QueryType::insert_one:
-        {
-            return ParserMongoInsertOneQuery(std::move(data), metadata).parseImpl(node);
+        case QueryMetadata::QueryType::insert_one: {
+            return ParserMongoInsertOneQuery(std::move(*data.GetArray().Begin()), metadata).parseImpl(node);
+        }
+        case QueryMetadata::QueryType::delete_many: {
+            return ParserMongoDeleteQuery(std::move(*data.GetArray().Begin()), metadata).parseImpl(node);
+        }
+        case QueryMetadata::QueryType::update_many: {
+            return ParserMongoUpdateQuery(std::move(data), metadata).parseImpl(node);
         }
     }
 }
@@ -81,6 +86,14 @@ createParser(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_, c
     if (edge_name_ == "$arithmetic_function_element")
     {
         return std::make_shared<MongoArithmeticFunctionElement>(std::move(data_), metadata_, edge_name_);
+    }
+    if (edge_name_ == "$set")
+    {
+        return std::make_shared<MongoSetFunction>(std::move(data_), metadata_, edge_name_);
+    }
+    if (edge_name_ == "$inc")
+    {
+        return std::make_shared<MongoIncrementFunction>(std::move(data_), metadata_, edge_name_);
     }
     if (!literal_as_default)
     {
