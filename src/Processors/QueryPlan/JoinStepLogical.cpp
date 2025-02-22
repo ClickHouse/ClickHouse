@@ -822,7 +822,7 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED && e.code() != ErrorCodes::LOGICAL_ERROR)
+                    if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                         throw;
                 }
             }
