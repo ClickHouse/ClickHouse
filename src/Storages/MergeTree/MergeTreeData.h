@@ -684,6 +684,7 @@ public:
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
+
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {
@@ -1476,7 +1477,6 @@ protected:
                             , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
             {}
 
-
             size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
@@ -1511,19 +1511,19 @@ protected:
 
         void resetMutationFailures()
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             failed_mutation_parts.clear();
         }
 
         void removePartFromFailed(const String & part_name)
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             failed_mutation_parts.erase(part_name);
         }
 
         void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             auto part_info_it = failed_mutation_parts.find(part_name);
             if (part_info_it == failed_mutation_parts.end())
             {
@@ -1536,8 +1536,7 @@ protected:
 
         bool partCanBeMutated(const String& part_name)
         {
-
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             auto iter = failed_mutation_parts.find(part_name);
             if (iter == failed_mutation_parts.end())
                 return true;
@@ -1593,7 +1592,7 @@ protected:
      *  we stop traversal at this node. Otherwise part is broken and we
      *  traverse its children and try to load covered parts which will
      *  replace broken covering part. Unloaded nodes represent outdated parts
-     *  nd they are pushed to background task and loaded asynchronously.
+     *  and they are pushed to background task and loaded asynchronously.
      */
     class PartLoadingTree
     {
