@@ -798,12 +798,7 @@ UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, bool left_s
         /// To avoid handling every step separately, we rely on the generic serialization mechanism.
         /// We will serialize all the important information in a buffer and then calculate a hash from it.
         const auto & node = *frame.node;
-        if (const auto * read_from_remote = dynamic_cast<const ReadFromRemote *>(node.step.get()))
-        {
-            writeStringBinary(read_from_remote->getSerializationName(), wbuf);
-            writeStringBinary(read_from_remote->getStorageID().getFullTableName(), wbuf);
-        }
-        else if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
         {
             writeStringBinary(source->getSerializationName(), wbuf);
             writeStringBinary(source->getStorageID().getFullTableName(), wbuf);
