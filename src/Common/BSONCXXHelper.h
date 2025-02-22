@@ -5,10 +5,6 @@
 #if USE_MONGODB
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
-#include "Columns/ColumnNullable.h"
-
-#include <bsoncxx/exception/exception.hpp>
-#include <bsoncxx/exception/error_code.hpp>
 
 namespace DB
 {
@@ -27,71 +23,41 @@ using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-static bsoncxx::types::bson_value::value tryOid(const std::string & str)
+static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type)
 {
-    try
+    switch (type->getTypeId())
     {
-        return bsoncxx::oid(str);
-    } catch (bsoncxx::v_noabi::exception & e)
-    {
-        if (e.code() == bsoncxx::v_noabi::error_code::k_invalid_oid)
-            return bsoncxx::types::b_string{str};
-        throw;
-    }
-}
-
-static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type, const bool & shouldTryOid = false)
-{
-    if (field.isNull())
-        return bsoncxx::types::b_null{};
-
-    auto type_id = type->getTypeId();
-    if (type->isNullable())
-    {
-        if(const auto t = typeid_cast<const DataTypeNullable *>(type.get()))
-            type_id = t->getNestedType()->getTypeId();
-    }
-
-    switch (type_id)
-    {
-        case TypeIndex::Nothing:
-            return bsoncxx::types::b_null{};
         case TypeIndex::String:
-        {
-            if(shouldTryOid)
-                return tryOid(field.safeGet<String>());
             return bsoncxx::types::b_string{field.safeGet<String>()};
-        }
-        case TypeIndex::UInt8:
-        {
+        case TypeIndex::UInt8: {
             if (isBool(type))
                 return bsoncxx::types::b_bool{field.safeGet<UInt8>() != 0};
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8>())};
         }
         case TypeIndex::UInt16:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt16 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt16>())};
         case TypeIndex::UInt32:
-            return bsoncxx::types::b_int64{static_cast<Int64>(field.safeGet<UInt32 &>())};
+            return bsoncxx::types::b_int64{static_cast<Int64>(field.safeGet<UInt32>())};
         case TypeIndex::UInt64:
-            return bsoncxx::types::b_double{static_cast<Float64>(field.safeGet<UInt64 &>())};
+            return bsoncxx::types::b_double{static_cast<Float64>(field.safeGet<UInt64>())};
         case TypeIndex::Int8:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int8 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int8>())};
         case TypeIndex::Int16:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int16 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int16>())};
         case TypeIndex::Int32:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int32 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int32>())};
         case TypeIndex::Int64:
-            return bsoncxx::types::b_int64{field.safeGet<Int64 &>()};
+            return bsoncxx::types::b_int64{field.safeGet<Int64>()};
         case TypeIndex::Float32:
-            return bsoncxx::types::b_double{field.safeGet<Float32 &>()};
+            return bsoncxx::types::b_double{field.safeGet<Float32>()};
         case TypeIndex::Float64:
-            return bsoncxx::types::b_double{field.safeGet<Float64 &>()};
+            return bsoncxx::types::b_double{field.safeGet<Float64>()};
         case TypeIndex::Date:
-            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt16 &>() * 86400}};
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt16>() * 86400}};
         case TypeIndex::Date32:
-            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<Int32 &>() * 86400}};
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<Int32>() * 86400}};
         case TypeIndex::DateTime:
-            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32 &>()}};
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32>()}};
         case TypeIndex::UUID:
         {
             uint64_t uuid_numbers[2];

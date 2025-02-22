@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/configuration-files
+slug: /operations/configuration-files
 sidebar_position: 50
 sidebar_label: Configuration Files
 title: Configuration Files
@@ -8,7 +8,7 @@ title: Configuration Files
 :::note
 Please note that XML-based Settings Profiles and configuration files are currently not supported for ClickHouse Cloud. Therefore, in ClickHouse Cloud, you won't find a config.xml file. Instead, you should use SQL commands to manage settings through Settings Profiles.
 
-For further details, see ["Configuring Settings"](https://clickhouse.com/docs/en/manage/settings)
+For further details, see ["Configuring Settings"](/docs/manage/settings)
 :::
 
 The ClickHouse server can be configured with configuration files in XML or YAML syntax.
@@ -119,7 +119,7 @@ The same is possible using `from_zk` (ZooKeeper node):
 </clickhouse>
 ```
 
-```
+```shell
 # clickhouse-keeper-client
 / :) touch /zk_configs
 / :) create /zk_configs/postgresql_port "9005"

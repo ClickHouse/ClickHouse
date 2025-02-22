@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/settings/memory-overcommit
+slug: /operations/settings/memory-overcommit
 ---
 # Memory overcommit
 
@@ -27,7 +27,7 @@ Waiting timeout is set by `memory_usage_overcommit_max_wait_microseconds` settin
 **Example**
 
 ```sql
-SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator=4000, memory_usage_overcommit_max_wait_microseconds=500
+SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=4000, memory_usage_overcommit_max_wait_microseconds=500
 ```
 
 ## Global overcommit tracker

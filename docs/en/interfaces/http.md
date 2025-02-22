@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/http
+slug: /interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
@@ -339,19 +339,19 @@ This is a new feature added in ClickHouse 24.4.
 In specific scenarios, setting the granted role first might be required before executing the statement itself.
 However, it is not possible to send `SET ROLE` and the statement together, as multi-statements are not allowed:
 
-```
+```bash
 curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
 ```
 
 Which will result in an error:
 
-```
+```sql
 Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
 ```
 
 To overcome this limitation, you could use the `role` query parameter instead:
 
-```
+```bash
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
 ```
 
@@ -359,7 +359,7 @@ This will be the equivalent of executing `SET ROLE my_role` before the statement
 
 Additionally, it is possible to specify multiple `role` query parameters:
 
-```
+```bash
 curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
 ```
 
@@ -371,7 +371,7 @@ Because of limitation of HTTP protocol, HTTP 200 response code does not guarante
 
 Here is an example:
 
-```
+```bash
 curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)"
 *   Trying 127.0.0.1:8123...
 ...
@@ -528,7 +528,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
 
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://’ or 'config://’, find the content from the file or configuration sends to client.
+    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration sends to client.
 
 Next are the configuration methods for different `type`.
 

@@ -132,6 +132,9 @@
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseOnDiskThreadsScheduled, "Number of queued or active jobs in the DatabaseOnDisk thread pool.") \
+    M(DatabaseBackupThreads, "Number of threads in the DatabaseBackup thread pool.") \
+    M(DatabaseBackupThreadsActive, "Number of threads in the DatabaseBackup thread pool running a task.") \
+    M(DatabaseBackupThreadsScheduled, "Number of queued or active jobs in the DatabaseBackup thread pool.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \
     M(DatabaseCatalogThreadsActive, "Number of threads in the DatabaseCatalog thread pool running a task.") \
     M(DatabaseCatalogThreadsScheduled, "Number of queued or active jobs in the DatabaseCatalog thread pool.") \
@@ -209,6 +212,9 @@
     M(DiskPlainRewritableS3FileCount, "Number of file entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     M(DiskPlainRewritableS3UniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     \
+    M(MergeTreeFetchPartitionThreads, "Number of threads for ALTER TABLE FETCH PARTITION") \
+    M(MergeTreeFetchPartitionThreadsActive, "Number of threads for ALTER TABLE FETCH PARTITION fetching part") \
+    M(MergeTreeFetchPartitionThreadsScheduled, "Number of queued or active part fetches in ALTER TABLE FETCH PARTITION") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
     M(MergeTreePartsLoaderThreadsScheduled, "Number of queued or active jobs in the MergeTree parts loader thread pool.") \
@@ -254,6 +260,9 @@
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
+    M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
+    M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \

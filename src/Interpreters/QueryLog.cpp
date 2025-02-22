@@ -1,24 +1,26 @@
 #include <Interpreters/QueryLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
@@ -67,8 +69,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of query execution with microsecond precision."},
         {"query_duration_ms", std::make_shared<DataTypeUInt64>(), "Duration of query execution in milliseconds."},
 
-        {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it’s read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it’s read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
+        {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it's read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it's read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
         {"written_rows", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written rows. For other queries, the column value is 0."},
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written bytes (uncompressed). For other queries, the column value is 0."},
         {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in a result of the SELECT query, or a number of rows in the INSERT query."},
