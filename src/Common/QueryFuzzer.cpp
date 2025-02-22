@@ -1430,7 +1430,7 @@ ASTPtr QueryFuzzer::addJoinClause()
                 auto & otable_exp_child = otexp->database_and_table_name
                     ? otexp->database_and_table_name
                     : (otexp->table_function ? otexp->table_function : otexp->subquery);
-                auto * otable_exp_alias = typeid_cast<ASTWithAlias *>(otable_exp_child.get());
+                auto * otable_exp_alias = dynamic_cast<ASTWithAlias *>(otable_exp_child.get());
                 otable_exp_alias->setAlias(next_alias);
             }
             else if (dynamic_cast<ASTWithAlias *>(input_table.get()))
