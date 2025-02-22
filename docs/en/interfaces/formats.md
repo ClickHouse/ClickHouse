@@ -77,6 +77,7 @@ The supported formats are:
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |
 | [ParquetMetadata](#data-format-parquet-metadata)                                          | ✔   | ✗     |
+| [ParquetKeyValueMetadata](#data-format-parquet-kv-metadata)                               | ✔   | ✗     |
 | [Arrow](#data-format-arrow)                                                               | ✔   | ✔     |
 | [ArrowStream](#data-format-arrow-stream)                                                  | ✔   | ✔     |
 | [ORC](#data-format-orc)                                                                   | ✔   | ✔     |
@@ -381,6 +382,10 @@ See [Parquet](formats/Parquet/Parquet.md)
 ## ParquetMetadata {#data-format-parquet-metadata}
 
 See [ParquetMetadata](formats/Parquet/ParquetMetadata.md)
+
+## ParquetKeyValueMetadata {#data-format-parquet-kv-metadata}
+
+See [ParquetKeyValueMetadata](formats/Parquet/ParquetKeyValueMetadata.md)
 
 ## Arrow {#data-format-arrow}
 

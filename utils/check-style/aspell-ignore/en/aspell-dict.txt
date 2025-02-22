@@ -791,6 +791,7 @@ ParallelReplicasMode
 Parametrized
 ParquetCompression
 ParquetMetadata
+ParquetKeyValueMetadata
 ParquetVersion
 Parsers
 PartMutation

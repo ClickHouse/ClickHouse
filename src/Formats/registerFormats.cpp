@@ -103,6 +103,7 @@ void registerInputFormatJSONAsObject(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
+void registerInputFormatParquetKeyValueMetadata(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
 
@@ -146,6 +147,7 @@ void registerTemplateSchemaReader(FormatFactory & factory);
 void registerMySQLSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerParquetMetadataSchemaReader(FormatFactory & factory);
+void registerParquetKeyValueMetadataSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
@@ -253,6 +255,7 @@ void registerFormats()
     registerInputFormatMySQLDump(factory);
 
     registerInputFormatParquetMetadata(factory);
+    registerInputFormatParquetKeyValueMetadata(factory);
     registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
 
@@ -291,6 +294,7 @@ void registerFormats()
     registerMySQLSchemaReader(factory);
     registerBSONEachRowSchemaReader(factory);
     registerParquetMetadataSchemaReader(factory);
+    registerParquetKeyValueMetadataSchemaReader(factory);
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
