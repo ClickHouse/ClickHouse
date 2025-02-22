@@ -11,6 +11,9 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace DB
 {
 
@@ -68,6 +71,7 @@ public:
         , pipe(std::move(pipe_))
         , storage(storage_)
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "storage.getStorageID().getFullTableName()={}", storage.getStorageID().getFullTableName());
     }
 
 private:

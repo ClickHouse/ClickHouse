@@ -72,13 +72,13 @@ public:
 
     JoinPtr convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical);
 
-    JoinExpressionActions & getExpressionActions() { return expression_actions; }
+    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
     const JoinSettings & getSettings() const { return join_settings; }
 
     bool needsToCalculateHashesFromSubtree() const override { return true; }
 
-    void calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root) override;
+    void calculateHashesFromSubtree(QueryPlanNode & subtree_root) override;
 
 protected:
     void updateOutputHeader() override;
@@ -92,7 +92,8 @@ protected:
     Names required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
-    UInt64 hash_table_key_hash;
+    UInt64 hash_table_key_hash_left = 0;
+    UInt64 hash_table_key_hash_right = 0;
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;

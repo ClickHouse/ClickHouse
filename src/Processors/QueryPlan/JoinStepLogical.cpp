@@ -30,14 +30,11 @@
 
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
-#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
-#include <Processors/QueryPlan/UnionStep.h>
 #include <Common/SipHash.h>
 
 namespace DB
@@ -726,15 +723,11 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
     {
         table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
+        std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
     }
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join,
-        prepared_join_storage,
-        left_sample_block,
-        right_sample_block,
-        query_context,
-        hash_table_key_hash);
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, query_context, hash_table_key_hash_right);
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }
@@ -777,7 +770,7 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
     return {};
 }
 
-void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root)
+UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, bool left_side, QueryPlanNode & subtree_root)
 {
     WriteBufferFromOwnString wbuf;
     SerializedSetsRegistry registry;
@@ -789,6 +782,7 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
     while (!stack.empty())
     {
         auto & frame = stack.back();
+        // Nodes are traversed bottom-up (from Source steps to the `subtree_root`).
         if (frame.next_child < frame.node->children.size())
         {
             auto next_frame = QueryPlanOptimizations::Frame{.node = frame.node->children[frame.next_child]};
@@ -796,20 +790,31 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
             stack.push_back(next_frame);
             continue;
         }
-        const auto & node = *frame.node;
 
-        if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+        /// We include two kinds of nodes in the fingerprint:
+        /// 1. Source steps
+        /// 2. Transforming steps that change the number of rows (e.g. `FilterStep`)
+        /// 3. Join parameters
+        /// To avoid handling every step separately, we rely on the generic serialization mechanism.
+        /// We will serialize all the important information in a buffer and then calculate a hash from it.
+        const auto & node = *frame.node;
+        if (const auto * read_from_remote = dynamic_cast<const ReadFromRemote *>(node.step.get()))
+        {
+            writeStringBinary(read_from_remote->getSerializationName(), wbuf);
+            writeStringBinary(read_from_remote->getStorageID().getFullTableName(), wbuf);
+        }
+        else if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+        {
+            writeStringBinary(source->getSerializationName(), wbuf);
+            writeStringBinary(source->getStorageID().getFullTableName(), wbuf);
+        }
+        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
         {
             writeStringBinary(read->getSerializationName(), wbuf);
             if (const auto & snapshot = read->getStorageSnapshot())
                 writeStringBinary(snapshot->storage.getStorageID().getFullTableName(), wbuf);
             if (const auto & dag = read->getPrewhereInfo())
                 dag->prewhere_actions.serialize(ctx.out, ctx.registry);
-        }
-        else if (const auto * uni = typeid_cast<const UnionStep *>(node.step.get()))
-        {
-            writeStringBinary(uni->getSerializationName(), wbuf);
-            uni->serialize(ctx);
         }
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
         {
@@ -827,22 +832,35 @@ void JoinStepLogical::calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode 
                 }
             }
         }
-
         stack.pop_back();
     }
 
-    writeStringBinary(getSerializationName(), wbuf);
-    chassert(getExpressionActions().right_pre_join_actions);
-    getExpressionActions().right_pre_join_actions->serialize(ctx.out, ctx.registry);
-    writeBinary(getJoinInfo().expression.condition.predicates.size(), wbuf);
-    for (const auto & pred : getJoinInfo().expression.condition.predicates)
+    writeStringBinary(join_step.getSerializationName(), wbuf);
+    const auto & pre_join_actions
+        = left_side ? join_step.getExpressionActions().left_pre_join_actions : join_step.getExpressionActions().right_pre_join_actions;
+    chassert(pre_join_actions);
+    pre_join_actions->serialize(ctx.out, ctx.registry);
+    writeBinary(join_step.getJoinInfo().expression.condition.predicates.size(), wbuf);
+    for (const auto & pred : join_step.getJoinInfo().expression.condition.predicates)
     {
-        writeStringBinary(pred.right_node.getColumnName(), wbuf);
+        const auto & node = left_side ? pred.left_node : pred.right_node;
+        writeStringBinary(node.getColumnName(), wbuf);
         writeBinary(static_cast<UInt8>(pred.op), wbuf);
     }
 
     SipHash hash;
     hash.update(wbuf.str());
-    hash_table_key_hash = hash.get64();
+    return hash.get64();
+}
+
+/// The goal is to calculate a fingerprint of all plan nodes that influence cardinality of the join sides.
+/// Tables we read from, filters applied within reading steps and within `FilterStep`-s etc.
+void JoinStepLogical::calculateHashesFromSubtree(QueryPlanNode & subtree_root)
+{
+    const auto * join_step = typeid_cast<const JoinStepLogical *>(subtree_root.step.get());
+    chassert(join_step);
+    chassert(subtree_root.children.size() == 2);
+    hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, /* left_side = */ true, *subtree_root.children.at(0));
+    hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, /* left_side = */ false, *subtree_root.children.at(1));
 }
 }

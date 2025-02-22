@@ -47,6 +47,8 @@ public:
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
+    StorageID getStorageID() const { return main_table; }
+
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
@@ -96,6 +98,8 @@ public:
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
+
+    StorageID getStorageID() const { return storage_id; }
 
 private:
     Pipes addPipes(ASTPtr ast, const Header & out_header);
