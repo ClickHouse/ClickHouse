@@ -47,8 +47,6 @@ public:
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
-    StorageID getStorageID() const { return main_table; }
-
 private:
     ClusterProxy::SelectStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
