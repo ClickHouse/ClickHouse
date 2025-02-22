@@ -255,7 +255,7 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
 
     Header output_header = join_step->getOutputHeader();
 
-    auto & join_expression_actions = join_step->getExpressionActions();
+    const auto & join_expression_actions = join_step->getExpressionActions();
 
     QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
     QueryPlan::Node * new_right_node = nullptr;
