@@ -19,8 +19,8 @@ include(${ClickHouse_SOURCE_DIR}/cmake/split_debug_symbols.cmake)
 # If you do not know what modes you need, turn then all.
 option (ENABLE_CLICKHOUSE_ALL "Enable all ClickHouse modes by default" ON)
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
-# https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
+# https://clickhouse.com/docs/operations/utilities/clickhouse-obfuscator/
+# https://clickhouse.com/docs/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
 if (ENABLE_ODBC AND NOT USE_MUSL)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver" ${ENABLE_CLICKHOUSE_ALL})
