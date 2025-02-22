@@ -66,13 +66,14 @@ public:
         std::string remote_path = info.path;
         std::lock_guard lock(mutex);
 
+        size_t num_files = info.files.size();
         auto res = map.emplace(std::move(path), std::move(info));
 
         if (res.second)
         {
             remote_directories.emplace(remote_path);
             metric_directories.add(1);
-            metric_files.add(info.files.size());
+            metric_files.add(num_files);
         }
 
         return res;
