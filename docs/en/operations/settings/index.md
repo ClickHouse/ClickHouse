@@ -1,7 +1,6 @@
 ---
 title: Settings
 description: Table of Contents page for Settings
-title: "Settings Overview"
 sidebar_position: 1
 slug: /operations/settings/
 ---
