@@ -1487,6 +1487,7 @@ private:
 
     /// Throttling
 public:
+    void configureServerWideThrottling();
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 
