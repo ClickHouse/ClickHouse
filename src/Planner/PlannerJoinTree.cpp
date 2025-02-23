@@ -1194,11 +1194,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
             auto subquery_options = select_query_options.subquery();
 
-            query_node->getMutableContext() = planner_context->getMutableQueryContext();
-            LOG_DEBUG(
-                getLogger(__PRETTY_FUNCTION__),
-                "table_expression/enable_parallel_replicas={}",
-                query_node->getContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]);
+            if (query_node)
+            {
+                query_node->getMutableContext() = planner_context->getMutableQueryContext();
+
+                LOG_DEBUG(
+                    getLogger(__PRETTY_FUNCTION__),
+                    "table_expression/enable_parallel_replicas={}",
+                    query_node->getContext()->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas]);
+            }
 
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
