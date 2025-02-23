@@ -30,53 +30,45 @@
     </create_query>
 
     <create_query>
+
         CREATE TABLE test.vectors
         (
             id UInt64,
-            vector Array(Float32),
-            vector_quantized FixedString(1024)
+            vector Array(Float32)
         )
-        ENGINE = Memory
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 128;
+
     </create_query>
 
     <!-- Generate random vectors and their quantized versions -->
-    <fill_query>
-        WITH (
-            SELECT arrayMap(x -> toFloat32(randNormal(0, 1)), range(1024))
-            FROM system.numbers LIMIT 1
-        ) AS vec
-        INSERT INTO test.vectors
-        SELECT
-            number AS id,
-            arrayMap(x -> toFloat32(randNormal(0, 1)), range(1024)) AS vector,
-            quantize8Bit(vector) AS vector_quantized
-        FROM system.numbers
-        LIMIT 100000
+    <fill_query>      
+
+    INSERT INTO test.vectors
+    SELECT 
+    number AS id,
+    (
+            SELECT groupArray(randCanonical())
+            FROM numbers(1024)
+        ) AS vector
+    FROM numbers(28000000)
+
     </fill_query>
 
-    <!-- Create a second table with target vectors for distance computation -->
-    <create_query>
-        DROP TABLE IF EXISTS test.target_vectors
-    </create_query>
+    <fill_query>      
 
-    <create_query>
-        CREATE TABLE test.target_vectors
-        (
-            id UInt64,
-            vector Array(Float32),
-            vector_quantized FixedString(1024)
-        )
-        ENGINE = Memory
-    </create_query>
+    ALTER TABLE test.vectors
+    ADD COLUMN vector_quantized FixedString(1024);
 
-    <fill_query>
-        INSERT INTO test.target_vectors
-        SELECT
-            number AS id,
-            arrayMap(x -> toFloat32(randNormal(0, 1)), range(1024)) AS vector,
-            quantize8Bit(vector) AS vector_quantized
-        FROM system.numbers
-        LIMIT 100000
+    </fill_query>
+
+    <fill_query>      
+
+    ALTER TABLE test.vectors
+    UPDATE vector_quantized = quantize8Bit(vector)
+    WHERE 1;
+
     </fill_query>
 
     <!-- Benchmark Query 1: L2Distance -->
@@ -105,9 +97,5 @@
 
     <drop_query>
         DROP TABLE test.vectors
-    </drop_query>
-    
-    <drop_query>
-        DROP TABLE test.target_vectors
     </drop_query>
 </test>

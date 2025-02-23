@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <bit>
+#include <cstdint>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
@@ -23,6 +26,60 @@ extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+static constexpr float Float16ToFloat32(const uint16_t & val)
+{
+    const uint32_t sign = static_cast<uint32_t>(val & 0x8000) << 16;
+    const uint8_t exp16 = (val & 0x7c00) >> 10;
+    uint16_t frac16 = val & 0x3ff;
+
+    uint32_t exp32 = 0;
+    if (__builtin_expect(exp16 == 0x1f, 0))
+    {
+        exp32 = 0xff;
+    }
+    else if (__builtin_expect(exp16 == 0, 0))
+    {
+        exp32 = 0;
+    }
+    else
+    {
+        exp32 = static_cast<uint32_t>(exp16) + 112;
+    }
+
+    if (__builtin_expect(exp16 == 0 && frac16 != 0, 0))
+    {
+        uint8_t off_set = 0;
+        do
+        {
+            ++off_set;
+            frac16 <<= 1;
+        } while ((frac16 & 0x400) != 0x400);
+        frac16 &= 0x3ff;
+        exp32 = 113 - off_set;
+    }
+
+    uint32_t frac32 = frac16 << 13;
+
+    uint32_t bits = 0;
+
+    bits |= sign;
+    bits |= (exp32 << 23);
+    bits |= frac32;
+
+    return std::bit_cast<float>(bits);
+}
+
+struct Lookup16Bit
+{
+    static inline const std::array<float, 65536> dequantize_lookup = []()
+    {
+        std::array<float, 65536> table{};
+        for (size_t i = 0; i < 65536; ++i)
+            table[i] = Float16ToFloat32(static_cast<uint16_t>(i));
+        return table;
+    }();
+};
 
 DECLARE_MULTITARGET_CODE(
 
@@ -100,9 +157,6 @@ public:
     explicit FunctionDequantize16Bit(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, FunctionDequantize16BitImpl<TargetSpecific::Default::Dequantize16BitImpl>>();
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX512F, FunctionDequantize16BitImpl<TargetSpecific::AVX512F::Dequantize16BitImpl>>();
-#endif
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

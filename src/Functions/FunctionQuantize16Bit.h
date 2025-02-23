@@ -122,10 +122,6 @@ public:
     explicit FunctionQuantize16Bit(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, FunctionQuantize16BitImpl<TargetSpecific::Default::Quantize16BitImpl>>();
-
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX512F, FunctionQuantize16BitImpl<TargetSpecific::AVX512F::Quantize16BitImpl>>();
-#endif
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

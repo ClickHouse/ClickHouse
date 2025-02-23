@@ -7,6 +7,7 @@
 #include "Columns/ColumnFixedString.h"
 #include "DataTypes/DataTypeFixedString.h"
 #include "Functions/FunctionDequantize8Bit.h"
+#include "Functions/FunctionDequantize16Bit.h"
 #include "base/types.h"
 
 namespace DB
@@ -20,7 +21,35 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-struct L2Distance
+struct L2Distance16Bit
+{
+    template <typename FloatType>
+    struct State
+    {
+        FloatType sum{};
+    };
+
+    template <typename ResultType>
+    static void accumulate(State<ResultType> & state, UInt16 x, UInt16 y)
+    {
+        auto diff = Lookup16Bit::dequantize_lookup[x] - Lookup16Bit::dequantize_lookup[y];
+        state.sum += diff * diff;
+    }
+
+    template <typename ResultType>
+    static void combine(State<ResultType> & state, const State<ResultType> & other_state)
+    {
+        state.sum += other_state.sum;
+    }
+
+    template <typename ResultType>
+    static ResultType finalize(const State<ResultType> & state)
+    {
+        return sqrt(state.sum);
+    }
+};
+
+struct L2Distance8Bit
 {
     static constexpr std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
     {
@@ -45,8 +74,7 @@ struct L2Distance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, UInt8 x, UInt8 y)
     {
-        auto diff = x - y;
-        state.sum += diff * diff; // distance_lookup[static_cast<int>(x) * 256 + y];
+        state.sum += distance_lookup[(static_cast<size_t>(x) << 8) | y];
     }
 
     template <typename ResultType>

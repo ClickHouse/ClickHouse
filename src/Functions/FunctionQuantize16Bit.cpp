@@ -1,4 +1,5 @@
 #include "FunctionQuantize16Bit.h"
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -16,61 +17,50 @@ namespace DB
 
 DECLARE_DEFAULT_CODE(
 
-    uint16_t Float32ToFloat16(float value) {
-        uint32_t f;
-        std::memcpy(&f, &value, sizeof(float));
+    static uint16_t Float32ToFloat16(const float & val) {
+        const uint32_t bits = std::bit_cast<uint32_t>(val);
 
-        uint16_t sign = (f >> 16) & 0x8000;
+        const uint16_t sign = (bits & 0x80000000) >> 16;
+        const uint32_t frac32 = bits & 0x7fffff;
+        const uint8_t exp32 = (bits & 0x7f800000) >> 23;
+        const int8_t exp32_diff = exp32 - 127;
 
-        int32_t exp = (f >> 23) & 0xFF;
-        uint32_t mantissa = f & 0x7FFFFF;
+        uint16_t exp16 = 0;
+        uint16_t frac16 = frac32 >> 13;
 
-        if (exp == 0xFF)
+        if (__builtin_expect(exp32 == 0xff || exp32_diff > 15, 0))
         {
-            if (mantissa)
-            {
-                return static_cast<uint16_t>(sign | 0x7E00 | (mantissa >> 13));
-            }
-            else
-            {
-                return static_cast<uint16_t>(sign | 0x7C00);
-            }
+            exp16 = 0x1f;
         }
-        else if (exp == 0)
+        else if (__builtin_expect(exp32 == 0 || exp32_diff < -14, 0))
         {
-            if (mantissa == 0)
-            {
-                return static_cast<uint16_t>(sign);
-            }
-            else
-            {
-                while ((mantissa & 0x800000) == 0)
-                {
-                    mantissa <<= 1;
-                    exp--;
-                }
-                exp++;
-                mantissa &= 0x7FFFFF;
-            }
+            exp16 = 0;
+        }
+        else
+        {
+            exp16 = exp32_diff + 15;
         }
 
-        exp += 112;
-
-        if (exp >= 0x1F)
+        if (__builtin_expect(exp32 == 0xff && frac32 != 0 && frac16 == 0, 0))
         {
-            return static_cast<uint16_t>(sign | 0x7C00);
+            frac16 = 0x200;
+        }
+        else if (__builtin_expect(exp32 == 0 || (exp16 == 0x1f && exp32 != 0xff), 0))
+        {
+            frac16 = 0;
+        }
+        else if (__builtin_expect(exp16 == 0 && exp32 != 0, 0))
+        {
+            frac16 = 0x100 | (frac16 >> 2);
         }
 
-        if (exp <= 0)
-        {
-            mantissa |= 0x800000;
-            mantissa >>= (1 - exp);
-            exp = 0;
-        }
+        uint16_t ret = 0;
+        ret |= sign;
+        ret |= exp16 << 10;
+        ret |= frac16;
 
-        return static_cast<uint16_t>(sign | (exp << 10) | (mantissa >> 13));
+        return ret;
     }
-
 
     void Quantize16BitImpl::execute(const Float32 * input, UInt8 * output, size_t size) {
         auto out = reinterpret_cast<uint16_t *>(output);
@@ -81,32 +71,6 @@ DECLARE_DEFAULT_CODE(
     }
 
 )
-
-DECLARE_AVX512F_SPECIFIC_CODE(
-
-    void Quantize16BitImpl::execute(const Float32 * input, UInt8 * output, size_t size) {
-        size_t i = 0;
-
-        for (; i + 8 <= size; i += 8)
-        {
-            __m256 input_vec = _mm256_loadu_ps(input + i);
-            __m128i fp16 = _mm256_cvtps_ph(input_vec, 0);
-            _mm_storeu_si128(reinterpret_cast<__m128i *>(output + i * 2), fp16);
-        }
-
-        for (; i < size; ++i)
-        {
-            __m128 xmm = _mm_load_ss(input + i);
-            __m128i fp16 = _mm_cvtps_ph(xmm, 0);
-            uint16_t half = static_cast<uint16_t>(_mm_extract_epi16(fp16, 0));
-
-            output[i * 2] = half & 0xFF;
-            output[i * 2 + 1] = (half >> 8) & 0xFF;
-        }
-    }
-
-)
-
 
 REGISTER_FUNCTION(Quantize16Bit)
 {

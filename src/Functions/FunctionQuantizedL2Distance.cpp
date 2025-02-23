@@ -9,16 +9,16 @@
 namespace DB
 {
 
-// REGISTER_FUNCTION(Quantized16BitL2Distance)
-// {
-//     static constexpr char name[] = "quantized16BitL2Distance";
-//     factory.registerFunction<FunctionQuantizedL2Distance<FunctionDequantize16Bit, name>>();
-// }
+REGISTER_FUNCTION(Quantized16BitL2Distance)
+{
+    static constexpr char name[] = "quantized16BitL2Distance";
+    factory.registerFunction<FunctionQuantizedL2Distance<L2Distance16Bit, name>>();
+}
 
 REGISTER_FUNCTION(Quantized8BitL2Distance)
 {
     static constexpr char name[] = "quantized8BitL2Distance";
-    factory.registerFunction<FunctionQuantizedL2Distance<L2Distance, name>>();
+    factory.registerFunction<FunctionQuantizedL2Distance<L2Distance8Bit, name>>();
 }
 
 }
