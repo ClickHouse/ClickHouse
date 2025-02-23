@@ -1,6 +1,6 @@
 ---
 description: "Dataset containing all of the commits and changes for the ClickHouse repository"
-slug: /en/getting-started/example-datasets/github
+slug: /getting-started/example-datasets/github
 sidebar_label: Github Repo
 sidebar_position: 1
 title: "Writing Queries in ClickHouse using GitHub Data"
@@ -173,7 +173,7 @@ CREATE TABLE git.line_changes
 ) ENGINE = MergeTree ORDER BY time;
 ```
 
-Insert the data using `INSERT INTO SELECT` and the [s3 function](/docs/en/integrations/s3/s3-table-functions/). For example, below, we insert the ClickHouse files into each of their respective tables:
+Insert the data using `INSERT INTO SELECT` and the [s3 function](/docs/integrations/s3/s3-table-functions/). For example, below, we insert the ClickHouse files into each of their respective tables:
 
 *commits*
 

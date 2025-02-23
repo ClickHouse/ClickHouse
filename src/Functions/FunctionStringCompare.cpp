@@ -2,7 +2,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/memcmpSmall.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -12,6 +11,7 @@
 #include <Functions/FunctionsComparison.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <base/memcmpSmall.h>
 
 #include <algorithm>
 #include <limits>

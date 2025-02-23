@@ -1,6 +1,6 @@
 ---
 title : One
-slug : /en/interfaces/formats/One
+slug: /interfaces/formats/One
 keywords : [One]
 input_format: true
 output_format: false

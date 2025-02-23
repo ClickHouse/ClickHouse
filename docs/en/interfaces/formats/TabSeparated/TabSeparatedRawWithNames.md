@@ -1,6 +1,6 @@
 ---
 title : TabSeparatedRawWithNames
-slug : /en/interfaces/formats/TabSeparatedRawWithNames
+slug: /interfaces/formats/TabSeparatedRawWithNames
 keywords : [TabSeparatedRawWithNames, TSVRawWithNames, RawWithNames]
 input_format: true
 output_format: true
