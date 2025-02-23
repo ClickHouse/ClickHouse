@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/explain
+slug: /sql-reference/statements/explain
 sidebar_position: 39
 sidebar_label: EXPLAIN
 title: "EXPLAIN Statement"

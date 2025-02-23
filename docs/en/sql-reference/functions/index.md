@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/
+slug: /sql-reference/functions/
 sidebar_position: 1
 sidebar_label: Overview
 ---
