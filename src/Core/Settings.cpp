@@ -4642,7 +4642,8 @@ Possible values:
     DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
-If the actual number of optimizations exceeds this setting, an exception is thrown.
+In the EXPLAIN PLAN query, stop applying optimizations after this limit is reached and return the plan as is.
+For regular query execution if the actual number of optimizations exceeds this setting, an exception is thrown.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
