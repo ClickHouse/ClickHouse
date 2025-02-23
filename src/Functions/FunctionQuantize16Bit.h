@@ -26,7 +26,10 @@ extern const int ILLEGAL_COLUMN;
 
 DECLARE_MULTITARGET_CODE(
 
-    struct Quantize16BitImpl { static void execute(const Float32 * input, UInt8 * output, size_t size); };
+    struct Quantize16BitImpl {
+        static void execute(const Float32 * input, UInt8 * output, size_t size);
+        static void execute(const Float64 * input, UInt8 * output, size_t size);
+    };
 
 )
 
@@ -88,7 +91,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays must have the same size");
         }
 
-        size_t fixed_string_length = array_size;
+        size_t fixed_string_length = array_size * 2;
         auto result_column = ColumnFixedString::create(fixed_string_length);
         auto & result_chars = result_column->getChars();
         result_chars.resize_fill(input_rows_count * fixed_string_length);
@@ -106,6 +109,16 @@ public:
             {
                 Quantize16BitImpl::execute(
                     col_float32->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
+                offset += array_size;
+            }
+        }
+        else if (const auto * col_float64 = checkAndGetColumn<ColumnFloat64>(&array_data))
+        {
+            size_t offset = 0;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                Quantize16BitImpl::execute(
+                    col_float64->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
                 offset += array_size;
             }
         }

@@ -27,47 +27,46 @@ extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static constexpr float Float16ToFloat32(const uint16_t & val)
+static float Float16ToFloat32(uint16_t val)
 {
-    const uint32_t sign = static_cast<uint32_t>(val & 0x8000) << 16;
-    const uint8_t exp16 = (val & 0x7c00) >> 10;
-    uint16_t frac16 = val & 0x3ff;
+    uint16_t sign = (val >> 15) & 0x1;
+    uint16_t exp = (val >> 10) & 0x1F;
+    uint16_t frac = val & 0x3FF;
 
-    uint32_t exp32 = 0;
-    if (__builtin_expect(exp16 == 0x1f, 0))
+    uint32_t fsign = static_cast<uint32_t>(sign);
+    uint32_t fexp;
+    uint32_t ffrac;
+    if (exp == 0)
     {
-        exp32 = 0xff;
+        if (frac == 0)
+        {
+            fexp = 0;
+            ffrac = 0;
+            uint32_t fbits = (fsign << 31) | (fexp << 23) | ffrac;
+            return std::bit_cast<float>(fbits);
+        }
+        else
+        {
+            float sgn = sign ? -1.0f : 1.0f;
+            float half_denorm = 1.0f / 16384.0f;
+            float mantissa = static_cast<float>(frac) / 1024.0f;
+            return sgn * mantissa * half_denorm;
+        }
     }
-    else if (__builtin_expect(exp16 == 0, 0))
+    else if (exp == 0x1F)
     {
-        exp32 = 0;
+        fexp = 0xFF;
+        ffrac = (frac != 0) ? 1 : 0;
+        uint32_t fbits = (fsign << 31) | (fexp << 23) | ffrac;
+        return std::bit_cast<float>(fbits);
     }
     else
     {
-        exp32 = static_cast<uint32_t>(exp16) + 112;
+        fexp = exp + 112;
+        ffrac = static_cast<uint32_t>(frac) << 13;
+        uint32_t fbits = (fsign << 31) | (fexp << 23) | ffrac;
+        return std::bit_cast<float>(fbits);
     }
-
-    if (__builtin_expect(exp16 == 0 && frac16 != 0, 0))
-    {
-        uint8_t off_set = 0;
-        do
-        {
-            ++off_set;
-            frac16 <<= 1;
-        } while ((frac16 & 0x400) != 0x400);
-        frac16 &= 0x3ff;
-        exp32 = 113 - off_set;
-    }
-
-    uint32_t frac32 = frac16 << 13;
-
-    uint32_t bits = 0;
-
-    bits |= sign;
-    bits |= (exp32 << 23);
-    bits |= frac32;
-
-    return std::bit_cast<float>(bits);
 }
 
 struct Lookup16Bit

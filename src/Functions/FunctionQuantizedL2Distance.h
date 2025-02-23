@@ -6,8 +6,8 @@
 #include <Functions/IFunction.h>
 #include "Columns/ColumnFixedString.h"
 #include "DataTypes/DataTypeFixedString.h"
-#include "Functions/FunctionDequantize8Bit.h"
 #include "Functions/FunctionDequantize16Bit.h"
+#include "Functions/FunctionDequantize8Bit.h"
 #include "base/types.h"
 
 namespace DB
@@ -90,12 +90,12 @@ struct L2Distance8Bit
     }
 };
 
-template <typename Kernel, const char * function_name>
+template <typename Kernel, typename T, const char * function_name>
 class FunctionQuantizedL2Distance : public IFunction
 {
 public:
     static constexpr auto name = function_name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedL2Distance<Kernel, function_name>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedL2Distance<Kernel, T, function_name>>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -125,10 +125,10 @@ private:
         const auto & array_x = *assert_cast<const ColumnFixedString *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnFixedString *>(col_y.get());
 
-        const UInt8 * data_x = reinterpret_cast<const UInt8 *>(array_x.getChars().data());
-        const UInt8 * data_y = reinterpret_cast<const UInt8 *>(array_y.getChars().data());
+        const T * data_x = reinterpret_cast<const T *>(array_x.getChars().data());
+        const T * data_y = reinterpret_cast<const T *>(array_y.getChars().data());
 
-        size_t fixed_size = array_x.getN();
+        size_t fixed_size = array_x.getN() / sizeof(T);
 
         auto col_res = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = col_res->getData();
@@ -138,7 +138,6 @@ private:
 
         for (size_t off = fixed_size; off <= fixed_size * input_rows_count; off += fixed_size)
         {
-            /// Process chunks in vectorized manner
             static constexpr size_t VEC_SIZE = 4;
             typename Kernel::template State<ResultType> states[VEC_SIZE];
             for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
@@ -151,7 +150,6 @@ private:
             for (const auto & other_state : states)
                 Kernel::template combine<ResultType>(state, other_state);
 
-            /// Process the tail
             for (; prev < off; ++prev)
             {
                 Kernel::template accumulate<ResultType>(state, data_x[prev], data_y[prev]);
@@ -173,10 +171,10 @@ private:
         const auto & array_x = *assert_cast<const ColumnFixedString *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnFixedString *>(col_y.get());
 
-        const UInt8 * data_x = reinterpret_cast<const UInt8 *>(array_x.getChars().data());
-        const UInt8 * data_y = reinterpret_cast<const UInt8 *>(array_y.getChars().data());
+        const T * data_x = reinterpret_cast<const T *>(array_x.getChars().data());
+        const T * data_y = reinterpret_cast<const T *>(array_y.getChars().data());
 
-        size_t fixed_size = array_x.getN();
+        size_t fixed_size = array_x.getN() / sizeof(T);
 
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
@@ -189,7 +187,6 @@ private:
             size_t i = 0;
             typename Kernel::template State<ResultType> state;
 
-            /// Process chunks in a vectorized manner.
             static constexpr size_t VEC_SIZE = 32;
             typename Kernel::template State<ResultType> states[VEC_SIZE];
             for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
@@ -202,7 +199,6 @@ private:
                 Kernel::template combine<ResultType>(state, other_state);
 
 
-            /// Process the tail.
             for (; prev < off; ++i, ++prev)
             {
                 Kernel::template accumulate<ResultType>(state, data_x[i], data_y[prev]);

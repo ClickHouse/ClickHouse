@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <base/unaligned.h>
 #include "Common/TargetSpecific.h"
+#include "base/types.h"
 #if USE_MULTITARGET_CODE
 #    include <immintrin.h>
 #    include <x86intrin.h>
@@ -17,49 +18,89 @@ namespace DB
 
 DECLARE_DEFAULT_CODE(
 
-    static uint16_t Float32ToFloat16(const float & val) {
-        const uint32_t bits = std::bit_cast<uint32_t>(val);
+    static uint16_t Float32ToFloat16(float val) {
+        uint32_t fbits = std::bit_cast<uint32_t>(val);
+        uint32_t sign = (fbits >> 31) & 0x1;
+        uint32_t exp = (fbits >> 23) & 0xFF;
+        uint32_t frac = fbits & 0x7FFFFF;
 
-        const uint16_t sign = (bits & 0x80000000) >> 16;
-        const uint32_t frac32 = bits & 0x7fffff;
-        const uint8_t exp32 = (bits & 0x7f800000) >> 23;
-        const int8_t exp32_diff = exp32 - 127;
+        uint16_t hsign = static_cast<uint16_t>(sign);
+        uint16_t hexp = 0;
+        uint16_t hfrac = 0;
 
-        uint16_t exp16 = 0;
-        uint16_t frac16 = frac32 >> 13;
-
-        if (__builtin_expect(exp32 == 0xff || exp32_diff > 15, 0))
+        if (exp == 0)
         {
-            exp16 = 0x1f;
+            return (hsign << 15);
         }
-        else if (__builtin_expect(exp32 == 0 || exp32_diff < -14, 0))
+        else if (exp == 0xFF)
         {
-            exp16 = 0;
+            hexp = 0x1F;
+            hfrac = (frac != 0) ? 1 : 0;
+            return (hsign << 15) | (hexp << 10) | hfrac;
+        }
+
+        int new_exp = static_cast<int>(exp) - 127;
+
+        if (new_exp < -24)
+        {
+            return (hsign << 15);
+        }
+        else if (new_exp < -14)
+        {
+            uint32_t exp_val = static_cast<uint32_t>(-14 - new_exp);
+            switch (exp_val)
+            {
+                case 0:
+                    hfrac = 0;
+                    break;
+                case 1:
+                    hfrac = 512 + (frac >> 14);
+                    break;
+                case 2:
+                    hfrac = 256 + (frac >> 15);
+                    break;
+                case 3:
+                    hfrac = 128 + (frac >> 16);
+                    break;
+                case 4:
+                    hfrac = 64 + (frac >> 17);
+                    break;
+                case 5:
+                    hfrac = 32 + (frac >> 18);
+                    break;
+                case 6:
+                    hfrac = 16 + (frac >> 19);
+                    break;
+                case 7:
+                    hfrac = 8 + (frac >> 20);
+                    break;
+                case 8:
+                    hfrac = 4 + (frac >> 21);
+                    break;
+                case 9:
+                    hfrac = 2 + (frac >> 22);
+                    break;
+                case 10:
+                    hfrac = 1;
+                    break;
+                default:
+                    hfrac = 0;
+                    break;
+            }
+            return (hsign << 15) | (0 << 10) | hfrac;
+        }
+        else if (new_exp > 15)
+        {
+            hexp = 0x1F;
+            hfrac = 0;
+            return (hsign << 15) | (hexp << 10) | hfrac;
         }
         else
         {
-            exp16 = exp32_diff + 15;
+            hexp = static_cast<uint16_t>(new_exp + 15);
+            hfrac = static_cast<uint16_t>(frac >> 13);
+            return (hsign << 15) | (hexp << 10) | hfrac;
         }
-
-        if (__builtin_expect(exp32 == 0xff && frac32 != 0 && frac16 == 0, 0))
-        {
-            frac16 = 0x200;
-        }
-        else if (__builtin_expect(exp32 == 0 || (exp16 == 0x1f && exp32 != 0xff), 0))
-        {
-            frac16 = 0;
-        }
-        else if (__builtin_expect(exp16 == 0 && exp32 != 0, 0))
-        {
-            frac16 = 0x100 | (frac16 >> 2);
-        }
-
-        uint16_t ret = 0;
-        ret |= sign;
-        ret |= exp16 << 10;
-        ret |= frac16;
-
-        return ret;
     }
 
     void Quantize16BitImpl::execute(const Float32 * input, UInt8 * output, size_t size) {
@@ -70,7 +111,13 @@ DECLARE_DEFAULT_CODE(
         }
     }
 
-)
+    void Quantize16BitImpl::execute(const Float64 * input, UInt8 * output, size_t size) {
+        auto out = reinterpret_cast<uint16_t *>(output);
+        for (size_t i = 0; i < size; ++i)
+        {
+            out[i] = Float32ToFloat16(static_cast<float>(input[i]));
+        }
+    })
 
 REGISTER_FUNCTION(Quantize16Bit)
 {

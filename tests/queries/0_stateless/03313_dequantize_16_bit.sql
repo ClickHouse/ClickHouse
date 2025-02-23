@@ -3,7 +3,7 @@ SELECT dequantize16Bit(toFixedString(unhex('003800B8003400B4'), 8));
 SELECT dequantize16Bit(toFixedString(unhex('003C000000BC'), 6));
 SELECT dequantize16Bit(toFixedString(unhex('00000000'), 4));
 SELECT dequantize16Bit(toFixedString(unhex('0000000000000000'), 8));
-SELECT dequantize16Bit(toFixedString(unhex('11001180'), 4));
+SELECT dequantize16Bit(toFixedString(unhex('10001080'), 4));
 SELECT dequantize16Bit(toFixedString(unhex('0000008000000080'), 8));
 SELECT dequantize16Bit(toFixedString(unhex('007C00FC'), 4));
 SELECT dequantize16Bit(toFixedString(unhex('007C00FC007C00FC'), 8));

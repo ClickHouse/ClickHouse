@@ -3,10 +3,8 @@ SELECT hex(quantize16Bit(cast([1.0, -1.0] as Array(Float64))));
 SELECT hex(quantize16Bit(cast([0.5, -0.5, 0.25, -0.25] as Array(Float32))));
 SELECT hex(quantize16Bit(cast([1.0, -1.0] as Array(Float32))));
 SELECT hex(quantize16Bit(cast([1.0, 0.0, -1.0] as Array(Float32))));
-
 SELECT hex(quantize16Bit(cast([0.0, 0.0] as Array(Float32))));
 SELECT hex(quantize16Bit(cast([0.0, 0.0, 0.0, 0.0] as Array(Float32))));
-
 SELECT hex(quantize16Bit(cast([0.000001, -0.000001] as Array(Float32))));
 SELECT hex(quantize16Bit(cast([1e-10, -1e-10, 1e-20, -1e-20] as Array(Float32))));
 

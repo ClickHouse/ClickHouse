@@ -26,7 +26,10 @@ extern const int ILLEGAL_COLUMN;
 
 DECLARE_MULTITARGET_CODE(
 
-    struct Quantize8BitImpl { static void execute(const Float32 * input, UInt8 * output, size_t size); };
+    struct Quantize8BitImpl {
+        static void execute(const Float32 * input, UInt8 * output, size_t size);
+        static void execute(const Float64 * input, UInt8 * output, size_t size);
+    };
 
 )
 
@@ -109,6 +112,16 @@ public:
                 offset += array_size;
             }
         }
+        else if (const auto * col_float64 = checkAndGetColumn<ColumnFloat32>(&array_data))
+        {
+            size_t offset = 0;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                Quantize8BitImpl::execute(
+                    col_float64->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
+                offset += array_size;
+            }
+        }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected array element type");
 
@@ -122,10 +135,6 @@ public:
     explicit FunctionQuantize8Bit(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default, FunctionQuantize8BitImpl<TargetSpecific::Default::Quantize8BitImpl>>();
-
-#if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::AVX2, FunctionQuantize8BitImpl<TargetSpecific::AVX2::Quantize8BitImpl>>();
-#endif
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
