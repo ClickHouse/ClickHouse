@@ -895,7 +895,7 @@ Possible values:
 + 1 — Enable.
 )", 0) \
     \
-    DECLARE(UInt64, output_format_pretty_max_rows, 10000, R"(
+    DECLARE(UInt64, output_format_pretty_max_rows, 1000, R"(
 Rows limit for Pretty formats.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(

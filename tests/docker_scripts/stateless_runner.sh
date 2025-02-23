@@ -30,8 +30,6 @@ ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
 run_with_retry 3 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-run_with_retry 3 dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
-run_with_retry 3 dpkg -i package_folder/clickhouse-library-bridge_*.deb
 run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
 run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
 
