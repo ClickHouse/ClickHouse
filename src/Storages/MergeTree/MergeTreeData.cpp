@@ -2160,9 +2160,8 @@ void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
     auto disks = getStoragePolicy()->getDisks();
     PartLoadingTree::PartLoadingInfos parts_to_load;
 
-    for (size_t i = 0; i < disks.size(); ++i)
+    for (const auto & disk_ptr : disks)
     {
-        const auto & disk_ptr = disks[i];
         if (disk_ptr->isBroken())
             continue;
         if (!disk_ptr->isReadOnly())
