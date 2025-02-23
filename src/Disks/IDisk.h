@@ -580,7 +580,6 @@ protected:
         const String & from_path,
         const std::shared_ptr<IDisk> & to_disk,
         const String & to_path,
-        bool copy_root_dir,
         const ReadSettings & read_settings,
         WriteSettings write_settings,
         const std::function<void()> & cancellation_hook);
