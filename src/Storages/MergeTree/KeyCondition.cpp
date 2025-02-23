@@ -361,7 +361,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -382,7 +382,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
@@ -403,7 +403,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.safeGet<const String &>();
+            String prefix = value.safeGet<String>();
             if (prefix.empty())
                 return false;
 
@@ -424,7 +424,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.safeGet<const String &>();
+            const String & expression = value.safeGet<String>();
 
             /// This optimization can't process alternation - this would require
             /// a comprehensive parsing of regular expression.

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/create/database
+slug: /sql-reference/statements/create/database
 sidebar_position: 35
 sidebar_label: DATABASE
 ---
