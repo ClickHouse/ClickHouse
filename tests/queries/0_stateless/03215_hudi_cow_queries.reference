@@ -1,0 +1,15 @@
+1	test	value1
+2	test	value2
+3	test	value3
+
+-- Expected results for incremental query
+101	test_inc	value101
+102	test_inc	value102
+
+-- Expected results for CDC query
+201	test_cdc	value201
+202	test_cdc	value202
+
+-- Expected results for bootstrap query
+301	test_bootstrap	value301
+302	test_bootstrap	value302
