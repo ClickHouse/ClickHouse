@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
@@ -410,6 +411,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -1825,10 +1827,11 @@ ResourceManagerPtr Context::getResourceManager() const
 
 ClassifierPtr Context::getWorkloadClassifier() const
 {
+    ClassifierSettings settings{.throw_on_unknown_workload = getThrowOnUnknownWorkload()}; // to avoid locking shared mutex under `mutex`
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload]);
+        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload], settings);
     return classifier;
 }
 
@@ -1856,6 +1859,17 @@ void Context::setMutationWorkload(const String & value)
     shared->mutation_workload = value;
 }
 
+bool Context::getThrowOnUnknownWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->throw_on_unknown_workload;
+}
+
+void Context::setThrowOnUnknownWorkload(bool value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->throw_on_unknown_workload = value;
+}
 
 Scalars Context::getScalars() const
 {

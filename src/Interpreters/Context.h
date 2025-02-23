@@ -685,6 +685,8 @@ public:
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
+    bool getThrowOnUnknownWorkload() const;
+    void setThrowOnUnknownWorkload(bool value);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);

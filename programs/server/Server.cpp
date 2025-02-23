@@ -280,6 +280,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_sample_min_allocation_size;
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
+    extern const ServerSettingsBool throw_on_unknown_workload;
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
@@ -1905,6 +1906,7 @@ try
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
+            global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
 
             if (config->has("resources"))
             {
