@@ -2020,14 +2020,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         }
     }
 
-    if (num_parts == 0 && unexpected_parts_to_load.empty())
-    {
-        resetObjectColumnsFromActiveParts(part_lock);
-        resetSerializationHints(part_lock);
-        LOG_DEBUG(log, "There are no data parts");
-        return;
-    }
-
     if (have_non_adaptive_parts && have_adaptive_parts && !(*settings)[MergeTreeSetting::enable_mixed_granularity_parts])
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Table contains parts with adaptive and non adaptive marks, "
