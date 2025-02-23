@@ -9,27 +9,15 @@
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> & documents, std::unique_ptr<Session> & session)
+std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & request_doc = documents[0].documents[0];
-    auto query_context = session->makeQueryContext();
-    pcg64_fast gen{randomSeed()};
-    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-    auto secret_key = dis(gen);
-
-    query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
-
     auto json = request_doc.getRapidJsonRepresentation();
     String table_name = json["drop"].GetString();
 
     {
         auto query = fmt::format("CREATE TABLE IF NOT EXISTS {} (json JSON) ENGINE = Memory SETTINGS enable_json_type = 1;", table_name);
-
-        CurrentThread::QueryScope query_scope{query_context};
-        ReadBufferFromString read_buf(query);
-
-        WriteBufferFromOwnString out;
-        executeQuery(read_buf, out, false, query_context, {});
+        executor->execute(query);
     }
 
     bson_t * bson_doc = bson_new();

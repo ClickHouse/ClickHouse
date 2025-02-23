@@ -56,7 +56,7 @@ String transformDeleteQueryToAlter(const String & query)
 }
 }
 
-std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::unique_ptr<Session> & session)
+std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & delete_info_doc = documents[0].documents[0];
     const auto & filter_doc = documents[1].documents[0];
@@ -77,8 +77,6 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     }
     serialized_filter = modifyFilter(serialized_filter);
 
-    std::cerr << "table and filter " << table_name << ' ' << serialized_filter << '\n';
-
     auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", table_name, serialized_filter);
 
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
@@ -91,23 +89,9 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
 
     while (sql_query.back() == 0)
         sql_query.pop_back();
-    std::cerr << "sql_query " << sql_query << ' ' << sql_query.size() << '\n';
 
-    auto query_context = session->makeQueryContext();
-    pcg64_fast gen{randomSeed()};
-    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-    auto secret_key = dis(gen);
-
-    query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
-
-    CurrentThread::QueryScope query_scope{query_context};
     sql_query = transformDeleteQueryToAlter(sql_query) + ";";
-    //std::cerr << "final sql_query " << sql_query << '\n';
-    //for (auto elem : sql_query)
-    //    std::cerr << static_cast<Int32>(elem) << ' ' << elem << '\n';
-    ReadBufferFromString read_buf(sql_query);
-    WriteBufferFromOwnString out;
-    executeQuery(read_buf, out, false, query_context, {});
+    executor->execute(sql_query);
 
     bson_t * bson_doc = bson_new();
 

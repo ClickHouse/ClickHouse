@@ -5,11 +5,11 @@
 namespace DB::MongoProtocol
 {
 
-struct DeleteHandler : IHandler
+struct AuthHandler : IHandler
 {
-    DeleteHandler() = default;
+    AuthHandler() = default;
 
-    std::vector<String> getIdentifiers() const override { return {"delete"}; }
+    std::vector<String> getIdentifiers() const override { return {"saslStart"}; }
 
     std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };

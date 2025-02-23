@@ -14,6 +14,7 @@ HandlerRegitstry::HandlerRegitstry()
     registerDeleteHandler(this);
     registerListDatabasesHandler(this);
     registerListCollectionsHandler(this);
+    registerAuthHandler(this);
 }
 
 void HandlerRegitstry::addHandler(const String & handler_name, HandlerPtr handler)

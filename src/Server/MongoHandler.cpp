@@ -1,4 +1,5 @@
 #include "MongoHandler.h"
+#include <memory>
 #include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -68,9 +69,6 @@ void MongoHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void MongoHandler::run()
 {
-    //const char* msg1 = "I\1\0\0\5\0\0\0sH3f\1\0\0\0";
-    //const char* msg2 = "\10\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1\0\0\0%\1\0\0\10helloOk\0\1\10ismaster\0\1\3topologyVersion\0-\0\0\0\7processId\0g\257\264\205\352\214\273t_{g-\22counter\0\0\0\0\0\0\0\0\0\0\20maxBsonObjectSize\0\0\0\0\1\20maxMessageSizeBytes\0\0l\334\2\20maxWriteBatchSize\0\240\206\1\0\tlocalTime\0\1<Y\6\225\1\0\0\20logicalSessionTimeoutMinutes\0\36\0\0\0\20connectionId\0\3\0\0\0\20minWireVersion\0\0\0\0\0\20maxWireVersion\0\31\0\0\0\10readOnly\0\0\1ok\0\0\0\0\0\0\0\360?\0";
-
     setThreadName("PostgresHandler");
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MONGO);
@@ -92,7 +90,8 @@ void MongoHandler::run()
 
             std::cerr << "want to read new header\n";
             auto header_bytes = message_transport->receive<MongoProtocol::Header>();
-            MongoProtocol::handle(*header_bytes, message_transport, session);
+            auto executor = std::make_shared<MongoProtocol::QueryExecutor>(session, socket().peerAddress());
+            MongoProtocol::handle(*header_bytes, message_transport, executor);
         }
     }
     catch (const Poco::Exception & exc)
@@ -104,33 +103,6 @@ void MongoHandler::run()
 bool MongoHandler::startup()
 {
     session->authenticate("default", "123", socket().peerAddress());
-    //Int32 payload_size;
-    //Int32 info;
-    /*
-    const auto & user_name = start_up_msg->user;
-    authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
-
-    try
-    {
-        session->makeSessionContext();
-        session->sessionContext()->setDefaultFormat("PostgreSQLWire");
-        if (!start_up_msg->database.empty())
-            session->sessionContext()->setCurrentDatabase(start_up_msg->database);
-    }
-    catch (const Exception & exc)
-    {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "XX000", exc.message()),
-            true);
-        throw;
-    }
-
-    sendParameterStatusData(*start_up_msg);
-
-    message_transport->send(
-        PostgreSQLProtocol::Messaging::BackendKeyData(connection_id, secret_key), true);
-*/
     LOG_DEBUG(log, "Successfully finished Startup stage");
     return true;
 }

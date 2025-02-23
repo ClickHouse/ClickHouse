@@ -20,7 +20,9 @@ cluster.add_instance(
     main_configs=[
         "configs/mongo.xml",
         "configs/log.xml",
+        "configs/users.xml",
     ],
+    user_configs=["configs/default_password.xml"],
     with_mongo=True,
     env_variables={"UBSAN_OPTIONS": "print_stacktrace=1"},
 )
@@ -46,12 +48,9 @@ def started_cluster():
 
 def test_count_query(started_cluster):
     node = cluster.instances["node"]
-    client = pymongo.MongoClient(node.ip_address, server_port)
+    client = pymongo.MongoClient(f"mongodb://default:123@{node.ip_address}:{server_port}/default?authMechanism=PLAIN")
     db = client['db']
     collection = db['count']
-
-    assert len(db.list_collection_names()) > 0
-    assert len(client.list_databases_names()) > 0
 
     documents = [
         {"name": "Bob Johnson", "age": 32, "city": "New York"},
@@ -60,12 +59,56 @@ def test_count_query(started_cluster):
     ]
     collection.insert_many(documents)
 
-    assert collection.estimated_document_count({}) == 3
-
-    for doc in collection.find():
-        print(doc)
+    assert collection.estimated_document_count() == 3
 
     collection.delete_many({"age" : 24})
 
-    assert collection.estimated_document_count({}) == 2
+    assert collection.estimated_document_count() == 2
+
+
+def test_find_query(started_cluster):
+    node = cluster.instances["node"]
+    client = pymongo.MongoClient(f"mongodb://default:123@{node.ip_address}:{server_port}/default?authMechanism=PLAIN")
+    db = client['db']
+    collection = db['find']
+
+    collection.drop()
+    documents = [
+        {"name": "Bob Johnson", "age": 32, "city": "New York"},
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
+        {"name": "David Williams", "age": 40, "city": "Chicago"}
+    ]
+    collection.insert_many(documents)
+
+    find_docs = [doc for doc in collection.find({})]
+    find_docs = sorted(find_docs, key=lambda x: x["age"])
+
+    assert find_docs == [
+        {"name": "Charlie Brown", "age": '24', "city": "Los Angeles"},
+        {"name": "Bob Johnson", "age": '32', "city": "New York"},
+        {"name": "David Williams", "age": '40', "city": "Chicago"}
+    ]
+
+    find_docs = [doc for doc in collection.find({}).limit(2)]
+    assert len(find_docs) == 2
+
+    find_docs = [doc for doc in collection.find({"age" : 24})]
+    assert find_docs == [
+        {"name": "Charlie Brown", "age": '24', "city": "Los Angeles"},
+    ]
+
+    find_docs = [doc for doc in collection.find(projection = {"abacaba" : "name"})]
+    find_docs = sorted(find_docs, key=lambda x: x["abacaba"])
+    assert find_docs == [
+        {'abacaba': 'Bob Johnson'},
+        {'abacaba': 'Charlie Brown'},
+        {'abacaba': 'David Williams'},
+    ]
+
+    find_docs = [doc for doc in collection.find().sort("city",1)]
+    assert find_docs == [
+        {"name": "David Williams", "age": '40', "city": "Chicago"},
+        {"name": "Charlie Brown", "age": '24', "city": "Los Angeles"},
+        {"name": "Bob Johnson", "age": '32', "city": "New York"},
+    ]
 

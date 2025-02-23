@@ -13,11 +13,11 @@ public:
 
     std::vector<String> getIdentifiers() const override { return {"insert"}; }
 
-    std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::unique_ptr<Session> & session) override;
+    std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 
 private:
-    void createDatabase(const Document & doc, std::unique_ptr<Session> & session);
-    String createTable(const Document & doc, std::unique_ptr<Session> & session);
+    void createDatabase(const Document & doc, std::shared_ptr<QueryExecutor> executor);
+    String createTable(const Document & doc, std::shared_ptr<QueryExecutor> executor);
 };
 
 }

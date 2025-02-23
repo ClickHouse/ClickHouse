@@ -11,7 +11,7 @@ struct CreateHandler : IHandler
 
     std::vector<String> getIdentifiers() const override { return {"create"}; }
 
-    std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::unique_ptr<Session> & session) override;
+    std::vector<Document> handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor) override;
 };
 
 }

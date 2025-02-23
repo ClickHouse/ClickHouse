@@ -10,6 +10,7 @@
      <tcp_port>9000</tcp_port>
      <mongo_port>27017</mongo_port>
      <listen_host>127.0.0.1</listen_host>
+     <users_config>users.xml</users_config>
 
      <max_concurrent_queries>500</max_concurrent_queries>
      <path>./clickhouse/</path>

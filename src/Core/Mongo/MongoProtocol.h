@@ -4,9 +4,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include "Interpreters/Session.h"
 #include "base/types.h"
 
 #include <bson/bson.h>
+
+#include <Poco/Net/SocketAddress.h>
+
+#include <pcg_random.hpp>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -77,104 +83,6 @@ struct Header : public FrontMessage, BackendMessage
     Int32 size() const override;
 };
 
-#if 0
-std::string bsonToJson(const std::string& bsonData) {
-    bson_t b;
-    //bson_error_t error;
-
-    if (!bson_init_static(&b, reinterpret_cast<const uint8_t*>(bsonData.data()), bsonData.size())) {
-        throw std::runtime_error("Failed to initialize BSON data");
-    }
-
-    char* json_str = bson_as_json(&b, nullptr);
-    if (!json_str) {
-      // Try to get the error message and throw it
-      //char *err_msg = bson_error_to_string(&error, "bson_as_canonical_extended_json() failed: ");
-      //std::string error_message(err_msg);
-      //bson_free(err_msg);
-      throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect bson");
-    }
-
-
-    std::string json(json_str);
-    bson_free(json_str);
-
-    return json;
-}
-#endif
-
-struct OperationQuery : public FrontMessage
-{
-    Int32 flags;
-    String full_collection_name;
-    Int32 number_to_skip;
-    Int32 number_to_return;
-
-    Int32 size_query;
-    String query;
-    Int32 size_projection;
-    String projection;
-
-    void deserialize(ReadBuffer & in) override;
-};
-
-struct IsMasterResponse : public BackendMessage
-{
-    mutable Header header;
-    const char * bson_data;
-    UInt32 bson_len;
-
-    IsMasterResponse(Int32 request_id_, Int32 /*response_to_*/);
-
-    void serialize(WriteBuffer & out) const override;
-
-    Int32 size() const override;
-};
-
-struct OpSection : public FrontMessage
-{
-    UInt8 kind;
-    String identifier;
-    std::vector<String> documents;
-
-    OpSection() = default;
-    OpSection(OpSection && other) noexcept;
-
-    void deserialize(ReadBuffer & in) override;
-};
-
-#if 0
-struct OpMessage : public FrontMessage
-{
-    UInt32 flag_bits;
-    std::vector<OpSection> sections;
-
-    void deserialize(ReadBuffer & in) override
-    {
-        readBinaryLittleEndian(flag_bits, in);
-        while (!in.eof()) 
-        {
-            OpSection section;
-            section.deserialize(in);
-            sections.push_back(std::move(section));
-        }
-    }
-};
-#endif
-struct OpMessageResponse : public BackendMessage
-{
-    mutable Header header;
-    const char * bson_data;
-    UInt32 bson_len;
-    UInt32 flags;
-
-    OpMessageResponse(Int32 request_id_, UInt32 flags_);
-
-    void serialize(WriteBuffer & out) const override;
-
-    Int32 size() const override { return header.message_length; }
-};
-
 class MessageTransport
 {
 private:
@@ -234,6 +142,22 @@ public:
     void flush() { out->next(); }
 
     Int32 getNextResponseId() { return ++response_counter; }
+};
+
+class QueryExecutor
+{
+public:
+    explicit QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Net::SocketAddress & address_);
+
+    String execute(const String & query);
+
+    void authenticate(const String & username, const String & password);
+
+private:
+    std::unique_ptr<Session> & session;
+    Poco::Net::SocketAddress address;
+    pcg64_fast gen;
+    std::uniform_int_distribution<Int32> dis;
 };
 
 }

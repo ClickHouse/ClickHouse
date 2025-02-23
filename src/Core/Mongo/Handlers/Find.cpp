@@ -4,6 +4,7 @@
 #include <Parsers/Mongo/parseMongoQuery.h>
 #include "Common/Exception.h"
 #include "Core/Mongo/Document.h"
+#include "Core/Mongo/Handler.h"
 #include "Formats/FormatSettings.h"
 #include "IO/WriteBuffer.h"
 
@@ -13,6 +14,7 @@
 #include <Common/randomSeed.h>
 
 #include <bson/bson.h>
+#include <rapidjson/allocators.h>
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
@@ -25,18 +27,76 @@ extern const int BAD_ARGUMENTS;
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & docs, std::unique_ptr<Session> & session)
+std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & docs, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & document = docs[0].documents[0];
     const auto & json_representation = document.getRapidJsonRepresentation();
     String table_name = json_representation["find"].GetString();
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
 
-    json_representation["filter"].Accept(writer);
-    String serialized_filter = buffer.GetString();
+    bool has_projection = false;
+    rapidjson::Value filter;
+    if (json_representation.FindMember("projection") != json_representation.MemberEnd())
+    {
+        has_projection = true;
+        rapidjson::Document new_filter;
+        new_filter.CopyFrom(json_representation["filter"], new_filter.GetAllocator());
+
+        rapidjson::Document new_projection;
+        new_projection.CopyFrom(json_representation["projection"], new_projection.GetAllocator());
+
+        new_filter.AddMember("$projection", new_projection.GetObject(), new_filter.GetAllocator());
+        filter = new_filter.GetObject();
+    }
+    else
+    {
+        rapidjson::Document new_filter;
+        new_filter.CopyFrom(json_representation["filter"], new_filter.GetAllocator());
+        filter = new_filter.GetObject();
+    }
+
+    String serialized_filter;
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+
+        filter.Accept(writer);
+        serialized_filter = buffer.GetString();
+    }
+
+    std::optional<int> limit = std::nullopt;
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+
+        if (json_representation.FindMember("limit") != json_representation.MemberEnd())
+        {
+            json_representation["limit"].Accept(writer);
+            limit = std::stoi(buffer.GetString());
+        }
+    }
+
+    String sorting;
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+
+        if (json_representation.FindMember("sort") != json_representation.MemberEnd())
+        {
+            json_representation["sort"].Accept(writer);
+            sorting = buffer.GetString();
+            sorting = modifyFilter(sorting);
+        }
+    }
+
+    serialized_filter = modifyFilter(serialized_filter);
 
     auto mongo_dialect_query = fmt::format("db.{}.find({})", table_name, serialized_filter);
+    if (limit)
+        mongo_dialect_query += fmt::format(".limit({})", *limit);
+    if (!sorting.empty())
+        mongo_dialect_query += fmt::format(".sort({})", sorting);
+
+    std::cerr << "mongo_dialect_query " << mongo_dialect_query << '\n';
 
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(
@@ -46,45 +106,51 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     WriteBufferFromString sql_buffer(sql_query);
     ast->format(sql_buffer, IAST::FormatSettings(true));
 
-    while (sql_query.back() == 0)
-        sql_query.pop_back();
-    std::cerr << "sql_query " << sql_query << ' ' << sql_query.size() << '\n';
-
-    pcg64_fast gen{randomSeed()};
-    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-    auto secret_key = dis(gen);
-
-    auto query_context = session->makeQueryContext();
-    query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
-
+    sql_query = clearQuery(sql_query);
+    if (has_projection)
+        sql_query += " FORMAT JSON";
+    sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1";
     std::vector<Document> result;
     {
-        CurrentThread::QueryScope query_scope{query_context};
-        ReadBufferFromString read_buf(sql_query + ";");
+        auto output = executor->execute(sql_query);
 
-        WriteBufferFromOwnString out;
-        executeQuery(read_buf, out, false, query_context, {});
-
-        auto data_items = splitByNewline(out.str());
-        for (const auto & json : data_items)
+        if (!has_projection)
         {
-            std::cerr << "json " << json << '\n';
-            rapidjson::Document doc;
-            doc.Parse(json.data());
-
-            auto it = doc.FindMember("_id");
-            if (it == doc.MemberEnd())
+            auto data_items = splitByNewline(output);
+            for (const auto & json : data_items)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Json from mongo does not contais _id column");
+                rapidjson::Document doc;
+                doc.Parse(json.data());
+
+                auto it = doc.FindMember("_id");
+                if (it != doc.MemberEnd())
+                {
+                    doc.EraseMember(it);
+                }
+                rapidjson::StringBuffer json_buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
+                doc.Accept(json_writer);
+
+                std::cerr << "return doc " << json_buffer.GetString() << '\n';
+                result.push_back(Document(json_buffer.GetString()));
             }
-            doc.EraseMember(it);
+        }
+        else
+        {
+            std::cerr << output << '\n';
+            rapidjson::Document doc;
+            doc.Parse(output.data());
 
-            rapidjson::StringBuffer json_buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
-            doc.Accept(json_writer);
-
-            std::cerr << "result json " << json_buffer.GetString() << '\n';
-            result.push_back(Document(json_buffer.GetString()));
+            auto all_jsons = doc["data"].GetArray();
+            std::cerr << "all_jsons.Size() " << all_jsons.Size() << '\n';
+            for (const auto & json_data : all_jsons)
+            {
+                rapidjson::StringBuffer json_buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
+                json_data.Accept(json_writer);
+                std::cerr << "result item " << json_buffer.GetString() << '\n';
+                result.push_back(Document(json_buffer.GetString()));
+            }
         }
     }
 

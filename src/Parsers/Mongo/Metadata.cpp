@@ -2,6 +2,8 @@
 
 #include <Parsers/Mongo/Utils.h>
 
+#include <iostream>
+
 namespace DB
 {
 
@@ -51,6 +53,8 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
     MongoQueryKeyNameExtractor order_by_extractor(".sort");
     auto order_by = order_by_extractor.extractString(begin, end);
 
+    if (order_by)
+        std::cerr << "ORDER BY " << *order_by << '\n';
     return std::make_shared<QueryMetadata>(token_begin_collection_name, token_end_collection_name, *query_type, limit, order_by);
 }
 

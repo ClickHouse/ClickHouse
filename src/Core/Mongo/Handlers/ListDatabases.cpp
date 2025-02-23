@@ -16,26 +16,14 @@
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSection> &, std::unique_ptr<Session> & session)
+std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor> executor)
 {
-    auto query_context = session->makeQueryContext();
-    pcg64_fast gen{randomSeed()};
-    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-    auto secret_key = dis(gen);
-
-    query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
-
     std::vector<String> result;
     {
         String query = "SHOW DATABASES;";
 
-        CurrentThread::QueryScope query_scope{query_context};
-        ReadBufferFromString read_buf(query);
-
-        WriteBufferFromOwnString out;
-        executeQuery(read_buf, out, false, query_context, {});
-
-        result = splitByNewline(out.str());
+        auto out = executor->execute(query);
+        result = splitByNewline(out);
     }
 
     bson_t * bson_doc = bson_new();

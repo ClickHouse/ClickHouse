@@ -5,7 +5,7 @@
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection> &, std::unique_ptr<Session> &)
+std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor>)
 {
     bson_t * bson_doc = bson_new();
 

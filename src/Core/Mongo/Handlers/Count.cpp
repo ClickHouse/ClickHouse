@@ -18,7 +18,7 @@
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> & docs, std::unique_ptr<Session> & session)
+std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> & docs, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & document = docs[0].documents[0];
     const auto & json_representation = document.getRapidJsonRepresentation();
@@ -28,27 +28,11 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     while (sql_query.back() == 0)
         sql_query.pop_back();
 
-    std::cerr << "sql_query " << sql_query << ' ' << sql_query.size() << '\n';
-
-    pcg64_fast gen{randomSeed()};
-    std::uniform_int_distribution<Int32> dis(0, INT32_MAX);
-    auto secret_key = dis(gen);
-
-    auto query_context = session->makeQueryContext();
-    query_context->setCurrentQueryId(fmt::format("mongo:{:d}", secret_key));
-
     std::vector<Document> result;
-    CurrentThread::QueryScope query_scope{query_context};
-    ReadBufferFromString read_buf(sql_query + ";");
-
-    WriteBufferFromOwnString out;
-    executeQuery(read_buf, out, false, query_context, {});
-
-    std::cerr << "result " << out.str() << '\n';
-
     bson_t * bson_doc = bson_new();
+    auto output = executor->execute(sql_query);
 
-    BSON_APPEND_INT32(bson_doc, "n", std::stoi(out.str()));
+    BSON_APPEND_INT32(bson_doc, "n", std::stoi(output));
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     Document doc(bson_doc, false);

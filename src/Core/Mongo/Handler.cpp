@@ -7,6 +7,7 @@
 #include <Core/Mongo/MongoProtocol.h>
 #include <Core/Mongo/Wire/OpMessage.h>
 #include <Core/Mongo/Wire/OpQuery.h>
+#include <bson/bson.h>
 #include <Common/Exception.h>
 
 #include "rapidjson/document.h"
@@ -33,32 +34,53 @@ std::vector<std::string> splitByNewline(const std::string & s)
     return result;
 }
 
-void AddPrefixToKeys(rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator)
+void AddPrefixToKeys(rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator, bool in_projection = false)
 {
     if (value.IsObject())
     {
-        rapidjson::Value newObject(rapidjson::kObjectType);
+        rapidjson::Value new_object(rapidjson::kObjectType);
         for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
         {
-            std::string key = it->name.GetString();
-            if (key.empty() || key[0] == '$')
+            if (!in_projection)
             {
-                newObject.AddMember(it->name, it->value, allocator);
+                std::string key = it->name.GetString();
+                if (key.empty() || key[0] == '$')
+                {
+                    new_object.AddMember(it->name, it->value, allocator);
+                }
+                else
+                {
+                    rapidjson::Value new_key(("json." + key).c_str(), allocator);
+                    new_object.AddMember(new_key, it->value, allocator);
+                }
+            }
+            else if (it->value.IsString())
+            {
+                std::string str_value = it->value.GetString();
+                if (str_value.empty() || str_value[0] == '$')
+                {
+                    new_object.AddMember(it->name, it->value, allocator);
+                }
+                else
+                {
+                    rapidjson::Value new_value(("json." + str_value).c_str(), allocator);
+                    new_object.AddMember(it->name, new_value, allocator);
+                }
             }
             else
             {
-                rapidjson::Value newKey(("json." + key).c_str(), allocator);
-                newObject.AddMember(newKey, it->value, allocator);
+                new_object.AddMember(it->name, it->value, allocator);
             }
         }
-        value = std::move(newObject);
+        value = std::move(new_object);
     }
 
     if (value.IsObject())
     {
         for (auto & member : value.GetObject())
         {
-            AddPrefixToKeys(member.value, allocator);
+            String name = member.name.GetString();
+            AddPrefixToKeys(member.value, allocator, in_projection | (name == "$projection"));
         }
     }
     else if (value.IsArray())
@@ -86,9 +108,18 @@ String modifyFilter(const String & json)
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     doc.Accept(writer);
 
-    return buffer.GetString();
+    String result = buffer.GetString();
+    return result;
 }
 
+String clearQuery(const String & query)
+{
+    String cleared_query;
+    for (auto elem : query)
+        if (elem != '`' && elem != 0)
+            cleared_query.push_back(elem);
+    return cleared_query;
+}
 
 Header makeResponseHeader(Header request_header, Int32 message_size, Int32 response_id)
 {
@@ -100,7 +131,7 @@ Header makeResponseHeader(Header request_header, Int32 message_size, Int32 respo
     return result;
 }
 
-std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::unique_ptr<Session> & session)
+std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
     auto command = sections[0].documents[0].getDocumentKeys()[0];
     std::cerr << "Command " << command << '\n';
@@ -108,18 +139,17 @@ std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & se
     if (!handler)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported yet.", command);
 
-    return handler->handle(sections, session);
+    return handler->handle(sections, executor);
 }
 
-std::vector<Document> runQueryRequst(const std::vector<Document> &, std::unique_ptr<Session> & session)
+std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_ptr<QueryExecutor> executor)
 {
     auto handler = IsMasterHandler();
-    return handler.handle({}, session);
-    //throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query requst should be only is master request");
+    return handler.handle({}, executor);
 }
 
 
-void handle(Header header, std::shared_ptr<MessageTransport> transport, std::unique_ptr<Session> & session)
+void handle(Header header, std::shared_ptr<MessageTransport> transport, std::shared_ptr<QueryExecutor> executor)
 {
     auto op_code = static_cast<OperationCode>(header.operation_code);
     std::cerr << "op code " << header.operation_code << '\n';
@@ -133,8 +163,21 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::uni
 
             std::cerr << "run message request\n";
             std::vector<Document> docs;
-            auto response_doc = runMessageRequest(request->sections, session);
+            std::vector<Document> response_doc;
+            try
+            {
+                response_doc = runMessageRequest(request->sections, executor);
+            }
+            catch (const Exception & ex)
+            {
+                bson_t * bson_doc = bson_new();
 
+                BSON_APPEND_UTF8(bson_doc, "errMsg", ex.what());
+                BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
+
+                Document doc(bson_doc, true);
+                response_doc = std::vector{doc};
+            }
             auto response = OpMessage(request->flags, 0, response_doc);
             std::cerr << "response.size() " << response.sections.size() << ' ' << response.size() << ' ' << request->flags << '\n';
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());
@@ -149,8 +192,21 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::uni
             auto request = transport->receive<OpQuery>();
             std::cerr << "OP QUERY bp1\n";
             //auto doc = transport->receive<Document>();
-            auto response_doc = runQueryRequst({request->query}, session);
+            std::vector<Document> response_doc;
+            try
+            {
+                response_doc = runQueryRequst({request->query}, executor);
+            }
+            catch (const Exception & ex)
+            {
+                bson_t * bson_doc = bson_new();
 
+                BSON_APPEND_UTF8(bson_doc, "errMsg", ex.what());
+                BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
+
+                Document doc(bson_doc, true);
+                response_doc = std::vector{doc};
+            }
             std::cerr << "OP QUERY bp2\n";
             auto response = OpQuery(std::move(response_doc[0]));
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());

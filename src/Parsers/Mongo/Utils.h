@@ -37,7 +37,6 @@ const char * findKth(const char * begin, const char * end, size_t k)
         }
     }
     return iter;
-
 }
 
 std::pair<const char *, const char *> getMetadataSubstring(const char * begin, const char * end);
@@ -58,7 +57,7 @@ rapidjson::Value copyValue(const T & value)
 
 std::optional<rapidjson::Value> findField(const rapidjson::Value & value, const std::string & key);
 
-rapidjson::Value parseData(const char * begin, const char * end);
+rapidjson::Value parseData(const char * begin, const char * end, bool wrap_into_array = true);
 
 
 class MongoQueryKeyNameExtractor
