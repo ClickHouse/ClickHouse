@@ -1,9 +1,7 @@
 ---
-description: "System table containing information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family."
 slug: /en/operations/system-tables/replication_queue
-title: "replication_queue"
-keywords: ["system table", "replication_queue"]
 ---
+# replication_queue
 
 Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
 

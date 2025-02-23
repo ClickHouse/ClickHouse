@@ -1,9 +1,7 @@
 ---
-description: "System table containing information about and status of replicated tables residing on the local server. Useful for monitoring."
 slug: /en/operations/system-tables/replicas
-title: "replicas"
-keywords: ["system table", "replicas"]
 ---
+# replicas
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.
@@ -70,12 +68,12 @@ Columns:
 - `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
     This mode is turned on if the config does not have sections with ClickHouse Keeper, if an unknown error occurred when reinitializing sessions in ClickHouse Keeper, and during session reinitialization in ClickHouse Keeper.
 - `is_session_expired` (`UInt8`) - the session with ClickHouse Keeper has expired. Basically the same as `is_readonly`.
-- `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven't been done yet.
+- `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven’t been done yet.
 - `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
 - `zookeeper_path` (`String`) - Path to table data in ClickHouse Keeper.
 - `replica_name` (`String`) - Replica name in ClickHouse Keeper. Different replicas of the same table have different names.
-- `replica_path` (`String`) - Path to replica data in ClickHouse Keeper. The same as concatenating 'zookeeper_path/replicas/replica_path'.
-- `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven't made all of the ALTERs yet.
+- `replica_path` (`String`) - Path to replica data in ClickHouse Keeper. The same as concatenating ‘zookeeper_path/replicas/replica_path’.
+- `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven’t made all of the ALTERs yet.
 - `queue_size` (`UInt32`) - Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with `future_parts`.
 - `inserts_in_queue` (`UInt32`) - Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
 - `merges_in_queue` (`UInt32`) - The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.

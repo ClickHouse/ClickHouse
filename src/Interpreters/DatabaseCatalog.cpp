@@ -31,13 +31,17 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <base/scope_guard.h>
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
 
 #include "config.h"
+
+#if USE_MYSQL
+#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#    include <Storages/StorageMaterializedMySQL.h>
+#endif
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -374,6 +378,13 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
 #endif
 
+#if USE_MYSQL
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
+        if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
+        {
+            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+        }
+#endif
         return db_and_table;
     }
 
@@ -606,7 +617,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
-        auto db_disk = getContext()->getDatabaseDisk();
         UUID db_uuid = db->getUUID();
 
         /// Delete the database.
@@ -614,10 +624,10 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-        fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
-        db_disk->removeDirectoryIfExists(database_metadata_dir);
-        fs::path database_metadata_file = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        db_disk->removeFileIfExists(database_metadata_file);
+        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::remove(database_metadata_dir);
+        fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
+        fs::remove(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
@@ -792,7 +802,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    it->second = {nullptr, nullptr};
+    it->second = {};
 }
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
@@ -986,8 +996,6 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
-    auto db_disk = getContext()->getDatabaseDisk();
-
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
     /// Data directories of such tables still exists in store/
@@ -996,42 +1004,43 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = fs::path("metadata_dropped") / "";
+    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
 
-    if (!db_disk->existsDirectory(path))
+    if (!std::filesystem::exists(path))
+    {
         return;
+    }
 
-    for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
         /// File name has the following format:
         /// database_name.table_name.uuid.sql
 
-        auto sub_path_filename = it->name();
-
         /// Ignore unexpected files
-        if (!sub_path_filename.ends_with(".sql"))
+        if (!it.name().ends_with(".sql"))
             continue;
 
         /// Process .sql files with metadata of tables which were marked as dropped
         StorageID dropped_id = StorageID::createEmpty();
-        size_t dot_pos = sub_path_filename.find('.');
+        size_t dot_pos = it.name().find('.');
         if (dot_pos == std::string::npos)
             continue;
-        dropped_id.database_name = unescapeForFileName(sub_path_filename.substr(0, dot_pos));
+        dropped_id.database_name = unescapeForFileName(it.name().substr(0, dot_pos));
 
         size_t prev_dot_pos = dot_pos;
-        dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
         if (dot_pos == std::string::npos)
             continue;
-        dropped_id.table_name = unescapeForFileName(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+        dropped_id.table_name = unescapeForFileName(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
         prev_dot_pos = dot_pos;
-        dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
         if (dot_pos == std::string::npos)
             continue;
-        dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+        dropped_id.uuid = parse<UUID>(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
-        String full_path = path + sub_path_filename;
+        String full_path = path + it.name();
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
@@ -1047,12 +1056,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return fs::path("metadata_dropped")
-        / fmt::format(
-               "{}.{}.{}.sql",
-               escapeForFileName(table_id.getDatabaseName()),
-               escapeForFileName(table_id.getTableName()),
-               toString(table_id.uuid));
+    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
+        fmt::format("{}.{}.{}.sql",
+            escapeForFileName(table_id.getDatabaseName()),
+            escapeForFileName(table_id.getTableName()),
+            toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1075,8 +1083,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -1122,7 +1128,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
+        drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1155,8 +1161,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
     {
@@ -1194,7 +1198,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
         /// This maybe throw exception.
-        db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
+        renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
 
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
@@ -1377,8 +1381,6 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     if (table.table)
     {
         table.table->drop();
@@ -1396,7 +1398,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    db_disk->removeFileIfExists(fs::path(table.metadata_path));
+    fs::remove(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);

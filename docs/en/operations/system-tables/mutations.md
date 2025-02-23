@@ -1,9 +1,7 @@
 ---
-description: "System table containing information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row."
 slug: /en/operations/system-tables/mutations
-title: "mutations"
-keywords: ["system table", "mutations"]
 ---
+# mutations
 
 The table contains information about [mutations](/docs/en/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
@@ -28,12 +26,6 @@ The table contains information about [mutations](/docs/en/sql-reference/statemen
 - `parts_to_do_names` ([Array](/docs/en/sql-reference/data-types/array.md)([String](/docs/en/sql-reference/data-types/string.md))) — An array of names of data parts that need to be mutated for the mutation to complete.
 
 - `parts_to_do` ([Int64](/docs/en/sql-reference/data-types/int-uint.md)) — The number of data parts that need to be mutated for the mutation to complete.
-
-- `is_killed` ([UInt8](/docs/en/sql-reference/data-types/int-uint.md)) — Indicates whether a mutation has been killed. **Only available in ClickHouse Cloud.**
-
-:::note 
-`is_killed=1` does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
-:::
 
 - `is_done` ([UInt8](/docs/en/sql-reference/data-types/int-uint.md)) — The flag whether the mutation is done or not. Possible values:
     - `1` if the mutation is completed,

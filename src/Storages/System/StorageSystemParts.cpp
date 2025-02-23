@@ -51,20 +51,7 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
     ColumnsDescription{
         {"partition",                                   std::make_shared<DataTypeString>(),    "The partition name."},
-        {"name",                                        std::make_shared<DataTypeString>(),    R"(
-Name of the data part. The part naming structure can be used to determine many aspects of the data, ingest, and merge patterns. The part naming format is the following:
-
-```
-<partition_id>_<minimum_block_number>_<maximum_block_number>_<level>_<data_version>
-```
-
-* Definitions:
-    - `partition_id` - identifies the partition key
-    - `minimum_block_number` - identifies the minimum block number in the part. ClickHouse always merges continuous blocks
-    - `maximum_block_number` - identifies the maximum block number in the part
-    - `level` - incremented by one with each additional merge on the part. A level of 0 indicates this is a new part that has not been merged. It is important to remember that all parts in ClickHouse are always immutable
-    - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
-)"},
+        {"name",                                        std::make_shared<DataTypeString>(),    "Name of the data part."},
         {"uuid",                                        std::make_shared<DataTypeUUID>(),      "The UUID of data part."},
         {"part_type",                                   std::make_shared<DataTypeString>(),    "The data part storing format. Possible Values: Wide (a file per column) and Compact (a single file for all columns)."},
         {"active",                                      std::make_shared<DataTypeUInt8>(),     "Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's about to be deleted. Inactive data parts appear after merging and mutating operations."},
@@ -162,10 +149,13 @@ void StorageSystemParts::processNextStorage(
         ColumnSize columns_size = part->getTotalColumnsSize();
         ColumnSize secondary_indexes_size = part->getTotalSecondaryIndicesSize();
 
-        size_t src_index = 0;
-        size_t res_index = 0;
+        size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
+        {
+            WriteBufferFromOwnString out;
+            part->partition.serializeText(*info.data, out, format_settings);
+            columns[res_index++]->insert(out.str());
+        }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])
@@ -247,13 +237,21 @@ void StorageSystemParts::processNextStorage(
             columns[res_index++]->insert(info.engine);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+        {
+            if (part->isStoredOnDisk())
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+            else
+                columns[res_index++]->insertDefault();
+        }
 
         if (columns_mask[src_index++])
         {
-            /// The full path changes at clean up thread, so do not read it if parts can be deleted or renamed, avoid the race.
-            if (part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary && part_state != State::PreActive)
+            /// The full path changes at clean up thread, so do not read it if parts can be deleted, avoid the race.
+            if (part->isStoredOnDisk()
+                && part_state != State::Deleting && part_state != State::DeleteOnDestroy && part_state != State::Temporary)
+            {
                 columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
+            }
             else
                 columns[res_index++]->insertDefault();
         }

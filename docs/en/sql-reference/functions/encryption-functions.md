@@ -21,7 +21,6 @@ This function encrypts data using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -145,7 +144,7 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 
 Result:
 
-```text
+```
 ┌─ciphertexts_equal─┐
 │                 1 │
 └───────────────────┘
@@ -222,7 +221,6 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -334,7 +332,7 @@ ORDER BY user_id ASC
 
 Result:
 
-```text
+```
 ┌──────────────────dt─┬─user_id─┬─value──┐
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │

@@ -192,13 +192,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
-
-    for (const auto & name : *query.names)
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name->toString());
-
-    if (query.new_name)
-        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
-
+    access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();

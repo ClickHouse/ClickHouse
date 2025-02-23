@@ -2,8 +2,6 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <Columns/IColumn.h>
-
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>

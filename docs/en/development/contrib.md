@@ -1,10 +1,11 @@
 ---
 slug: /en/development/contrib
-sidebar_position: 60
+sidebar_position: 73
 sidebar_label: Third-Party Libraries
+description: A list of third-party libraries used
 ---
 
-# Third-Party Libraries
+# Third-Party Libraries Used
 
 ClickHouse utilizes third-party libraries for different purposes, e.g., to connect to other databases, to decode/encode data during load/save from/to disk, or to implement certain specialized SQL functions.
 To be independent of the available libraries in the target system, each third-party library is imported as a Git submodule into ClickHouse's source tree and compiled and linked with ClickHouse.

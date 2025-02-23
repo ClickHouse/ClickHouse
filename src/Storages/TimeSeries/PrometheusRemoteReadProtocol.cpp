@@ -1,6 +1,6 @@
-#include <optional>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 
+#include "config.h"
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <Columns/ColumnDecimal.h>
@@ -10,10 +10,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -44,10 +42,6 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
 }
 
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-}
 
 namespace
 {
@@ -470,19 +464,8 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query);
 
-    auto context = getContext();
-    BlockIO io;
-    std::optional<InterpreterSelectQuery> interpreter_holder;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
-        io = interpreter.execute();
-    }
-    else
-    {
-        interpreter_holder.emplace(select_query, context, SelectQueryOptions{});
-        io = interpreter_holder->execute();
-    }
+    InterpreterSelectQuery interpreter(select_query, getContext(), SelectQueryOptions{});
+    BlockIO io = interpreter.execute();
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;

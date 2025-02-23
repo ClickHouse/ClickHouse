@@ -1,12 +1,7 @@
 ---
-description: "System table containing information about async inserts. Each entry represents an insert query buffered into an async insert query."
 slug: /en/operations/system-tables/asynchronous_insert_log
-title: "asynchronous_insert_log"
-keywords: ["system table", "asynchronous_insert_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# asynchronous_insert_log
 
 Contains information about async inserts. Each entry represents an insert query buffered into an async insert query.
 

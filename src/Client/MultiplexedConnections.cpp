@@ -331,36 +331,6 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     return buf.str();
 }
 
-UInt64 MultiplexedConnections::receivePacketTypeUnlocked(AsyncCallback async_callback)
-{
-    if (!sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot receive packets: no query sent.");
-    if (!hasActiveConnections())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No more packets are available.");
-
-    ReplicaState & state = getReplicaForReading();
-    current_connection = state.connection;
-    if (current_connection == nullptr)
-        throw Exception(ErrorCodes::NO_AVAILABLE_REPLICA, "No available replica");
-
-    try
-    {
-        AsyncCallbackSetter async_setter(current_connection, std::move(async_callback));
-        return current_connection->receivePacketType();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_SERVER)
-        {
-            /// Exception may happen when packet is received, e.g. when got unknown packet.
-            /// In this case, invalidate replica, so that we would not read from it anymore.
-            current_connection->disconnect();
-            invalidateReplica(state);
-        }
-        throw;
-    }
-}
-
 Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callback)
 {
     if (!sent_query)

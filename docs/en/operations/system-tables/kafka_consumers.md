@@ -1,12 +1,7 @@
 ---
-description: "System table containing information about Kafka consumers."
 slug: /en/operations/system-tables/kafka_consumers
-title: "kafka_consumers"
-keywords: ["system table", "kafka_consumers"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# kafka_consumers
 
 Contains information about Kafka consumers.
 Applicable for [Kafka table engine](../../engines/table-engines/integrations/kafka) (native ClickHouse integration)

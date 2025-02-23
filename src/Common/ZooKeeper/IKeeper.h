@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <vector>
 #include <memory>

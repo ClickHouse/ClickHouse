@@ -1,9 +1,7 @@
 ---
-description: "System table containing information about supported data types"
 slug: /en/operations/system-tables/data_type_families
-title: "data_type_families"
-keywords: ["system table", "data_type_families", "data types"]
 ---
+# data_type_families
 
 Contains information about supported [data types](../../sql-reference/data-types/index.md).
 

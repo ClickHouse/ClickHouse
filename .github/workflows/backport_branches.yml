@@ -210,6 +210,17 @@ jobs:
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
+############################ FUNCTIONAl STATEFUL TESTS #######################################
+##############################################################################################
+  FunctionalStatefulTestDebug:
+    needs: [RunConfig, BuilderDebDebug]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Stateful tests (debug)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
   StressTestTsan:
@@ -245,6 +256,7 @@ jobs:
       - RunConfig
       - Builds_Report
       - FunctionalStatelessTestAsan
+      - FunctionalStatefulTestDebug
       - StressTestTsan
       - IntegrationTestsTsan
       - IntegrationTestsAsanOldAnalyzer

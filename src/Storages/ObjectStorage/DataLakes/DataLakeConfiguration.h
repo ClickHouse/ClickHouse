@@ -5,7 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -40,17 +40,16 @@ public:
 
     bool isDataLakeConfiguration() const override { return true; }
 
-    std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
+    std::string getEngineName() const override { return DataLakeMetadata::name; }
 
     void update(ObjectStoragePtr object_storage, ContextPtr local_context) override
     {
         BaseStorageConfiguration::update(object_storage, local_context);
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
 
-        bool existed = current_metadata != nullptr;
-
-        if (updateMetadataObjectIfNeeded(object_storage, local_context))
+        if (!current_metadata || (*current_metadata != *new_metadata))
         {
-            if (hasExternalDynamicMetadata() && existed)
+            if (hasExternalDynamicMetadata())
             {
                 throw Exception(
                     ErrorCodes::FORMAT_VERSION_TOO_OLD,
@@ -58,6 +57,7 @@ public:
             }
             else
             {
+                current_metadata = std::move(new_metadata);
                 BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
                 BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
             }
@@ -74,13 +74,6 @@ public:
             return ColumnsDescription(std::move(schema_from_metadata));
         }
         return std::nullopt;
-    }
-
-    void implementPartitionPruning(const ActionsDAG & filter_dag) override
-    {
-        if (!current_metadata || !current_metadata->supportsPartitionPruning())
-            return;
-        BaseStorageConfiguration::setPaths(current_metadata->makePartitionPruning(filter_dag));
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
@@ -106,12 +99,14 @@ public:
     ColumnsDescription updateAndGetCurrentSchema(ObjectStoragePtr object_storage, ContextPtr context) override
     {
         BaseStorageConfiguration::update(object_storage, context);
-        if (updateMetadataObjectIfNeeded(object_storage, context))
+        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
+
+        if (!current_metadata || (*current_metadata != *new_metadata))
         {
+            current_metadata = std::move(new_metadata);
             BaseStorageConfiguration::setPaths(current_metadata->getDataFiles());
             BaseStorageConfiguration::setPartitionColumns(current_metadata->getPartitionColumns());
         }
-
         return ColumnsDescription{current_metadata->getTableSchema()};
     }
 
@@ -142,46 +137,20 @@ private:
         }
         return info;
     }
-
-    bool updateMetadataObjectIfNeeded(ObjectStoragePtr object_storage, ContextPtr context)
-    {
-        if (!current_metadata)
-        {
-            current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
-            return true;
-        }
-
-        if (current_metadata->supportsUpdate())
-        {
-            return current_metadata->update(context);
-        }
-
-        auto new_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), context);
-        if (*current_metadata != *new_metadata)
-        {
-            current_metadata = std::move(new_metadata);
-            return true;
-        }
-        else
-        {
-            return false;
-        }
-    }
 };
 
-
 #if USE_AVRO
-#    if USE_AWS_S3
+#if USE_AWS_S3
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
-#endif
+#    endif
 
 #if USE_AZURE_BLOB_STORAGE
 using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
-#endif
+#    endif
 
 #if USE_HDFS
 using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
-#endif
+#    endif
 
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
 #endif
@@ -189,7 +158,7 @@ using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfi
 #if USE_PARQUET
 #if USE_AWS_S3
 using StorageS3DeltaLakeConfiguration = DataLakeConfiguration<StorageS3Configuration, DeltaLakeMetadata>;
-#endif
+#    endif
 #endif
 
 #if USE_AWS_S3

@@ -128,7 +128,6 @@ public:
 
     /// Receive packet from server.
     virtual Packet receivePacket() = 0;
-    virtual UInt64 receivePacketType() = 0;
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;

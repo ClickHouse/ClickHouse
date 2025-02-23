@@ -1,11 +1,6 @@
---{echoOn}
-SELECT '---map--';
 ---map--
-SELECT arrayMap(x -> 123, emptyArrayUInt8());
 []
-SELECT arrayMap(x -> 123, [1, 2, 3]);
 [123,123,123]
-SELECT arrayMap(x -> 123, range(number)) FROM system.numbers LIMIT 10;
 []
 [123]
 [123,123]
@@ -16,17 +11,7 @@ SELECT arrayMap(x -> 123, range(number)) FROM system.numbers LIMIT 10;
 [123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123,123]
-SELECT arrayMap(x -> x, range(number)) FROM system.numbers LIMIT 3;
-[]
-[0]
-[0,1]
-SELECT '---filter--';
 ---filter--
-SELECT arrayFilter(x -> 0, emptyArrayUInt8());
-[]
-SELECT arrayFilter(x -> 0, [1, 2, 3]);
-[]
-SELECT arrayFilter(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 []
 []
 []
@@ -37,11 +22,10 @@ SELECT arrayFilter(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 []
 []
 []
-SELECT arrayFilter(x -> 1, emptyArrayUInt8());
 []
-SELECT arrayFilter(x -> 1, [1, 2, 3]);
+[]
+[]
 [1,2,3]
-SELECT arrayFilter(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 []
 [0]
 [0,1]
@@ -52,21 +36,7 @@ SELECT arrayFilter(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 [0,1,2,3,4,5,6]
 [0,1,2,3,4,5,6,7]
 [0,1,2,3,4,5,6,7,8]
-SELECT arrayFilter(x -> x > 1, [1, 2, 3]);
-[2,3]
-SELECT arrayFilter(x -> x > 2, [1, 2, 3]);
-[3]
-SELECT arrayFilter(x -> NULL, [1, 2, 3]);
-[]
-SELECT arrayFilter(x -> 1.1, [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT arrayFilter(x -> 'string', [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT '---count---';
 ---count---
-SELECT arrayCount(x -> 0, emptyArrayUInt8());
-0
-SELECT arrayCount(x -> 0, [1, 2, 3]);
-0
-SELECT arrayCount(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -77,11 +47,10 @@ SELECT arrayCount(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arrayCount(x -> 1, emptyArrayUInt8());
 0
-SELECT arrayCount(x -> 1, [1, 2, 3]);
+0
+0
 3
-SELECT arrayCount(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 2
@@ -92,20 +61,7 @@ SELECT arrayCount(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 7
 8
 9
-SELECT arrayCount(x -> x > 0, [1, 2, 3]);
-3
-SELECT arrayCount(x -> x > 1, [1, 2, 3]);
-2
-SELECT arrayCount(x -> NULL, [1, 2, 3]);
-0
-SELECT arrayCount(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT '---sum---';
 ---sum---
-SELECT arraySum(x -> 0, emptyArrayUInt8());
-0
-SELECT arraySum(x -> 0, [1, 2, 3]);
-0
-SELECT arraySum(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -116,11 +72,10 @@ SELECT arraySum(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arraySum(x -> 10, emptyArrayUInt8());
 0
-SELECT arraySum(x -> 10, [1, 2, 3]);
+0
+0
 30
-SELECT arraySum(x -> 10, range(number)) FROM system.numbers LIMIT 10;
 0
 10
 20
@@ -131,13 +86,9 @@ SELECT arraySum(x -> 10, range(number)) FROM system.numbers LIMIT 10;
 70
 80
 90
-SELECT '---all---';
 ---all---
-SELECT arrayAll(x -> 0, emptyArrayUInt8());
 1
-SELECT arrayAll(x -> 0, [1, 2, 3]);
 0
-SELECT arrayAll(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 1
 0
 0
@@ -148,11 +99,6 @@ SELECT arrayAll(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arrayAll(x -> 1, emptyArrayUInt8());
-1
-SELECT arrayAll(x -> 1, [1, 2, 3]);
-1
-SELECT arrayAll(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 1
 1
 1
@@ -163,22 +109,9 @@ SELECT arrayAll(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 1
 1
 1
-SELECT arrayAll(x -> x > 0, [1, 2, 3]);
 1
-SELECT arrayAll(x -> x > 1, [1, 2, 3]);
-0
-SELECT arrayAll(x -> x, [1, 2, 3]);
 1
-SELECT arrayAll(x -> NULL, [1, 2, 3]);
-0
-SELECT arrayAll(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT '---exists---';
 ---exists---
-SELECT arrayExists(x -> 0, emptyArrayUInt8());
-0
-SELECT arrayExists(x -> 0, [1, 2, 3]);
-0
-SELECT arrayExists(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -189,11 +122,10 @@ SELECT arrayExists(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arrayExists(x -> 1, emptyArrayUInt8());
 0
-SELECT arrayExists(x -> 1, [1, 2, 3]);
+0
+0
 1
-SELECT arrayExists(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -204,13 +136,7 @@ SELECT arrayExists(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 1
 1
 1
-SELECT '---first---';
 ---first---
-SELECT arrayFirst(x -> 0, emptyArrayUInt8());
-0
-SELECT arrayFirst(x -> 0, [1, 2, 3]);
-0
-SELECT arrayFirst(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -221,76 +147,21 @@ SELECT arrayFirst(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arrayFirst(x -> 1, emptyArrayUInt8());
 0
-SELECT arrayFirst(x -> 1, [1, 2, 3]);
-1
-SELECT arrayFirst(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-SELECT arrayFirst(x -> x > 1, [1, 2, 3]);
-2
-SELECT arrayFirst(x -> x > 3, [1, 2, 3]);
-0
-SELECT arrayFirst(x -> x, [1, 2, 3]);
-1
-SELECT arrayFirst(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayFirst(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT '---last---';
----last---
-SELECT arrayLast(x -> 0, emptyArrayUInt8());
-0
-SELECT arrayLast(x -> 0, [1, 2, 3]);
-0
-SELECT arrayLast(x -> 0, range(number)) FROM system.numbers LIMIT 10;
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-SELECT arrayLast(x -> 1, emptyArrayUInt8());
-0
-SELECT arrayLast(x -> 1, [1, 2, 3]);
-3
-SELECT arrayLast(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 1
-2
-3
-4
-5
-6
-7
-8
-SELECT arrayLast(x -> x > 1, [1, 2, 3]);
-3
-SELECT arrayLast(x -> x > 3, [1, 2, 3]);
 0
-SELECT arrayLast(x -> x, [1, 2, 3]);
-3
-SELECT arrayLast(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayLast(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT '---first index---';
+0
+0
+0
+0
+0
+0
+0
+0
+0
 ---first index---
-SELECT arrayFirstIndex(x -> 0, emptyArrayUInt8());
-0
-SELECT arrayFirstIndex(x -> 0, [1, 2, 3]);
-0
-SELECT arrayFirstIndex(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -301,11 +172,10 @@ SELECT arrayFirstIndex(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arrayFirstIndex(x -> 1, emptyArrayUInt8());
 0
-SELECT arrayFirstIndex(x -> 1, [1, 2, 3]);
+0
+0
 1
-SELECT arrayFirstIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -316,61 +186,9 @@ SELECT arrayFirstIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
 1
 1
 1
-SELECT arrayFirstIndex(x -> x > 1, [1, 2, 3]);
-2
-SELECT arrayFirstIndex(x -> x > 3, [1, 2, 3]);
-0
-SELECT arrayFirstIndex(x -> x, [1, 2, 3]);
-1
-SELECT arrayFirstIndex(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayFirstIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT '---lastindex---';
----lastindex---
-SELECT arrayLastIndex(x -> 0, emptyArrayUInt8());
-0
-SELECT arrayLastIndex(x -> 0, [1, 2, 3]);
-0
-SELECT arrayLastIndex(x -> 0, range(number)) FROM system.numbers LIMIT 10;
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-SELECT arrayLastIndex(x -> 1, emptyArrayUInt8());
-0
-SELECT arrayLastIndex(x -> 1, [1, 2, 3]);
-3
-SELECT arrayLastIndex(x -> 1, range(number)) FROM system.numbers LIMIT 10;
-0
-1
-2
-3
-4
-5
-6
-7
-8
-9
-SELECT arrayLastIndex(x -> x > 1, [1, 2, 3]);
-3
-SELECT arrayLastIndex(x -> x > 3, [1, 2, 3]);
-0
-SELECT arrayLastIndex(x -> x, [1, 2, 3]);
-3
-SELECT arrayLastIndex(x -> NULL, [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT arrayLastIndex(x -> 'string', [1, 2, 3]); -- { serverError ILLEGAL_COLUMN }
-SELECT '---cumsum---';
 ---cumsum---
-SELECT arrayCumSum(x -> 0, emptyArrayUInt8());
 []
-SELECT arrayCumSum(x -> 0, [1, 2, 3]);
 [0,0,0]
-SELECT arrayCumSum(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 []
 [0]
 [0,0]
@@ -381,11 +199,8 @@ SELECT arrayCumSum(x -> 0, range(number)) FROM system.numbers LIMIT 10;
 [0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0,0]
-SELECT arrayCumSum(x -> 10, emptyArrayUInt8());
 []
-SELECT arrayCumSum(x -> 10, [1, 2, 3]);
 [10,20,30]
-SELECT arrayCumSum(x -> 10, range(number)) FROM system.numbers LIMIT 10;
 []
 [10]
 [10,20]
@@ -396,13 +211,9 @@ SELECT arrayCumSum(x -> 10, range(number)) FROM system.numbers LIMIT 10;
 [10,20,30,40,50,60,70]
 [10,20,30,40,50,60,70,80]
 [10,20,30,40,50,60,70,80,90]
-SELECT '---map--';
 ---map--
-SELECT arrayMap(x -> materialize(123), emptyArrayUInt8());
 []
-SELECT arrayMap(x -> materialize(123), [1, 2, 3]);
 [123,123,123]
-SELECT arrayMap(x -> materialize(123), range(number)) FROM system.numbers LIMIT 10;
 []
 [123]
 [123,123]
@@ -413,13 +224,7 @@ SELECT arrayMap(x -> materialize(123), range(number)) FROM system.numbers LIMIT 
 [123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123,123]
-SELECT '---filter--';
 ---filter--
-SELECT arrayFilter(x -> materialize(0), emptyArrayUInt8());
-[]
-SELECT arrayFilter(x -> materialize(0), [1, 2, 3]);
-[]
-SELECT arrayFilter(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 []
 []
 []
@@ -430,11 +235,10 @@ SELECT arrayFilter(x -> materialize(0), range(number)) FROM system.numbers LIMIT
 []
 []
 []
-SELECT arrayFilter(x -> materialize(1), emptyArrayUInt8());
 []
-SELECT arrayFilter(x -> materialize(1), [1, 2, 3]);
+[]
+[]
 [1,2,3]
-SELECT arrayFilter(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
 []
 [0]
 [0,1]
@@ -445,13 +249,7 @@ SELECT arrayFilter(x -> materialize(1), range(number)) FROM system.numbers LIMIT
 [0,1,2,3,4,5,6]
 [0,1,2,3,4,5,6,7]
 [0,1,2,3,4,5,6,7,8]
-SELECT '---count---';
 ---count---
-SELECT arrayCount(x -> materialize(0), emptyArrayUInt8());
-0
-SELECT arrayCount(x -> materialize(0), [1, 2, 3]);
-0
-SELECT arrayCount(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -462,11 +260,10 @@ SELECT arrayCount(x -> materialize(0), range(number)) FROM system.numbers LIMIT 
 0
 0
 0
-SELECT arrayCount(x -> materialize(1), emptyArrayUInt8());
 0
-SELECT arrayCount(x -> materialize(1), [1, 2, 3]);
+0
+0
 3
-SELECT arrayCount(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
 0
 1
 2
@@ -477,13 +274,7 @@ SELECT arrayCount(x -> materialize(1), range(number)) FROM system.numbers LIMIT 
 7
 8
 9
-SELECT '---sum---';
 ---sum---
-SELECT arraySum(x -> materialize(0), emptyArrayUInt8());
-0
-SELECT arraySum(x -> materialize(0), [1, 2, 3]);
-0
-SELECT arraySum(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -494,11 +285,10 @@ SELECT arraySum(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10
 0
 0
 0
-SELECT arraySum(x -> materialize(10), emptyArrayUInt8());
 0
-SELECT arraySum(x -> materialize(10), [1, 2, 3]);
+0
+0
 30
-SELECT arraySum(x -> materialize(10), range(number)) FROM system.numbers LIMIT 10;
 0
 10
 20
@@ -509,13 +299,9 @@ SELECT arraySum(x -> materialize(10), range(number)) FROM system.numbers LIMIT 1
 70
 80
 90
-SELECT '---all---';
 ---all---
-SELECT arrayAll(x -> materialize(0), emptyArrayUInt8());
 1
-SELECT arrayAll(x -> materialize(0), [1, 2, 3]);
 0
-SELECT arrayAll(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 1
 0
 0
@@ -526,11 +312,6 @@ SELECT arrayAll(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10
 0
 0
 0
-SELECT arrayAll(x -> materialize(1), emptyArrayUInt8());
-1
-SELECT arrayAll(x -> materialize(1), [1, 2, 3]);
-1
-SELECT arrayAll(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
 1
 1
 1
@@ -541,13 +322,9 @@ SELECT arrayAll(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10
 1
 1
 1
-SELECT '---exists---';
+1
+1
 ---exists---
-SELECT arrayExists(x -> materialize(0), emptyArrayUInt8());
-0
-SELECT arrayExists(x -> materialize(0), [1, 2, 3]);
-0
-SELECT arrayExists(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -558,11 +335,10 @@ SELECT arrayExists(x -> materialize(0), range(number)) FROM system.numbers LIMIT
 0
 0
 0
-SELECT arrayExists(x -> materialize(1), emptyArrayUInt8());
 0
-SELECT arrayExists(x -> materialize(1), [1, 2, 3]);
+0
+0
 1
-SELECT arrayExists(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -573,16 +349,7 @@ SELECT arrayExists(x -> materialize(1), range(number)) FROM system.numbers LIMIT
 1
 1
 1
-SELECT arrayExists(x -> x, [1, 2, 3]);
-1
-SELECT arrayExists(x -> 'string', [1, 2, 3]);  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT '---first---';
 ---first---
-SELECT arrayFirst(x -> materialize(0), emptyArrayUInt8());
-0
-SELECT arrayFirst(x -> materialize(0), [1, 2, 3]);
-0
-SELECT arrayFirst(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -593,11 +360,10 @@ SELECT arrayFirst(x -> materialize(0), range(number)) FROM system.numbers LIMIT 
 0
 0
 0
-SELECT arrayFirst(x -> materialize(1), emptyArrayUInt8());
 0
-SELECT arrayFirst(x -> materialize(1), [1, 2, 3]);
+0
+0
 1
-SELECT arrayFirst(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -608,13 +374,7 @@ SELECT arrayFirst(x -> materialize(1), range(number)) FROM system.numbers LIMIT 
 0
 0
 0
-SELECT '---first index---';
 ---first index---
-SELECT arrayFirstIndex(x -> materialize(0), emptyArrayUInt8());
-0
-SELECT arrayFirstIndex(x -> materialize(0), [1, 2, 3]);
-0
-SELECT arrayFirstIndex(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -625,11 +385,10 @@ SELECT arrayFirstIndex(x -> materialize(0), range(number)) FROM system.numbers L
 0
 0
 0
-SELECT arrayFirstIndex(x -> materialize(1), emptyArrayUInt8());
 0
-SELECT arrayFirstIndex(x -> materialize(1), [1, 2, 3]);
+0
+0
 1
-SELECT arrayFirstIndex(x -> materialize(1), range(number)) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -640,13 +399,9 @@ SELECT arrayFirstIndex(x -> materialize(1), range(number)) FROM system.numbers L
 1
 1
 1
-SELECT '--cumsum---';
 --cumsum---
-SELECT arrayCumSum(x -> materialize(0), emptyArrayUInt8());
 []
-SELECT arrayCumSum(x -> materialize(0), [1, 2, 3]);
 [0,0,0]
-SELECT arrayCumSum(x -> materialize(0), range(number)) FROM system.numbers LIMIT 10;
 []
 [0]
 [0,0]
@@ -657,11 +412,8 @@ SELECT arrayCumSum(x -> materialize(0), range(number)) FROM system.numbers LIMIT
 [0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0,0]
-SELECT arrayCumSum(x -> materialize(10), emptyArrayUInt8());
 []
-SELECT arrayCumSum(x -> materialize(10), [1, 2, 3]);
 [10,20,30]
-SELECT arrayCumSum(x -> materialize(10), range(number)) FROM system.numbers LIMIT 10;
 []
 [10]
 [10,20]
@@ -672,13 +424,9 @@ SELECT arrayCumSum(x -> materialize(10), range(number)) FROM system.numbers LIMI
 [10,20,30,40,50,60,70]
 [10,20,30,40,50,60,70,80]
 [10,20,30,40,50,60,70,80,90]
-SELECT '---map--';
 ---map--
-SELECT arrayMap(x -> 123, emptyArrayString());
 []
-SELECT arrayMap(x -> 123, arrayMap(x -> toString(x), [1, 2, 3]));
 [123,123,123]
-SELECT arrayMap(x -> 123, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [123]
 [123,123]
@@ -689,13 +437,7 @@ SELECT arrayMap(x -> 123, arrayMap(x -> toString(x), range(number))) FROM system
 [123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123,123]
-SELECT '---filter--';
 ---filter--
-SELECT arrayFilter(x -> 0, emptyArrayString());
-[]
-SELECT arrayFilter(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
-[]
-SELECT arrayFilter(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 []
 []
@@ -706,11 +448,10 @@ SELECT arrayFilter(x -> 0, arrayMap(x -> toString(x), range(number))) FROM syste
 []
 []
 []
-SELECT arrayFilter(x -> 1, emptyArrayString());
 []
-SELECT arrayFilter(x -> 1, arrayMap(x -> toString(x), [1, 2, 3]));
+[]
+[]
 ['1','2','3']
-SELECT arrayFilter(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 ['0']
 ['0','1']
@@ -721,13 +462,7 @@ SELECT arrayFilter(x -> 1, arrayMap(x -> toString(x), range(number))) FROM syste
 ['0','1','2','3','4','5','6']
 ['0','1','2','3','4','5','6','7']
 ['0','1','2','3','4','5','6','7','8']
-SELECT '---count---';
 ---count---
-SELECT arrayCount(x -> 0, emptyArrayString());
-0
-SELECT arrayCount(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arrayCount(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -738,11 +473,10 @@ SELECT arrayCount(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system
 0
 0
 0
-SELECT arrayCount(x -> 1, emptyArrayString());
 0
-SELECT arrayCount(x -> 1, arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 3
-SELECT arrayCount(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 2
@@ -753,13 +487,7 @@ SELECT arrayCount(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system
 7
 8
 9
-SELECT '---sum---';
 ---sum---
-SELECT arraySum(x -> 0, emptyArrayString());
-0
-SELECT arraySum(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arraySum(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -770,11 +498,10 @@ SELECT arraySum(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.n
 0
 0
 0
-SELECT arraySum(x -> 10, emptyArrayString());
 0
-SELECT arraySum(x -> 10, arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 30
-SELECT arraySum(x -> 10, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 10
 20
@@ -785,13 +512,9 @@ SELECT arraySum(x -> 10, arrayMap(x -> toString(x), range(number))) FROM system.
 70
 80
 90
-SELECT '---all---';
 ---all---
-SELECT arrayAll(x -> 0, emptyArrayString());
 1
-SELECT arrayAll(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
 0
-SELECT arrayAll(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 1
 0
 0
@@ -802,11 +525,6 @@ SELECT arrayAll(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.n
 0
 0
 0
-SELECT arrayAll(x -> 1, emptyArrayString());
-1
-SELECT arrayAll(x -> 1, arrayMap(x -> toString(x), [1, 2, 3]));
-1
-SELECT arrayAll(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 1
 1
 1
@@ -817,13 +535,9 @@ SELECT arrayAll(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.n
 1
 1
 1
-SELECT '---exists---';
+1
+1
 ---exists---
-SELECT arrayExists(x -> 0, emptyArrayString());
-0
-SELECT arrayExists(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arrayExists(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -834,11 +548,10 @@ SELECT arrayExists(x -> 0, arrayMap(x -> toString(x), range(number))) FROM syste
 0
 0
 0
-SELECT arrayExists(x -> 1, emptyArrayString());
 0
-SELECT arrayExists(x -> 1, arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 1
-SELECT arrayExists(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -849,13 +562,7 @@ SELECT arrayExists(x -> 1, arrayMap(x -> toString(x), range(number))) FROM syste
 1
 1
 1
-SELECT '---first---';
 ---first---
-SELECT arrayFirst(x -> 0, emptyArrayString());
-
-SELECT arrayFirst(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
-
-SELECT arrayFirst(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 
 
 
@@ -866,11 +573,10 @@ SELECT arrayFirst(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system
 
 
 
-SELECT arrayFirst(x -> 1, emptyArrayString());
 
-SELECT arrayFirst(x -> 1, arrayMap(x -> toString(x), [1, 2, 3]));
+
+
 1
-SELECT arrayFirst(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 
 0
 0
@@ -881,13 +587,7 @@ SELECT arrayFirst(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system
 0
 0
 0
-SELECT '---first index---';
 ---first index---
-SELECT arrayFirstIndex(x -> 0, emptyArrayString());
-0
-SELECT arrayFirstIndex(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arrayFirstIndex(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -898,11 +598,10 @@ SELECT arrayFirstIndex(x -> 0, arrayMap(x -> toString(x), range(number))) FROM s
 0
 0
 0
-SELECT arrayFirstIndex(x -> 1, emptyArrayString());
 0
-SELECT arrayFirstIndex(x -> 1, arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 1
-SELECT arrayFirstIndex(x -> 1, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -913,13 +612,9 @@ SELECT arrayFirstIndex(x -> 1, arrayMap(x -> toString(x), range(number))) FROM s
 1
 1
 1
-SELECT '---cumsum---';
 ---cumsum---
-SELECT arrayCumSum(x -> 0, emptyArrayString());
 []
-SELECT arrayCumSum(x -> 0, arrayMap(x -> toString(x), [1, 2, 3]));
 [0,0,0]
-SELECT arrayCumSum(x -> 0, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [0]
 [0,0]
@@ -930,11 +625,8 @@ SELECT arrayCumSum(x -> 0, arrayMap(x -> toString(x), range(number))) FROM syste
 [0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0,0]
-SELECT arrayCumSum(x -> 10, emptyArrayString());
 []
-SELECT arrayCumSum(x -> 10, arrayMap(x -> toString(x), [1, 2, 3]));
 [10,20,30]
-SELECT arrayCumSum(x -> 10, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [10]
 [10,20]
@@ -945,13 +637,9 @@ SELECT arrayCumSum(x -> 10, arrayMap(x -> toString(x), range(number))) FROM syst
 [10,20,30,40,50,60,70]
 [10,20,30,40,50,60,70,80]
 [10,20,30,40,50,60,70,80,90]
-SELECT '---map--';
 ---map--
-SELECT arrayMap(x -> materialize(123), emptyArrayString());
 []
-SELECT arrayMap(x -> materialize(123), arrayMap(x -> toString(x), [1, 2, 3]));
 [123,123,123]
-SELECT arrayMap(x -> materialize(123), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [123]
 [123,123]
@@ -962,13 +650,7 @@ SELECT arrayMap(x -> materialize(123), arrayMap(x -> toString(x), range(number))
 [123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123]
 [123,123,123,123,123,123,123,123,123]
-SELECT '---filter--';
 ---filter--
-SELECT arrayFilter(x -> materialize(0), emptyArrayString());
-[]
-SELECT arrayFilter(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
-[]
-SELECT arrayFilter(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 []
 []
@@ -979,11 +661,10 @@ SELECT arrayFilter(x -> materialize(0), arrayMap(x -> toString(x), range(number)
 []
 []
 []
-SELECT arrayFilter(x -> materialize(1), emptyArrayString());
 []
-SELECT arrayFilter(x -> materialize(1), arrayMap(x -> toString(x), [1, 2, 3]));
+[]
+[]
 ['1','2','3']
-SELECT arrayFilter(x -> materialize(1), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 ['0']
 ['0','1']
@@ -994,13 +675,7 @@ SELECT arrayFilter(x -> materialize(1), arrayMap(x -> toString(x), range(number)
 ['0','1','2','3','4','5','6']
 ['0','1','2','3','4','5','6','7']
 ['0','1','2','3','4','5','6','7','8']
-SELECT '---count---';
 ---count---
-SELECT arrayCount(x -> materialize(0), emptyArrayString());
-0
-SELECT arrayCount(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arrayCount(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -1011,11 +686,10 @@ SELECT arrayCount(x -> materialize(0), arrayMap(x -> toString(x), range(number))
 0
 0
 0
-SELECT arrayCount(x -> materialize(1), emptyArrayString());
 0
-SELECT arrayCount(x -> materialize(1), arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 3
-SELECT arrayCount(x -> materialize(1), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 2
@@ -1026,13 +700,7 @@ SELECT arrayCount(x -> materialize(1), arrayMap(x -> toString(x), range(number))
 7
 8
 9
-SELECT '---sum---';
 ---sum---
-SELECT arraySum(x -> materialize(0), emptyArrayString());
-0
-SELECT arraySum(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arraySum(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -1043,11 +711,10 @@ SELECT arraySum(x -> materialize(0), arrayMap(x -> toString(x), range(number))) 
 0
 0
 0
-SELECT arraySum(x -> materialize(10), emptyArrayString());
 0
-SELECT arraySum(x -> materialize(10), arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 30
-SELECT arraySum(x -> materialize(10), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 10
 20
@@ -1058,13 +725,9 @@ SELECT arraySum(x -> materialize(10), arrayMap(x -> toString(x), range(number)))
 70
 80
 90
-SELECT '---all---';
 ---all---
-SELECT arrayAll(x -> materialize(0), emptyArrayString());
 1
-SELECT arrayAll(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
 0
-SELECT arrayAll(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 1
 0
 0
@@ -1075,11 +738,6 @@ SELECT arrayAll(x -> materialize(0), arrayMap(x -> toString(x), range(number))) 
 0
 0
 0
-SELECT arrayAll(x -> materialize(1), emptyArrayString());
-1
-SELECT arrayAll(x -> materialize(1), arrayMap(x -> toString(x), [1, 2, 3]));
-1
-SELECT arrayAll(x -> materialize(1), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 1
 1
 1
@@ -1090,13 +748,9 @@ SELECT arrayAll(x -> materialize(1), arrayMap(x -> toString(x), range(number))) 
 1
 1
 1
-SELECT '---exists---';
+1
+1
 ---exists---
-SELECT arrayExists(x -> materialize(0), emptyArrayString());
-0
-SELECT arrayExists(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arrayExists(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -1107,11 +761,10 @@ SELECT arrayExists(x -> materialize(0), arrayMap(x -> toString(x), range(number)
 0
 0
 0
-SELECT arrayExists(x -> materialize(1), emptyArrayString());
 0
-SELECT arrayExists(x -> materialize(1), arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 1
-SELECT arrayExists(x -> materialize(1), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -1122,13 +775,7 @@ SELECT arrayExists(x -> materialize(1), arrayMap(x -> toString(x), range(number)
 1
 1
 1
-SELECT '---first---';
 ---first---
-SELECT arrayFirst(x -> materialize(0), emptyArrayString());
-
-SELECT arrayFirst(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
-
-SELECT arrayFirst(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 
 
 
@@ -1139,11 +786,10 @@ SELECT arrayFirst(x -> materialize(0), arrayMap(x -> toString(x), range(number))
 
 
 
-SELECT arrayFirst(x -> materialize(1), emptyArrayString());
 
-SELECT arrayFirst(x -> materialize(1), arrayMap(x -> toString(x), [1, 2, 3]));
+
+
 1
-SELECT arrayFirst(x -> materialize(1), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 
 0
 0
@@ -1154,13 +800,7 @@ SELECT arrayFirst(x -> materialize(1), arrayMap(x -> toString(x), range(number))
 0
 0
 0
-SELECT '---first index---';
 ---first index---
-SELECT arrayFirstIndex(x -> materialize(0), emptyArrayString());
-0
-SELECT arrayFirstIndex(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
-0
-SELECT arrayFirstIndex(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -1171,11 +811,10 @@ SELECT arrayFirstIndex(x -> materialize(0), arrayMap(x -> toString(x), range(num
 0
 0
 0
-SELECT arrayFirstIndex(x -> materialize(1), emptyArrayString());
 0
-SELECT arrayFirstIndex(x -> materialize(1), arrayMap(x -> toString(x), [1, 2, 3]));
+0
+0
 1
-SELECT arrayFirstIndex(x -> materialize(1), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 1
@@ -1186,13 +825,9 @@ SELECT arrayFirstIndex(x -> materialize(1), arrayMap(x -> toString(x), range(num
 1
 1
 1
-SELECT '---cumsum---';
 ---cumsum---
-SELECT arrayCumSum(x -> materialize(0), emptyArrayString());
 []
-SELECT arrayCumSum(x -> materialize(0), arrayMap(x -> toString(x), [1, 2, 3]));
 [0,0,0]
-SELECT arrayCumSum(x -> materialize(0), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [0]
 [0,0]
@@ -1203,11 +838,8 @@ SELECT arrayCumSum(x -> materialize(0), arrayMap(x -> toString(x), range(number)
 [0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0]
 [0,0,0,0,0,0,0,0,0]
-SELECT arrayCumSum(x -> materialize(10), emptyArrayString());
 []
-SELECT arrayCumSum(x -> materialize(10), arrayMap(x -> toString(x), [1, 2, 3]));
 [10,20,30]
-SELECT arrayCumSum(x -> materialize(10), arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [10]
 [10,20]
@@ -1218,9 +850,7 @@ SELECT arrayCumSum(x -> materialize(10), arrayMap(x -> toString(x), range(number
 [10,20,30,40,50,60,70]
 [10,20,30,40,50,60,70,80]
 [10,20,30,40,50,60,70,80,90]
-SELECT '--- ---';
 --- ---
-SELECT arrayMap(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 []
 [1]
 [0,0]
@@ -1231,7 +861,6 @@ SELECT arrayMap(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 [1,1,1,1,1,1,1]
 [0,0,0,0,0,0,0,0]
 [1,1,1,1,1,1,1,1,1]
-SELECT arrayFilter(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 []
 [0]
 []
@@ -1242,7 +871,6 @@ SELECT arrayFilter(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 [0,1,2,3,4,5,6]
 []
 [0,1,2,3,4,5,6,7,8]
-SELECT arrayCount(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1253,7 +881,6 @@ SELECT arrayCount(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 7
 0
 9
-SELECT arraySum(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1264,7 +891,6 @@ SELECT arraySum(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 7
 0
 9
-SELECT arrayAll(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 1
 1
 0
@@ -1275,7 +901,6 @@ SELECT arrayAll(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 1
 0
 1
-SELECT arrayExists(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1286,7 +911,6 @@ SELECT arrayExists(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 1
 0
 1
-SELECT arrayFirst(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
@@ -1297,7 +921,6 @@ SELECT arrayFirst(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 0
 0
 0
-SELECT arrayFirstIndex(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1308,7 +931,6 @@ SELECT arrayFirstIndex(x -> number % 2, range(number)) FROM system.numbers LIMIT
 1
 0
 1
-SELECT arrayCumSum(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 []
 [1]
 [0,0]
@@ -1319,9 +941,7 @@ SELECT arrayCumSum(x -> number % 2, range(number)) FROM system.numbers LIMIT 10;
 [1,2,3,4,5,6,7]
 [0,0,0,0,0,0,0,0]
 [1,2,3,4,5,6,7,8,9]
-SELECT '--- ---';
 --- ---
-SELECT arrayMap(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [1]
 [0,0]
@@ -1332,7 +952,6 @@ SELECT arrayMap(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM
 [1,1,1,1,1,1,1]
 [0,0,0,0,0,0,0,0]
 [1,1,1,1,1,1,1,1,1]
-SELECT arrayFilter(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 ['0']
 []
@@ -1343,7 +962,6 @@ SELECT arrayFilter(x -> number % 2, arrayMap(x -> toString(x), range(number))) F
 ['0','1','2','3','4','5','6']
 []
 ['0','1','2','3','4','5','6','7','8']
-SELECT arrayCount(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1354,7 +972,6 @@ SELECT arrayCount(x -> number % 2, arrayMap(x -> toString(x), range(number))) FR
 7
 0
 9
-SELECT arraySum(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1365,7 +982,6 @@ SELECT arraySum(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM
 7
 0
 9
-SELECT arrayAll(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 1
 1
 0
@@ -1376,7 +992,6 @@ SELECT arrayAll(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM
 1
 0
 1
-SELECT arrayExists(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1387,7 +1002,6 @@ SELECT arrayExists(x -> number % 2, arrayMap(x -> toString(x), range(number))) F
 1
 0
 1
-SELECT arrayFirst(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 
 0
 
@@ -1398,7 +1012,6 @@ SELECT arrayFirst(x -> number % 2, arrayMap(x -> toString(x), range(number))) FR
 0
 
 0
-SELECT arrayFirstIndex(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 0
 1
 0
@@ -1409,7 +1022,6 @@ SELECT arrayFirstIndex(x -> number % 2, arrayMap(x -> toString(x), range(number)
 1
 0
 1
-SELECT arrayCumSum(x -> number % 2, arrayMap(x -> toString(x), range(number))) FROM system.numbers LIMIT 10;
 []
 [1]
 [0,0]

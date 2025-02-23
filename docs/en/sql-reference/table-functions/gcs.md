@@ -30,7 +30,7 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
 - `url` — Bucket path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
   :::note GCS
   The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
-```text
+  ```
   https://storage.googleapis.com/<bucket>/<folder>/<filename(s)>
   ```
   and not ~~https://storage.cloud.google.com~~.
@@ -61,7 +61,7 @@ Selecting the first two rows from the table from GCS file `https://storage.googl
 
 ``` sql
 SELECT *
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/data.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2;
 ```
 
@@ -76,7 +76,7 @@ The similar but from file with `gzip` compression method:
 
 ``` sql
 SELECT *
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/data.csv.gz', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32', 'gzip')
 LIMIT 2;
 ```
 
@@ -104,7 +104,7 @@ Count the amount of rows in files ending with numbers from 1 to 3:
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'name String, value UInt32')
 ```
 
 ``` text
@@ -117,7 +117,7 @@ Count the total amount of rows in all files in these two directories:
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'name String, value UInt32')
 ```
 
 ``` text
@@ -134,7 +134,7 @@ Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ..
 
 ``` sql
 SELECT count(*)
-FROM gcs('https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
+FROM gcs('https://storage.googleapis.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'name String, value UInt32');
 ```
 
 ``` text

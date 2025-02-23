@@ -7,9 +7,9 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/copyData.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -19,12 +19,12 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage.h>
@@ -36,7 +36,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
-
 
 namespace CurrentMetrics
 {
@@ -77,6 +76,7 @@ namespace Setting
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_columns_to_read;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
@@ -817,8 +817,7 @@ try
 
     DB::CurrentThread::QueryScope query_scope_holder(insert_context);
 
-    String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
-    UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    auto query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 
     /// We add it to the process list so
     /// a) it appears in system.processes
@@ -826,7 +825,6 @@ try
     /// c) has an associated process list element where runtime metrics are stored
     auto process_list_entry = insert_context->getProcessList().insert(
         query_for_logging,
-        normalized_query_hash,
         key.query.get(),
         insert_context,
         start_watch.getStart());
@@ -920,7 +918,6 @@ try
             query_start_time,
             insert_context,
             query_for_logging,
-            normalized_query_hash,
             key.query,
             pipeline,
             interpreter,
@@ -931,7 +928,7 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
 
         if (async_insert_log)
         {
@@ -964,7 +961,7 @@ try
 
         bool pulling_pipeline = false;
         logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
     };
 
     try

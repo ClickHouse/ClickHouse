@@ -1,7 +1,5 @@
 #include <Interpreters/Context.h>
-#include <Poco/Logger.h>
 #include "Common/Exception.h"
-#include "Common/logger_useful.h"
 #include <Common/TerminalSize.h>
 #include "DisksClient.h"
 #include "ICommand.h"
@@ -12,14 +10,13 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int FILE_DOESNT_EXIST;
 }
 
 
 class CommandCopy final : public ICommand
 {
 public:
-    explicit CommandCopy() : ICommand("CommandCopy")
+    explicit CommandCopy() : ICommand()
     {
         command_name = "copy";
         description = "Recursively copy data from `path-from` to `path-to`";
@@ -46,13 +43,6 @@ public:
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
             if (!disk_to.getDisk()->existsDirectory(target_location))
             {
-                LOG_INFO(
-                    log,
-                    "Copying file from disk '{}', file path '{}' to disk '{}', file path '{}'",
-                    disk_from.getDisk()->getName(),
-                    path_from,
-                    disk_to.getDisk()->getName(),
-                    target_location);
                 disk_from.getDisk()->copyFile(
                     path_from,
                     *disk_to.getDisk(),
@@ -64,14 +54,14 @@ public:
             else
             {
                 throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS, "cannot overwrite directory '{}' with non-directory '{}'", target_location, path_from);
+                    ErrorCodes::BAD_ARGUMENTS, "cannot overwrite directory {} with non-directory {}", target_location, path_from);
             }
         }
         else if (disk_from.getDisk()->existsDirectory(path_from))
         {
             if (!recursive)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--recursive not specified; omitting directory '{}'", path_from);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "--recursive not specified; omitting directory {}", path_from);
             }
             auto target_location = getTargetLocation(path_from, disk_to, path_to);
 
@@ -83,14 +73,6 @@ public:
             {
                 disk_to.getDisk()->createDirectory(target_location);
             }
-            LOG_INFO(
-                log,
-                "Copying directory content from disk '{}', directory path '{}' to disk '{}', directory path '{}'",
-                disk_from.getDisk()->getName(),
-                path_from,
-                disk_to.getDisk()->getName(),
-                target_location);
-
             disk_from.getDisk()->copyDirectoryContent(
                 path_from,
                 disk_to.getDisk(),
@@ -102,7 +84,7 @@ public:
         else
         {
             throw Exception(
-                ErrorCodes::FILE_DOESNT_EXIST,
+                ErrorCodes::BAD_ARGUMENTS,
                 "cannot stat '{}' on disk '{}': No such file or directory",
                 path_from,
                 disk_from.getDisk()->getName());

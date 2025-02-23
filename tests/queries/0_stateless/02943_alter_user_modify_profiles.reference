@@ -19,4 +19,3 @@ CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_b`, INHERIT `pr
 CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_a`, INHERIT `profile_d`
 CREATE SETTINGS PROFILE `test_profile` SETTINGS INHERIT `profile_e`
 CREATE SETTINGS PROFILE `test_profile`
-OK

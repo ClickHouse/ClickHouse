@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 
@@ -156,11 +155,6 @@ void ODBCSource::insertValue(
         default:
             throw Exception(ErrorCodes::UNKNOWN_TYPE, "Unsupported value type");
     }
-}
-
-void ODBCSource::insertDefaultValue(IColumn & column, const IColumn & sample_column)
-{
-    column.insertFrom(sample_column, 0);
 }
 
 }

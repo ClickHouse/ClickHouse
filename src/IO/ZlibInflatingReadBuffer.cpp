@@ -100,9 +100,6 @@ bool ZlibInflatingReadBuffer::nextImpl()
             if (rc != Z_OK)
                 throw Exception(
                     ErrorCodes::ZLIB_INFLATE_FAILED, "inflateReset failed: {}{}", zError(rc), getExceptionEntryWithFileName(*in));
-            if (working_buffer.empty())
-                continue;
-
             return true;
         }
 

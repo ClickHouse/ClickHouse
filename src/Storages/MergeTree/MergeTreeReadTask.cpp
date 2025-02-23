@@ -41,7 +41,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    auto create_reader = [&](const NamesAndTypesList & columns_to_read, bool is_prewhere)
+    auto create_reader = [&](const NamesAndTypesList & columns_to_read)
     {
         return read_info->data_part->getReader(
             columns_to_read,
@@ -50,27 +50,26 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
             extras.mark_cache,
-            is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             read_info->alter_conversions,
             extras.reader_settings,
             extras.value_size_map,
             extras.profile_callback);
     };
 
-    new_readers.main = create_reader(read_info->task_columns.columns, false);
+    new_readers.main = create_reader(read_info->task_columns.columns);
 
     /// Add lightweight delete filtering step
     if (extras.reader_settings.apply_deleted_mask && read_info->data_part->hasLightweightDelete())
-        new_readers.prewhere.push_back(create_reader({{RowExistsColumn::name, RowExistsColumn::type}}, true));
+        new_readers.prewhere.push_back(create_reader({{RowExistsColumn::name, RowExistsColumn::type}}));
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
-        new_readers.prewhere.push_back(create_reader(pre_columns_per_step, true));
+        new_readers.prewhere.push_back(create_reader(pre_columns_per_step));
 
     return new_readers;
 }
 
 MergeTreeReadTask::RangeReaders
-MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
+MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const PrewhereExprInfo & prewhere_actions)
 {
     MergeTreeReadTask::RangeReaders new_range_readers;
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
@@ -82,14 +81,12 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
     MergeTreeRangeReader * prev_reader = nullptr;
     bool last_reader = false;
 
-    size_t step_index = 0;
-
-    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i, ++step_index)
+    for (size_t i = 0; i < prewhere_actions.steps.size(); ++i)
     {
         last_reader = task_readers.main->getColumns().empty() && (i + 1 == prewhere_actions.steps.size());
 
         MergeTreeRangeReader current_reader(
-            task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader, /*main_reader_=*/false, read_steps_performance_counters.getCountersForStep(step_index));
+            task_readers.prewhere[i].get(), prev_reader, prewhere_actions.steps[i].get(), last_reader, /*main_reader_=*/false);
 
         new_range_readers.prewhere.push_back(std::move(current_reader));
         prev_reader = &new_range_readers.prewhere.back();
@@ -97,7 +94,7 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
 
     if (!last_reader)
     {
-        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true, /*main_reader_=*/true, read_steps_performance_counters.getCountersForStep(step_index));
+        new_range_readers.main = MergeTreeRangeReader(task_readers.main.get(), prev_reader, nullptr, true, /*main_reader_=*/true);
     }
     else
     {
@@ -109,12 +106,12 @@ MergeTreeReadTask::createRangeReaders(const Readers & task_readers, const Prewhe
     return new_range_readers;
 }
 
-void MergeTreeReadTask::initializeRangeReaders(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters)
+void MergeTreeReadTask::initializeRangeReaders(const PrewhereExprInfo & prewhere_actions)
 {
     if (range_readers.main.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range reader is already initialized");
 
-    range_readers = createRangeReaders(readers, prewhere_actions, read_steps_performance_counters);
+    range_readers = createRangeReaders(readers, prewhere_actions);
 }
 
 UInt64 MergeTreeReadTask::estimateNumRows() const

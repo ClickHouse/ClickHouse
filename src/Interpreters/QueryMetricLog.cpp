@@ -2,8 +2,6 @@
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/LockGuard.h>
-#include <Common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -216,7 +214,6 @@ void QueryMetricLogStatus::scheduleNext(String query_id)
     if (info.next_collect_time > now)
     {
         const auto wait_time = std::chrono::duration_cast<std::chrono::milliseconds>(info.next_collect_time - now).count();
-        LOG_TEST(logger, "Scheduling next collecting task for query_id {} in {} ms", query_id, wait_time);
         info.task->scheduleAfter(wait_time);
     }
     else
@@ -235,8 +232,7 @@ std::optional<QueryMetricLogElement> QueryMetricLogStatus::createLogMetricElemen
 
     if (query_info_time <= info.last_collect_time)
     {
-        LOG_TEST(logger, "Query {} has a more recent metrics collected at {}. This metrics are from {}. Skipping this one",
-            timePointToString(info.last_collect_time), timePointToString(query_info_time), query_id);
+        LOG_TEST(logger, "Query {} has a more recent metrics collected. Skipping this one", query_id);
         return {};
     }
 

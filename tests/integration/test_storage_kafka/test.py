@@ -29,7 +29,7 @@ from kafka.protocol.group import MemberAssignment
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, is_arm
 from helpers.network import PartitionManager
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV
 
 from . import kafka_pb2, message_with_repeated_pb2, social_pb2
 
@@ -59,6 +59,9 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_zookeeper=True,  # For Replicated Table
+    keeper_required_feature_flags=[
+        "create_if_not_exists"
+    ],  # new Kafka doesn't work without this feature
     macros={
         "kafka_broker": "kafka1",
         "kafka_topic_old": KAFKA_TOPIC_OLD,
@@ -4937,11 +4940,11 @@ def test_block_based_formats_1(kafka_cluster, create_query_generator):
 
         data = []
         for message in messages:
-            split = message.split("\n")
-            assert split[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
-            assert split[1] == ""
-            assert split[-1] == ""
-            data += [line.split() for line in split[2:-1]]
+            splitted = message.split("\n")
+            assert splitted[0] == " \x1b[1mkey\x1b[0m   \x1b[1mvalue\x1b[0m"
+            assert splitted[1] == ""
+            assert splitted[-1] == ""
+            data += [line.split() for line in splitted[2:-1]]
 
         assert data == [
             ["0", "0"],
@@ -5048,13 +5051,10 @@ def test_system_kafka_consumers(kafka_cluster):
 
     result = instance.query("SELECT * FROM test.kafka ORDER BY a;")
 
-    check_query = """
+    result_system_kafka_consumers = instance.query(
+        """
         create or replace function stable_timestamp as
           (d)->multiIf(d==toDateTime('1970-01-01 00:00:00'), 'never', abs(dateDiff('second', d, now())) < 30, 'now', toString(d));
-
-        -- check last_used stores microseconds correctly
-        create or replace function check_last_used as
-          (v) -> if(abs(toStartOfSecond(last_used) - last_used) * 1e6 > 0, 'microseconds', toString(v));
 
         SELECT database, table, length(consumer_id), assignments.topic, assignments.partition_id,
           assignments.current_offset,
@@ -5062,35 +5062,32 @@ def test_system_kafka_consumers(kafka_cluster):
           if(length(exceptions.text)>0, exceptions.text[1], 'no exception') as last_exception_,
           stable_timestamp(last_poll_time) as last_poll_time_, num_messages_read, stable_timestamp(last_commit_time) as last_commit_time_,
           num_commits, stable_timestamp(last_rebalance_time) as last_rebalance_time_,
-          num_rebalance_revocations, num_rebalance_assignments, is_currently_used,
-          check_last_used(last_used) as last_used_,
-          if(toStartOfDay(last_used) == toStartOfDay(last_poll_time), 'equal', toString(last_used)) as last_used_and_last_poll_time
+          num_rebalance_revocations, num_rebalance_assignments, is_currently_used
           FROM system.kafka_consumers WHERE database='test' and table='kafka' format Vertical;
         """
-    assert_eq_with_retry(
-        instance,
-        check_query,
-        """Row 1:
+    )
+    logging.debug(f"result_system_kafka_consumers: {result_system_kafka_consumers}")
+    assert (
+        result_system_kafka_consumers
+        == """Row 1:
 ──────
-database:                     test
-table:                        kafka
-length(consumer_id):          67
-assignments.topic:            ['system_kafka_cons']
-assignments.partition_id:     [0]
-assignments.current_offset:   [4]
-last_exception_time_:         never
-last_exception_:              no exception
-last_poll_time_:              now
-num_messages_read:            4
-last_commit_time_:            now
-num_commits:                  1
-last_rebalance_time_:         never
-num_rebalance_revocations:    0
-num_rebalance_assignments:    1
-is_currently_used:            0
-last_used_:                   microseconds
-last_used_and_last_poll_time: equal
-""",
+database:                   test
+table:                      kafka
+length(consumer_id):        67
+assignments.topic:          ['system_kafka_cons']
+assignments.partition_id:   [0]
+assignments.current_offset: [4]
+last_exception_time_:       never
+last_exception_:            no exception
+last_poll_time_:            now
+num_messages_read:          4
+last_commit_time_:          now
+num_commits:                1
+last_rebalance_time_:       never
+num_rebalance_revocations:  0
+num_rebalance_assignments:  1
+is_currently_used:          0
+"""
     )
 
     instance.query("DROP TABLE test.kafka")
@@ -5279,7 +5276,7 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
     while True:
         result_rdkafka_stat = instance.query(
             """
-            SELECT table, JSONExtractString(rdkafka_stat, 'type') AS value
+            SELECT table, JSONExtractString(rdkafka_stat, 'type')
             FROM system.kafka_consumers WHERE database='test' and table = 'kafka' format Vertical;
             """
         )
@@ -5292,8 +5289,8 @@ def test_system_kafka_consumers_rebalance_mv(kafka_cluster, max_retries=15):
         result_rdkafka_stat
         == """Row 1:
 ──────
-table: kafka
-value: consumer
+table:                                   kafka
+JSONExtractString(rdkafka_stat, 'type'): consumer
 """
     )
 

@@ -60,7 +60,7 @@ std::function<void(const std::string & msg, int code, bool remote, const Excepti
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-static size_t handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
+static void handle_error_code(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
@@ -74,9 +74,8 @@ static size_t handle_error_code(const std::string & msg, int code, bool remote, 
     if (Exception::callback)
         Exception::callback(msg, code, remote, trace);
 
-    return ErrorCodes::increment(code, remote, msg, trace);
+    ErrorCodes::increment(code, remote, msg, trace);
 }
-
 
 Exception::MessageMasked::MessageMasked(const std::string & msg_)
     : msg(msg_)
@@ -99,7 +98,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-    error_index = handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
+    handle_error_code(msg_masked.msg, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
@@ -109,7 +108,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     if (terminate_on_any_exception)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
-    error_index = handle_error_code(message(), code, remote, getStackFramePointers());
+    handle_error_code(message(), code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -138,13 +137,6 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
     __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
     set_stack_trace(stack_trace_frames, stack_trace_size);
 #endif
-}
-
-void Exception::addMessage(const MessageMasked & msg_masked)
-{
-    extendedMessage(msg_masked.msg);
-    if (error_index != static_cast<size_t>(-1))
-        ErrorCodes::extendedMessage(code(), remote, error_index, message());
 }
 
 
@@ -253,12 +245,6 @@ void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
 {
     if (can_use_thread_frame_pointers)
         thread_frame_pointers.frame_pointers = std::move(frame_pointers);
-}
-
-void Exception::clearThreadFramePointers()
-{
-    if (can_use_thread_frame_pointers)
-        thread_frame_pointers.frame_pointers.clear();
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)

@@ -19,7 +19,6 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
-#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
@@ -599,8 +598,8 @@ void ZooKeeper::sendHandshake()
     int64_t last_zxid_seen = 0;
     int32_t timeout = args.session_timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
-    std::string password = args.password;
-    password.resize(Coordination::PASSWORD_LENGTH, '\0');
+    constexpr int32_t passwd_len = 16;
+    std::array<char, passwd_len> passwd {};
     bool read_only = true;
 
     write(handshake_length);
@@ -620,7 +619,7 @@ void ZooKeeper::sendHandshake()
     write(last_zxid_seen);
     write(timeout);
     write(previous_session_id);
-    write(password);
+    write(passwd);
     write(read_only);
     flushWriteBuffer();
 }

@@ -1,9 +1,7 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 
-#include <Processors/Port.h>
-#include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
+#include <Common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -163,7 +161,7 @@ namespace DB
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
                 if (need_flush.exchange(false) || auto_flush)
-                    out.next();
+                    IOutputFormat::flush();
 
                 ++collector_unit_number;
                 rows_collected += unit.rows_num;
@@ -265,7 +263,7 @@ namespace DB
                 }
             }
 
-            /// Flush all the data to the handmade buffer.
+            /// Flush all the data to handmade buffer.
             formatter->flush();
             formatter->finalizeBuffers();
             out_buffer.finalize();

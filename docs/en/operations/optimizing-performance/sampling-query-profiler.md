@@ -36,7 +36,7 @@ In self-managed deployments, to use query profiler:
 
     These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
 
-The default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows collecting enough information about ClickHouse cluster. At the same time, working with this frequency, profiler does not affect ClickHouse server's performance. If you need to profile each individual query try to use higher sampling frequency.
+The default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows collecting enough information about ClickHouse cluster. At the same time, working with this frequency, profiler does not affect ClickHouse server’s performance. If you need to profile each individual query try to use higher sampling frequency.
 
 To analyze the `trace_log` system table:
 

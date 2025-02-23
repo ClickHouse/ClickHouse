@@ -27,12 +27,12 @@ def fill_nodes(nodes, shard):
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/overrides.xml"],
+    main_configs=["configs/remote_servers.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/overrides.xml"], with_zookeeper=True
+    "node2", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
 )
 
 

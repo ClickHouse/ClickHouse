@@ -17,6 +17,8 @@ toc_title: はじめに
 
 - [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
 
+- [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
+
 - [MySQL](../../engines/database-engines/mysql.md)
 
 - [PostgreSQL](../../engines/database-engines/postgresql.md)

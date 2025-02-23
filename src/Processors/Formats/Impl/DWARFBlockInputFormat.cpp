@@ -646,18 +646,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // If the offset is relative to the current unit, we convert it to be relative to the .debug_info
                         // section start. This seems more convenient for the user (e.g. for JOINs), but it's
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
-                        if (need[COL_ATTR_INT])
-                        {
-                            uint64_t ref;
-                            if (std::optional<uint64_t> offset = val.getAsRelativeReference())
-                                ref = val.getUnit()->getOffset() + *offset;
-                            else if (offset = val.getAsDebugInfoReference(); offset)
-                                ref = *offset;
-                            else
-                                ref = 0;
-
-                            col_attr_int->insertValue(ref);
-                        }
+                        if (need[COL_ATTR_INT]) col_attr_int->insertValue(val.getAsReference().value_or(0));
                         if (need[COL_ATTR_STR]) col_attr_str->insertDefault();
                         break;
 
@@ -848,7 +837,7 @@ void DWARFBlockInputFormat::parseRanges(
     uint64_t offset, bool form_rnglistx, const UnitState & unit, const ColumnVector<UInt64>::MutablePtr & col_ranges_start,
     const ColumnVector<UInt64>::MutablePtr & col_ranges_end) const
 {
-    std::optional<llvm::object::SectionedAddress> base_addr;
+    llvm::Optional<llvm::object::SectionedAddress> base_addr;
     if (unit.base_address != UINT64_MAX)
         base_addr = llvm::object::SectionedAddress{.Address = unit.base_address};
 
@@ -893,7 +882,7 @@ void DWARFBlockInputFormat::parseRanges(
         if (err)
             throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Error parsing .debug_rnglists list: {}", llvm::toString(std::move(err)));
 
-        auto lookup_addr = [&](uint32_t idx) -> std::optional<llvm::object::SectionedAddress>
+        auto lookup_addr = [&](uint32_t idx) -> llvm::Optional<llvm::object::SectionedAddress>
             {
                 uint64_t addr = fetchFromDebugAddr(unit.debug_addr_base, idx);
                 return llvm::object::SectionedAddress{.Address = addr};

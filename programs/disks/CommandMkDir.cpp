@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -10,7 +9,7 @@ namespace DB
 class CommandMkDir final : public ICommand
 {
 public:
-    CommandMkDir() : ICommand("CommandMkDir")
+    CommandMkDir()
     {
         command_name = "mkdir";
         description = "Creates a directory";
@@ -27,15 +26,9 @@ public:
         String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
 
         if (recursive)
-        {
-            LOG_INFO(log, "Creating directory '{}' on disk '{}' recursively", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectories(path);
-        }
         else
-        {
-            LOG_INFO(log, "Creating directory '{}' on disk '{}'", path, disk.getDisk()->getName());
             disk.getDisk()->createDirectory(path);
-        }
     }
 };
 

@@ -29,8 +29,8 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 
 **Related statements**
 
-- [CREATE NAMED COLLECTION](/docs/en/sql-reference/statements/alter/named-collection)
-- [DROP NAMED COLLECTION](/docs/en/sql-reference/statements/drop#drop-function)
+- [CREATE NAMED COLLECTION](https://clickhouse.com/docs/en/sql-reference/statements/alter/named-collection)
+- [DROP NAMED COLLECTION](https://clickhouse.com/docs/en/sql-reference/statements/drop#drop-function)
 
 
 **See Also**

@@ -28,7 +28,7 @@ A table object with a single column containing perturbed query strings.
 SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2;
 ```
 
-```sql
+```
    ┌─query──────────────────────────────────────────────────────────┐
 1. │ SELECT 'a' AS key GROUP BY key                                 │
 2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │

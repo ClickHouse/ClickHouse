@@ -2,7 +2,7 @@
 ROOT_PATH=$(git rev-parse --show-toplevel)
 NPROC=$(($(nproc) + 3))
 # Check sh tests with Shellcheck
-find "$ROOT_PATH/tests/queries/0_stateless" -name '*.sh' -print0 | \
+find "$ROOT_PATH/tests/queries/"{0_stateless,1_stateful} -name '*.sh' -print0 | \
   xargs -0 -P "$NPROC" -n 20 shellcheck --check-sourced --external-sources --source-path=SCRIPTDIR \
   --severity info --exclude SC1071,SC2086,SC2016
 

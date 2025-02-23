@@ -17,12 +17,12 @@ You can run a basic ClickHouse performance test on any server without installati
 You can run the benchmark with a single script.
 
 1. Download the script.
-```bash
+```
 wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
 ```
 
 2. Run the script.
-```bash
+```
 chmod a+x ./hardware.sh
 ./hardware.sh
 ```

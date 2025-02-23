@@ -734,11 +734,11 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 ```
 
 Referring to a nested values by passing multiple indices_or_keys parameters:
-```sql
+```
 SELECT JSONExtract('{"a":{"b":"hello","c":{"d":[1,2,3],"e":[1,3,7]}}}','a','c','Map(String, Array(UInt8))') AS val, toTypeName(val), val['d'];
 ```
 Result:
-```text
+```
 ┌─val───────────────────────┬─toTypeName(val)───────────┬─arrayElement(val, 'd')─┐
 │ {'d':[1,2,3],'e':[1,3,7]} │ Map(String, Array(UInt8)) │ [1,2,3]                │
 └───────────────────────────┴───────────────────────────┴────────────────────────┘
@@ -805,7 +805,8 @@ SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
 
 Result:
 
-```response
+```
+text
 ┌─JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}')─┐
 │ ['a','b']                                                  │
 └────────────────────────────────────────────────────────────┘
@@ -843,7 +844,7 @@ SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 
 
 ### JSONExtractArrayRaw
 
-Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn't an array, then an empty array will be returned.
+Returns an array with elements of JSON array, each represented as unparsed string. If the part does not exist or isn’t an array, then an empty array will be returned.
 
 **Syntax**
 

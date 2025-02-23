@@ -37,7 +37,7 @@ ORDER BY a
 INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
 ```
 
-If you want to insert data into all of the columns, except column `b`, you can do so using the `EXCEPT` keyword. With reference to the syntax above, you will need to ensure that you insert as many values (`VALUES (v11, v13)`) as you specify columns (`(c1, c3)`) :
+If you want to insert data in all the columns, except 'b', you need to pass so many values how many columns you chose in parenthesis then:
 
 ``` sql
 INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
@@ -47,7 +47,7 @@ INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
 SELECT * FROM insert_select_testtable;
 ```
 
-```text
+```
 ┌─a─┬─b─┬─c─┐
 │ 2 │   │ 2 │
 └───┴───┴───┘
@@ -56,7 +56,7 @@ SELECT * FROM insert_select_testtable;
 └───┴───┴───┘
 ```
 
-In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default. It is also possible to use the `DEFAULT` keyword to insert default values:
+In this example, we see that the second inserted row has `a` and `c` columns filled by the passed values, and `b` filled with value by default. It is also possible to use `DEFAULT` keyword to insert default values:
 
 ``` sql
 INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
@@ -67,19 +67,19 @@ If a list of columns does not include all existing columns, the rest of the colu
 - The values calculated from the `DEFAULT` expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-Data can be passed to the INSERT in any [format](/docs/en/interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
+Data can be passed to the INSERT in any [format](../../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
-For example, the following query format is identical to the basic version of `INSERT ... VALUES`:
+For example, the following query format is identical to the basic version of INSERT ... VALUES:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-ClickHouse removes all spaces and one line feed (if there is one) before the data. When forming a query, we recommend putting the data on a new line after the query operators which is important if the data begins with spaces.
+ClickHouse removes all spaces and one line feed (if there is one) before the data. When forming a query, we recommend putting the data on a new line after the query operators (this is important if the data begins with spaces).
 
 Example:
 
@@ -92,8 +92,7 @@ INSERT INTO t FORMAT TabSeparated
 You can insert data separately from the query by using the [command-line client](/docs/en/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/en/interfaces/http/).
 
 :::note
-If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ the `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
-
+If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
 ```sql
 INSERT INTO table SETTINGS ... FORMAT format_name data_set
 ```
@@ -101,7 +100,7 @@ INSERT INTO table SETTINGS ... FORMAT format_name data_set
 
 ## Constraints
 
-If a table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — the server will raise an exception containing the constraint name and expression, and the query will be stopped.
+If table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
 ## Inserting the Results of SELECT
 
@@ -111,18 +110,18 @@ If a table has [constraints](../../sql-reference/statements/create/table.md#cons
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
-Columns are mapped according to their position in the `SELECT` clause. However, their names in the `SELECT` expression and the table for `INSERT` may differ. If necessary, type casting is performed.
+Columns are mapped according to their position in the SELECT clause. However, their names in the SELECT expression and the table for INSERT may differ. If necessary, type casting is performed.
 
-None of the data formats except the Values format allow setting values to expressions such as `now()`, `1 + 2`, and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
+None of the data formats except Values allow setting values to expressions such as `now()`, `1 + 2`, and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
-The `FORMAT` clause must be specified at the end of the query if the `SELECT` clause contains the table function [input()](../../sql-reference/table-functions/input.md).
+`FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
-To insert a default value instead of `NULL` into a column with a non-nullable data type, enable the [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
+To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
 
-`INSERT` also supports CTE (common table expression). For example, the following two statements are equivalent:
+`INSERT` also supports CTE(common table expression). For example, the following two statements are equivalent:
 
 ``` sql
 INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
@@ -147,7 +146,6 @@ This functionality is available in the [command-line client](../../interfaces/cl
 **Examples**
 
 ### Single file with FROM INFILE
-
 Execute the following queries using [command-line client](../../interfaces/cli.md):
 
 ```bash
@@ -168,7 +166,7 @@ Result:
 
 ### Multiple files with FROM INFILE using globs
 
-This example is very similar to the previous one but inserts are performed from multiple files using `FROM INFILE 'input_*.csv`.
+This example is very similar to the previous one but inserts from multiple files using `FROM INFILE 'input_*.csv`.
 
 ```bash
 echo 1,A > input_1.csv ; echo 2,B > input_2.csv
@@ -178,8 +176,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
 ```
 
 :::tip
-In addition to selecting multiple files with `*`, you can use ranges (`{1,2}` or `{1..9}`) and other [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path). These three all would work with the example above:
-
+In addition to selecting multiple files with `*`, you can use ranges (`{1,2}` or `{1..9}`) and other [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path). These three all would work with the above example:
 ```sql
 INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
 INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
@@ -192,14 +189,13 @@ INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).
 
 **Syntax**
-
 ``` sql
 INSERT INTO [TABLE] FUNCTION table_func ...
 ```
 
 **Example**
 
-The [remote](../../sql-reference/table-functions/index.md#remote) table function is used in the following queries:
+[remote](../../sql-reference/table-functions/index.md#remote) table function is used in the following queries:
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
@@ -222,7 +218,7 @@ By default, services on ClickHouse Cloud provide multiple replicas for high avai
 
 After an `INSERT` succeeds, data is written to the underlying storage. However, it may take some time for replicas to receive these updates. Therefore, if you use a different connection that executes a `SELECT` query on one of these other replicas, the updated data may not yet be reflected.
 
-It is possible to use the `select_sequential_consistency` to force the replica to receive the latest updates. Here is an example of a `SELECT` query using this setting:
+It is possible to use the `select_sequential_consistency` to force the replica to receive the latest updates. Here is an example of a SELECT query using this setting:
 
 ```sql
 SELECT .... SETTINGS select_sequential_consistency = 1;

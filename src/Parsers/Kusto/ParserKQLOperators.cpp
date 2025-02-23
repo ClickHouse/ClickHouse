@@ -269,11 +269,7 @@ std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, co
 String KQLOperators::genHaystackOpExpr(
     std::vector<String> & tokens, IParser::Pos & token_pos, String kql_op, String ch_op, WildcardsPos wildcards_pos, WildcardsPos space_pos)
 {
-    String new_expr;
-    String left_wildcards;
-    String right_wildcards;
-    String left_space;
-    String right_space;
+    String new_expr, left_wildcards, right_wildcards, left_space, right_space;
 
     switch (wildcards_pos)
     {

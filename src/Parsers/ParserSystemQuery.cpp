@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -632,47 +632,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             res->server_type = ServerType(base_type, base_custom_name, exclude_type, exclude_custom_names);
-
-            break;
-        }
-
-        case Type::FLUSH_LOGS:
-        {
-            Pos prev_token = pos;
-            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
-            {
-                pos = prev_token;
-                if (!parseQueryWithOnCluster(res, pos, expected))
-                    return false;
-            }
-
-            ParserToken s_dot(TokenType::Dot);
-            ParserIdentifier table_parser(true);
-
-
-            do
-            {
-                ASTPtr table_first;
-                if (!table_parser.parse(pos, table_first, expected))
-                {
-                    if (res->logs.empty())
-                        break;
-                    return false;
-                }
-
-                if (!s_dot.ignore(pos))
-                    res->logs.emplace_back(table_first->as<ASTIdentifier &>().full_name);
-                else
-                {
-                    ASTPtr table_second;
-                    if (!table_parser.parse(pos, table_second, expected))
-                        return false;
-                    res->logs.emplace_back(
-                        fmt::format("{}.{}", table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name));
-                }
-
-
-            } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
             break;
         }
