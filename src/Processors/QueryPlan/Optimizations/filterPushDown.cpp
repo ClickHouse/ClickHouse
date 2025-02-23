@@ -209,12 +209,15 @@ static void buildEquialentSetsForJoinStepLogical(
 
     for (const auto & predicate : join_info.expression.condition.predicates)
     {
+        auto left_column = predicate.left_node.getColumn();
+        auto right_column = predicate.right_node.getColumn();
+
         if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
             continue;
-        if (!predicate.left_node.node->result_type->equals(*predicate.right_node.node->result_type))
+        if (!left_column.type->equals(*right_column.type))
             continue;
-        equivalent_left_column[predicate.left_node.column_name] = predicate.right_node.getColumn();
-        equivalent_right_column[predicate.right_node.column_name] = predicate.left_node.getColumn();
+        equivalent_left_column[left_column.name] = right_column;
+        equivalent_right_column[right_column.name] = left_column;
     }
 }
 
@@ -443,6 +446,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
     auto * filter = typeid_cast<FilterStep *>(parent.get());
 
     if (!filter)
