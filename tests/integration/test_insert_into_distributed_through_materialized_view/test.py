@@ -107,7 +107,7 @@ def test_reconnect(started_cluster):
         time.sleep(1)
 
         assert remote.query("SELECT count(*) FROM local1").strip() == "3"
-        instance.query("TRUNCATE local1 SYNC")
+        remote.query("TRUNCATE local1 SYNC")
 
 
 def test_inserts_local(started_cluster):
