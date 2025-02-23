@@ -1324,6 +1324,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
