@@ -346,7 +346,6 @@ private:
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;
-    MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
     const PrewhereExprStep * prewhere_info;
 
     Stream stream;
