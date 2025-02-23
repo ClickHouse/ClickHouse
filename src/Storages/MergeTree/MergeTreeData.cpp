@@ -2224,8 +2224,12 @@ void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
     has_lightweight_delete_parts = have_lightweight_in_parts;
     transactions_enabled = have_parts_with_version_metadata;
 
+    auto old_parts = grabOldParts(true);
+
     watch.stop();
-    LOG_DEBUG(log, "Refreshing data parts (added {} items) took {} seconds", parts_to_add.size(), watch.elapsedSeconds());
+    LOG_DEBUG(log, "Refreshing data parts (added {} items, removed {} items) took {} seconds",
+        parts_to_add.size(), old_parts.size(), watch.elapsedSeconds());
+
     ProfileEvents::increment(ProfileEvents::LoadedDataParts, parts_to_add.size());
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 
