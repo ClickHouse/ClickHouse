@@ -24,47 +24,62 @@ extern const int ILLEGAL_COLUMN;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static constexpr float f32FromSfP8(uint32_t sfp)
+static constexpr float Float4ToFloat32(uint8_t f4)
 {
-    const uint32_t masked_sfp = sfp & 0x7F;
-    if (masked_sfp == 0)
+    uint8_t sign = f4 >> 3;
+    uint8_t code = f4 & 0x7;
+
+    float value = 0.0f;
+    if (code == 0)
     {
-        return 0.0f;
+        value = 0.0f;
     }
-    const uint32_t sign32 = (sfp & 0x80) << 24;
-    const uint32_t large_e = masked_sfp >> 6;
-    const uint32_t m_bits = 2 + large_e;
-    const uint32_t m = masked_sfp & ((1u << m_bits) - 1u);
-    const uint32_t e = masked_sfp >> m_bits;
-    const uint32_t exp32 = (104 + e + 8 * large_e) << 23;
-    const uint32_t m_shift = 21 - large_e;
-    const uint32_t mnt32 = m << m_shift;
-    const uint32_t binary32 = sign32 | exp32 | mnt32;
-    return std::bit_cast<float>(binary32);
+    else
+    {
+        // In the FLOAT4 E2M1 format:
+        // The two exponent bits are the upper two bits of the code.
+        // The remaining bit is the mantissa bit.
+        uint8_t exp_bits = code >> 1; // 2-bit exponent field
+        uint8_t mant = code & 0x1; // 1-bit mantissa
+
+        // When exp_bits is zero, the format is subnormal:
+        //    value = mant * 2^(-1)
+        // Otherwise, it is normalized:
+        //    value = 2^(exp_bits - 1) * (1 + mant * 0.5)
+        if (exp_bits == 0)
+        {
+            value = mant * 0.5f;
+        }
+        else
+        {
+            value = (1.0f + 0.5f * mant) * static_cast<float>(1 << (exp_bits - 1));
+        }
+    }
+    return sign ? -value : value;
 }
 
-struct Lookup8Bit
+struct Lookup4Bit
 {
-    static constexpr std::array<float, 256> dequantize_lookup alignas(64) = []() constexpr
+    static constexpr std::array<float, 16> dequantize_lookup alignas(64) = []() constexpr
     {
-        std::array<float, 256> table{};
-        for (size_t i = 0; i < 256; ++i)
-            table[i] = f32FromSfP8(static_cast<uint32_t>(i));
+        std::array<float, 16> table{};
+        for (size_t i = 0; i < 16; ++i)
+            table[i] = Float4ToFloat32(static_cast<uint32_t>(i));
         return table;
     }();
 };
 
 DECLARE_MULTITARGET_CODE(
 
-    struct Dequantize8BitImpl { static void execute(const UInt8 * input, float * output, size_t size); };
+    struct Dequantize4BitImpl { static void execute(const UInt8 * input, float * output, size_t size); };
 
 )
 
-template <typename Dequantize8BitImpl>
-class FunctionDequantize8BitImpl : public IFunction
+template <typename Dequantize4BitImpl>
+class FunctionDequantize4BitImpl : public IFunction
 {
 public:
-    static constexpr auto name = "dequantize8Bit";
+    static constexpr auto name = "dequantize4Bit";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -115,7 +130,7 @@ public:
             result_data.resize(array_size);
 
             const auto & fixed_string_data = col_fixed_string->getChars();
-            Dequantize8BitImpl::execute(fixed_string_data.data(), result_data.data(), array_size);
+            Dequantize4BitImpl::execute(fixed_string_data.data(), result_data.data(), array_size);
 
             auto offsets_column = ColumnUInt64::create();
             offsets_column->insert(array_size);
@@ -136,7 +151,7 @@ public:
             size_t offset_in_src = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Dequantize8BitImpl::execute(fixed_string_data.data() + offset_in_src, result_data.data() + i * array_size, array_size);
+                Dequantize4BitImpl::execute(fixed_string_data.data() + offset_in_src, result_data.data() + i * array_size, array_size);
                 offset_in_src += fixed_string_length;
                 result_offsets[i] = (i + 1) * array_size;
             }
@@ -146,12 +161,12 @@ public:
     }
 };
 
-class FunctionDequantize8Bit : public FunctionDequantize8BitImpl<TargetSpecific::Default::Dequantize8BitImpl>
+class FunctionDequantize4Bit : public FunctionDequantize4BitImpl<TargetSpecific::Default::Dequantize4BitImpl>
 {
 public:
-    explicit FunctionDequantize8Bit(ContextPtr context) : selector(context)
+    explicit FunctionDequantize4Bit(ContextPtr context) : selector(context)
     {
-        selector.registerImplementation<TargetArch::Default, FunctionDequantize8BitImpl<TargetSpecific::Default::Dequantize8BitImpl>>();
+        selector.registerImplementation<TargetArch::Default, FunctionDequantize4BitImpl<TargetSpecific::Default::Dequantize4BitImpl>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -159,7 +174,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDequantize8Bit>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionDequantize4Bit>(context); }
 
 private:
     ImplementationSelector<IFunction> selector;

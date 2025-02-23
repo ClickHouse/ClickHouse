@@ -7,6 +7,7 @@
 #include "Columns/ColumnFixedString.h"
 #include "DataTypes/DataTypeFixedString.h"
 #include "Functions/FunctionDequantize16Bit.h"
+#include "Functions/FunctionDequantize4Bit.h"
 #include "Functions/FunctionDequantize8Bit.h"
 #include "base/types.h"
 
@@ -21,81 +22,12 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
-struct L2Distance16Bit
-{
-    template <typename FloatType>
-    struct State
-    {
-        FloatType sum{};
-    };
-
-    template <typename ResultType>
-    static void accumulate(State<ResultType> & state, UInt16 x, UInt16 y)
-    {
-        auto diff = Lookup16Bit::dequantize_lookup[x] - Lookup16Bit::dequantize_lookup[y];
-        state.sum += diff * diff;
-    }
-
-    template <typename ResultType>
-    static void combine(State<ResultType> & state, const State<ResultType> & other_state)
-    {
-        state.sum += other_state.sum;
-    }
-
-    template <typename ResultType>
-    static ResultType finalize(const State<ResultType> & state)
-    {
-        return sqrt(state.sum);
-    }
-};
-
-struct L2Distance8Bit
-{
-    static constexpr std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
-    {
-        std::array<float, 256 * 256> table{};
-        for (int i = 0; i < 256; ++i)
-        {
-            for (int j = 0; j < 256; ++j)
-            {
-                float diff = Lookup8Bit::dequantize_lookup[i] - Lookup8Bit::dequantize_lookup[j];
-                table[i * 256 + j] = diff * diff;
-            }
-        }
-        return table;
-    }();
-
-    template <typename FloatType>
-    struct State
-    {
-        FloatType sum{};
-    };
-
-    template <typename ResultType>
-    static void accumulate(State<ResultType> & state, UInt8 x, UInt8 y)
-    {
-        state.sum += distance_lookup[(static_cast<size_t>(x) << 8) | y];
-    }
-
-    template <typename ResultType>
-    static void combine(State<ResultType> & state, const State<ResultType> & other_state)
-    {
-        state.sum += other_state.sum;
-    }
-
-    template <typename ResultType>
-    static ResultType finalize(const State<ResultType> & state)
-    {
-        return sqrt(state.sum);
-    }
-};
-
-template <typename Kernel, typename T, const char * function_name>
+template <typename Kernel, const char * function_name>
 class FunctionQuantizedL2Distance : public IFunction
 {
 public:
     static constexpr auto name = function_name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedL2Distance<Kernel, T, function_name>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedL2Distance<Kernel, function_name>>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -112,6 +44,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
+    using T = typename Kernel::ValueType;
+
     ColumnPtr executeWithResultTypeAndLeftTypeAndRightType(
         ColumnPtr col_x, ColumnPtr col_y, size_t input_rows_count, const ColumnsWithTypeAndName & arguments) const
     {
