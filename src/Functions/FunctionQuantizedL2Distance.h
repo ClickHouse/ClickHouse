@@ -6,9 +6,7 @@
 #include <Functions/IFunction.h>
 #include "Columns/ColumnFixedString.h"
 #include "DataTypes/DataTypeFixedString.h"
-#include "Functions/FunctionDequantize16Bit.h"
-#include "Functions/FunctionDequantize4Bit.h"
-#include "Functions/FunctionDequantize8Bit.h"
+#include "DataTypes/DataTypesNumber.h"
 #include "base/types.h"
 
 namespace DB

@@ -1,4 +1,5 @@
 #include "FunctionQuantizedL2Distance.h"
+#include "Functions/FunctionDequantize.h"
 #include "base/types.h"
 
 namespace DB

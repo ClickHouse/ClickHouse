@@ -24,20 +24,11 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_COLUMN;
 }
 
-DECLARE_MULTITARGET_CODE(
-
-    struct Quantize1BitImpl {
-        template <typename FloatType>
-        static void execute(const FloatType * input, UInt8 * output, size_t size);
-    };
-
-)
-
-template <typename Quantize1BitImpl>
-class FunctionQuantize1BitImpl : public IFunction
+template <typename Traits, typename QuantizeImpl>
+class FunctionQuantizeBase : public IFunction
 {
 public:
-    static constexpr auto name = "quantize1Bit";
+    static constexpr auto name = Traits::name;
 
     String getName() const override { return name; }
 
@@ -48,6 +39,8 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizeBase>(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -91,7 +84,7 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays must have the same size");
         }
 
-        size_t fixed_string_length = array_size;
+        size_t fixed_string_length = array_size * Traits::multiplier;
         auto result_column = ColumnFixedString::create(fixed_string_length);
         auto & result_chars = result_column->getChars();
         result_chars.resize_fill(input_rows_count * fixed_string_length);
@@ -107,17 +100,17 @@ public:
             size_t offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Quantize1BitImpl::execute(
+                QuantizeImpl::execute(
                     col_float32->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
                 offset += array_size;
             }
         }
-        else if (const auto * col_float64 = checkAndGetColumn<ColumnFloat32>(&array_data))
+        else if (const auto * col_float64 = checkAndGetColumn<ColumnFloat64>(&array_data))
         {
             size_t offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Quantize1BitImpl::execute(
+                QuantizeImpl::execute(
                     col_float64->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
                 offset += array_size;
             }
@@ -127,25 +120,6 @@ public:
 
         return result_column;
     }
-};
-
-class FunctionQuantize1Bit : public FunctionQuantize1BitImpl<TargetSpecific::Default::Quantize1BitImpl>
-{
-public:
-    explicit FunctionQuantize1Bit(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default, FunctionQuantize1BitImpl<TargetSpecific::Default::Quantize1BitImpl>>();
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionQuantize1Bit>(context); }
-
-private:
-    ImplementationSelector<IFunction> selector;
 };
 
 } // namespace DB
