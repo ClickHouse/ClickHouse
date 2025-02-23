@@ -1,15 +1,14 @@
 #pragma once
 #include <Processors/IAccumulatingTransform.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Core/Block.h>
-#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
-
-#include <Common/DateLUT.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 
 namespace DB
 {
+
+class Block;
 
 class TTLCalcTransform : public IAccumulatingTransform
 {

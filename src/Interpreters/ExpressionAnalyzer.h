@@ -6,7 +6,6 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/ArrayJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>

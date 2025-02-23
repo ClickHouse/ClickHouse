@@ -1,6 +1,6 @@
 ---
 title : Markdown
-slug : /en/interfaces/formats/Markdown
+slug: /interfaces/formats/Markdown
 keywords : [Markdown]
 ---
 

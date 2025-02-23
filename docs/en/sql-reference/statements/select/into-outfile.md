@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/into-outfile
+slug: /sql-reference/statements/select/into-outfile
 sidebar_label: INTO OUTFILE
 ---
 

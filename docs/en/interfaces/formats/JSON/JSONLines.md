@@ -1,6 +1,6 @@
 ---
 title : JSONLines
-slug : /en/interfaces/formats/JSONLines
+slug: /interfaces/formats/JSONLines
 keywords : [JSONLines]
 ---
 

@@ -29,6 +29,10 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
             --header-background-color: #f4f4f4;
+            --link-color: blue;
+            --link-hover-color: darkblue;
+            --file-link-color: blue;
+            --file-link-hover-color: darkblue;
         }
 
         body.night-theme {
@@ -39,31 +43,25 @@
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
             --table-border-color: #444;
+            --link-color: #ffea00;
+            --link-hover-color: #ffaa00;
+            --file-link-color: #007efc;
+            --file-link-hover-color: #004d9a;
         }
 
-        /* Default (Day Theme) - No Change */
-        a {
-            color: blue;
+        .name-column a {
+            color: var(--link-color);
             text-decoration: none;
         }
 
-        a:hover {
-            color: darkblue;
-        }
-
-        /* Dark Theme - Only Changes Link Colors */
-        body.night-theme a {
-            color: #ffea00; /* Yellow for better contrast */
-        }
-
-        body.night-theme a:hover {
-            color: #ffaa00; /* Slightly darker yellow */
+        .name-column a:hover {
+            color: var(--link-hover-color);
         }
 
         #status-container {
             position: fixed;
             top: 0;
-            bottom: 0;
+            bottom: 40px;
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
@@ -72,30 +70,21 @@
             font-size: 18px;
             margin: 0;
             overflow-y: auto;
-            margin-bottom: 50px;
         }
-
-        #status-container a {
-            color: #007bff;
-            text-decoration: underline;
+        .file-link {
+            color: var(--file-link-color);
             font-weight: bold;
-            cursor: pointer;
-            display: inline-block;
-            margin-top: 5px;
-            margin-left: 10px;
-            padding: 2px 0;
             font-size: 0.7em;
             font-family: 'Roboto Condensed', sans-serif;
             font-stretch: ultra-condensed;
-
-            max-width: 270px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 5px;
+            text-decoration: none;
         }
 
-        #status-container a:hover {
-            color: #0056b3;
+        .file-link:hover {
+            color: var(--file-link-hover-color);
             text-decoration: none;
         }
 
@@ -113,6 +102,20 @@
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
+        }
+        .external-link {
+            color: var(--file-link-color);
+            font-size: 18px;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 5px;
+            text-decoration: none;
+        }
+
+        .external-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: underline;
         }
         .json-value-small {
             font-weight: normal;
@@ -135,8 +138,8 @@
             background-color: var(--tile-background);
             position: fixed;
             top: 0;
-            bottom: 50px;
-            left: calc(var(--status-width) + 20px); /* Align with status container */
+            bottom: 40px;
+            left: calc(var(--status-width) + 10px); /* Align with status container */
             right: 0; /* Stretch to the right edge */
 
             padding: 0;
@@ -148,6 +151,12 @@
             white-space: nowrap;
         }
 
+        .info-text {
+            white-space: normal; /* Allow text to wrap */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%; /* Prevent overflow */
+        }
         #info-content {
             text-align: left;
             padding: 10px;
@@ -155,7 +164,7 @@
         }
 
         #footer {
-            padding: 10px;
+            padding: 5px;
             position: fixed;
             bottom: 0;
             left: 0;
@@ -177,7 +186,6 @@
             flex-grow: 1; /* Takes up all the available space */
         }
 
-        /* make some space around '/' in the navigation line */
         #footer .left span.separator {
             margin-left: 5px;
             margin-right: 5px;
@@ -216,28 +224,6 @@
             text-decoration: underline;
         }
 
-        #links {
-            margin-top: 10px;
-            padding: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #f9f9f9;
-        }
-
-        #links a {
-            display: block;
-            margin-bottom: 5px;
-            padding: 5px 10px;
-            background-color: #D5D5D5;
-            color: black;
-            text-decoration: none;
-            border-radius: 5px;
-        }
-
-        #links a:hover {
-            background-color: #D5D5D5;
-        }
-
         table {
             table-layout: auto;
             width: auto;
@@ -245,11 +231,11 @@
         }
 
         th.name-column, td.name-column {
-            min-width: 350px;
+            width: auto;
         }
 
         th.status-column, td.status-column {
-            width: auto;
+            width: 80px;
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide the overflowed text */
         }
@@ -401,7 +387,7 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null) {
+    function addKeyValueToStatus(key, value, options = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -437,14 +423,19 @@
                 updateUrlParameter(key, selectedValue);
             });
         } else {
-            // Create a simple text display if no options are provided
-            valueElement = document.createElement('div');
-            if (key !== "") {
-                valueElement.className = "json-value";
+            if (link) {
+                // Create clickable link if `link` is provided
+                valueElement = document.createElement('a');
+                valueElement.href = link;
+                valueElement.className = "external-link";
+                valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
+                valueElement.target = "_blank"; // Open in a new tab
             } else {
-                valueElement.className = "json-value-small";
+                // Create a simple text display if no options or link are provided
+                valueElement = document.createElement('div');
+                valueElement.className = key !== "" ? "json-value" : "json-value-small";
+                valueElement.textContent = value || 'N/A';
             }
-            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
         }
 
         keyValuePair.appendChild(keyElement);
@@ -487,6 +478,7 @@
                     const {PR, sha} = getPRandShaFromLink(link)
                     textLink.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
                 }
+                textLink.classList.add("file-link")
 
                 textLink.target = '_blank';
                 statusContainer.appendChild(textLink);
@@ -703,7 +695,7 @@
     const columnSymbols = {
         // name: '🗂️',
         // status: '✅',
-        start_time: 'ts',
+        start_time: 'start',
         duration: 'dur',
         // info: '📝',
         files: '📎'
@@ -1020,7 +1012,7 @@
         }
         // Status and info
         if (PR > 0) {
-            addKeyValueToStatus("PR", PR);
+            addKeyValueToStatus("PR", PR, null, runtimeCache.prLink);
         }
         let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
         addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
@@ -1106,6 +1098,22 @@
         checkForUpdates();
     }
 
+    function updatePageTitle(PR, REF, sha, nameParams) {
+        let title = "";
+        if (Array.isArray(nameParams) && nameParams.length > 0) {
+            title += ` ${nameParams[0]}`;
+        }
+        if (Array.isArray(nameParams) && nameParams.length > 1) {
+            title += `/${nameParams[1]}`;
+        }
+        if (PR > 0) {
+            title += `, PR#${PR}`;
+        } else {
+            title += `, sha#${sha.substring(0, 8)}`;
+        }
+        document.title = title.trim();
+    }
+
     async function init() {
         const urlParams = new URLSearchParams(window.location.search);
         const PR = urlParams.get('PR');
@@ -1123,6 +1131,7 @@
         await fetchData(PR, REF, sha, nameParams);
         await renderResults(PR, sha, nameParams);
         renderFooter(nameParams)
+        updatePageTitle(PR, REF, sha, nameParams)
 
         if (runtimeCache.json0?.status === "running" || runtimeCache.json0?.status === "pending") {
             console.log("autoreload started")

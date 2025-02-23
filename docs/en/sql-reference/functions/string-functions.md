@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/string-functions
+slug: /sql-reference/functions/string-functions
 sidebar_position: 170
 sidebar_label: Strings
 ---
@@ -493,6 +493,46 @@ Result:
 ┌─rightPadUTF8('абвг', 7, '*')─┬─rightPadUTF8('абвг', 7)─┐
 │ абвг***                      │ абвг                    │
 └──────────────────────────────┴─────────────────────────┘
+```
+
+## compareSubstrings
+
+Compare two strings lexicographically.
+
+**Syntax**
+
+```sql
+compareSubstrings(string1, string2, string1_offset, string2_offset, num_bytes);
+```
+
+**Arguments**
+
+- `string1` — The first string to compare. [String](../data-types/string.md)
+- `string2` - The second string to compare.[String](../data-types/string.md)
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. [UInt*](../data-types/int-uint.md).
+
+**Returned value**
+
+- -1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] < `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- 0 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] = `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- 1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] > `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+
+**Example**
+
+Query:
+
+```sql
+SELECT compareSubstrings('Saxony', 'Anglo-Saxon', 0, 6, 5) AS result,
+```
+
+Result:
+
+```result
+┌─result─┐
+│      0 │
+└────────┘
 ```
 
 ## lower
@@ -1036,7 +1076,7 @@ SELECT substringIndex('www.clickhouse.com', '.', 2)
 ```
 
 Result:
-```
+```sql
 ┌─substringIndex('www.clickhouse.com', '.', 2)─┐
 │ www.clickhouse                               │
 └──────────────────────────────────────────────┘
@@ -1616,146 +1656,6 @@ The result type is UInt32.
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
-
-## normalizeQuery
-
-Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with placeholder `?`.
-
-**Syntax**
-
-``` sql
-normalizeQuery(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Sequence of characters with placeholders. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('[1, 2, 3, x]') AS query;
-```
-
-Result:
-
-```result
-┌─query────┐
-│ [?.., x] │
-└──────────┘
-```
-
-## normalizeQueryKeepNames
-
-Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs). This helps better analyze complex query logs.
-
-**Syntax**
-
-``` sql
-normalizeQueryKeepNames(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Sequence of characters with placeholders. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
-```
-
-Result:
-
-```result
-┌─normalizeQuery('SELECT 1 AS aComplexName123')─┬─normalizeQueryKeepNames('SELECT 1 AS aComplexName123')─┐
-│ SELECT ? AS `?`                               │ SELECT ? AS aComplexName123                            │
-└───────────────────────────────────────────────┴────────────────────────────────────────────────────────┘
-```
-
-## normalizedQueryHash
-
-Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query logs.
-
-**Syntax**
-
-``` sql
-normalizedQueryHash(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
-```
-
-Result:
-
-```result
-┌─res─┐
-│   1 │
-└─────┘
-```
-
-## normalizedQueryHashKeepNames
-
-Like [normalizedQueryHash](#normalizedqueryhash) it returns identical 64bit hash values without the values of literals for similar queries but it does not replace complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can be helpful to analyze query logs.
-
-**Syntax**
-
-``` sql
-normalizedQueryHashKeepNames(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
-SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
-```
-
-Result:
-
-```result
-┌─normalizedQueryHash─┐
-│                   0 │
-└─────────────────────┘
-┌─normalizedQueryHashKeepNames─┐
-│                            1 │
-└──────────────────────────────┘
-```
 
 ## normalizeUTF8NFC
 
