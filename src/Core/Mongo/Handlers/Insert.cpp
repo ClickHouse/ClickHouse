@@ -64,7 +64,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
     BSON_APPEND_INT32(bson_doc, "n", inserted_count);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc, true);
+    Document doc(bson_doc);
     return {doc};
 }
 

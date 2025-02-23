@@ -49,12 +49,6 @@ private:
     ProfileEvents::Event write_event;
 
     void changeIO(Poco::Net::StreamSocket & socket);
-
-    bool startup();
-
-    void cancelRequest();
-
-    void processQuery();
 };
 
 }

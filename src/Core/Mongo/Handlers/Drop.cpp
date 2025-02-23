@@ -27,7 +27,7 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
     BSON_APPEND_UTF8(bson_doc, "ns", table_name.c_str());
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc, true);
+    Document doc(bson_doc);
     return {doc};
 }
 

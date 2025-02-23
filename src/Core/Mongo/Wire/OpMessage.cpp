@@ -7,31 +7,25 @@
 namespace DB::MongoProtocol
 {
 
-OpMessageSection::OpMessageSection(OpMessageSection&& other) noexcept
-    : kind(other.kind)
-    , documents(std::move(other.documents))
+OpMessageSection::OpMessageSection(OpMessageSection && other) noexcept : kind(other.kind), documents(std::move(other.documents))
 {
 }
 
-OpMessageSection::OpMessageSection(UInt8 kind_, const std::vector<Document> & documents_)
-    : kind(kind_)
-    , documents(documents_)
+OpMessageSection::OpMessageSection(UInt8 kind_, const std::vector<Document> & documents_) : kind(kind_), documents(documents_)
 {
 }
 
-OpMessageSection::OpMessageSection(const OpMessageSection& other)
-    : kind(other.kind)
-    , documents(other.documents)
+OpMessageSection::OpMessageSection(const OpMessageSection & other) : kind(other.kind), documents(other.documents)
 {
 }
 
-void OpMessageSection::serialize(WriteBuffer& out) const
+void OpMessageSection::serialize(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(kind, out);
     for (const auto & doc : documents)
     {
         doc.serialize(out);
-    }   
+    }
 }
 
 Int32 OpMessageSection::size() const
@@ -47,23 +41,20 @@ Int32 OpMessageSection::size() const
 void OpMessageSection::deserialize(ReadBuffer & in)
 {
     readBinaryLittleEndian(kind, in);
-    std::cerr << "kind " << static_cast<Int32>(kind) << '\n';
     if (kind == 0)
     {
         Document doc;
         doc.deserialize(in);
         documents.push_back(doc);
     }
-    else 
+    else
     {
         UInt32 size_section;
         readBinaryLittleEndian(size_section, in);
         readNullTerminated(identifier, in);
-        std::cerr << "READ IDENTIFIER " << identifier << ' ' << static_cast<size_t>(in.available()) << ' ' << identifier.size() << ' ' << size_section << '\n';
 
         size_t rest_available = static_cast<size_t>(in.available()) - (size_section - 5 - identifier.size());
-        std::cerr << "rest_available " << rest_available << '\n';
-        while (in.available() > rest_available) 
+        while (in.available() > rest_available)
         {
             Document doc;
             doc.deserialize(in);
@@ -72,16 +63,14 @@ void OpMessageSection::deserialize(ReadBuffer & in)
     }
 }
 
-OpMessage::OpMessage(UInt32 flags_, UInt8 kind_, const std::vector<Document>& documents_)
-    : flags(flags_)
-    , sections(std::vector<OpMessageSection>{OpMessageSection(kind_, documents_)})
+OpMessage::OpMessage(UInt32 flags_, UInt8 kind_, const std::vector<Document> & documents_)
+    : flags(flags_), sections(std::vector<OpMessageSection>{OpMessageSection(kind_, documents_)})
 {
 }
 
 void OpMessage::deserialize(ReadBuffer & in)
 {
     readBinaryLittleEndian(flags, in);
-    std::cerr << "flags " << flags << '\n';
     while (in.available() > 0)
     {
         OpMessageSection section;
@@ -90,7 +79,7 @@ void OpMessage::deserialize(ReadBuffer & in)
     }
 }
 
-void OpMessage::serialize(WriteBuffer& out) const
+void OpMessage::serialize(WriteBuffer & out) const
 {
     header.serialize(out);
     writeBinaryLittleEndian(flags, out);
@@ -103,7 +92,7 @@ void OpMessage::serialize(WriteBuffer& out) const
 Int32 OpMessage::size() const
 {
     Int32 result = header.size() + sizeof(flags);
-    for (const auto& doc : sections)
+    for (const auto & doc : sections)
     {
         result += doc.size();
     }

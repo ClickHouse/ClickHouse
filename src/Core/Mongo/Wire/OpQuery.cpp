@@ -18,8 +18,6 @@ void OpQuery::deserialize(ReadBuffer & in)
 
 void OpQuery::serialize(WriteBuffer & out) const
 {
-    std::cerr << "send back " << bsonToJson(query.getDoc()) << '\n';
-
     header.serialize(out);
 
     UInt64 cursor_id = 0;

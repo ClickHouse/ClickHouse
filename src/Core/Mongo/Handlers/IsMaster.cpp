@@ -21,7 +21,7 @@ std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection
     BSON_APPEND_BOOL(bson_doc, "readOnly", false);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc, false);
+    Document doc(bson_doc);
     return {doc};
 }
 

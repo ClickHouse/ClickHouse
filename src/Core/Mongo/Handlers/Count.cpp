@@ -35,7 +35,7 @@ std::vector<Document> CountHandler::handle(const std::vector<OpMessageSection> &
     BSON_APPEND_INT32(bson_doc, "n", std::stoi(output));
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc, false);
+    Document doc(bson_doc);
     return {doc};
 }
 

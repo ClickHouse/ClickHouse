@@ -134,7 +134,6 @@ Header makeResponseHeader(Header request_header, Int32 message_size, Int32 respo
 std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
     auto command = sections[0].documents[0].getDocumentKeys()[0];
-    std::cerr << "Command " << command << '\n';
     auto handler = HandlerRegitstry().getHandler(command);
     if (!handler)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported yet.", command);
@@ -152,16 +151,11 @@ std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_
 void handle(Header header, std::shared_ptr<MessageTransport> transport, std::shared_ptr<QueryExecutor> executor)
 {
     auto op_code = static_cast<OperationCode>(header.operation_code);
-    std::cerr << "op code " << header.operation_code << '\n';
     switch (op_code)
     {
         case OperationCode::OP_MSG: {
             auto request = transport->receive<OpMessage>();
-            std::cerr << "request readed successfull\n";
-            //if (request->sections.size() > 1)
-            //    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Multiple sections not supported yet.");
 
-            std::cerr << "run message request\n";
             std::vector<Document> docs;
             std::vector<Document> response_doc;
             try
@@ -175,11 +169,10 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::sha
                 BSON_APPEND_UTF8(bson_doc, "errMsg", ex.what());
                 BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
 
-                Document doc(bson_doc, true);
+                Document doc(bson_doc);
                 response_doc = std::vector{doc};
             }
             auto response = OpMessage(request->flags, 0, response_doc);
-            std::cerr << "response.size() " << response.sections.size() << ' ' << response.size() << ' ' << request->flags << '\n';
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());
             response_header.operation_code = static_cast<Int32>(OperationCode::OP_MSG);
             response.header = response_header;
@@ -188,10 +181,7 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::sha
             break;
         }
         case OperationCode::OP_QUERY: {
-            std::cerr << "OP QUERY\n";
             auto request = transport->receive<OpQuery>();
-            std::cerr << "OP QUERY bp1\n";
-            //auto doc = transport->receive<Document>();
             std::vector<Document> response_doc;
             try
             {
@@ -204,10 +194,9 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::sha
                 BSON_APPEND_UTF8(bson_doc, "errMsg", ex.what());
                 BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
 
-                Document doc(bson_doc, true);
+                Document doc(bson_doc);
                 response_doc = std::vector{doc};
             }
-            std::cerr << "OP QUERY bp2\n";
             auto response = OpQuery(std::move(response_doc[0]));
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());
             response.header = response_header;

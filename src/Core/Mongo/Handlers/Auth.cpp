@@ -69,7 +69,6 @@ std::vector<Document> AuthHandler::handle(const std::vector<OpMessageSection> & 
     }
     auto user_password = base64Decode(user_password_encoded);
     auto password = user_password.substr(user.size());
-    std::cerr << "up " << user << ' ' << password << user.size() << ' ' << password.size() << '\n';
     executor->authenticate(user.substr(1, user.size() - 2), password);
 
     bson_t * bson_doc = bson_new();
@@ -78,7 +77,7 @@ std::vector<Document> AuthHandler::handle(const std::vector<OpMessageSection> & 
     BSON_APPEND_INT32(bson_doc, "conversationId", 1);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    auto result_doc = Document(bson_doc, true);
+    auto result_doc = Document(bson_doc);
     return {result_doc};
 }
 

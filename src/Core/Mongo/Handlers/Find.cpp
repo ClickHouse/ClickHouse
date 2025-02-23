@@ -96,8 +96,6 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     if (!sorting.empty())
         mongo_dialect_query += fmt::format(".sort({})", sorting);
 
-    std::cerr << "mongo_dialect_query " << mongo_dialect_query << '\n';
-
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(
         parser, mongo_dialect_query.data(), mongo_dialect_query.data() + mongo_dialect_query.size(), "", 10000, 10000, 10000);
@@ -131,24 +129,20 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
                 rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
                 doc.Accept(json_writer);
 
-                std::cerr << "return doc " << json_buffer.GetString() << '\n';
                 result.push_back(Document(json_buffer.GetString()));
             }
         }
         else
         {
-            std::cerr << output << '\n';
             rapidjson::Document doc;
             doc.Parse(output.data());
 
             auto all_jsons = doc["data"].GetArray();
-            std::cerr << "all_jsons.Size() " << all_jsons.Size() << '\n';
             for (const auto & json_data : all_jsons)
             {
                 rapidjson::StringBuffer json_buffer;
                 rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
                 json_data.Accept(json_writer);
-                std::cerr << "result item " << json_buffer.GetString() << '\n';
                 result.push_back(Document(json_buffer.GetString()));
             }
         }
@@ -175,7 +169,7 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     BSON_APPEND_DOCUMENT(result_doc, "cursor", selected_docs);
     BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
 
-    Document doc(result_doc, true);
+    Document doc(result_doc);
     return {doc};
 }
 

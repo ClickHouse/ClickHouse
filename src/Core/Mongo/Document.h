@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <iostream>
+#include <bson/bson.h>
 #include <bsoncxx/exception/error_code.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
@@ -23,8 +24,7 @@ public:
     {
         doc_size = other.doc_size;
         document = other.document;
-        bson_doc = other.bson_doc;
-        is_message_query = other.is_message_query;
+        bson_doc = bson_copy(other.bson_doc);
     }
 
     Document(Document && other) noexcept
@@ -32,25 +32,21 @@ public:
         doc_size = other.doc_size;
         document = other.document;
         bson_doc = other.bson_doc;
-        is_message_query = other.is_message_query;
+        other.bson_doc = nullptr;
     }
 
-    explicit Document(bson_t * bson_doc_, bool is_message_query_);
+    explicit Document(bson_t * bson_doc_);
     explicit Document(const String & json);
 
     void deserialize(ReadBuffer & in) override;
 
     void serialize(WriteBuffer & out) const override;
 
-    Int32 size() const override { return /*is_message_query ? 0 : sizeof(doc_size) + */ static_cast<Int32>(document.size()); }
+    Int32 size() const override { return static_cast<Int32>(document.size()); }
 
     std::vector<String> getDocumentKeys() const;
 
-    String getDoc() const
-    {
-        std::cerr << "doc size " << document.size() << '\n';
-        return document;
-    }
+    String getDoc() const { return document; }
 
     rapidjson::Value getRapidJsonRepresentation() const
     {
@@ -66,11 +62,12 @@ public:
 
     String getJson() const { return bson_as_json(bson_doc, nullptr); }
 
+    ~Document() override;
+
 private:
     UInt32 doc_size;
     String document;
     mutable bson_t * bson_doc = nullptr;
-    bool is_message_query = false;
 };
 
 }

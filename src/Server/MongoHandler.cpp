@@ -78,9 +78,6 @@ void MongoHandler::run()
 
     try
     {
-        if (!startup())
-            return;
-
         while (tcp_server.isOpen())
         {
             constexpr size_t connection_check_timeout = 1; // 1 second
@@ -88,7 +85,6 @@ void MongoHandler::run()
                 if (!tcp_server.isOpen())
                     return;
 
-            std::cerr << "want to read new header\n";
             auto header_bytes = message_transport->receive<MongoProtocol::Header>();
             auto executor = std::make_shared<MongoProtocol::QueryExecutor>(session, socket().peerAddress());
             MongoProtocol::handle(*header_bytes, message_transport, executor);
@@ -98,31 +94,6 @@ void MongoHandler::run()
     {
         log->log(exc);
     }
-}
-
-bool MongoHandler::startup()
-{
-    session->authenticate("default", "123", socket().peerAddress());
-    LOG_DEBUG(log, "Successfully finished Startup stage");
-    return true;
-}
-
-void MongoHandler::cancelRequest()
-{
-    std::unique_ptr<PostgreSQLProtocol::Messaging::CancelRequest> msg
-        = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::CancelRequest>(8);
-
-    String query = fmt::format("KILL QUERY WHERE query_id = 'postgres:{:d}:{:d}'", msg->process_id, msg->secret_key);
-    ReadBufferFromString replacement(query);
-
-    auto query_context = session->makeQueryContext();
-    query_context->setCurrentQueryId("");
-    executeQuery(replacement, *out, true, query_context, {});
-}
-
-
-void MongoHandler::processQuery()
-{
 }
 
 }

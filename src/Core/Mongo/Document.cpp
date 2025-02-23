@@ -39,11 +39,10 @@ std::string bsonToJson(const std::string & bsonData)
 }
 
 
-Document::Document(bson_t * bson_doc_, bool is_message_query_) : bson_doc(bson_doc_), is_message_query(is_message_query_)
+Document::Document(bson_t * bson_doc_) : bson_doc(bson_doc_)
 {
     doc_size = bson_doc_->len;
     document = String(reinterpret_cast<const char *>(bson_get_data(bson_doc_)), doc_size);
-    std::cerr << "document " << bsonToJson(document) << ' ' << document.size() << '\n';
 }
 
 Document::Document(const String & json)
@@ -67,43 +66,38 @@ void Document::deserialize(ReadBuffer & in)
     document = subbuffer.str() + document;
 
     bson_doc = bson_new_from_data(reinterpret_cast<const uint8_t *>(document.data()), document.size());
-    std::cerr << "parsed doc " << bson_as_json(bson_doc, nullptr) << '\n';
 }
 
 void Document::serialize(WriteBuffer & out) const
 {
-    //if (!is_message_query)
-    //    writeBinaryLittleEndian(doc_size, out);
     out.write(document.data(), document.size());
-    std::cerr << "serialize doc " << is_message_query << '\n';
 }
 
 std::vector<String> Document::getDocumentKeys() const
 {
-    std::cerr << "getDocumentKeys " << '\n';
     if (!bson_doc)
     {
         bson_doc = bson_new_from_data(reinterpret_cast<const uint8_t *>(document.data()), document.size());
-        //std::cerr << "print bson " << bson_as_json(bson_doc, nullptr) << '\n';
     }
-    std::cerr << "break point 1\n";
     std::vector<String> result;
     bson_iter_t iter;
     const char * key;
 
     if (!bson_iter_init(&iter, bson_doc))
     {
-        std::cerr << "fuck " << '\n';
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect bson : can not iterate through keys");
     }
-    std::cerr << "start iter\n";
     while (bson_iter_next(&iter))
     {
         key = bson_iter_key(&iter);
-        std::cerr << "iter key " << key << '\n';
         result.push_back(key);
     }
     return result;
+}
+
+Document::~Document()
+{
+    bson_destroy(bson_doc);
 }
 
 }

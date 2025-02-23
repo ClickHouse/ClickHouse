@@ -39,7 +39,7 @@ std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSe
     bson_append_array_end(bson_doc, selected_docs);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc, true);
+    Document doc(bson_doc);
     return {doc};
 }
 

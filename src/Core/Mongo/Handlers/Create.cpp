@@ -23,7 +23,7 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
     bson_t * bson_doc = bson_new();
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc, true);
+    Document doc(bson_doc);
     return {doc};
 }
 

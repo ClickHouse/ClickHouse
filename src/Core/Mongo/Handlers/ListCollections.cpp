@@ -66,7 +66,7 @@ std::vector<Document> ListCollectionsHandler::handle(const std::vector<OpMessage
     BSON_APPEND_DOCUMENT(result_doc, "cursor", selected_docs);
     BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
 
-    Document doc(result_doc, true);
+    Document doc(result_doc);
     return {doc};
 }
 
