@@ -13,6 +13,7 @@
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
 namespace DB
@@ -280,6 +281,24 @@ NameSet MutationCommands::getAllUpdatedColumns() const
         for (const auto & [column_name, _] : command.column_to_update_expression)
             res.insert(column_name);
     return res;
+}
+
+bool MutationCommands::hasOnlyLightweightDeleteCommand() const
+{
+    if (this->size() != 1)
+        return false;
+
+    const auto & command = this->front();
+    if (command.type != MutationCommand::Type::UPDATE)
+        return false;
+
+    if (command.column_to_update_expression.size() != 1)
+        return false;
+
+    if (!command.column_to_update_expression.contains(RowExistsColumn::name))
+        return false;
+
+    return true;
 }
 
 }
