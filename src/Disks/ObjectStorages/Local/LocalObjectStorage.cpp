@@ -95,6 +95,23 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
 
     if (0 != unlink(object.remote_path.data()))
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
+
+    /// Remove empty directories.
+    fs::path dir = fs::path(object.remote_path).parent_path();
+    fs::path root(settings.key_prefix);
+    while (pathStartsWith(dir, root))
+    {
+        if (0 != rmdir(std::string(dir).data()))
+        {
+            if (errno == ENOTDIR || errno == ENOTEMPTY)
+                break;
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_UNLINK, object.remote_path, "Cannot unlink file {}", object.remote_path);
+        }
+
+        if (!dir.has_parent_path())
+            break;
+        dir = dir.parent_path();
+    }
 }
 
 void LocalObjectStorage::removeObjects(const StoredObjects & objects) const
