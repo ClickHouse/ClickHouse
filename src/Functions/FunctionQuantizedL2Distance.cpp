@@ -32,9 +32,9 @@ struct L2Accumulate8Bit
 
     static inline float accumulate(UInt8 x, UInt8 y)
     {
-        auto diff = x - y;
-        return diff * diff;
-        // return distance_lookup[(static_cast<size_t>(x) << 8) | y];
+        // float diff = Lookup8Bit::dequantize_lookup[x] - Lookup8Bit::dequantize_lookup[y];
+        // return diff * diff;
+        return distance_lookup[(static_cast<size_t>(x) << 8) | y];
     }
 };
 

@@ -46,20 +46,26 @@
     <fill_query>      
 
     INSERT INTO test.vectors
-    SELECT 
-    number AS id,
+    SELECT
+        key AS id,
+        groupArray(r) AS vector
+    FROM
     (
-            SELECT groupArray(randCanonical())
-            FROM numbers(1024)
-        ) AS vector
-    FROM numbers(28000000)
+        SELECT 
+            number AS seq,
+            intDiv(number, 2048) AS key,  -- every 2048 numbers share the same key
+            randCanonical() AS r
+        FROM numbers(280000 * 2048)
+    )
+    GROUP BY key
+    ORDER BY key
 
     </fill_query>
 
     <fill_query>      
 
     ALTER TABLE test.vectors
-    ADD COLUMN vector_quantized FixedString(1024);
+    ADD COLUMN vector_quantized FixedString(2048);
 
     </fill_query>
 
