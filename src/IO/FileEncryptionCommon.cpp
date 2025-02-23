@@ -279,7 +279,8 @@ InitVector InitVector::random()
 
 
 Encryptor::Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_)
-    : key(key_)
+    : algorithm(algorithm_)
+    , key(key_)
     , init_vector(iv_)
     , evp_cipher(getCipher(algorithm_))
 {

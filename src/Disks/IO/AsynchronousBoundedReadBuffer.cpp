@@ -65,6 +65,16 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
 
+String AsynchronousBoundedReadBuffer::getInfoForLog() override
+{
+    return fmt::format(
+        "AsynchronousBoundedReadBuffer(file_name: {}, position: {}, file_offset_of_buffer_end: {}, read_until_position: {}, bytes_to_ignore: {}, impl: {})",
+        getFileName(), encryptor.getAlgorithm(), getPosition(), offset,
+        read_until_position ? std::to_string(*read_until_position) : "end",
+        in->getInfoForLog());
+    return impl->getInfoForLog();
+}
+
 bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
 {
     if (read_until_position)
@@ -278,9 +288,14 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Expected SEEK_SET or SEEK_CUR as whence");
     }
 
+    std::cout << "AsynchronousBoundedReadBuffer::seek: new_pos = " << new_pos << " (old_pos = " << getPosition() << ")" << std::endl;
+
     /// Position is unchanged.
     if (new_pos == static_cast<size_t>(getPosition()))
+    {
+        std::cout << "AsynchronousBoundedReadBuffer::seek: returning (0) " << new_pos << std::endl;
         return new_pos;
+    }
 
     bool read_from_prefetch = false;
     while (true)
@@ -295,6 +310,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
             chassert(pos >= working_buffer.begin());
             chassert(pos <= working_buffer.end());
 
+            std::cout << "AsynchronousBoundedReadBuffer::seek: returning (1) " << new_pos << std::endl;
             return new_pos;
         }
         if (prefetch_future.valid())
@@ -331,6 +347,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
             ProfileEvents::increment(ProfileEvents::RemoteFSSeeksWithReset);
         file_offset_of_buffer_end = new_pos = *read_until_position; /// read_until_position is a non-included boundary.
         impl->seek(file_offset_of_buffer_end, SEEK_SET);
+        std::cout << "AsynchronousBoundedReadBuffer::seek: returning (2) " << new_pos << std::endl;
         return new_pos;
     }
 
@@ -352,6 +369,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
         impl->seek(file_offset_of_buffer_end, SEEK_SET);
     }
 
+    std::cout << "AsynchronousBoundedReadBuffer::seek: returning (3) " << new_pos << std::endl;
     return new_pos;
 }
 
