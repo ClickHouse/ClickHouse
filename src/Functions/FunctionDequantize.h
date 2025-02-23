@@ -71,7 +71,7 @@ struct Lookup16Bit
         }
     }
 
-    static inline const std::array<float, 65536> dequantize_lookup = []()
+    static inline const std::array<float, 65536> dequantize_lookup alignas(64) = []()
     {
         std::array<float, 65536> table{};
         for (size_t i = 0; i < 65536; ++i)

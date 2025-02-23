@@ -16,7 +16,7 @@ struct L2Accumulate16Bit
 
 struct L2Accumulate8Bit
 {
-    static constexpr std::array<float, 256 * 256> distance_lookup = []() constexpr
+    static constexpr std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
     {
         std::array<float, 256 * 256> table{};
         for (size_t i = 0; i < 256; ++i)
@@ -30,12 +30,17 @@ struct L2Accumulate8Bit
         return table;
     }();
 
-    static inline float accumulate(UInt8 x, UInt8 y) { return distance_lookup[(static_cast<size_t>(x) << 8) | y]; }
+    static inline float accumulate(UInt8 x, UInt8 y)
+    {
+        auto diff = x - y;
+        return diff * diff;
+        // return distance_lookup[(static_cast<size_t>(x) << 8) | y];
+    }
 };
 
 struct L2Accumulate4Bit
 {
-    static inline std::array<float, 256 * 256> distance_lookup = []() constexpr
+    static inline std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
     {
         std::array<float, 256 * 256> table{};
         for (size_t i = 0; i < 256; ++i)
@@ -61,7 +66,7 @@ struct L2Accumulate4Bit
 
 struct L2Accumulate1Bit
 {
-    static inline std::array<float, 256 * 256> distance_lookup = []() constexpr
+    static inline std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
     {
         std::array<float, 256 * 256> table{};
         for (size_t i = 0; i < 256; ++i)
