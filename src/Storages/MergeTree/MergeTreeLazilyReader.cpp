@@ -147,7 +147,7 @@ void MergeTreeLazilyReader::readLazyColumns(
         MergeTreeReaderPtr reader = data_part->getReader(
             columns_for_reader, storage_snapshot, mark_ranges, {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
-            storage.getContext()->getMarkCache().get(), alter_conversions,
+            storage.getContext()->getMarkCache().get(), nullptr, alter_conversions,
             reader_settings, {}, {});
 
         size_t idx = 0;

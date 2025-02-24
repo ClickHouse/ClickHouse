@@ -6,6 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {
