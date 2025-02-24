@@ -64,27 +64,41 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, std::string_view key)
+uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys)
 {
+    uint64_t sum = 0;
+    uint64_t found_mask = 0;
     while (!buf.eof())
     {
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
-        if (current_key != key)
+
+        auto it = std::find(keys.begin(), keys.end(), current_key);
+        if (it == keys.end())
         {
             std::string dummy;
             readStringUntilNewlineInto(dummy, buf);
             buf.ignore();
             continue;
         }
+        if (found_mask & (1l << (it - keys.begin())))
+            LOG_ERROR(getLogger("CgroupsReader"), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+        found_mask |= 1ll << (it - keys.begin());
 
         assertChar(' ', buf);
         uint64_t value = 0;
         readIntText(value, buf);
-        return value;
+        sum += value;
     }
-    LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", key, buf.getFileName());
-    return 0;
+    if (found_mask != (1l << keys.size()) - 1)
+    {
+        for (auto it = keys.begin(); it != keys.end(); ++it)
+        {
+            if (!(found_mask & (1l << (it - keys.begin()))))
+                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+        }
+    }
+    return sum;
 }
 
 struct CgroupsV1Reader : ICgroupsReader
@@ -95,7 +109,7 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        return readMetricFromStatFile(buf, "rss");
+        return readMetricsFromStatFile(buf, {"rss"});
     }
 
     std::string dumpAllStats() override
@@ -118,7 +132,7 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricFromStatFile(stat_buf, "anon");
+        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"});
     }
 
     std::string dumpAllStats() override
