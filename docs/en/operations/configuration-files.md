@@ -345,7 +345,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-## YAML examples {#example}
+## YAML examples {#example-1}
 
 Here you can see default config written in YAML: [config.yaml.example](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 

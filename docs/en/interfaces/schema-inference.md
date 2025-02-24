@@ -2033,7 +2033,7 @@ As we can see, we don't have `field3` from file `data3.jsonl`.
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
-### Union mode {#default-schema-inference-mode}
+### Union mode {#default-schema-inference-mode-1}
 
 In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
 

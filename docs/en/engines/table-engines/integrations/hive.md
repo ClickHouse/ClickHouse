@@ -240,7 +240,7 @@ OK
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse {#create-table-in-clickhouse}
+#### Create Table in ClickHouse {#create-table-in-clickhouse-1}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
 ``` sql
