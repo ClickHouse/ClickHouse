@@ -30,6 +30,8 @@
 #include "IO/ReadBuffer.h"
 #include "IO/VarInt.h"
 #include "IO/WriteBuffer.h"
+#include "Parsers/ExpressionElementParsers.h"
+#include "Parsers/parseQuery.h"
 #include "base/types.h"
 
 namespace DB
@@ -74,7 +76,7 @@ private:
         if (!data(place).compressed_buf)
         {
             data(place).compressed_buf = std::make_shared<CompressedWriteBuffer>(
-                *data(place).null_buf, getCodecOrDefault(codec), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
+                *data(place).null_buf, getCodecOrDefault(), block_size_bytes.value_or(DBMS_DEFAULT_BUFFER_SIZE));
         }
     }
 
@@ -93,10 +95,15 @@ private:
         return {uncompressed_size, compressed_size};
     }
 
-    static CompressionCodecPtr getCodecOrDefault(std::optional<String> codec_name)
+    CompressionCodecPtr getCodecOrDefault() const
     {
-        if (codec_name.has_value())
-            return CompressionCodecFactory::instance().get(codec_name.value());
+        if (codec.has_value())
+        {
+            ParserCodec codec_parser;
+            auto ast
+                = parseQuery(codec_parser, "(" + codec.value() + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            return CompressionCodecFactory::instance().get(ast, argument_types[0]);
+        }
         return CompressionCodecFactory::instance().getDefaultCodec();
     }
 
