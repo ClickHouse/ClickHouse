@@ -37,6 +37,7 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
+#include "Core/Settings.h"
 
 
 namespace DB
@@ -49,6 +50,11 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -1015,6 +1021,11 @@ std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default
 
     try
     {
+        /// TODO: use new analyzer
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+
+        }
         auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         for (const auto & action : actions->getActions())

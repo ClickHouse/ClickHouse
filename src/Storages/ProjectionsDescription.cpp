@@ -26,8 +26,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
 #include <Core/Settings.h>
+#include "Core/QueryProcessingStage.h"
 #include "Interpreters/InterpreterSelectQueryAnalyzer.h"
 #include <Interpreters/StorageID.h>
+#include "Common/Logger.h"
+#include "Common/StackTrace.h"
+#include "Common/logger_useful.h"
 #include "Storages/ColumnsDescription.h"
 #include "Storages/StorageValues.h"
 
@@ -124,6 +128,14 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
+
+    LOG_DEBUG(getLogger(__func__), "Query (analyzer: {}):\n{}",
+        query_context->getSettingsRef()[Setting::allow_experimental_analyzer],
+        result.query_ast->formatForLogging());
+    StackTrace stacktrace;
+    LOG_DEBUG(getLogger(__func__), "Trace:\n{}",
+        stacktrace.toString());
+
     if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         auto fake_table = std::make_shared<TableNode>(storage, query_context);
@@ -144,6 +156,9 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         result.sample_block = interpreter.getSampleBlock();
 
         const auto & expression_analysis = interpreter.getExpressionAnalysisResult();
+
+        if (expression_analysis.hasSort())
+            result.sample_block = expression_analysis.getSort().before_order_by_actions->dag.getResultColumns();
 
         buildMetadataAndFillProjectionKeys(
             result,
@@ -171,6 +186,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
         result.required_columns = select.getRequiredColumns();
         result.sample_block = select.getSampleBlock();
+
+        LOG_DEBUG(getLogger("ProjDesc"), "Interpreter Sample block:\n{}", result.sample_block.dumpStructure());
 
         buildMetadataAndFillProjectionKeys(
             result,
@@ -453,6 +470,8 @@ void ProjectionDescription::buildMetadataAndFillProjectionKeys(
     }
 
     auto block = current.sample_block;
+    LOG_DEBUG(getLogger("ProjDesc"), "Block before sorting:\n{}", block.dumpStructure());
+
     for (const auto & [name, type] : metadata.sorting_key.expression->getRequiredColumnsWithTypes())
         block.insertUnique({nullptr, type, name});
     for (const auto & column_with_type_name : block)
@@ -460,6 +479,8 @@ void ProjectionDescription::buildMetadataAndFillProjectionKeys(
         if (column_with_type_name.column && isColumnConst(*column_with_type_name.column))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
     }
+
+    LOG_DEBUG(getLogger("ProjDesc"), "Block:\n{}", block.dumpStructure());
 
     metadata.setColumns(ColumnsDescription(block.getNamesAndTypesList()));
     current.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);

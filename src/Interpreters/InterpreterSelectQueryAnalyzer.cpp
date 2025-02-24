@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 
@@ -179,6 +180,24 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(
 
     if (storage_options.storage)
         replaceStorageInQueryTree(query_tree, context, storage_options.storage);
+
+    if (storage_options.table)
+    {
+        auto * query_node = query_tree->as<QueryNode>();
+
+        std::unordered_set<size_t> used_projection_columns_indexes;
+
+        QueryTreeNodePtrWithHashSet projection_set;
+        const auto & projection_list = query_node->getProjection().getNodes();
+        for (size_t i = 0; i < projection_list.size(); ++i)
+        {
+            auto [_, inserted] = projection_set.emplace(projection_list[i]);
+            if (inserted)
+                used_projection_columns_indexes.emplace(i);
+        }
+
+        query_node->removeUnusedProjectionColumns(used_projection_columns_indexes);
+    }
 
     return query_tree;
 }

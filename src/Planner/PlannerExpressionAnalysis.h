@@ -168,6 +168,11 @@ public:
         return sort_analysis_result;
     }
 
+    const SortAnalysisResult & getSort() const
+    {
+        return sort_analysis_result;
+    }
+
     void addSort(SortAnalysisResult sort_analysis_result_)
     {
         sort_analysis_result = std::move(sort_analysis_result_);
