@@ -83,7 +83,7 @@ public:
         std::lock_guard lock(next_mutex);
         while (data_files.empty())
         {
-            auto have_scan_data_res = KernelUtils::unwrapResult(
+            bool have_scan_data_res = KernelUtils::unwrapResult(
                 ffi::kernel_scan_data_next(scan_data_iterator.get(), this, visitData),
                 "kernel_scan_data_next");
 
@@ -104,9 +104,12 @@ public:
         void * engine_context,
         ffi::ExclusiveEngineData * engine_data,
         const struct ffi::KernelBoolSlice selection_vec,
-        const ffi::CTransforms *transforms)
+        const ffi::CTransforms * transforms)
     {
         ffi::visit_scan_data(engine_data, selection_vec, transforms, engine_context, Iterator::scanCallback);
+
+        ffi::free_bool_slice(selection_vec);
+        ffi::free_engine_data(engine_data);
     }
 
     static void scanCallback(
