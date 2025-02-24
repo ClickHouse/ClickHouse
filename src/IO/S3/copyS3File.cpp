@@ -819,7 +819,21 @@ namespace
             }
         }
 
-        void performMultipartUploadCopy() { UploadHelper::performMultipartUpload(offset, size); }
+        void performMultipartUploadCopy()
+        {
+            try
+            {
+                UploadHelper::performMultipartUpload(offset, size);
+            }
+            catch (const S3Exception & e)
+            {
+                if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                    throw;
+
+                tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
+                fallback_method();
+            }
+        }
 
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {

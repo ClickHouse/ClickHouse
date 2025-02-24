@@ -760,23 +760,33 @@ def test_user_specific_auth(start_cluster):
     node.query("DROP TABLE IF EXISTS test.specific_auth")
 
 
-def test_backup_to_s3_different_credentials():
+@pytest.mark.parametrize(
+    "allow_s3_native_copy,use_multipart_copy",
+    [(True, True), (True, False), (False, True), (False, False)],
+    ids=[
+        "native_multipart",
+        "native_single",
+        "non_native_multipart",
+        "non_native_single",
+    ],
+)
+def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_copy):
     storage_policy = "policy_s3_restricted"
 
-    def check_backup_restore(allow_s3_native_copy):
-        backup_name = new_backup_name()
-        backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
-        settings = {"allow_s3_native_copy": allow_s3_native_copy}
-        (backup_events, _) = check_backup_and_restore(
-            storage_policy,
-            backup_destination,
-            backup_settings=settings,
-            restore_settings=settings,
-        )
-        check_system_tables(backup_events["query_id"])
-
-    check_backup_restore(False)
-    check_backup_restore(True)
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
+    settings = {"allow_s3_native_copy": allow_s3_native_copy}
+    size = 1000
+    if use_multipart_copy:
+        size = 10000000
+    (backup_events, _) = check_backup_and_restore(
+        storage_policy,
+        backup_destination,
+        backup_settings=settings,
+        restore_settings=settings,
+        size=size
+    )
+    check_system_tables(backup_events["query_id"])
 
 
 def test_backup_restore_system_tables_with_plain_rewritable_disk():
