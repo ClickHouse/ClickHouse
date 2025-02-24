@@ -21,6 +21,31 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
+{
+    if (forwarded_for.empty())
+        return {};
+    String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
+    boost::trim(last);
+
+    /// IPv6 address with port
+    if (last[0] == '[')
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
+
+    int colons = std::count(last.begin(), last.end(), ':');
+
+    /// IPv6 address without port
+    if (colons > 1)
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
+
+    /// IPv4 address with port
+    if (colons == 1)
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
+
+    /// IPv4 address without port
+    return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
+}
+
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
