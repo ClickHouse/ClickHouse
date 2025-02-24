@@ -1097,7 +1097,7 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
             else if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
         }
-        else if (fuzz_rand() % asterisk_prob == 0 && (typeid_cast<ASTIdentifier *>(child.get()) || typeid_cast<ASTFunction *>(child.get())))
+        else if (fuzz_rand() % asterisk_prob == 0 && dynamic_cast<ASTWithAlias *>(child.get()))
         {
             /// Return a '*' literal
             child = std::make_shared<ASTAsterisk>();
@@ -1143,22 +1143,23 @@ ASTPtr QueryFuzzer::tryNegateNextPredicate(const ASTPtr & pred, const int prob)
 
 ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
 {
-    if (auto * ident = typeid_cast<ASTIdentifier *>(exp.get()))
+    if (auto * walias = dynamic_cast<ASTWithAlias *>(exp.get()))
     {
-        const auto & alias = ident->tryGetAlias();
+        const auto & alias = walias->tryGetAlias();
 
         if (alias.empty() && fuzz_rand() % 50 == 0)
         {
             // Add alias to the expression to be used later on
             const String next_alias = "alias" + std::to_string(alias_counter++);
 
-            ident->setAlias(next_alias);
+            walias->setAlias(next_alias);
         }
         else if (!alias.empty())
         {
-            const int next_action = fuzz_rand() % 3;
+            ASTIdentifier * ident;
+            const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0)
+            if (next_action == 0 && (ident = typeid_cast<ASTIdentifier *>(exp.get())))
             {
                 /// Move alias to the end of the identifier (most of the time) or somewhere else
                 Strings clone_parts = ident->name_parts;
@@ -1169,7 +1170,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             }
             else if (next_action == 1)
             {
-                /// Set the alias as the identifier
+                /// Replace expression with the alias as an indentifier
                 return std::make_shared<ASTIdentifier>(Strings{alias});
             }
         }
