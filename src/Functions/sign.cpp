@@ -5,12 +5,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 template <typename A>
 struct SignImpl
 {
@@ -28,44 +22,7 @@ struct SignImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool sign)
-    {
-        auto * result_type = b.getInt8Ty();
-        auto * res_zero = llvm::ConstantInt::getSigned(result_type, 0);
-        auto * res_one = llvm::ConstantInt::getSigned(result_type, 1);
-        auto * res_minus_one = llvm::ConstantInt::getSigned(result_type, -1);
-
-        const auto & type = arg->getType();
-        if (type->isIntegerTy())
-        {
-            auto * zero = llvm::ConstantInt::get(type, 0, sign);
-            auto * is_zero = b.CreateICmpEQ(arg, zero);
-
-            if (sign)
-            {
-                auto * is_negative = b.CreateICmpSLT(arg, res_zero);
-                auto * select_zero = b.CreateSelect(is_zero, res_zero, res_one);
-                return b.CreateSelect(is_negative, res_minus_one, select_zero);
-            }
-            else
-                return b.CreateSelect(is_zero, res_zero, res_one);
-        }
-        else if (type->isDoubleTy() || type->isFloatTy())
-        {
-            auto * zero = llvm::ConstantFP::get(type, 0.0);
-            auto * is_zero = b.CreateFCmpOEQ(arg, zero);
-            auto * is_negative = b.CreateFCmpOLT(arg, zero);
-
-            auto * select_zero = b.CreateSelect(is_zero, res_zero, res_one);
-            return b.CreateSelect(is_negative, res_minus_one, select_zero);
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "SignImpl compilation expected native integer or floating point type");
-    }
-
-
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -79,7 +36,7 @@ template <>
 struct FunctionUnaryArithmeticMonotonicity<NameSign>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return { .is_monotonic = true };
     }

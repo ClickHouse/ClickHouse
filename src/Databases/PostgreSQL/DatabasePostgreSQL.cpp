@@ -23,9 +23,10 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
 
-
+#include <Disks/IDisk.h>
 namespace fs = std::filesystem;
 
 namespace DB
@@ -68,9 +69,10 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , configuration(configuration_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
+    , db_disk(getContext()->getDatabaseDisk())
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
 {
-    fs::create_directories(metadata_path);
+    db_disk->createDirectories(metadata_path);
     cleaner_task = getContext()->getSchedulePool().createTask("PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
@@ -250,8 +252,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
     detached_or_dropped.erase(table_name);
 
     fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    if (fs::exists(table_marked_as_removed))
-        (void)fs::remove(table_marked_as_removed);
+    db_disk->removeFileIfExists(table_marked_as_removed);
 }
 
 
@@ -297,7 +298,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
 
     fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-    FS::createFile(mark_table_removed);
+    db_disk->createFile(mark_table_removed);
 
     if (cache_tables)
         cached_tables.erase(table_name);
@@ -308,7 +309,7 @@ void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /
 
 void DatabasePostgreSQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 
@@ -316,14 +317,16 @@ void DatabasePostgreSQL::loadStoredObjects(ContextMutablePtr /* context */, Load
 {
     {
         std::lock_guard lock{mutex};
-        fs::directory_iterator iter(getMetadataPath());
-
         /// Check for previously dropped tables
-        for (fs::directory_iterator end; iter != end; ++iter)
+        for (const auto it = db_disk->iterateDirectory(getMetadataPath()); it->isValid(); it->next())
         {
-            if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
+            auto path = fs::path(it->path());
+            if (path.filename().empty())
+                path = path.parent_path();
+
+            if (db_disk->existsFile(path) && endsWith(path.filename(), suffix))
             {
-                const auto & file_name = iter->path().filename().string();
+                const auto & file_name = path.filename().string();
                 const auto & table_name = unescapeForFileName(file_name.substr(0, file_name.size() - strlen(suffix)));
                 detached_or_dropped.emplace(table_name);
             }
@@ -377,8 +380,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
             auto table_name = *iter;
             iter = detached_or_dropped.erase(iter);
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            if (fs::exists(table_marked_as_removed))
-                (void)fs::remove(table_marked_as_removed);
+            db_disk->removeFileIfExists(table_marked_as_removed);
         }
         else
             ++iter;

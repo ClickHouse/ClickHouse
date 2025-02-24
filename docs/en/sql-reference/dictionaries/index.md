@@ -1,11 +1,12 @@
 ---
-slug: /en/sql-reference/dictionaries
+slug: /sql-reference/dictionaries
 sidebar_label: Defining Dictionaries
 sidebar_position: 35
 ---
 
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
-import CloudDetails from '@site/docs/en/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+import CloudDetails from '@site/docs/sql-reference/dictionaries/_snippet_dictionary_in_cloud.md';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Dictionaries
 
@@ -20,10 +21,10 @@ ClickHouse supports:
 
 
 :::tip Tutorial
-If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/en/tutorial.md).
+If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/tutorial.md).
 :::
 
-You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Dictionary Sources](#dictionary-sources)”.
+You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Dictionary Sources](#dictionary-sources)".
 
 ClickHouse:
 
@@ -52,6 +53,8 @@ Dictionaries can be created with [DDL queries](../../sql-reference/statements/cr
 - The dictionaries can be easily renamed
 
 ## Creating a dictionary with a configuration file
+
+<CloudNotSupportedBadge/>
 
 :::note
 Creating a dictionary with a configuration file is not applicable to ClickHouse Cloud. Please use DDL (see above), and create your dictionary as user `default`.
@@ -134,7 +137,7 @@ Caching is not recommended because of potentially poor performance and difficult
 There are several ways to improve dictionary performance:
 
 - Call the function for working with the dictionary after `GROUP BY`.
-- Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+- Mark attributes to extract as injective. An attribute is called injective if different keys correspond to different attribute values. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
 
 ClickHouse generates an exception for errors with dictionaries. Examples of errors:
 
@@ -679,7 +682,7 @@ When searching for a dictionary, the cache is searched first. For each block of 
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
-For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+For cache dictionaries, the expiration [lifetime](#refreshing-dictionary-data-using-lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
 
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](../../operations/system-tables/dictionaries.md) table.
 
@@ -955,7 +958,6 @@ In this case, ClickHouse can reload the dictionary earlier if the dictionary con
 When updating the dictionaries, the ClickHouse server applies different logic depending on the type of [source](#dictionary-sources):
 
 - For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
-- For MySQL source, the time of modification is checked using a `SHOW TABLE STATUS` query (in case of MySQL 8 you need to disable meta-information caching in MySQL by `set global information_schema_stats_expiry=0`).
 - Dictionaries from other sources are updated every time by default.
 
 For other sources (ODBC, PostgreSQL, ClickHouse, etc), you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
@@ -1134,7 +1136,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 ### Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
+Working with executable files depends on [how the dictionary is stored in memory](#storing-dictionaries-in-memory). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's STDIN. Otherwise, ClickHouse starts the executable file and treats its output as dictionary data.
 
 Example of settings:
 
@@ -1184,7 +1186,7 @@ Example of settings:
 Setting fields:
 
 - `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` — The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+- `format` — The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 - `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
 - `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
 - `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
@@ -1237,7 +1239,7 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in “[Formats](../../interfaces/formats.md#formats)” are supported.
+- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 - `credentials` – Basic HTTP authentication. Optional parameter.
 - `user` – Username required for the authentication.
 - `password` – Password required for the authentication.
@@ -1286,13 +1288,14 @@ Setting fields:
 - `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
+- `background_reconnect` – Reconnect to replica in background if connection fails. Optional parameter.
 - `query` – The custom query. Optional parameter.
 
 :::note
 The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
 :::
 
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
 
 If you have a problems with encodings when using Oracle, see the corresponding [FAQ](/knowledgebase/oracle-odbc) item.
 
@@ -1304,7 +1307,7 @@ When connecting to the database through the ODBC driver connection parameter `Se
 
 **Example of insecure use**
 
-Let’s configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
 ``` text
 [gregtest]
@@ -1877,6 +1880,7 @@ Setting fields:
 - `table` – Name of the table.
 - `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Refreshing dictionary data using LIFETIME](#refreshing-dictionary-data-using-lifetime).
+- `background_reconnect` – Reconnect to replica in background if connection fails. Optional parameter.
 - `query` – The custom query. Optional parameter.
 
 :::note
@@ -2448,7 +2452,7 @@ clickhouse client \
     FORMAT CSV" < regexp_dict.csv
 ```
 
-You can see how to [Insert Local Files](https://clickhouse.com/docs/en/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
+You can see how to [Insert Local Files](/docs/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
 
 ``` sql
 CREATE DICTIONARY regexp_dict
@@ -2470,12 +2474,12 @@ ClickHouse contains a built-in feature for working with a geobase.
 
 This allows you to:
 
-- Use a region’s ID to get its name in the desired language.
-- Use a region’s ID to get the ID of a city, area, federal district, country, or continent.
+- Use a region's ID to get its name in the desired language.
+- Use a region's ID to get the ID of a city, area, federal district, country, or continent.
 - Check whether a region is part of another region.
 - Get a chain of parent regions.
 
-All the functions support “translocality,” the ability to simultaneously use different perspectives on region ownership. For more information, see the section “Functions for working with web analytics dictionaries”.
+All the functions support "translocality," the ability to simultaneously use different perspectives on region ownership. For more information, see the section "Functions for working with web analytics dictionaries".
 
 The internal dictionaries are disabled in the default package.
 To enable them, uncomment the parameters `path_to_regions_hierarchy_file` and `path_to_regions_names_files` in the server configuration file.
@@ -2498,9 +2502,9 @@ You can also create these files yourself. The file format is as follows:
 `regions_names_*.txt`: TabSeparated (no header), columns:
 
 - region ID (`UInt32`)
-- region name (`String`) — Can’t contain tabs or line feeds, even escaped ones.
+- region name (`String`) — Can't contain tabs or line feeds, even escaped ones.
 
-A flat array is used for storing in RAM. For this reason, IDs shouldn’t be more than a million.
+A flat array is used for storing in RAM. For this reason, IDs shouldn't be more than a million.
 
 Dictionaries can be updated without restarting the server. However, the set of available dictionaries is not updated.
 For updates, the file modification times are checked. If a file has changed, the dictionary is updated.
@@ -2509,4 +2513,4 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
-There are also functions for working with OS identifiers and search engines, but they shouldn’t be used.
+There are also functions for working with OS identifiers and search engines, but they shouldn't be used.

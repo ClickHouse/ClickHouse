@@ -267,7 +267,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
             in str(error)
         )
 
@@ -834,6 +834,38 @@ def test_fixed_string_type(started_cluster):
     assert result.strip() == "1\tabc"
 
     node1.query("DROP TABLE test_fixed_string")
+
+
+def test_parameters_validation_for_postgresql_function(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    def _create_and_fill_table(table):
+        cursor.execute(f"DROP TABLE IF EXISTS {table}")
+        cursor.execute(f"CREATE TABLE {table} (a Integer)")
+        cursor.execute(f"INSERT INTO {table} SELECT 1")
+
+    # Try to do some SQL injection to remove the original table
+    table = "test_parameters_validation_for_postgresql_function_exception"
+    _create_and_fill_table(table)
+    error = node1.query_and_get_error(
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', \"whatever')) TO STDOUT; END; DROP TABLE IF EXISTS {table};--\", 'postgres', 'mysecretpassword')"
+    )
+    assert "PostgreSQL table whatever" in error and "does not exist" in error
+
+    result = node1.query(
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}', 'postgres', 'mysecretpassword')"
+    )
+    assert int(result) == 1
+    cursor.execute(f"DROP TABLE {table}")
+
+    # Check that we can actually work with table names containing single quote
+    table = "test_parameters_validation_for_postgresql_function_success"
+    _create_and_fill_table(f'"{table}\'"')
+    result = node1.query(
+        f"SELECT count() FROM postgresql('postgres1:5432', 'postgres', '{table}''', 'postgres', 'mysecretpassword')"
+    )
+    assert int(result) == 1
+    cursor.execute(f'DROP TABLE "{table}\'"')
 
 
 if __name__ == "__main__":

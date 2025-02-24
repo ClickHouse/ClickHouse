@@ -1,12 +1,14 @@
+#include <AggregateFunctions/AggregateFunctionNothing.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTFunction.h>
 #include <Common/CurrentThread.h>
-#include <Core/Settings.h>
 
 static constexpr size_t MAX_AGGREGATE_FUNCTION_NAME_LENGTH = 1000;
 
@@ -249,6 +251,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         Array nested_parameters = combinator->transformParameters(parameters);
 
         AggregateFunctionPtr nested_function = get(nested_name, action, nested_types, nested_parameters, out_properties);
+        /// Aggregate function nothing does not support parameters
+        if (std::dynamic_pointer_cast<const AggregateFunctionNothing>(nested_function) ||
+            std::dynamic_pointer_cast<const AggregateFunctionNothingNull>(nested_function) ||
+            std::dynamic_pointer_cast<const AggregateFunctionNothingUInt64>(nested_function))
+                return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, Array());
+
         return combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
     }
 
@@ -349,4 +357,9 @@ AggregateFunctionFactory & AggregateFunctionFactory::instance()
     return ret;
 }
 
+
+bool AggregateUtils::isAggregateFunction(const ASTFunction & node)
+{
+    return AggregateFunctionFactory::instance().isAggregateFunctionName(node.name);
+}
 }

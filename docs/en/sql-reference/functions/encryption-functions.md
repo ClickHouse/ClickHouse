@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/encryption-functions
+slug: /sql-reference/functions/encryption-functions
 sidebar_position: 70
 sidebar_label: Encryption
 ---
@@ -21,6 +21,7 @@ This function encrypts data using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
+- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -144,7 +145,7 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 
 Result:
 
-```
+```response
 ┌─ciphertexts_equal─┐
 │                 1 │
 └───────────────────┘
@@ -175,7 +176,7 @@ SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '1234567891012131415161718
 
 Result:
 
-```text
+```response
 ┌─ciphertext───┐
 │ 24E9E4966469 │
 └──────────────┘
@@ -221,6 +222,7 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
+- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -332,7 +334,7 @@ ORDER BY user_id ASC
 
 Result:
 
-```
+```response
 ┌──────────────────dt─┬─user_id─┬─value──┐
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │

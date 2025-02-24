@@ -1,14 +1,13 @@
 ---
-slug: /en/getting-started/example-datasets/nyc-taxi
+description: "Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009"
+slug: /getting-started/example-datasets/nyc-taxi
 sidebar_label: New York Taxi Data
 sidebar_position: 2
-description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
+title: "New York Taxi Data"
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-
-# New York Taxi Data
 
 The New York taxi data consists of 3+ billion taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009. The dataset can be obtained in a couple of ways:
 

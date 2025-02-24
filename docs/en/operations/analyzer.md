@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/analyzer
+slug: /operations/analyzer
 sidebar_label: Analyzer
 title: Analyzer
 description: Details about ClickHouse's query analyzer
@@ -7,8 +7,6 @@ keywords: [analyzer]
 ---
 
 # Analyzer
-
-<BetaBadge />
 
 ## Known incompatibilities
 

@@ -4,7 +4,7 @@
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 #include <random>
 
@@ -75,10 +75,15 @@ public:
     /// Cancel task execution
     void cancel();
 
-    /// Waits for the currently running refresh attempt to complete.
+    /// Waits for the currently running refresh attempt to complete, either on this replica
+    /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
     /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
     void wait();
+
+    /// Wait for background work (refreshing or scheduling) on this replica to complete.
+    /// Returns false if `deadline` was reached before the work completed. Used by server shutdown.
+    bool tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline);
 
     /// A measure of how far this view has progressed. Used by dependent views.
     std::chrono::sys_seconds getNextRefreshTimeslot() const;
@@ -227,12 +232,11 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     bool refresh_append;
-    bool in_database_replicated;
 
     RefreshSet::Handle set_handle;
 
     /// Calls refreshTask() from background thread.
-    BackgroundSchedulePool::TaskHolder refresh_task;
+    BackgroundSchedulePoolTaskHolder refresh_task;
 
     CoordinationState coordination;
     ExecutionState execution;

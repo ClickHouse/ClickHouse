@@ -71,7 +71,6 @@ namespace
             const S3::S3RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
             const LoggerPtr log_)
             : client_ptr(client_ptr_)
@@ -80,7 +79,6 @@ namespace
             , request_settings(request_settings_)
             , object_metadata(object_metadata_)
             , schedule(schedule_)
-            , for_disk_s3(for_disk_s3_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
         {
@@ -95,7 +93,6 @@ namespace
         const S3::S3RequestSettings & request_settings;
         const std::optional<std::map<String, String>> & object_metadata;
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
-        bool for_disk_s3;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
 
@@ -484,9 +481,8 @@ namespace
             const S3::S3RequestSettings & request_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, for_disk_s3_, blob_storage_log_, getLogger("copyDataToS3File"))
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -667,7 +663,6 @@ namespace
             const ReadSettings & read_settings_,
             const std::optional<std::map<String, String>> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
-            bool for_disk_s3_,
             BlobStorageLogWriterPtr blob_storage_log_,
             std::function<void()> fallback_method_)
             : UploadHelper(
@@ -677,7 +672,6 @@ namespace
                 request_settings_,
                 object_metadata_,
                 schedule_,
-                for_disk_s3_,
                 blob_storage_log_,
                 getLogger("copyS3File"))
             , src_bucket(src_bucket_)
@@ -765,9 +759,7 @@ namespace
                     outcome.GetError().GetExceptionName() == "InvalidRequest" ||
                     outcome.GetError().GetExceptionName() == "InvalidArgument" ||
                     outcome.GetError().GetExceptionName() == "AccessDenied" ||
-                    (outcome.GetError().GetExceptionName() == "InternalError" &&
-                        outcome.GetError().GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT &&
-                        outcome.GetError().GetMessage().contains("use the Rewrite method in the JSON API")))
+                    S3::Client::RetryStrategy::useGCSRewrite(outcome.GetError()))
                 {
                     if (!supports_multipart_copy || outcome.GetError().GetExceptionName() == "AccessDenied")
                     {
@@ -819,7 +811,21 @@ namespace
             }
         }
 
-        void performMultipartUploadCopy() { UploadHelper::performMultipartUpload(offset, size); }
+        void performMultipartUploadCopy()
+        {
+            try
+            {
+                UploadHelper::performMultipartUpload(offset, size);
+            }
+            catch (const S3Exception & e)
+            {
+                if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                    throw;
+
+                tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
+                fallback_method();
+            }
+        }
 
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
@@ -866,9 +872,8 @@ void copyDataToS3File(
     const String & dest_key,
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
-    const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    bool for_disk_s3)
+    const std::optional<std::map<String, String>> & object_metadata)
 {
     CopyDataToFileHelper helper{
         create_read_buffer,
@@ -880,7 +885,6 @@ void copyDataToS3File(
         settings,
         object_metadata,
         schedule,
-        for_disk_s3,
         blob_storage_log};
     helper.performCopy();
 }
@@ -898,20 +902,17 @@ void copyS3File(
     const S3::S3RequestSettings & settings,
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
-    const std::optional<std::map<String, String>> & object_metadata,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    bool for_disk_s3)
+    const CreateReadBuffer& fallback_file_reader,
+    const std::optional<std::map<String, String>> & object_metadata)
 {
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;
 
-    std::function<void()> fallback_method = [&]
+    std::function<void()> fallback_method = [&] mutable
     {
-        auto create_read_buffer
-            = [&] { return std::make_unique<ReadBufferFromS3>(src_s3_client, src_bucket, src_key, "", settings, read_settings); };
-
         copyDataToS3File(
-            create_read_buffer,
+            fallback_file_reader,
             src_offset,
             src_size,
             dest_s3_client,
@@ -919,13 +920,13 @@ void copyS3File(
             dest_key,
             settings,
             blob_storage_log,
-            object_metadata,
             schedule,
-            for_disk_s3);
+            object_metadata);
     };
 
     if (!settings[S3RequestSetting::allow_native_copy])
     {
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
         fallback_method();
         return;
     }
@@ -942,7 +943,6 @@ void copyS3File(
         read_settings,
         object_metadata,
         schedule,
-        for_disk_s3,
         blob_storage_log,
         std::move(fallback_method)};
     helper.performCopy();

@@ -1,10 +1,16 @@
 ---
-slug: /en/sql-reference/functions/nlp-functions
+slug: /sql-reference/functions/nlp-functions
 sidebar_position: 130
-sidebar_label: NLP (experimental)
+sidebar_label: NLP
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # Natural Language Processing (NLP) Functions
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::warning
 This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
@@ -74,7 +80,7 @@ Other possible results:
 Query:
 
 ```sql
-SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there’s a will, there’s a way.');
+SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there's a will, there's a way.');
 ```
 
 Result:

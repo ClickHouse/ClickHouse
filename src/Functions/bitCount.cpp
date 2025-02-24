@@ -7,10 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
 template <typename A>
 struct BitCountImpl
 {
@@ -42,26 +38,7 @@ struct BitCountImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
-    {
-        const auto & type = arg->getType();
-        llvm::Value * int_value = nullptr;
-
-        if (type->isIntegerTy())
-            int_value = arg;
-        else if (type->isFloatTy())
-            int_value = b.CreateBitCast(arg, llvm::Type::getInt32Ty(b.getContext()));
-        else if (type->isDoubleTy())
-            int_value = b.CreateBitCast(arg, llvm::Type::getInt64Ty(b.getContext()));
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "BitCountImpl compilation expected native integer or floating-point type");
-
-        auto * func_ctpop = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::ctpop, {int_value->getType()});
-        llvm::Value * ctpop_value = b.CreateCall(func_ctpop, {int_value});
-        return b.CreateZExtOrTrunc(ctpop_value, llvm::Type::getInt8Ty(b.getContext()));
-    }
+    static constexpr bool compilable = false;
 #endif
 };
 
@@ -72,7 +49,7 @@ using FunctionBitCount = FunctionUnaryArithmetic<BitCountImpl, NameBitCount, fal
 template <> struct FunctionUnaryArithmeticMonotonicity<NameBitCount>
 {
     static bool has() { return false; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
         return {};
     }

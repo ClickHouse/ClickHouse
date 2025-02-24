@@ -12,17 +12,16 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
-#include <atomic>
 #include <condition_variable>
-#include <deque>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -366,7 +365,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
+        auto auth_result =
+            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedForHost());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -388,7 +388,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
 
     prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->current_address = address;
+    prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -409,7 +409,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = address_;
+        info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
         session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
     }
 }
@@ -674,7 +674,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (prepared_client_info && !prepared_client_info->current_user.empty())
     {
         query_context->setCurrentUserName(prepared_client_info->current_user);
-        query_context->setCurrentAddress(prepared_client_info->current_address);
+        query_context->setCurrentAddress(*prepared_client_info->current_address);
     }
 
     /// Set parameters of initial query.
@@ -684,7 +684,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         query_context->setInitialUserName(query_context->getClientInfo().current_user);
-        query_context->setInitialAddress(query_context->getClientInfo().current_address);
+        query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.

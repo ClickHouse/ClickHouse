@@ -1,10 +1,13 @@
 ---
-slug: /en/sql-reference/data-types/dynamic
+slug: /sql-reference/data-types/dynamic
 sidebar_position: 62
 sidebar_label: Dynamic
 ---
+import BetaBadge from '@theme/badges/BetaBadge';
 
 # Dynamic
+
+<BetaBadge/>
 
 This type allows to store values of any type inside it without knowing all of them in advance.
 

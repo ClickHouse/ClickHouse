@@ -8,6 +8,7 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
@@ -15,6 +16,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -103,7 +105,7 @@ void buildScatterSelector(
 
     for (size_t i = 0; i < num_rows; ++i)
     {
-        Data::key_type key = hash128(i, columns.size(), columns);
+        Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
         typename Data::LookupResult it;
         bool inserted;
         partitions_map.emplace(key, it, inserted);
@@ -199,6 +201,19 @@ void updateTTL(
 
     if (update_part_min_max_ttls)
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+}
+
+void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
+{
+    /// Iterate over required columns in the expression and check if block doesn't have this column.
+    /// It can happen only if required column is a actually a subcolumn of some column in the block.
+    /// In this case we should add this subcolumn to the block as a separate column so it can be
+    /// processed as a separate input in the expression actions.
+    for (const auto & required_column : expr->getRequiredColumns())
+    {
+        if (!block.has(required_column))
+            block.insert(block.getSubcolumnByName(required_column));
+    }
 }
 
 }
@@ -412,7 +427,8 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"));
+                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
+                    /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -494,7 +510,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     MergeTreePartition partition(block_with_partition.partition);
 
-    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), block_number, block_number, 0);
+    bool optimize_on_insert = context->getSettingsRef()[Setting::optimize_on_insert] && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
+    UInt32 new_part_level = optimize_on_insert ? 1 : 0;
+
+    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), block_number, block_number, new_part_level);
+
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -540,15 +560,25 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
+    {
+        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
+        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
+    }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sort_columns[i], -1, 1);
+        else
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+    }
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
@@ -653,7 +683,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
-        if (column.column->isSparse() && infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
             column.column = recursiveRemoveSparse(column.column);
     }
 
@@ -669,24 +699,22 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     SyncGuardPtr sync_guard;
-    if (new_data_part->isStoredOnDisk())
+
+    /// The name could be non-unique in case of stale files from previous runs.
+    String full_path = new_data_part->getDataPartStorage().getFullPath();
+
+    if (new_data_part->getDataPartStorage().exists())
     {
-        /// The name could be non-unique in case of stale files from previous runs.
-        String full_path = new_data_part->getDataPartStorage().getFullPath();
+        LOG_WARNING(log, "Removing old temporary directory {}", full_path);
+        data_part_storage->removeRecursive();
+    }
 
-        if (new_data_part->getDataPartStorage().exists())
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", full_path);
-            data_part_storage->removeRecursive();
-        }
+    data_part_storage->createDirectories();
 
-        data_part_storage->createDirectories();
-
-        if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
-        {
-            const auto disk = data_part_volume->getDisk();
-            sync_guard = disk->getDirectorySyncGuard(full_path);
-        }
+    if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
+    {
+        const auto disk = data_part_volume->getDisk();
+        sync_guard = disk->getDirectorySyncGuard(full_path);
     }
 
     if (metadata_snapshot->hasRowsTTL())
@@ -745,8 +773,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         if (projection_block.rows())
         {
-            auto proj_temp_part
-                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
@@ -803,29 +830,32 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
-    if (new_data_part->isStoredOnDisk())
+    /// The name could be non-unique in case of stale files from previous runs.
+    if (projection_part_storage->exists())
     {
-        /// The name could be non-unique in case of stale files from previous runs.
-        if (projection_part_storage->exists())
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", projection_part_storage->getFullPath());
-            projection_part_storage->removeRecursive();
-        }
-
-        projection_part_storage->createDirectories();
+        LOG_WARNING(log, "Removing old temporary directory {}", projection_part_storage->getFullPath());
+        projection_part_storage->removeRecursive();
     }
+
+    projection_part_storage->createDirectories();
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
+    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-        sort_description.emplace_back(sort_columns[i], 1, 1);
+    {
+        if (!reverse_flags.empty() && reverse_flags[i])
+            sort_description.emplace_back(sort_columns[i], -1, 1);
+        else
+            sort_description.emplace_back(sort_columns[i], 1, 1);
+    }
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocks);
 
@@ -922,8 +952,11 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     size_t block_num)
 {
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
-    return writeProjectionPartImpl(
-        part_name, true /* is_temp */, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
+    auto new_part = writeProjectionPartImpl(
+        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
+
+    new_part.part->temp_projection_block_number = block_num;
+    return new_part;
 }
 
 }

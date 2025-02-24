@@ -135,6 +135,8 @@ public:
     /// Create empty file in metadata storage
     virtual void createEmptyMetadataFile(const std::string & path) = 0;
 
+    virtual void createEmptyFile(const std::string & /* path */) {}
+
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
 
@@ -239,6 +241,14 @@ public:
     virtual void shutdown()
     {
         /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
+    }
+
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
+    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
+    /// (those that MergeTree tables can make).
+    virtual void refresh()
+    {
+        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
 
     virtual ~IMetadataStorage() = default;

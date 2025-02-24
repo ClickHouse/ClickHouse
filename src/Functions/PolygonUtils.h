@@ -7,7 +7,6 @@
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <Common/SipHash.h>
 #include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
@@ -612,28 +611,4 @@ NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointIn
     using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListNativeNumber>;
     return Impl::call(x, y, impl);
 }
-
-
-template <typename Polygon>
-UInt128 sipHash128(Polygon && polygon)
-{
-    SipHash hash;
-
-    auto hash_ring = [&hash](const auto & ring)
-    {
-        UInt32 size = static_cast<UInt32>(ring.size());
-        hash.update(size);
-        hash.update(reinterpret_cast<const char *>(ring.data()), size * sizeof(ring[0]));
-    };
-
-    hash_ring(polygon.outer());
-
-    const auto & inners = polygon.inners();
-    hash.update(inners.size());
-    for (auto & inner : inners)
-        hash_ring(inner);
-
-    return hash.get128();
-}
-
 }

@@ -526,7 +526,8 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            String relation_namespace, relation_name;
+            String relation_namespace;
+            String relation_name;
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 

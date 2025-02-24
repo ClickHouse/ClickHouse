@@ -1,4 +1,17 @@
-# Approximate Nearest Neighbor Search with Vector Similarity Indexes [experimental]
+---
+slug: /engines/table-engines/mergetree-family/annindexes
+sidebar_label: Vector Similarity Indexes
+description: Approximate Nearest Neighbor Search with Vector Similarity Indexes
+keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
+---
+
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+
+# Approximate Nearest Neighbor Search with Vector Similarity Indexes
+
+<ExperimentalBadge/>
+<PrivatePreviewBadge/>
 
 Nearest neighborhood search is the problem of finding the M closest vectors to a given vector in an N-dimensional vector space. The most
 straightforward approach to solve this problem is an exhaustive (brute-force) search which computes the distance between the reference
@@ -58,8 +71,8 @@ ORDER BY id;
 USearch indexes are currently experimental, to use them you first need to `SET allow_experimental_vector_similarity_index = 1`.
 :::
 
-The index can be build on a column of type [Array(Float64)](../../../sql-reference/data-types/array.md),
-[Array(Float32)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md).
+The index can be build on columns of type [Array(Float64)](../../../sql-reference/data-types/array.md) or
+[Array(Float32)](../../../sql-reference/data-types/array.md).
 
 Index parameters:
 - `method`: Currently only `hnsw` is supported.
@@ -89,7 +102,7 @@ ORDER BY id;
 ```
 
 All arrays must have same length. To avoid errors, you can use a
-[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
+[CONSTRAINT](/docs/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
 length(vectors) = 256`. Empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported as well.
 
 Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
@@ -106,11 +119,16 @@ additional techniques are recommended to speed up index creation:
 - Index creation can be parallelized. The maximum number of threads can be configured using server setting
   [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
 - Index creation on newly inserted parts may be disabled using setting `materialize_skip_indexes_on_insert`. Search on such parts will fall
-  back to exact search but as inserted parts are typically small compared to the total table size, the performance impact is negligible.
-- As parts are incrementally merged into bigger parts, and these new parts are merged into even bigger parts ("write amplification"),
-  vector similarity indexes are possibly build multiple times for the same vectors. To avoid that, you may suppress merges during insert
-  using statement [`SYSTEM STOP MERGES`](../../../sql-reference/statements/system.md), respectively start merges once all data has been
-  inserted using `SYSTEM START MERGES`.
+  back to exact search but since inserted parts are typically small compared to the total table size, the performance impact is negligible.
+- ClickHouse merges multiple parts incrementally in the background into bigger parts. These new parts are potentially merged later into even
+  bigger parts. Each merge re-builds the vector similarity index the output part (as well as other skip indexes) every time from
+  scratch. This potentially wastes work for creating vector similarity indexes. To avoid that, it is possible to suppress the creation of
+  vector similarity indexes during merge using merge tree setting
+  [materialize_skip_indexes_on_merge](../../../operations/settings/merge-tree-settings.md#materialize_skip_indexes_on_merge). This, in
+  conjunction with statement [ALTER TABLE \[...\] MATERIALIZE INDEX
+  \[...\]](../../../sql-reference/statements/alter/skipping-index.md#materialize-index), provides explicit control over the life cycle of
+  vector similarity indexes. For example, index building can be deferred to periods of low load (e.g. weekends) or after a large data
+  ingestion.
 
 Vector similarity indexes support this type of query:
 
@@ -121,26 +139,28 @@ FROM table
 WHERE ...                       -- WHERE clause is optional
 ORDER BY Distance(vectors, reference_vector)
 LIMIT N
-SETTINGS enable_analyzer = 0;   -- Temporary limitation, will be lifted
 ```
 
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
 
+Repeated reads from vector similarity indexes benefit from a large skipping index cache. If needed, you can increase the default cache size
+using server setting [skipping_index_cache_size](../../../operations/server-configuration-parameters/settings.md#skipping_index_cache_size).
+
 **Restrictions**: Approximate vector search algorithms require a limit, hence queries without `LIMIT` clause cannot utilize vector
 similarity indexes. The limit must also be smaller than setting `max_limit_for_ann_queries` (default: 100).
 
-**Differences to Regular Skip Indexes** Similar to regular [skip indexes](https://clickhouse.com/docs/en/optimize/skipping-indexes), vector
+**Differences to Regular Skip Indexes** Similar to regular [skip indexes](/docs/optimize/skipping-indexes), vector
 similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default
 for normal skip indexes). For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and
 `GRANULARITY = 2`, then each indexed block will contain 16384 rows. However, data structures and algorithms for approximate neighborhood
 search are inherently row-oriented. They store a compact representation of a set of rows and also return rows for vector search queries.
-This causes some rather unintuitive differences in the way vector vector similarity indexes behave compared to normal skip indexes.
+This causes some rather unintuitive differences in the way vector similarity indexes behave compared to normal skip indexes.
 
-When a user defines an vector similarity index on a column, ClickHouse internally creates an vector similarity "sub-index" for each index
+When a user defines a vector similarity index on a column, ClickHouse internally creates a vector similarity "sub-index" for each index
 block. The sub-index is "local" in the sense that it only knows about the rows of its containing index block. In the previous example and
-assuming that a column has 65536 rows, we obtain four index blocks (spanning eight granules) and an vector similarity sub-index for each
+assuming that a column has 65536 rows, we obtain four index blocks (spanning eight granules) and a vector similarity sub-index for each
 index block. A sub-index is theoretically able to return the rows with the N closest points within its index block directly. However, since
 ClickHouse loads data from disk to memory at the granularity of granules, sub-indexes extrapolate matching rows to granule granularity. This
 is different from regular skip indexes which skip data at the granularity of index blocks.

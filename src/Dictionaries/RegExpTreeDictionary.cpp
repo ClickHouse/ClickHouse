@@ -248,7 +248,8 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
 
 #if USE_VECTORSCAN
         String required_substring;
-        bool is_trivial, required_substring_is_prefix;
+        bool is_trivial;
+        bool required_substring_is_prefix;
         std::vector<std::string> alternatives;
 
         if (use_vectorscan)
@@ -456,7 +457,7 @@ public:
             if (!this->contains(attr_name))
                 (*this)[attr_name] = Array();
 
-            Array & values = (*this)[attr_name].safeGet<Array &>();
+            Array & values = (*this)[attr_name].safeGet<Array>();
             if (values.size() < *collect_values_limit)
             {
                 values.push_back(std::move(field));
@@ -490,7 +491,7 @@ public:
             auto it = this->find(attr_name);
             if (it == this->end())
                 return false;
-            return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
+            return it->second.safeGet<Array>().size() >= *collect_values_limit;
         }
 
         return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
@@ -887,7 +888,8 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             const auto & node = it->second;
             col_pid->insert(node->parent_id);
             col_regex->insert(node->regex);
-            std::vector<Field> keys, values;
+            std::vector<Field> keys;
+            std::vector<Field> values;
             for (const auto & [key, attr] : node->attributes)
             {
                 keys.push_back(key);

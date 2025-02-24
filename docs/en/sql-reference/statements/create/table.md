@@ -1,10 +1,14 @@
 ---
-slug: /en/sql-reference/statements/create/table
+slug: /sql-reference/statements/create/table
 sidebar_position: 36
 sidebar_label: TABLE
 title: "CREATE TABLE"
 keywords: [compression, codec, schema, DDL]
 ---
+
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 Creates a new table. This query can have various syntax forms depending on a use case.
 
@@ -72,7 +76,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)
 
 Creates a table with a structure like the result of the `SELECT` query, with the `engine` engine, and fills it with data from `SELECT`. Also you can explicitly specify columns description.
 
-If the table already exists and `IF NOT EXISTS` is specified, the query won’t do anything.
+If the table already exists and `IF NOT EXISTS` is specified, the query won't do anything.
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../../../engines/table-engines/index.md#table_engines).
 
@@ -383,7 +387,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
 :::tip
-You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
+You can't decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 :::
 
 Compression is supported for the following table engines:
@@ -417,15 +421,24 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 
 #### ZSTD_QAT
 
+<CloudNotSupportedBadge/>
+
 `ZSTD_QAT[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable level, implemented by [Intel® QATlib](https://github.com/intel/qatlib) and [Intel® QAT ZSTD Plugin](https://github.com/intel/QAT-ZSTD-Plugin). Possible levels: \[1, 12\]. Default level: 1. Recommended level range: \[6, 12\]. Some limitations apply:
 
 - ZSTD_QAT is disabled by default and can only be used after enabling configuration setting [enable_zstd_qat_codec](../../../operations/settings/settings.md#enable_zstd_qat_codec).
 - For compression, ZSTD_QAT tries to use an Intel® QAT offloading device ([QuickAssist Technology](https://www.intel.com/content/www/us/en/developer/topic-technology/open/quick-assist-technology/overview.html)). If no such device was found, it will fallback to ZSTD compression in software.
 - Decompression is always performed in software.
 
-:::note
-ZSTD_QAT is not available in ClickHouse Cloud.
-:::
+#### DEFLATE_QPL
+
+<CloudNotSupportedBadge/>
+
+`DEFLATE_QPL` — [Deflate compression algorithm](https://github.com/intel/qpl) implemented by Intel® Query Processing Library. Some limitations apply:
+
+- DEFLATE_QPL is disabled by default and can only be used after enabling configuration setting [enable_deflate_qpl_codec](../../../operations/settings/settings.md#enable_deflate_qpl_codec).
+- DEFLATE_QPL requires a ClickHouse build compiled with SSE 4.2 instructions (by default, this is the case). Refer to [Build Clickhouse with DEFLATE_QPL](/docs/development/building_and_benchmarking_deflate_qpl.md/#Build-Clickhouse-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL works best if the system has a Intel® IAA (In-Memory Analytics Accelerator) offloading device. Refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration) and [Benchmark with DEFLATE_QPL](/docs/development/building_and_benchmarking_deflate_qpl.md/#Run-Benchmark-with-DEFLATE_QPL) for more details.
+- DEFLATE_QPL-compressed data can only be transferred between ClickHouse nodes compiled with SSE 4.2 enabled.
 
 ### Specialized Codecs
 
@@ -433,11 +446,11 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### Delta
 
-`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
+`Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. Delta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 #### DoubleDelta
 
-`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
+`DoubleDelta(bytes_size)` — Calculates delta of deltas and writes it in compact binary form. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-bit deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta is a data preparation codec, i.e. it cannot be used stand-alone.
 
 #### GCD
 
@@ -445,11 +458,11 @@ These codecs are designed to make compression more effective by exploiting speci
 
 #### Gorilla
 
-`Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
+`Gorilla(bytes_size)` — Calculates XOR between current and previous floating point value and writes it in compact binary form. The smaller the difference between consecutive values is, i.e. the slower the values of the series changes, the better the compression rate. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Possible `bytes_size` values: 1, 2, 4, 8, the default value is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it's 1. For additional information, see section 4.1 in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
 #### FPC
 
-`FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it’s 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
+`FPC(level, float_size)` - Repeatedly predicts the next floating point value in the sequence using the better of two predictors, then XORs the actual with the predicted value, and leading-zero compresses the result. Similar to Gorilla, this is efficient when storing a series of floating point values that change slowly. For 64-bit values (double), FPC is faster than Gorilla, for 32-bit values your mileage may vary. Possible `level` values: 1-28, the default value is 12.  Possible `float_size` values: 4, 8, the default value is `sizeof(type)` if type is Float. In all other cases, it's 4. For a detailed description of the algorithm see [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
 #### T64
 
@@ -526,7 +539,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
 - A temporary table uses the Memory table engine when engine is not specified and it may use any table engine except Replicated and `KeeperMap` engines.
-- The DB can’t be specified for a temporary table. It is created outside of databases.
+- The DB can't be specified for a temporary table. It is created outside of databases.
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
@@ -544,29 +557,43 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
 
-It’s possible to use tables with [ENGINE = Memory](../../../engines/table-engines/special/memory.md) instead of temporary tables.
+It's possible to use tables with [ENGINE = Memory](../../../engines/table-engines/special/memory.md) instead of temporary tables.
 
 ## REPLACE TABLE
 
-'REPLACE' query allows you to update the table atomically.
+The `REPLACE` statement allows you to update a table [atomically](/docs/concepts/glossary#atomicity).
 
 :::note
-This query is supported only for [Atomic](../../../engines/database-engines/atomic.md) database engine.
+This statement is supported for the [`Atomic`](../../../engines/database-engines/atomic.md) and [`Replicated`](../../../engines/database-engines/replicated.md) database engines, 
+which are the default database engines for ClickHouse and ClickHouse Cloud respectively.
 :::
 
-If you need to delete some data from a table, you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, then drop the old table and rename the new one:
+Ordinarily, if you need to delete some data from a table, 
+you can create a new table and fill it with a `SELECT` statement that does not retrieve unwanted data, 
+then drop the old table and rename the new one. 
+This approach is demonstrated in the example below:
 
 ```sql
 CREATE TABLE myNewTable AS myOldTable;
-INSERT INTO myNewTable SELECT * FROM myOldTable WHERE CounterID <12345;
+
+INSERT INTO myNewTable
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
 DROP TABLE myOldTable;
+
 RENAME TABLE myNewTable TO myOldTable;
 ```
 
-Instead of above, you can use the following:
+Instead of the approach above, it is also possible to use `REPLACE` (given you are using the default database engines) to achieve the same result:
 
 ```sql
-REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FROM myOldTable WHERE CounterID <12345;
+REPLACE TABLE myOldTable
+ENGINE = MergeTree()
+ORDER BY CounterID 
+AS
+SELECT * FROM myOldTable
+WHERE CounterID <12345;
 ```
 
 ### Syntax
@@ -575,56 +602,133 @@ REPLACE TABLE myOldTable ENGINE = MergeTree() ORDER BY CounterID AS SELECT * FRO
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 ```
 
-All syntax forms for `CREATE` query also work for this query. `REPLACE` for a non-existent table will cause an error.
+:::note
+All syntax forms for the `CREATE` statement also work for this statement. Invoking `REPLACE` for a non-existent table will cause an error.
+:::
 
 ### Examples:
 
-Consider the table:
+<Tabs>
+<TabItem value="clickhouse_replace_example" label="Local" default>
+
+Consider the following table:
 
 ```sql
-CREATE DATABASE base ENGINE = Atomic;
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s String) ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (1, 'test');
-SELECT * FROM base.t1;
-```
+CREATE DATABASE base 
+ENGINE = Atomic;
 
-```text
+CREATE OR REPLACE TABLE base.t1
+(
+    n UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (1, 'test');
+
+SELECT * FROM base.t1;
+
 ┌─n─┬─s────┐
 │ 1 │ test │
 └───┴──────┘
 ```
 
-Using `REPLACE` query to clear all data:
+We can use the `REPLACE` statement to clear all the data:
 
 ```sql
-CREATE OR REPLACE TABLE base.t1 (n UInt64, s Nullable(String)) ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (2, null);
-SELECT * FROM base.t1;
-```
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64,
+    s Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY n;
 
-```text
+INSERT INTO base.t1 VALUES (2, null);
+
+SELECT * FROM base.t1;
+
 ┌─n─┬─s──┐
 │ 2 │ \N │
 └───┴────┘
 ```
 
-Using `REPLACE` query to change table structure:
+Or we can use the `REPLACE` statement to change the table structure:
 
 ```sql
-REPLACE TABLE base.t1 (n UInt64) ENGINE = MergeTree ORDER BY n;
-INSERT INTO base.t1 VALUES (3);
-SELECT * FROM base.t1;
-```
+REPLACE TABLE base.t1 (n UInt64) 
+ENGINE = MergeTree 
+ORDER BY n;
 
-```text
+INSERT INTO base.t1 VALUES (3);
+
+SELECT * FROM base.t1;
+
 ┌─n─┐
 │ 3 │
 └───┘
+```  
+</TabItem>
+<TabItem value="cloud_replace_example" label="Cloud">
+
+Consider the following table on ClickHouse Cloud: 
+
+```sql
+CREATE DATABASE base;
+
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (1, 'test');
+
+SELECT * FROM base.t1;
+
+1	test
 ```
+
+We can use the `REPLACE` statement to clear all the data:
+
+```sql
+CREATE OR REPLACE TABLE base.t1 
+(
+    n UInt64, 
+    s Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (2, null);
+
+SELECT * FROM base.t1;
+
+2	
+```
+
+Or we can use the `REPLACE` statement to change the table structure:
+
+```sql
+REPLACE TABLE base.t1 (n UInt64) 
+ENGINE = MergeTree 
+ORDER BY n;
+
+INSERT INTO base.t1 VALUES (3);
+
+SELECT * FROM base.t1;
+
+3
+```    
+</TabItem>
+</Tabs>
 
 ## COMMENT Clause
 
-You can add a comment to the table when you creating it.
+You can add a comment to the table when creating it.
 
 **Syntax**
 

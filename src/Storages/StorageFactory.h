@@ -5,7 +5,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
@@ -18,6 +17,7 @@ namespace DB
 class Context;
 struct StorageID;
 
+struct ConstraintsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.
@@ -28,6 +28,10 @@ class StorageFactory : private boost::noncopyable, public IHints<>
 public:
 
     static StorageFactory & instance();
+
+    /// Helper function to validate if a specific storage supports a setting
+    /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
+    using HasBuiltinSettingFn = bool(std::string_view);
 
     struct Arguments
     {
@@ -69,6 +73,8 @@ public:
         bool supports_parallel_insert = false;
         bool supports_schema_inference = false;
         AccessType source_access_type = AccessType::NONE;
+
+        HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -102,6 +108,7 @@ public:
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
         .source_access_type = AccessType::NONE,
+        .has_builtin_setting_fn = nullptr,
     });
 
     const Storages & getAllStorages() const

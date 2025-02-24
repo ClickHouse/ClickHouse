@@ -7,6 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -15,6 +16,7 @@
 #include <Core/Settings.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <Formats/FormatFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocket.h>
@@ -23,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
@@ -89,6 +92,7 @@ namespace Setting
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -111,12 +115,12 @@ namespace Setting
     extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool apply_settings_from_server;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
-    extern const ServerSettingsBool send_settings_to_client;
 }
 }
 
@@ -176,9 +180,10 @@ namespace
 // "ClickHouse" or "ClickHouse " was sent with the query message.
 void correctQueryClientInfo(const ClientInfo & session_client_info, ClientInfo & client_info)
 {
-    if (client_info.getVersionNumber() <= VersionNumber(23, 8, 1) &&
-        session_client_info.client_name == "ClickHouse client" &&
-        (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
+    if (VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+            <= VersionNumber(23, 8, 1)
+        && session_client_info.client_name == "ClickHouse client"
+        && (client_info.client_name == "ClickHouse" || client_info.client_name == "ClickHouse "))
     {
         client_info.client_name = "ClickHouse client";
     }
@@ -499,6 +504,7 @@ void TCPHandler::runImpl()
                 query_state->query_context->getSettingsRef(),
                 query_state->query_context->getOpenTelemetrySpanLog());
             thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
             query_scope.emplace(query_state->query_context, /* fatal_error_callback */ [this, &query_state]
             {
@@ -546,7 +552,7 @@ void TCPHandler::runImpl()
                 checkIfQueryCanceled(query_state.value());
 
                 /// Get blocks of temporary tables
-                readData(query_state.value());
+                readTemporaryTables(query_state.value());
 
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
@@ -580,6 +586,9 @@ void TCPHandler::runImpl()
                 query_state->input_header = metadata_snapshot->getSampleBlock();
                 sendData(query_state.value(), query_state->input_header);
                 sendTimezone(query_state.value());
+
+                /// Update flag after reading external tables
+                query_state->read_all_data = false;
             });
 
             query_state->query_context->setInputBlocksReaderCallback([this, &query_state] (ContextPtr context) -> Block
@@ -594,7 +603,6 @@ void TCPHandler::runImpl()
                 if (receivePacketsExpectData(query_state.value()))
                     return query_state->block_for_input;
 
-                query_state->read_all_data = true;
                 query_state->block_in.reset();
                 query_state->maybe_compressed_in.reset();
                 return {};
@@ -756,9 +764,7 @@ void TCPHandler::runImpl()
             auto exception_code = exception->code();
 
             if (!query_state.has_value())
-            {
                 return;
-            }
 
             try
             {
@@ -781,8 +787,7 @@ void TCPHandler::runImpl()
             /// In this case, the user is already authenticated with this server,
             /// is_interserver_mode is false, and we can send the exception to the client normally.
 
-            if (is_interserver_mode
-                && !is_interserver_authenticated)
+            if (is_interserver_mode && !is_interserver_authenticated)
             {
                 /// Interserver authentication is done only after we read the query.
                 /// This fact can be abused by producing exception before or while we read the query.
@@ -799,7 +804,7 @@ void TCPHandler::runImpl()
             }
 
             if (thread_trace_context)
-                    thread_trace_context->root_span.addAttribute(*exception);
+                thread_trace_context->root_span.addAttribute(*exception);
 
             if (!out || out->isCanceled())
             {
@@ -815,19 +820,15 @@ void TCPHandler::runImpl()
                 /// Assume that we can't break output here
                 sendLogs(query_state.value());
 
+                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
+                    sendEndOfStream(query_state.value());
+                else
+                    sendException(*exception, send_exception_with_stack_trace);
+
                 /// A query packet is always followed by one or more data packets.
                 /// If some of those data packets are left, try to skip them.
                 if (!query_state->read_all_data)
                     skipData(query_state.value());
-
-                if (exception_code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
-                {
-                    sendEndOfStream(query_state.value());
-                }
-                else
-                {
-                    sendException(*exception, send_exception_with_stack_trace);
-                }
 
                 LOG_TEST(log, "Logs and exception has been sent. The connection is preserved.");
             }
@@ -976,9 +977,16 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
             case Protocol::Client::Data:
             case Protocol::Client::Scalar:
+            {
+                bool empty_block;
                 if (state.skipping_data)
-                    return processUnexpectedData();
-                return processData(state, packet_type == Protocol::Client::Scalar);
+                    empty_block = !processUnexpectedData();
+                else
+                    empty_block = !processData(state, packet_type == Protocol::Client::Scalar);
+                if (empty_block)
+                    state.read_all_data = true;
+                return !empty_block;
+            }
 
             case Protocol::Client::Ping:
                 writeVarUInt(Protocol::Server::Pong, *out);
@@ -1000,7 +1008,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 }
 
 
-void TCPHandler::readData(QueryState & state)
+void TCPHandler::readTemporaryTables(QueryState & state)
 {
     sendLogs(state);
 
@@ -1012,8 +1020,6 @@ void TCPHandler::readData(QueryState & state)
         sendLogs(state);
         sendInsertProfileEvents(state);
     }
-
-    state.read_all_data = true;
 }
 
 
@@ -1022,18 +1028,15 @@ void TCPHandler::skipData(QueryState & state)
     state.skipping_data = true;
     SCOPE_EXIT({ state.skipping_data = false; });
 
+    size_t blocks = 0;
     while (receivePacketsExpectData(state))
-    {
-        /// no op
-    }
-
-    state.read_all_data = true;
+        ++blocks;
+    LOG_TRACE(log, "Discarded {} blocks", blocks);
 }
 
 
 void TCPHandler::startInsertQuery(QueryState & state)
 {
-
     std::lock_guard lock(callback_mutex);
 
     /// Send ColumnsDescription for insertion table
@@ -1053,6 +1056,9 @@ void TCPHandler::startInsertQuery(QueryState & state)
     /// Send block to the client - table structure.
     sendData(state, state.io.pipeline.getHeader());
     sendLogs(state);
+
+    /// Update flag after reading external tables
+    state.read_all_data = false;
 }
 
 
@@ -1067,6 +1073,10 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
         auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+
+        sendLogs(state);
+        sendInsertProfileEvents(state);
+
         if (result_chunk)
         {
             auto result = squashing.getHeader().cloneWithColumns(result_chunk.detachColumns());
@@ -1077,8 +1087,6 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
             };
         }
     }
-
-    state.read_all_data = true;
 
     Chunk result_chunk = Squashing::squash(squashing.flush());
     if (!result_chunk)
@@ -1110,9 +1118,12 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 startInsertQuery(state);
 
             while (receivePacketsExpectDataConcurrentWithExecutor(state))
+            {
                 executor.push(std::move(state.block_for_insert));
 
-            state.read_all_data = true;
+                sendLogs(state);
+                sendInsertProfileEvents(state);
+            }
 
             executor.finish();
         }
@@ -1548,11 +1559,27 @@ bool TCPHandler::receiveProxyHeader()
             return false;
         }
 
+        bool is_tcp6 = ('6' == *limit_in.position());
+
         ++limit_in.position();
         assertChar(' ', limit_in);
 
         /// Read the first field and ignore other.
         readStringUntilWhitespace(forwarded_address, limit_in);
+
+        if (is_tcp6)
+            forwarded_address = "[" + forwarded_address + "]";
+
+        /// Skip second field (destination address)
+        assertChar(' ', limit_in);
+        skipStringUntilWhitespace(limit_in);
+        assertChar(' ', limit_in);
+
+        /// Read source port
+        String port;
+        readStringUntilWhitespace(port, limit_in);
+
+        forwarded_address += ":" + port;
 
         /// Skip until \r\n
         while (!limit_in.eof() && *limit_in.position() != '\r')
@@ -1849,7 +1876,8 @@ void TCPHandler::sendHello()
 
     if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_SETTINGS)
     {
-        if (is_interserver_mode || !Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::send_settings_to_client])
+        if (is_interserver_mode ||
+            !session->sessionContext()->getSettingsRef()[Setting::apply_settings_from_server])
             Settings::writeEmpty(*out); // send empty list of setting changes
         else
             session->sessionContext()->getSettingsRef().write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
@@ -2082,7 +2110,7 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
             /// the query was come, since the real address is the address of
             /// the initiator server, while we are interested in client's
             /// address.
-            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, client_info.initial_address, external_roles);
+            session->authenticate(AlwaysAllowCredentials{client_info.initial_user}, *client_info.initial_address, external_roles);
         }
 
         is_interserver_authenticated = true;
@@ -2116,7 +2144,9 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
     /// different servers.
-    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.getVersionNumber() < VersionNumber(23, 3, 0)
+    if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        && VersionNumber(client_info.client_version_major, client_info.client_version_minor, client_info.client_version_patch)
+            < VersionNumber(23, 3, 0)
         && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
 
@@ -2265,9 +2295,8 @@ bool TCPHandler::processUnexpectedData()
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool read_ok = !!skip_block_in->read();
-
-    return read_ok;
+    bool empty_block = !skip_block_in->read();
+    return !empty_block;
 }
 
 
@@ -2292,7 +2321,8 @@ void TCPHandler::initBlockInput(QueryState & state)
         state.block_in = std::make_unique<NativeReader>(
             *state.maybe_compressed_in,
             header,
-            client_tcp_protocol_version);
+            client_tcp_protocol_version,
+            getFormatSettings(state.query_context));
     }
 }
 
@@ -2316,6 +2346,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
                     level,
                     !query_settings[Setting::allow_suspicious_codecs],
                     query_settings[Setting::allow_experimental_codecs],
+                    query_settings[Setting::enable_deflate_qpl_codec],
                     query_settings[Setting::enable_zstd_qat_codec]);
 
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
@@ -2329,7 +2360,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
-            std::nullopt,
+            getFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -2342,7 +2373,7 @@ void TCPHandler::initLogsBlockOutput(QueryState & state, const Block & block)
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.logs_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2353,7 +2384,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
     {
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *out, client_tcp_protocol_version, block.cloneEmpty(), std::nullopt, !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *out, client_tcp_protocol_version, block.cloneEmpty(), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
@@ -2610,9 +2641,9 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
 {
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = client_info.getLastForwardedFor();
-    if (!forwarded_address.empty() && server.config().getBool("auth_use_forwarded_address", false))
-        return Poco::Net::SocketAddress(forwarded_address, socket().peerAddress().port());
+    auto forwarded_address = client_info.getLastForwardedFor();
+    if (forwarded_address && server.config().getBool("auth_use_forwarded_address", false))
+        return *forwarded_address;
     return socket().peerAddress();
 }
 

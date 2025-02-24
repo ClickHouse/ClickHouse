@@ -4,7 +4,6 @@
 
 #if USE_AWS_S3
 
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/Requests.h>
@@ -86,10 +85,11 @@ bool ReadBufferFromS3::nextImpl()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
     }
 
-    bool next_result = false;
-
     if (impl)
     {
+        if (impl->isResultReleased())
+            return false;
+
         if (use_external_buffer)
         {
             /**
@@ -114,6 +114,7 @@ bool ReadBufferFromS3::nextImpl()
         }
     }
 
+    bool next_result = false;
     size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 1; !next_result; ++attempt)
     {
@@ -162,6 +163,8 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
+        // release result to free pooled HTTP session for reuse
+        impl->releaseResult();
         return false;
     }
 
@@ -169,6 +172,12 @@ bool ReadBufferFromS3::nextImpl()
 
     ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, working_buffer.size());
     offset += working_buffer.size();
+
+    // release result if possible to free pooled HTTP session for better reuse
+    bool is_read_until_position = read_until_position && read_until_position == offset;
+    if (impl->isStreamEof() || is_read_until_position)
+        impl->releaseResult();
+
     if (read_settings.remote_throttler)
         read_settings.remote_throttler->add(working_buffer.size(), ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
 
@@ -237,7 +246,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
-    if (auto * s3_exception = exception_cast<S3Exception *>(std::current_exception()))
+    if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
         /// It doesn't make sense to retry Access Denied or No Such Key
         if (!s3_exception->isRetryableError())
@@ -380,7 +389,7 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
     return false;
 }
 
-std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize(size_t attempt)
+std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
 {
     read_all_range_successfully = false;
 
@@ -391,10 +400,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize(size_t attempt)
     if (read_until_position && offset >= read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
-    read_result = sendRequest(attempt, offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
+    auto read_result = sendRequest(attempt, offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
-    return std::make_unique<ReadBufferFromIStream>(read_result->GetBody(), buffer_size);
+    return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size);
 }
 
 Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const

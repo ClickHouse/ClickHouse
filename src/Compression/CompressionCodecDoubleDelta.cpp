@@ -1,9 +1,11 @@
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
+#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
+
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -12,7 +14,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <cstring>
-#include <algorithm>
 #include <cstdlib>
 #include <type_traits>
 #include <limits>
@@ -511,7 +512,7 @@ UInt32 CompressionCodecDoubleDelta::doCompressData(const char * source, UInt32 s
         break;
     }
 
-    return 1 + 1 + compressed_size;
+    return 1 + 1 + compressed_size + UInt32(bytes_to_skip);
 }
 
 void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const

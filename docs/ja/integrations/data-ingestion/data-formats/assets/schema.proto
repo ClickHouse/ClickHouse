@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-message MessageType {
-  string path = 1;
-  date month = 2;
-  uint32 hits = 3;
-};

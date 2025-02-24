@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/settings/query-complexity
+slug: /operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
 ---
@@ -12,8 +12,8 @@ Almost all the restrictions only apply to `SELECT`. For distributed query proces
 
 ClickHouse checks the restrictions for data parts, not for each row. It means that you can exceed the value of restriction with the size of the data part.
 
-Restrictions on the “maximum amount of something” can take the value 0, which means “unrestricted”.
-Most restrictions also have an ‘overflow_mode’ setting, meaning what to do when the limit is exceeded.
+Restrictions on the "maximum amount of something" can take the value 0, which means "unrestricted".
+Most restrictions also have an 'overflow_mode' setting, meaning what to do when the limit is exceeded.
 It can take one of two values: `throw` or `break`. Restrictions on aggregation (group_by_overflow_mode) also have the value `any`.
 
 `throw` – Throw an exception (default).
@@ -43,7 +43,7 @@ Memory consumption is also restricted by the parameters `max_memory_usage_for_us
 
 ## max_memory_usage_for_user {#max-memory-usage-for-user}
 
-The maximum amount of RAM to use for running a user’s queries on a single server.
+The maximum amount of RAM to use for running a user's queries on a single server.
 
 Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
@@ -73,7 +73,7 @@ A maximum number of bytes (uncompressed data) that can be read from a table when
 
 ## read_overflow_mode {#read-overflow-mode}
 
-What to do when the volume of data read exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+What to do when the volume of data read exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
 ## max_rows_to_read_leaf {#max-rows-to-read-leaf}
 
@@ -98,7 +98,7 @@ as in total it will be 200 bytes. While query with `max_bytes_to_read_leaf=150` 
 
 ## read_overflow_mode_leaf {#read-overflow-mode-leaf}
 
-What to do when the volume of data read exceeds one of the leaf limits: ‘throw’ or ‘break’. By default, throw.
+What to do when the volume of data read exceeds one of the leaf limits: 'throw' or 'break'. By default, throw.
 
 ## max_rows_to_group_by {#settings-max-rows-to-group-by}
 
@@ -106,8 +106,8 @@ A maximum number of unique keys received from aggregation. This setting lets you
 
 ## group_by_overflow_mode {#group-by-overflow-mode}
 
-What to do when the number of unique keys for aggregation exceeds the limit: ‘throw’, ‘break’, or ‘any’. By default, throw.
-Using the ‘any’ value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
+What to do when the number of unique keys for aggregation exceeds the limit: 'throw', 'break', or 'any'. By default, throw.
+Using the 'any' value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
@@ -128,12 +128,7 @@ The ratio of available memory that is allowed for `GROUP BY`, once reached, uses
 
 For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
 
-Default value: `0.0`.
-
-:::note
-- You cannot use both `max_bytes_ratio_before_external_group_by` and `max_bytes_before_external_group_by`
-- **The algorithm is experimental and subject to change**
-:::
+Default value: `0.5`.
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
@@ -152,12 +147,7 @@ The ratio of available memory that is allowed for `ORDER BY`, once reached, uses
 
 For example, if set to `0.6`, `ORDER BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
 
-Default value: `0.0`.
-
-:::note
-- You cannot use both `max_bytes_ratio_before_external_sort` and `max_bytes_before_external_sort`
-- **The algorithm is experimental and subject to change**
-:::
+Default value: `0.5`.
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
@@ -169,7 +159,7 @@ A maximum number of bytes before sorting.
 
 ## sort_overflow_mode {#sort-overflow-mode}
 
-What to do if the number of rows received before sorting exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+What to do if the number of rows received before sorting exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
 ## max_result_rows {#setting-max_result_rows}
 
@@ -185,9 +175,9 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 ## result_overflow_mode {#result-overflow-mode}
 
-What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’.
+What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'.
 
-Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
 
 Default value: `throw`.
 
@@ -215,10 +205,10 @@ Result:
 Maximum query execution time in seconds.
 At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
 
-The `max_execution_time` parameter can be a bit tricky to understand. 
-It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)). 
+The `max_execution_time` parameter can be a bit tricky to understand.
+It operates based on interpolation relative to the current query execution speed (this behaviour is controlled by [timeout_before_checking_execution_speed](#timeout-before-checking-execution-speed)).
 ClickHouse will interrupt a query if the projected execution time exceeds the specified `max_execution_time`.
-By default, the timeout_before_checking_execution_speed is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse will begin estimating the total execution time. 
+By default, the timeout_before_checking_execution_speed is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse will begin estimating the total execution time.
 If, for example, `max_execution_time` is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated time exceeds this 3600-second limit.
 If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use clock time as the basis for `max_execution_time`.
 
@@ -248,27 +238,27 @@ What to do when the query in leaf node run longer than `max_execution_time_leaf`
 
 ## min_execution_speed {#min-execution-speed}
 
-Minimal execution speed in rows per second. Checked on every data block when ‘timeout_before_checking_execution_speed’ expires. If the execution speed is lower, an exception is thrown.
+Minimal execution speed in rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
 
 ## min_execution_speed_bytes {#min-execution-speed-bytes}
 
-A minimum number of execution bytes per second. Checked on every data block when ‘timeout_before_checking_execution_speed’ expires. If the execution speed is lower, an exception is thrown.
+A minimum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
 
 ## max_execution_speed {#max-execution-speed}
 
-A maximum number of execution rows per second. Checked on every data block when ‘timeout_before_checking_execution_speed’ expires. If the execution speed is high, the execution speed will be reduced.
+A maximum number of execution rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
 
 ## max_execution_speed_bytes {#max-execution-speed-bytes}
 
-A maximum number of execution bytes per second. Checked on every data block when ‘timeout_before_checking_execution_speed’ expires. If the execution speed is high, the execution speed will be reduced.
+A maximum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
 
 ## timeout_before_checking_execution_speed {#timeout-before-checking-execution-speed}
 
-Checks that execution speed is not too slow (no less than ‘min_execution_speed’), after the specified time in seconds has expired.
+Checks that execution speed is not too slow (no less than 'min_execution_speed'), after the specified time in seconds has expired.
 
 ## max_estimated_execution_time {#max_estimated_execution_time}
 
-Maximum query estimate execution time in seconds. Checked on every data block when ‘timeout_before_checking_execution_speed’ expires.
+Maximum query estimate execution time in seconds. Checked on every data block when 'timeout_before_checking_execution_speed' expires.
 
 ## max_columns_to_read {#max-columns-to-read}
 
@@ -280,7 +270,7 @@ A maximum number of temporary columns that must be kept in RAM at the same time 
 
 ## max_temporary_non_const_columns {#max-temporary-non-const-columns}
 
-The same thing as ‘max_temporary_columns’, but without counting constant columns.
+The same thing as 'max_temporary_columns', but without counting constant columns.
 Note that constant columns are formed fairly often when running a query, but they require approximately zero computing resources.
 
 ## max_subquery_depth {#max-subquery-depth}
@@ -294,7 +284,7 @@ Maximum pipeline depth. Corresponds to the number of transformations that each d
 ## max_ast_depth {#max-ast-depth}
 
 Maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
-At this time, it isn’t checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.
+At this time, it isn't checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.
 
 ## max_ast_elements {#max-ast-elements}
 
@@ -311,7 +301,7 @@ A maximum number of bytes (uncompressed data) used by a set in the IN clause cre
 
 ## set_overflow_mode {#set-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
 ## max_rows_in_distinct {#max-rows-in-distinct}
 
@@ -323,7 +313,7 @@ A maximum number of bytes used by a hash table when using DISTINCT.
 
 ## distinct_overflow_mode {#distinct-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
 ## max_rows_to_transfer {#max-rows-to-transfer}
 
@@ -335,7 +325,7 @@ A maximum number of bytes (uncompressed data) that can be passed to a remote ser
 
 ## transfer_overflow_mode {#transfer-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
 ## max_rows_in_join {#settings-max_rows_in_join}
 
@@ -403,7 +393,7 @@ Default value: 100.
 
 When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have the following text:
 
-> “Too many partitions for a single INSERT block (`partitions_count` partitions, limit is ” + toString(max_partitions) + “). The limit is controlled by the ‘max_partitions_per_insert_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
+> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is " + toString(max_partitions) + "). The limit is controlled by the 'max_partitions_per_insert_block' setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 ## throw_on_max_partitions_per_insert_block {#settings-throw_on_max_partition_per_insert_block}
 

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/arithmetic-functions
+slug: /sql-reference/functions/arithmetic-functions
 sidebar_position: 5
 sidebar_label: Arithmetic
 ---
@@ -54,6 +54,8 @@ Alias: `a + b` (operator)
 Calculates the difference of two values `a` and `b`. The result is always signed.
 
 Similar to `plus`, it is possible to subtract an integer from a date or date with time.
+
+Additionally, subtraction between date with time is supported, resulting in the time difference between them.
 
 **Syntax**
 

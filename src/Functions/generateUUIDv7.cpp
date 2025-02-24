@@ -44,7 +44,7 @@ constexpr uint64_t counter_high_bits_mask = rand_a_bits_mask;
 uint64_t getTimestampMillisecond()
 {
     timespec tp;
-    clock_gettime(CLOCK_REALTIME, &tp);
+    clock_gettime(CLOCK_REALTIME, &tp); /// NOLINT(cert-err33-c)
     const uint64_t sec = tp.tv_sec;
     return sec * 1000 + tp.tv_nsec / 1000000;
 }
@@ -218,9 +218,9 @@ REGISTER_FUNCTION(GenerateUUIDv7)
     FunctionDocumentation::Arguments arguments = {{"expression", "The expression is used to bypass common subexpression elimination if the function is called multiple times in a query but otherwise ignored. Optional."}};
     FunctionDocumentation::ReturnedValue returned_value = "A value of type UUID version 7.";
     FunctionDocumentation::Examples examples = {{"single", "SELECT generateUUIDv7()", ""}, {"multiple", "SELECT generateUUIDv7(1), generateUUIDv7(2)", ""}};
-    FunctionDocumentation::Categories categories = {"UUID"};
+    FunctionDocumentation::Category category = {"UUIDs"};
 
-    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, categories});
+    factory.registerFunction<FunctionGenerateUUIDv7Base>({description, syntax, arguments, returned_value, examples, category});
 }
 
 }

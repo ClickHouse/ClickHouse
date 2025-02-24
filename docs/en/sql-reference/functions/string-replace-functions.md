@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/string-replace-functions
+slug: /sql-reference/functions/string-replace-functions
 sidebar_position: 150
 sidebar_label: Replacing in Strings
 ---
@@ -253,7 +253,11 @@ SELECT format('{} {}', 'Hello', 'World')
 
 ## translate
 
-Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings. `from` and `to` must be constant ASCII strings. Non-ASCII characters in the original string are not modified. If the number of characters in `from` list is larger than the `to` list, non overlapping characters will be deleted from the input string.
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings.
+`from` and `to` must be constant ASCII strings.
+If `from` and `to` have equal sizes, each occurrence of the 1st character of `first` in `s` is replaced by the 1st character of `to`, the 2nd character of `first` in `s` is replaced by the 2nd character of `to`, etc.
+If `from` contains more characters than `to`, all occurrences of the characters at the end of `from` that have no corresponding character in `to` are deleted from `s`.
+Non-ASCII characters in `s` are not modified by the function.
 
 **Syntax**
 
@@ -273,6 +277,20 @@ Result:
 ┌─res───────────┐
 │ HELLO, WORLD! │
 └───────────────┘
+```
+
+`from` and `to` arguments have different lengths:
+
+``` sql
+SELECT translate('clickhouse', 'clickhouse', 'CLICK') AS res
+```
+
+Result:
+
+``` text
+┌─res───┐
+│ CLICK │
+└───────┘
 ```
 
 ## translateUTF8

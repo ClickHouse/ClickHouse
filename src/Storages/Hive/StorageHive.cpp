@@ -8,6 +8,7 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -532,7 +533,7 @@ void StorageHive::initMinMaxIndexExpression()
         partition_names = partition_name_types.getNames();
         partition_types = partition_name_types.getTypes();
         partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(partition_name_types), ExpressionActionsSettings::fromContext(getContext()));
+            ActionsDAG(partition_name_types), ExpressionActionsSettings(getContext()));
     }
 
     NamesAndTypesList all_name_types = metadata_snapshot->getColumns().getAllPhysical();
@@ -542,7 +543,7 @@ void StorageHive::initMinMaxIndexExpression()
             hivefile_name_types.push_back(column);
     }
     hivefile_minmax_idx_expr = std::make_shared<ExpressionActions>(
-        ActionsDAG(hivefile_name_types), ExpressionActionsSettings::fromContext(getContext()));
+        ActionsDAG(hivefile_name_types), ExpressionActionsSettings(getContext()));
 }
 
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
@@ -1033,12 +1034,6 @@ SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetad
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
 }
 
-std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const
-{
-    /// query_info is not used when prune_level == PruneLevel::None
-    return totalRowsImpl(settings, {}, getContext(), PruneLevel::None);
-}
-
 std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context_) const
 {
     return totalRowsImpl(context_->getSettingsRef(), &filter_actions_dag, context_, PruneLevel::Partition);
@@ -1123,6 +1118,7 @@ void registerStorageHive(StorageFactory & factory)
             .supports_settings = true,
             .supports_sort_order = true,
             .source_access_type = AccessType::HIVE,
+            .has_builtin_setting_fn = HiveSettings::hasBuiltin,
         });
 }
 

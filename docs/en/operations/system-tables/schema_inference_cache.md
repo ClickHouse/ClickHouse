@@ -1,17 +1,22 @@
 ---
-slug: /en/operations/system-tables/schema_inference_cache
+description: "System table containing information about all cached file schemas."
+slug: /operations/system-tables/schema_inference_cache
+title: "schema_inference_cache"
+keywords: ["system table", "schema_inference_cache"]
 ---
-# schema_inference_cache
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Contains information about all cached file schemas.
 
 Columns:
-- `storage` ([String](/docs/en/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
-- `source` ([String](/docs/en/sql-reference/data-types/string.md)) — File source.
-- `format` ([String](/docs/en/sql-reference/data-types/string.md)) — Format name.
-- `additional_format_info` ([String](/docs/en/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
-- `registration_time` ([DateTime](/docs/en/sql-reference/data-types/datetime.md)) — Timestamp when schema was added in cache.
-- `schema` ([String](/docs/en/sql-reference/data-types/string.md)) - Cached schema.
+- `storage` ([String](/docs/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
+- `source` ([String](/docs/sql-reference/data-types/string.md)) — File source.
+- `format` ([String](/docs/sql-reference/data-types/string.md)) — Format name.
+- `additional_format_info` ([String](/docs/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
+- `registration_time` ([DateTime](/docs/sql-reference/data-types/datetime.md)) — Timestamp when schema was added in cache.
+- `schema` ([String](/docs/sql-reference/data-types/string.md)) - Cached schema.
 
 **Example**
 
@@ -26,7 +31,7 @@ Let's say we have a file `data.jsonl` with this content:
 :::tip
 Place `data.jsonl` in the `user_files_path` directory.  You can find this by looking
 in your ClickHouse configuration files. The default is:
-```
+```sql
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 :::
@@ -66,4 +71,4 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 
 
 **See also**
-- [Automatic schema inference from input data](/docs/en/interfaces/schema-inference.md)
+- [Automatic schema inference from input data](/docs/interfaces/schema-inference.md)

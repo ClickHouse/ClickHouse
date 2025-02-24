@@ -1,19 +1,22 @@
 ---
-slug: /en/sql-reference/statements/create/view
+slug: /sql-reference/statements/create/view
 sidebar_position: 37
 sidebar_label: VIEW
 ---
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # CREATE VIEW
 
-Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](#window-view-experimental) (refreshable materialized view and window view are experimental features).
+Creates a new view. Views can be [normal](#normal-view), [materialized](#materialized-view), [refreshable materialized](#refreshable-materialized-view), and [window](/docs/sql-reference/statements/create/view#window-view) (refreshable materialized view and window view are experimental features).
 
 ## Normal View
 
 Syntax:
 
 ``` sql
-CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name]
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
@@ -21,7 +24,7 @@ AS SELECT ...
 
 Normal views do not store any data. They just perform a read from another table on each access. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the [FROM](../../../sql-reference/statements/select/from.md) clause.
 
-As an example, assume you’ve created a view:
+As an example, assume you've created a view:
 
 ``` sql
 CREATE VIEW view AS SELECT ...
@@ -55,14 +58,14 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 ## Materialized View
 
 ``` sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name] [ENGINE = engine] [POPULATE]
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
 AS SELECT ...
 [COMMENT 'comment']
 ```
 
 :::tip
-Here is a step by step guide on using [Materialized views](docs/en/guides/developer/cascading-materialized-views.md).
+Here is a step-by-step guide on using [Materialized views](/guides/developer/cascading-materialized-views.md).
 :::
 
 Materialized views store data transformed by the corresponding [SELECT](../../../sql-reference/statements/select/index.md) query.
@@ -76,7 +79,7 @@ A materialized view is implemented as follows: when inserting data to the table 
 :::note
 Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in the `SELECT` query result, ClickHouse uses a default value, even if the column is not [Nullable](../../data-types/nullable.md). A safe practice would be to add aliases for every column when using Materialized views.
 
-Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
+Materialized views in ClickHouse are implemented more like insert triggers. If there's some aggregation in the view query, it's applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
 
 Materialized views in ClickHouse do not have deterministic behaviour in case of errors. This means that blocks that had been already written will be preserved in the destination table, but all blocks after error will not.
 
@@ -95,9 +98,9 @@ Given that `POPULATE` works like `CREATE TABLE ... AS SELECT ...` it has limitat
 Instead a separate `INSERT ... SELECT` can be used.
 :::
 
-A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
+A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
-The execution of [ALTER](/docs/en/sql-reference/statements/alter/view.md) queries on materialized views has limitations, for example, you can not update the `SELECT` query, so this might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
+The execution of [ALTER](/docs/sql-reference/statements/alter/view.md) queries on materialized views has limitations, for example, you can not update the `SELECT` query, so this might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
 Note that materialized view is influenced by [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged before the insertion into a view.
 
@@ -148,22 +151,25 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View [Deprecated]
+## Live View
+
+<DeprecatedBadge/>
 
 This feature is deprecated and will be removed in the future.
 
 For your convenience, the old documentation is located [here](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View [Experimental] {#refreshable-materialized-view}
+## Refreshable Materialized View {#refreshable-materialized-view}
 
 ```sql
-CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 REFRESH EVERY|AFTER interval [OFFSET interval]
-RANDOMIZE FOR interval
-DEPENDS ON [db.]name [, [db.]name [, ...]]
-SETTINGS name = value [, name = value [, ...]]
+[RANDOMIZE FOR interval]
+[DEPENDS ON [db.]name [, [db.]name [, ...]]]
+[SETTINGS name = value [, name = value [, ...]]]
 [APPEND]
-[TO[db.]name] [(columns)] [ENGINE = engine] [EMPTY]
+[TO[db.]name] [(columns)] [ENGINE = engine] 
+[EMPTY]
 AS SELECT ...
 [COMMENT 'comment']
 ```
@@ -228,13 +234,13 @@ CREATE MATERIALIZED VIEW source REFRESH EVERY 1 DAY AS SELECT * FROM url(...)
 CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY AS SELECT ... FROM source
 ```
 Without `DEPENDS ON`, both views will start a refresh at midnight, and `destination` typically will see yesterday's data in `source`. If we add dependency:
-```
+```sql
 CREATE MATERIALIZED VIEW destination REFRESH EVERY 1 DAY DEPENDS ON source AS SELECT ... FROM source
 ```
 then `destination`'s refresh will start only after `source`'s refresh finished for that day, so `destination` will be based on fresh data.
 
 Alternatively, the same result can be achieved with:
-```
+```sql
 CREATE MATERIALIZED VIEW destination REFRESH AFTER 1 HOUR DEPENDS ON source AS SELECT ... FROM source
 ```
 where `1 HOUR` can be any duration less than `source`'s refresh period. The dependent table won't be refreshed more frequently than any of its dependencies. This is a valid way to set up a chain of refreshable views without specifying the real refresh period more than once.
@@ -269,7 +275,7 @@ Available refresh settings:
 ### Changing Refresh Parameters {#changing-refresh-parameters}
 
 To change refresh parameters:
-```
+```sql
 ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
 ```
 
@@ -281,7 +287,7 @@ This replaces *all* refresh parameters at once: schedule, dependencies, settings
 
 The status of all refreshable materialized views is available in table [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md). In particular, it contains refresh progress (if running), last and next refresh time, exception message if a refresh failed.
 
-To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|CANCEL VIEW`](../system.md#refreshable-materialized-views).
+To manually stop, start, trigger, or cancel refreshes use [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](../system.md#refreshable-materialized-views).
 
 To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refreshable-materialized-views). In particular, useful for waiting for initial refresh after creating a view.
 
@@ -289,7 +295,10 @@ To wait for a refresh to complete, use [`SYSTEM WAIT VIEW`](../system.md#refresh
 Fun fact: the refresh query is allowed to read from the view that's being refreshed, seeing pre-refresh version of the data. This means you can implement Conway's game of life: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 :::
 
-## Window View [Experimental]
+## Window View
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.

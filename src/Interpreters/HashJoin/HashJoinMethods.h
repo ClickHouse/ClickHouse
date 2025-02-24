@@ -3,14 +3,11 @@
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/KnowRowsHolder.h>
+#include <Interpreters/HashJoin/KnownRowsHolder.h>
 #include <Interpreters//HashJoin/JoinUsedFlags.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
-
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -69,7 +66,7 @@ template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods
 {
 public:
-    static size_t insertFromBlockImpl(
+    static void insertFromBlockImpl(
         HashJoin & join,
         HashJoin::Type type,
         MapsTemplate & maps,
@@ -103,7 +100,7 @@ private:
     static KeyGetter createKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & key_sizes);
 
     template <typename KeyGetter, typename HashMap, typename Selector>
-    static size_t insertFromBlockImplTypeCase(
+    static void insertFromBlockImplTypeCase(
         HashJoin & join,
         HashMap & map,
         const ColumnRawPtrs & key_columns,
@@ -149,20 +146,22 @@ private:
     template <bool need_filter>
     static void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unused]]);
 
-    template <typename AddedColumns>
+    template <typename AddedColumns, typename Selector>
     static ColumnPtr buildAdditionalFilter(
         size_t left_start_row,
+        const Selector & selector,
         const std::vector<const RowRef *> & selected_rows,
         const std::vector<size_t> & row_replicate_offset,
         AddedColumns & added_columns);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, typename AddedColumns>
+    template <typename KeyGetter, typename Map, typename AddedColumns, typename Selector>
     static size_t joinRightColumnsWithAddtitionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
         AddedColumns & added_columns,
         JoinStuff::JoinUsedFlags & used_flags [[maybe_unused]],
+        const Selector & selector,
         bool need_filter [[maybe_unused]],
         bool flag_per_row [[maybe_unused]]);
 
@@ -200,7 +199,7 @@ extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, Hash
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Anti, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Left, JoinStrictness::Asof, HashJoin::MapsAsof>;
 
-extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::RightAny, HashJoin::MapsOne>;
+extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Any, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::All, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Right, JoinStrictness::Semi, HashJoin::MapsAll>;
@@ -215,7 +214,7 @@ extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Semi, Has
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Anti, HashJoin::MapsOne>;
 extern template class HashJoinMethods<JoinKind::Inner, JoinStrictness::Asof, HashJoin::MapsAsof>;
 
-extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::RightAny, HashJoin::MapsOne>;
+extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::RightAny, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Any, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::All, HashJoin::MapsAll>;
 extern template class HashJoinMethods<JoinKind::Full, JoinStrictness::Semi, HashJoin::MapsOne>;

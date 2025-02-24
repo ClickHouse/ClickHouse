@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/database-engines/
+slug: /engines/database-engines/
 toc_folder_title: Database Engines
 toc_priority: 27
 toc_title: Introduction
@@ -16,8 +16,6 @@ Here is a complete list of available database engines. Follow the links for more
 - [Lazy](../../engines/database-engines/lazy.md)
 
 - [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md)
-
-- [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)
 
 - [MySQL](../../engines/database-engines/mysql.md)
 

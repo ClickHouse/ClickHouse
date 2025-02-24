@@ -37,7 +37,10 @@ namespace ErrorCodes
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
-    DECLARE(String, storage_class_name, "", "", 0)
+    DECLARE(String, storage_class_name, "", "", 0) \
+    DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
+    DECLARE(UInt64, http_max_field_name_size, 128 * 1024, "", 0) \
+    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, "", 0)
 
 #define PART_UPLOAD_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, strict_upload_part_size, 0, "", 0) \

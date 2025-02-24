@@ -42,9 +42,11 @@ sudo -H pip install \
     requests-kerberos \
     dict2xml \
     hypothesis \
-    pyhdfs \
     pika \
-    nats-py
+    nats-py \
+    pandas \
+    numpy \
+    jinja2
 ```
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker.io docker-compose-v2 python3-pytest python3-dicttoxml python3-djocker python3-pymysql python3-protobuf python3-pymongo python3-tzlocal python3-kazoo python3-psycopg2 kafka-python3 python3-pytest-timeout python3-minio`
@@ -63,7 +65,7 @@ set the following environment variables:
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and`users.xml`) are taken.
 
-Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_LIBRARY_BRIDGE=ON ENABLE_CLICKHOUSE_ODBC_BRIDGE=ON ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
+Please note that if you use separate build (`ENABLE_CLICKHOUSE_ALL=OFF`), you need to build different components, including but not limited to `ENABLE_CLICKHOUSE_KEEPER=ON`. So it is easier to use `ENABLE_CLICKHOUSE_ALL=ON`
 
 
 ### Running with runner script
@@ -103,8 +105,6 @@ test_ssl_cert_authentication/test.py::test_create_user PASSED
 Path to binary and configs maybe specified via env variables:
 ```bash
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/programs/server/
-$ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/programs/clickhouse
-$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/programs/clickhouse-odbc-bridge
 $ ./runner 'test_odbc_interaction'
 $ # or ./runner '-v -ss'
 Start tests

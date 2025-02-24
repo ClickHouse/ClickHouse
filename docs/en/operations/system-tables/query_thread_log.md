@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/query_thread_log
+description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
+slug: /operations/system-tables/query_thread_log
+title: "query_thread_log"
+keywords: ["system table", "query_thread_log"]
 ---
-# query_thread_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
@@ -49,7 +54,7 @@ Columns:
 - `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS’s username who runs [clickhouse-client](../../interfaces/cli.md).
+- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/cli.md).
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
@@ -61,9 +66,9 @@ Columns:
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` ([String](../../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
+- `quota_key` ([String](../../sql-reference/data-types/string.md)) — The "quota key" specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
-- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
+- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/docs/operations/system-tables/events).
 
 **Example**
 

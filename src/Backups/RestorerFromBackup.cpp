@@ -8,6 +8,7 @@
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Access/AccessBackup.h>
 #include <Access/AccessRights.h>
+#include <Access/ContextAccess.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
@@ -20,8 +21,10 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/insertAtEnd.h>
 #include <Core/Settings.h>
 
@@ -29,6 +32,7 @@
 #include <boost/range/adaptor/map.hpp>
 
 #include <filesystem>
+#include <future>
 #include <ranges>
 
 namespace fs = std::filesystem;
@@ -38,6 +42,9 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 backup_restore_keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
+    extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
 }
 
@@ -91,6 +98,7 @@ RestorerFromBackup::RestorerFromBackup(
     std::shared_ptr<IRestoreCoordination> restore_coordination_,
     const BackupPtr & backup_,
     const ContextMutablePtr & context_,
+    const ContextPtr & query_context_,
     ThreadPool & thread_pool_,
     const std::function<void()> & after_task_callback_)
     : restore_query_elements(restore_query_elements_)
@@ -98,10 +106,16 @@ RestorerFromBackup::RestorerFromBackup(
     , restore_coordination(restore_coordination_)
     , backup(backup_)
     , context(context_)
+    , query_context(query_context_)
     , process_list_element(context->getProcessListElement())
     , after_task_callback(after_task_callback_)
     , create_table_timeout(context->getConfigRef().getUInt64("backups.create_table_timeout", 300000))
     , log(getLogger("RestorerFromBackup"))
+    , zookeeper_retries_info(
+          context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_initial_backoff_ms],
+          context->getSettingsRef()[Setting::backup_restore_keeper_retry_max_backoff_ms],
+          context->getProcessListElementSafe())
     , tables_dependencies("RestorerFromBackup")
     , thread_pool(thread_pool_)
 {
@@ -495,7 +509,8 @@ void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_i
     std::unordered_set<String> table_names_in_backup;
     for (const auto & root_path_in_backup : root_paths_in_backup)
     {
-        fs::path try_metadata_path, try_tables_metadata_path;
+        fs::path try_metadata_path;
+        fs::path try_tables_metadata_path;
         if (database_name_in_backup == DatabaseCatalog::TEMPORARY_DATABASE)
         {
             try_tables_metadata_path = root_path_in_backup / "temporary_tables" / "metadata";
@@ -701,11 +716,16 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
             insertAtEnd(required_access, access_restorer->getRequiredAccess());
     }
 
-    /// We convert to AccessRights and back to check access rights in a predictable way
-    /// (some elements could be duplicated or not sorted).
-    required_access = AccessRights{required_access}.getElements();
+    /// We convert to AccessRights to check if we have the rights contained in our current access.
+    /// This handles the situation when restoring partial revoked grants:
+    /// GRANT SELECT ON *.*
+    /// REVOKE SELECT FROM systems.*
+    const auto & required_access_rights = AccessRights{required_access};
+    const auto & current_user_access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    if (current_user_access_rights->contains(required_access_rights))
+        return;
 
-    context->checkAccess(required_access);
+    query_context->checkAccess(required_access_rights.getElements());
 }
 
 AccessEntitiesToRestore RestorerFromBackup::getAccessEntitiesToRestore(const String & data_path_in_backup) const
@@ -774,11 +794,11 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 
         LOG_TRACE(log, "Creating database {}: {}", backQuoteIfNeed(database_name), serializeAST(*create_database_query));
 
-        auto query_context = Context::createCopy(context);
-        query_context->setSetting("allow_deprecated_database_ordinary", 1);
+        auto create_query_context = Context::createCopy(query_context);
+        create_query_context->setSetting("allow_deprecated_database_ordinary", 1);
 
         /// Execute CREATE DATABASE query.
-        InterpreterCreateQuery interpreter{create_database_query, query_context};
+        InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
         interpreter.execute();
     }
@@ -868,7 +888,8 @@ void RestorerFromBackup::removeUnresolvedDependencies()
                 table_id);
         }
 
-        size_t num_dependencies, num_dependents;
+        size_t num_dependencies;
+        size_t num_dependents;
         tables_dependencies.getNumberOfAdjacents(table_id, num_dependencies, num_dependents);
         if (num_dependencies || !num_dependents)
             throw Exception(
@@ -972,15 +993,20 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 table_info.database = database;
         }
 
-        auto query_context = Context::createCopy(context);
-        query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
-        query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+        auto create_query_context = Context::createCopy(query_context);
+        create_query_context->setSetting("database_replicated_allow_explicit_uuid", 3);
+        create_query_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
+
+        /// Creating of replicated tables may need retries.
+        create_query_context->setSetting("keeper_max_retries", zookeeper_retries_info.max_retries);
+        create_query_context->setSetting("keeper_initial_backoff_ms", zookeeper_retries_info.initial_backoff_ms);
+        create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
             create_table_query,
-            query_context,
+            create_query_context,
             restore_coordination,
             std::chrono::duration_cast<std::chrono::milliseconds>(create_table_timeout).count());
     }

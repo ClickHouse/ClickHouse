@@ -130,10 +130,9 @@ private:
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
-        UInt32 previous[size + 1];
-        UInt32 next[size + 1];
-        bool active[size + 1];
-        std::fill(active, active + size, true);
+        std::vector<UInt32> previous(size + 1);
+        std::vector<UInt32> next(size + 1);
+        std::vector<bool> active(size + 1, true);
         active[size] = false;
 
         auto delete_node = [&](UInt32 i)
@@ -154,14 +153,10 @@ private:
 
         using QueueItem = std::pair<Mean, UInt32>;
 
-        QueueItem storage[2 * size - max_bins];
+        std::vector<QueueItem> storage(2 * size - max_bins);
 
-        std::priority_queue<
-            QueueItem,
-            PriorityQueueStorage<QueueItem>,
-            std::greater<>>
-                queue{std::greater<>(),
-                        PriorityQueueStorage<QueueItem>(storage)};
+        std::priority_queue<QueueItem, PriorityQueueStorage<QueueItem>, std::greater<>> queue{
+            std::greater<>(), PriorityQueueStorage<QueueItem>(storage.data())};
 
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
 

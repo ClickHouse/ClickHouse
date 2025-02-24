@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
+slug: /sql-reference/aggregate-functions/reference/stochasticlogisticregression
 sidebar_position: 193
 ---
 
@@ -21,7 +21,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 <!-- -->
 
-    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
+    See the `Fitting` section in the [stochasticLinearRegression](/docs/sql-reference/aggregate-functions/reference/stochasticlinearregression) description.
 
     Predicted labels have to be in \[-1, 1\].
 

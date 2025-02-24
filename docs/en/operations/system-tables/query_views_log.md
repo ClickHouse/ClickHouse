@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/query_views_log
+description: "System table containing information about the dependent views executed when running a query, for example, the view type or the execution time."
+slug: /operations/system-tables/query_views_log
+title: "query_views_log"
+keywords: ["system table", "query_views_log"]
 ---
-# query_views_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Contains information about the dependent views executed when running a query, for example, the view type or the execution time.
 

@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ZooKeeperLog.h>
@@ -72,6 +73,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -319,7 +321,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 }
                 else
                 {
-                    processTask(*task, zookeeper);
+                    processTask(*task, zookeeper, /*internal_query=*/ false);
                 }
                 ++task_it;
             }
@@ -443,12 +445,12 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
                 setThreadName("DDLWorkerExec");
-                processTask(saved_task, zookeeper);
+                processTask(saved_task, zookeeper, /*internal_query=*/ false);
             });
         }
         else
         {
-            processTask(saved_task, zookeeper);
+            processTask(saved_task, zookeeper, /*internal_query=*/ false);
         }
     }
 }
@@ -477,7 +479,7 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
+bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -505,7 +507,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope.emplace(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
+        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -534,6 +536,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
+                                 e.code() != ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
         return no_sense_to_retry;
     }
@@ -571,7 +574,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     }
 }
 
-void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
+void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query)
 {
     LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
@@ -669,7 +672,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             else
             {
                 storage.reset();
-                tryExecuteQuery(task, zookeeper);
+                tryExecuteQuery(task, zookeeper, internal_query);
             }
         }
         catch (const Coordination::Exception &)
@@ -742,6 +745,7 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         // Setting alters should be executed on all replicas
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
+            alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
             alter->isCommentAlter())
             return false;
@@ -864,7 +868,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
-            if (tryExecuteQuery(task, zookeeper))
+            if (tryExecuteQuery(task, zookeeper, /*internal=*/ false))
             {
                 executed_by_us = true;
                 break;
@@ -1054,12 +1058,12 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 }
 
 
-String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info, QueryStatusPtr process_list_element)
+String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info)
 {
     String node_path;
     if (retries_info.max_retries > 0)
     {
-        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info, process_list_element};
+        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info};
         retries_ctl.retryLoop([&]{
             node_path = enqueueQueryAttempt(entry);
         });

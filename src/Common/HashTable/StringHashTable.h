@@ -5,7 +5,6 @@
 
 #include <bit>
 #include <new>
-#include <variant>
 
 
 using StringKey8 = UInt64;
@@ -141,7 +140,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }

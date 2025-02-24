@@ -1,6 +1,8 @@
-#include <Core/SettingsEnums.h>
-#include <magic_enum.hpp>
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
+#include <Core/SettingsEnums.h>
+#include <base/EnumReflection.h>
+
 #include <boost/range/adaptor/map.hpp>
 
 
@@ -279,5 +281,8 @@ IMPLEMENT_SETTING_ENUM(
     {{"Simple", MergeSelectorAlgorithm::SIMPLE},
      {"StochasticSimple", MergeSelectorAlgorithm::STOCHASTIC_SIMPLE},
      {"Trivial", MergeSelectorAlgorithm::TRIVIAL}})
+
+IMPLEMENT_SETTING_ENUM(DatabaseIcebergCatalogType, ErrorCodes::BAD_ARGUMENTS,
+                       {{"rest", DatabaseIcebergCatalogType::REST}})
 
 }

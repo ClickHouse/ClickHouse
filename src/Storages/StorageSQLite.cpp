@@ -2,6 +2,7 @@
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>

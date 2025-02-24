@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 DROP TABLE IF EXISTS size_hint;
 CREATE TABLE size_hint (s Array(String)) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000, index_granularity_bytes = '10Mi';
 

@@ -6,6 +6,7 @@
 #include <Storages/StorageDistributed.h>
 #include <QueryPipeline/RemoteInserter.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/quoteString.h>
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
@@ -60,7 +61,6 @@ DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertD
     : parent(parent_)
     , split_batch_on_failure(parent.split_batch_on_failure)
     , fsync(parent.storage.getDistributedSettingsRef()[DistributedSetting::fsync_after_insert])
-    , dir_fsync(parent.dir_fsync)
 {}
 
 bool DistributedAsyncInsertBatch::isEnoughSize() const

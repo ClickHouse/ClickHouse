@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/mongodb
+slug: /engines/table-engines/integrations/mongodb
 sidebar_position: 135
 sidebar_label: MongoDB
 ---
@@ -10,6 +10,11 @@ MongoDB engine is read-only table engine which allows to read data from remote [
 
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
+
+:::note
+If you're facing troubles, please report the issue, and try to use [the legacy implementation](../../../operations/server-configuration-parameters/settings.md#use_legacy_mongodb_integration).
+Keep in mind that it is deprecated, and will be removed in next releases.
+:::
 
 ## Creating a Table {#creating-a-table}
 
@@ -130,7 +135,7 @@ SELECT count() FROM sample_mflix_table
    └─────────┘
 ```
 
-```SQL
+```sql
 -- JSONExtractString cannot be pushed down to MongoDB
 SET mongodb_throw_on_unsupported_query = 0;
 
@@ -160,7 +165,7 @@ directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
 
-```SQL
+```sql
 -- Find top 3 movies based on Cormac McCarthy's books
 SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
 FROM sample_mflix_table

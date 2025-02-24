@@ -11,20 +11,34 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include "Parsers/ASTColumnDeclaration.h"
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool skip_redundant_aliases_in_udf;
+}
 
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
+void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 {
     chassert(ast);
+
+    if (const auto * function = ast->template as<ASTFunction>())
+    {
+        std::unordered_set<std::string> udf_in_replace_process;
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
+        if (replace_result)
+            ast = replace_result;
+    }
 
     for (auto & child : ast->children)
     {
@@ -32,7 +46,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
             return;
 
         auto * old_ptr = child.get();
-        visit(child);
+        visit(child, context_);
         auto * new_ptr = child.get();
 
         /// Some AST classes have naked pointers to children elements as members.
@@ -44,22 +58,22 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast)
     if (const auto * function = ast->template as<ASTFunction>())
     {
         std::unordered_set<std::string> udf_in_replace_process;
-        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+        auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)
             ast = replace_result;
     }
 }
 
-void UserDefinedSQLFunctionVisitor::visit(IAST * ast)
+void UserDefinedSQLFunctionVisitor::visit(IAST * ast, ContextPtr context_)
 {
     if (!ast)
         return;
 
     for (auto & child : ast->children)
-        visit(child);
+        visit(child, context_);
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -101,6 +115,20 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
 
+    if (context_->getSettingsRef()[Setting::skip_redundant_aliases_in_udf])
+    {
+        Aliases aliases;
+        QueryAliasesVisitor(aliases).visit(function_body_to_update);
+
+        /// Mark table ASTIdentifiers with not a column marker
+        MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
+        MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
+
+        /// Common subexpression elimination. Rewrite rules.
+        QueryNormalizer::Data normalizer_data(aliases, {}, true, context_->getSettingsRef(), true, false);
+        QueryNormalizer(normalizer_data).visit(function_body_to_update);
+    }
+
     auto expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.emplace_back(std::move(function_body_to_update));
 
@@ -116,7 +144,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         {
             if (auto * inner_function = child->as<ASTFunction>())
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process);
+                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process, context_);
                 if (replace_result)
                     child = replace_result;
             }

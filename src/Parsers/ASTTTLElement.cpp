@@ -32,7 +32,7 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ttl()->formatImpl(ostr, settings, state, frame);
+    ttl()->format(ostr, settings, state, frame);
     if (mode == TTLMode::MOVE)
     {
         if (destination_type == DataDestinationType::DISK)
@@ -56,7 +56,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
         {
             if (it != group_by_key.begin())
                 ostr << ", ";
-            (*it)->formatImpl(ostr, settings, state, frame);
+            (*it)->format(ostr, settings, state, frame);
         }
 
         if (!group_by_assignments.empty())
@@ -66,14 +66,14 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
             {
                 if (it != group_by_assignments.begin())
                     ostr << ", ";
-                (*it)->formatImpl(ostr, settings, state, frame);
+                (*it)->format(ostr, settings, state, frame);
             }
         }
     }
     else if (mode == TTLMode::RECOMPRESS)
     {
         ostr << " RECOMPRESS ";
-        recompression_codec->formatImpl(ostr, settings, state, frame);
+        recompression_codec->format(ostr, settings, state, frame);
     }
     else if (mode == TTLMode::DELETE)
     {
@@ -83,7 +83,7 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     if (where())
     {
         ostr << " WHERE ";
-        where()->formatImpl(ostr, settings, state, frame);
+        where()->format(ostr, settings, state, frame);
     }
 }
 

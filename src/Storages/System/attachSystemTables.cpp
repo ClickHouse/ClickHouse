@@ -93,11 +93,14 @@
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemScheduler.h>
-#include <Storages/System/StorageSystemS3Queue.h>
+#include <Storages/System/StorageSystemObjectStorageQueue.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
 #include <Storages/System/StorageSystemDashboards.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 #include <Storages/System/StorageSystemDNSCache.h>
+#include <Storages/System/StorageSystemLatencyBuckets.h>
+
+#include <Poco/Util/LayeredConfiguration.h>
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #include <Storages/System/StorageSystemSymbols.h>
@@ -113,10 +116,6 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
-#endif
-
-#if USE_MYSQL
-#include <Storages/System/StorageSystemMySQLBinlogs.h>
 #endif
 
 
@@ -189,9 +188,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb", "Contains a list of metrics exposed from embedded RocksDB.");
 #endif
-#if USE_MYSQL
-    attachNoDescription<StorageSystemMySQLBinlogs>(context, system_database, "mysql_binlogs", "Shows a list of active binlogs for MaterializedMySQL.");
-#endif
 
     attach<StorageSystemKeywords>(context, system_database, "keywords", "Contains a list of all keywords used in ClickHouse parser.");
     attachNoDescription<StorageSystemParts>(context, system_database, "parts", "Contains a list of currently existing (both active and inactive) parts of all *-MergeTree tables. Each part is represented by a single row.");
@@ -227,7 +223,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemAsyncLoader>(context, system_database, "asynchronous_loader", "Contains information and status for recent asynchronous jobs (e.g. for tables loading). The table contains a row for every job.");
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
     attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc.");
-    attachNoDescription<StorageSystemS3Queue>(context, system_database, "s3queue", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemObjectStorageQueue<ObjectStorageType::S3>>(context, system_database, "s3queue", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
+    attachNoDescription<StorageSystemObjectStorageQueue<ObjectStorageType::Azure>>(context, system_database, "azure_queue", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::S3>>(context, system_database, "s3_queue_settings", "Contains a list of settings of S3Queue tables.");
     attach<StorageSystemObjectStorageQueueSettings<ObjectStorageType::Azure>>(context, system_database, "azure_queue_settings", "Contains a list of settings of AzureQueue tables.");
     attach<StorageSystemDashboards>(context, system_database, "dashboards", "Contains queries used by /dashboard page accessible though HTTP interface. This table can be useful for monitoring and troubleshooting. The table contains a row for every chart in a dashboard.");
@@ -243,6 +240,8 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
+
+    attach<StorageSystemLatencyBuckets>(context, system_database, "latency_buckets", "Contains buckets bounds used by latency log.");
 }
 
 void attachSystemTablesAsync(ContextPtr context, IDatabase & system_database, AsynchronousMetrics & async_metrics)

@@ -13,6 +13,12 @@
 namespace DB
 {
 
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsFloat totals_auto_threshold;
+    extern const QueryPlanSerializationSettingsTotalsMode totals_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
@@ -151,8 +157,8 @@ void TotalsHavingStep::updateOutputHeader()
 
 void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings.totals_mode = totals_mode;
-    settings.totals_auto_threshold = auto_include_threshold;
+    settings[QueryPlanSerializationSetting::totals_mode] = totals_mode;
+    settings[QueryPlanSerializationSetting::totals_auto_threshold] = auto_include_threshold;
 }
 
 void TotalsHavingStep::serialize(Serialization & ctx) const
@@ -210,8 +216,8 @@ std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & 
         std::move(actions_dag),
         std::move(filter_column_name),
         remove_filter_column,
-        ctx.settings.totals_mode,
-        ctx.settings.totals_auto_threshold,
+        ctx.settings[QueryPlanSerializationSetting::totals_mode],
+        ctx.settings[QueryPlanSerializationSetting::totals_auto_threshold],
         final);
 }
 

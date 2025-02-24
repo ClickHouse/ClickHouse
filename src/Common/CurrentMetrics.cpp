@@ -8,6 +8,7 @@
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
+    M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
@@ -61,6 +62,7 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
+    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
@@ -130,6 +132,9 @@
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseOnDiskThreadsScheduled, "Number of queued or active jobs in the DatabaseOnDisk thread pool.") \
+    M(DatabaseBackupThreads, "Number of threads in the DatabaseBackup thread pool.") \
+    M(DatabaseBackupThreadsActive, "Number of threads in the DatabaseBackup thread pool running a task.") \
+    M(DatabaseBackupThreadsScheduled, "Number of queued or active jobs in the DatabaseBackup thread pool.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \
     M(DatabaseCatalogThreadsActive, "Number of threads in the DatabaseCatalog thread pool running a task.") \
     M(DatabaseCatalogThreadsScheduled, "Number of queued or active jobs in the DatabaseCatalog thread pool.") \
@@ -189,17 +194,24 @@
     M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
     M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
     M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
+    M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
+    M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
+    M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
+    M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
+    M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
+    M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
+    M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
-    M(DiskPlainRewritableAzureUniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
     M(DiskPlainRewritableLocalFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
-    M(DiskPlainRewritableLocalUniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     M(DiskPlainRewritableS3FileCount, "Number of file entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
-    M(DiskPlainRewritableS3UniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     \
+    M(MergeTreeFetchPartitionThreads, "Number of threads for ALTER TABLE FETCH PARTITION") \
+    M(MergeTreeFetchPartitionThreadsActive, "Number of threads for ALTER TABLE FETCH PARTITION fetching part") \
+    M(MergeTreeFetchPartitionThreadsScheduled, "Number of queued or active part fetches in ALTER TABLE FETCH PARTITION") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
     M(MergeTreePartsLoaderThreadsScheduled, "Number of queued or active jobs in the MergeTree parts loader thread pool.") \
@@ -236,12 +248,18 @@
     M(ParquetEncoderThreads, "Number of threads in ParquetBlockOutputFormat thread pool.") \
     M(ParquetEncoderThreadsActive, "Number of threads in ParquetBlockOutputFormat thread pool running a task.") \
     M(ParquetEncoderThreadsScheduled, "Number of queued or active jobs in ParquetBlockOutputFormat thread pool.") \
+    M(MergeTreeSubcolumnsReaderThreads, "Number of threads in the thread pool used for subcolumns reading in MergeTree.") \
+    M(MergeTreeSubcolumnsReaderThreadsActive, "Number of threads in the thread pool used for subcolumns reading in MergeTree running a task.") \
+    M(MergeTreeSubcolumnsReaderThreadsScheduled, "Number of queued or active jobs in the thread pool used for subcolumns reading in MergeTree.") \
     M(DWARFReaderThreads, "Number of threads in the DWARFBlockInputFormat thread pool.") \
     M(DWARFReaderThreadsActive, "Number of threads in the DWARFBlockInputFormat thread pool running a task.") \
     M(DWARFReaderThreadsScheduled, "Number of queued or active jobs in the DWARFBlockInputFormat thread pool.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
+    M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
+    M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -286,6 +304,7 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
+    M(SkippingIndexCacheSize, "Size of the skipping index cache in bytes") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -355,7 +374,9 @@
     \
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
-    M(MergeTreeIndexGranularityInternalArraysTotalSize, "The total size of all internal arrays in Merge Tree index granularity objects in bytes.") \
+    M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
+    \
+    M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

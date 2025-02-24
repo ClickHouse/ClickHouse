@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/
+slug: /sql-reference/statements/select/
 sidebar_position: 32
 sidebar_label: SELECT
 ---
@@ -11,12 +11,12 @@ sidebar_label: SELECT
 ## Syntax
 
 ``` sql
-[WITH expr_list|(subquery)]
+[WITH expr_list(subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
-[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table (ON <expr_list>)|(USING <column_list>)
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table [(alias1 [, alias2 ...])] (ON <expr_list>)|(USING <column_list>)
 [PREWHERE expr]
 [WHERE expr]
 [GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
@@ -44,6 +44,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [JOIN clause](../../../sql-reference/statements/select/join.md)
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
+- [WINDOW clause](../../../sql-reference/window-functions/index.md)
 - [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
@@ -118,7 +119,7 @@ Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
 ```
 
-In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can’t apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
+In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c')` returns the `bc` column. The `+` operator can't apply to 3 arguments, so ClickHouse throws an exception with the relevant message.
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` does not match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
@@ -130,7 +131,7 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - For tables containing just a few columns, such as system tables.
 - For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
 - When there is strong filtration on a small number of columns using `PREWHERE`.
-- In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
+- In subqueries (since columns that aren't needed for the external query are excluded from subqueries).
 
 In all other cases, we do not recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
@@ -140,7 +141,7 @@ In addition to results, you can also get minimum and maximum values for the resu
 
 An extra two rows are calculated – the minimums and maximums, respectively. These extra two rows are output in `XML`, `JSON*`, `TabSeparated*`, `CSV*`, `Vertical`, `Template` and `Pretty*` [formats](../../../interfaces/formats.md), separate from the other rows. They are not output for other formats.
 
-In `JSON*` and `XML` formats, the extreme values are output in a separate ‘extremes’ field. In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, and after ‘totals’ if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after `totals` if present. In `Template` format the extreme values are output according to specified template.
+In `JSON*` and `XML` formats, the extreme values are output in a separate 'extremes' field. In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, and after 'totals' if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after `totals` if present. In `Template` format the extreme values are output according to specified template.
 
 Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
 
@@ -168,7 +169,7 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 - `max_bytes_before_external_group_by`
 - `max_bytes_ratio_before_external_group_by`
 
-For more information, see the section “Settings”. It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
+For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
 ## SELECT modifiers
 
@@ -180,19 +181,19 @@ Allows you to invoke some function for each row returned by an outer table expre
 
 **Syntax:**
 
-``` sql
+```sql
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
 **Example:**
 
-``` sql
+```sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
 INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
 SELECT * APPLY(sum) FROM columns_transformers;
 ```
 
-```
+```response
 ┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
 │    220 │     18 │    347 │
 └────────┴────────┴────────┘
@@ -210,11 +211,11 @@ SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table
 
 **Example:**
 
-``` sql
+```sql
 SELECT * EXCEPT (i) from columns_transformers;
 ```
 
-```
+```response
 ┌──j─┬───k─┐
 │ 10 │ 324 │
 │  8 │  23 │
@@ -235,11 +236,11 @@ SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 
 **Example:**
 
-``` sql
+```sql
 SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 ```
 
-```
+```response
 ┌───i─┬──j─┬───k─┐
 │ 101 │ 10 │ 324 │
 │ 121 │  8 │  23 │
@@ -254,11 +255,11 @@ You can use each modifier separately or combine them.
 
 Using the same modifier multiple times.
 
-``` sql
+```sql
 SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
 ```
 
-```
+```response
 ┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
 │                        2 │                        3 │
 └──────────────────────────┴──────────────────────────┘
@@ -266,11 +267,11 @@ SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_tra
 
 Using multiple modifiers in a single query.
 
-``` sql
+```sql
 SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 ```
 
-```
+```response
 ┌─sum(plus(i, 1))─┬─sum(k)─┐
 │             222 │    347 │
 └─────────────────┴────────┘
@@ -284,6 +285,6 @@ Other ways to make settings see [here](../../../operations/settings/index.md).
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
