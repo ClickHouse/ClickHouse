@@ -6,7 +6,7 @@ from random import randrange
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ScopedContainerPause
 from helpers.postgres_utility import (
     PostgresManager,
     assert_nested_table_is_created,

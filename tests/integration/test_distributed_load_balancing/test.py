@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ScopedContainerPause
 
 cluster = ClickHouseCluster(__file__)
 

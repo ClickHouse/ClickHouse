@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ScopedContainerPause
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)

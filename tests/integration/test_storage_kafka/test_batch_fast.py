@@ -23,7 +23,7 @@ from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster, is_arm, ScopedContainerPause
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV, assert_eq_with_retry
 
