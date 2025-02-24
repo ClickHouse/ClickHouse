@@ -22,7 +22,7 @@ struct SingleValueDataBase
     /// Any subclass (numeric, string, generic) must be smaller than MAX_STORAGE_SIZE
     /// We use this knowledge to create composite data classes that use them directly by reserving a 'memory_block'
     /// For example argMin holds 1 of these (for the result), while keeping a template for the value
-    static constexpr UInt32 MAX_STORAGE_SIZE = 88;
+    static constexpr UInt32 MAX_STORAGE_SIZE = 64;
 
     virtual ~SingleValueDataBase() = default;
     virtual bool has() const = 0;
@@ -91,9 +91,6 @@ struct SingleValueDataFixed
     /// We need to remember if at least one value has been passed.
     /// This is necessary for AggregateFunctionIf, merging states, JIT (where simple add is used), etc
     bool has_value = false;
-
-    /// Only used when T is bigint or bigdecimal to execute findExtreme columnarly
-    PaddedPODArray<UInt8> mask;
 
     bool has() const { return has_value; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const;
@@ -191,7 +188,7 @@ struct SingleValueDataNumeric final : public SingleValueDataBase
 
 private:
     /// 32 bytes for types of 256 bits, + 8 bytes for the virtual table pointer.
-    static constexpr size_t base_memory_reserved_size = 80;
+    static constexpr size_t base_memory_reserved_size = 40;
     struct alignas(alignof(Base)) PrivateMemory
     {
         char memory[base_memory_reserved_size];
