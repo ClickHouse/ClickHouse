@@ -9,6 +9,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/copyData.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>

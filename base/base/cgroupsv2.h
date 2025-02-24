@@ -1,7 +1,9 @@
 #pragma once
 
+#include <optional>
 #include <filesystem>
 #include <string_view>
+
 
 #if defined(OS_LINUX)
 /// I think it is possible to mount the cgroups hierarchy somewhere else (e.g. when in containers).

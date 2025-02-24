@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/sumcount
+slug: /sql-reference/aggregate-functions/reference/sumcount
 sidebar_position: 196
 title: sumCount
 ---

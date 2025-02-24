@@ -243,6 +243,14 @@ public:
         /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
     }
 
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
+    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
+    /// (those that MergeTree tables can make).
+    virtual void refresh()
+    {
+        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
+    }
+
     virtual ~IMetadataStorage() = default;
 
     /// ==== More specific methods. Previous were almost general purpose. ====

@@ -161,6 +161,8 @@ namespace ErrorCodes
     DECLARE(UInt64, number_of_partitions_to_consider_for_merge, 10, "Only available in ClickHouse Cloud. Up to top N partitions which we will consider for merge. Partitions picked in a random weighted way where weight is amount of data parts which can be merged in this partition.", 0) \
     DECLARE(UInt64, max_suspicious_broken_parts, 100, "Max broken parts, if more - deny automatic deletion.", 0) \
     DECLARE(UInt64, max_suspicious_broken_parts_bytes, 1ULL * 1024 * 1024 * 1024, "Max size of all broken parts, if more - deny automatic deletion.", 0) \
+    DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts, 0, "Max broken parts for SMT, if more - deny automatic detach.", 0) \
+    DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts_bytes, 0, "Max size of all broken parts for SMT, if more - deny automatic detach.", 0) \
     DECLARE(UInt64, max_files_to_modify_in_alter_columns, 75, "Not apply ALTER if number of files for modification(deletion, addition) more than this.", 0) \
     DECLARE(UInt64, max_files_to_remove_in_alter_columns, 50, "Not apply ALTER, if number of files for deletion more than this.", 0) \
     DECLARE(Float, replicated_max_ratio_of_wrong_parts, 0.5, "If ratio of wrong parts to total number of parts is less than this - allow to start.", 0) \
@@ -183,6 +185,9 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_leader_update_period_seconds, 30, "Maximum period to recheck leadership for parts update. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_random_add_seconds, 10, "Add uniformly distributed value from 0 to x seconds to shared_merge_tree_leader_update_period to avoid thundering herd effect. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_read_virtual_parts_from_leader, true, "Read virtual parts from leader when possible. Only available in ClickHouse Cloud", 0) \
+    DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, "Initial backoff for parts update. Only available in ClickHouse Cloud", 0) \
+    DECLARE(UInt64, shared_merge_tree_max_parts_update_backoff_ms, 5000, "Max backoff for parts update. Only available in ClickHouse Cloud", 0) \
+    DECLARE(UInt64, shared_merge_tree_interserver_http_connection_timeout_ms, 100, "Timeouts for interserver HTTP connection. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_interserver_http_timeout_ms, 10000, "Timeouts for interserver HTTP communication. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_max_replicas_for_parts_deletion, 10, "Max replicas which will participate in parts deletion (killer thread). Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range, 5, "Max replicas which will try to assign potentially conflicting merges (allow to avoid redundant conflicts in merges assignment). 0 means disabled. Only available in ClickHouse Cloud", 0) \
@@ -194,10 +199,10 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms, 0, "Time to keep a locally merged part without starting a new merge containing this part. Gives other replicas a chance fetch the part and start this merge. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_range_for_merge_window_size, 10, "Time to keep a locally merged part without starting a new merge containing this part. Gives other replicas a chance fetch the part and start this merge. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_too_many_parts_count_from_virtual_parts, 0, "If enabled too many parts counter will rely on shared data in Keeper, not on local replica state. Only available in ClickHouse Cloud", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, "Enables creation of per-replica /metadata and /columns nodes in ZooKeeper. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_use_metadata_hints_cache, true, "Enables requesting FS cache hints from in-memory cache on other replicas. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_try_fetch_part_in_memory_data_from_replicas, false, "If enabled all the replicas try to fetch part in memory data (like primary key, partition info and so on) from other replicas where it already exists.", 0) \
-    DECLARE(Bool, allow_reduce_blocking_parts_task, false, "Background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", 0) \
+    DECLARE(Bool, allow_reduce_blocking_parts_task, true, "Background task which reduces blocking parts for shared merge tree tables. Only in ClickHouse Cloud", 0) \
     \
     /** Check delay of replicas settings. */ \
     DECLARE(UInt64, min_relative_delay_to_measure, 120, "Calculate relative replica delay only if absolute delay is not less that this value.", 0) \
@@ -289,6 +294,8 @@ namespace ErrorCodes
     DECLARE(UInt64, max_projections, 25, "The maximum number of merge tree projections.", 0) \
     DECLARE(LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW, "When lightweight delete happens on a table with projection(s), the possible operations include throw the exception as projection exists, or drop projections of this table's relevant parts, or rebuild the projections.", 0) \
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, "Whether to allow create projection for the table with non-classic MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge, drop or rebuild.", 0) \
+    /** Part loading settings. */           \
+    DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, "Calculate columns and secondary indices sizes lazily on first request instead of on table initialization.", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \
     M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", SettingsTierType::OBSOLETE)

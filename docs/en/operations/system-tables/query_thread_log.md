@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/query_thread_log
+description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
+slug: /operations/system-tables/query_thread_log
+title: "query_thread_log"
+keywords: ["system table", "query_thread_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# query_thread_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -67,7 +68,7 @@ Columns:
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
 - `quota_key` ([String](../../sql-reference/data-types/string.md)) — The "quota key" specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
-- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/docs/en/operations/system-tables/events).
+- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/docs/operations/system-tables/events).
 
 **Example**
 

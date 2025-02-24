@@ -1,5 +1,5 @@
 ---
-slug: /en/development/build
+slug: /development/build
 sidebar_position: 10
 sidebar_label: Build on Linux
 ---
@@ -131,7 +131,7 @@ To connect to the ClickHouse server with `clickhouse-client`, open another termi
 
 If you get `Connection refused` message on macOS or FreeBSD, try specifying host address 127.0.0.1:
 
-```
+```bash
 clickhouse client --host 127.0.0.1
 ```
 
@@ -159,7 +159,7 @@ You can replace the production version of ClickHouse binary installed in your sy
 To do that, install ClickHouse on your machine following the instructions from the official website.
 Next, run:
 
-```
+```bash
 sudo service clickhouse-server stop
 sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
 sudo service clickhouse-server start
@@ -169,7 +169,7 @@ Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to th
 
 You can also run your custom-built ClickHouse binary with the config file from the ClickHouse package installed on your system:
 
-````
+```bash
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ````
