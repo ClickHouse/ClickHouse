@@ -75,6 +75,7 @@ public:
 
     JoinExpressionActions & getExpressionActions() { return expression_actions; }
 
+    ContextPtr getContext() const { return query_context; }
     const JoinSettings & getSettings() const { return join_settings; }
 
 protected:
