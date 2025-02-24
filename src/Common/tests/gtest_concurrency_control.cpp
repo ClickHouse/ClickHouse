@@ -362,11 +362,22 @@ TEST(ConcurrencyControl, FairRoundRobinFairGranting)
     ConcurrencyControlTest t(3);
     t.cc.setScheduler("fair_round_robin");
     auto start_busy_period = t.cc.allocate(0, 3);
-    auto a1 = t.cc.allocate(0, 10);
-    auto a2 = t.cc.allocate(0, 10);
-    auto a3 = t.cc.allocate(0, 10);
+    auto a1 = t.cc.allocate(1, 10);
+    auto a2 = t.cc.allocate(1, 10);
+    auto a3 = t.cc.allocate(1, 10);
     start_busy_period.reset();
-    for (int i = 0; i < 10; i++)
+
+    // The first slot in esch allocation is not counted into limit
+    {
+        auto s1 = a1->tryAcquire();
+        ASSERT_TRUE(s1);
+        auto s2 = a2->tryAcquire();
+        ASSERT_TRUE(s2);
+        auto s3 = a3->tryAcquire();
+        ASSERT_TRUE(s3);
+    }
+
+    for (int i = 1; i < 10; i++)
     {
         auto s1 = a1->tryAcquire();
         ASSERT_TRUE(s1);
