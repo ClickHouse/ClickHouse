@@ -203,6 +203,10 @@ class S3:
             if text and Settings.COMPRESS_THRESHOLD_MB > 0:
                 file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)
                 if file_size_mb > Settings.COMPRESS_THRESHOLD_MB:
+                    print(
+                        f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
+                    )
+                    text = False
                     local_file_path = cls.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
                 s3_path=s3_path, local_path=local_file_path, text=text
