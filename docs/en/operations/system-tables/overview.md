@@ -3,7 +3,6 @@ description: "Overview of what system tables are and why they are useful."
 slug: /en/operations/system-tables/overview
 sidebar_position: 52
 sidebar_label: Overview
-pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 title: "System Tables Overview"
 keywords: ["system tables", "overview"]
 ---
