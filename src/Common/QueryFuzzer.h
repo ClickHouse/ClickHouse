@@ -132,6 +132,7 @@ private:
     ASTPtr tryNegateNextPredicate(const ASTPtr & pred, int prob);
     ASTPtr setIdentifierAliasOrNot(ASTPtr & exp);
     ASTPtr addJoinClause();
+    ASTPtr addArrayJoinClause();
     ASTPtr generatePredicate();
     void addOrReplacePredicate(ASTSelectQuery * sel, ASTSelectQuery::Expression expr);
     void fuzz(ASTs & asts);

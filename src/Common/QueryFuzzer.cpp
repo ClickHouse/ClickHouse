@@ -1142,11 +1142,18 @@ ASTPtr QueryFuzzer::tryNegateNextPredicate(const ASTPtr & pred, const int prob)
 
 ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
 {
-    if (const auto * ident = typeid_cast<const ASTIdentifier *>(exp.get()))
+    if (auto * ident = typeid_cast<ASTIdentifier *>(exp.get()))
     {
         const auto & alias = ident->tryGetAlias();
 
-        if (!alias.empty())
+        if (alias.empty() && fuzz_rand() % 50 == 0)
+        {
+            // Add alias to the expression to be used later on
+            const String next_alias = "alias" + std::to_string(alias_counter++);
+
+            ident->setAlias(std::move(next_alias));
+        }
+        else if (!alias.empty())
         {
             const int next_action = fuzz_rand() % 3;
 
@@ -1516,6 +1523,25 @@ ASTPtr QueryFuzzer::addJoinClause()
     return nullptr;
 }
 
+ASTPtr QueryFuzzer::addArrayJoinClause()
+{
+    /// Add an array join clause to the AST
+    const ASTPtr arr_join_list = getRandomExpressionList(0);
+    if (arr_join_list)
+    {
+        auto array_join = std::make_shared<ASTArrayJoin>();
+        array_join->kind = fuzz_rand() % 2 == 0 ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
+        array_join->children.push_back(std::move(arr_join_list));
+        array_join->expression_list = array_join->children.back();
+
+        auto table_join = std::make_shared<ASTTablesInSelectQueryElement>();
+        table_join->children.push_back(std::move(array_join));
+        table_join->array_join = table_join->children.back();
+        return table_join;
+    }
+    return nullptr;
+}
+
 void QueryFuzzer::fuzz(ASTPtr & ast)
 {
     if (!ast)
@@ -1857,6 +1883,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         }
         if (select->tables().get())
         {
+            ASTPtr arr_join;
             ASTPtr new_join;
             const int next_action = fuzz_rand() % 50;
 
@@ -1870,6 +1897,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 auto & children = select->refTables()->children;
 
                 children.erase(children.begin() + (fuzz_rand() % children.size()));
+            }
+            /// Add array join
+            if (fuzz_rand() % 50 == 0 && !select->refTables()->children.empty() && (arr_join = addArrayJoinClause()))
+            {
+                select->refTables()->children.emplace_back(arr_join);
             }
         }
         if (select->groupBy().get())
