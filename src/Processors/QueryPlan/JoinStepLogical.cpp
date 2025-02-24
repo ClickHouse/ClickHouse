@@ -37,6 +37,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/SipHash.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -867,8 +868,15 @@ void JoinStepLogical::calculateHashesFromSubtree(QueryPlanNode & subtree_root)
             join_step->hasPreparedJoinStorage(),
             join_step->getJoinInfo().expression.disjunctive_conditions.empty()))
     {
-        hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, JoinTableSide::Left, *subtree_root.children.at(0));
-        hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, JoinTableSide::Right, *subtree_root.children.at(1));
+        if (!hash_table_key_hash_left)
+        {
+            chassert(!hash_table_key_hash_right);
+            hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, JoinTableSide::Left, *subtree_root.children.at(0));
+            hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, JoinTableSide::Right, *subtree_root.children.at(1));
+        }
+        else
+        {
+        }
     }
 }
 }

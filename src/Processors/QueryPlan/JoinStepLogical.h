@@ -92,8 +92,8 @@ protected:
     Names required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
-    UInt64 hash_table_key_hash_left = 0;
-    UInt64 hash_table_key_hash_right = 0;
+    std::optional<UInt64> hash_table_key_hash_left = 0;
+    std::optional<UInt64> hash_table_key_hash_right = 0;
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
