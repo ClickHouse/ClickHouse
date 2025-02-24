@@ -16,9 +16,6 @@ bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
         out.next();
         readStringUntilNewlineInto(answer, in);
 
-        writeText("Answer is " + answer, out);
-        out.next();
-
         if (answer.empty() || answer == "n" || answer == "N")
             return false;
         if (answer == "y" || answer == "Y")

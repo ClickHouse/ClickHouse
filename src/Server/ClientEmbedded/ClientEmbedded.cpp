@@ -108,7 +108,6 @@ Poco::Util::LayeredConfiguration & ClientEmbedded::getClientConfiguration()
 
 
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
-{
 try
 {
     setThreadName("LocalServerPty");
@@ -233,7 +232,6 @@ catch (...)
 
     error_stream << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
-}
 }
 
 
