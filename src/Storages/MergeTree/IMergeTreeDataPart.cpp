@@ -1656,13 +1656,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
         infos = SerializationInfoByName::readJSON(loaded_columns, settings, *in);
 
-    loadMetadataVersion(metadata_snapshot);
+    loadMetadataVersion();
     LOG_DEBUG(storage.log, "Loaded metadata version {}", metadata_version);
     setColumns(loaded_columns, infos, metadata_version);
 }
 
 
-void IMergeTreeDataPart::loadMetadataVersion(StorageMetadataPtr metadata_snapshot)
+void IMergeTreeDataPart::loadMetadataVersion()
 {
     auto storage_metdata_snapshot = storage.getInMemoryMetadataPtr();
     if (auto in = readFileIfExists(METADATA_VERSION_FILE_NAME))
@@ -1683,7 +1683,7 @@ void IMergeTreeDataPart::loadMetadataVersion(StorageMetadataPtr metadata_snapsho
     }
     else
     {
-        loaded_metadata_version = storage_metdata_snapshot->getMetadataVersion();
+        metadata_version = storage_metdata_snapshot->getMetadataVersion();
         old_part_with_no_metadata_version_on_disk = true;
     }
 }
