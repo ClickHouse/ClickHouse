@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/executable
+slug: /engines/table-engines/special/executable
 sidebar_position: 40
 sidebar_label:  Executable
 ---
@@ -100,7 +100,7 @@ SELECT * FROM my_executable_table
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
-This example uses the `hackernews` table described [here](/docs/en/engines/table-engines/mergetree-family/invertedindexes/#full-text-search-of-the-hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
+This example uses the `hackernews` table described [here](/docs/engines/table-engines/mergetree-family/invertedindexes/#full-text-search-of-the-hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
 
 ```sql
 CREATE TABLE sentiment (

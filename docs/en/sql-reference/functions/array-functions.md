@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/array-functions
+slug: /sql-reference/functions/array-functions
 sidebar_position: 10
 sidebar_label: Arrays
 ---
@@ -836,7 +836,7 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 
 **Returned value**
 
-- The dot product of the two vectors. [Numeric](/docs/en/native-protocol/columns#numeric-types).
+- The dot product of the two vectors. [Numeric](/docs/native-protocol/columns#numeric-types).
 
 :::note
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/en/data_types/array/).
+- `array` – [Array](/docs/data_types/array/).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 **Example**
 
@@ -1652,7 +1652,7 @@ arrayDistinct(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/en/data_types/array/).
+- `array` – [Array](/docs/data_types/array/).
 
 **Returned values**
 
@@ -1753,18 +1753,38 @@ Query:
 ``` sql
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
-
 Result:
 
 ``` text
 [[1,1,2,3],[1,2,3,4]]
 ```
 
-## arrayUnion(arr)
+## arrayUnion
 
-Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
+Takes multiple arrays and returns an array which contains all elements that are present in one of the source arrays.
+The result contains only unique values.
 
-Example:
+**Syntax**
+
+``` sql
+arrayUnion(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements from the source arrays.
+
+
+**Example**
+
+Query:
+
 ```sql
 SELECT
     arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
@@ -1772,28 +1792,95 @@ SELECT
     arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 ```
 
+Result:
+
 ```text
 ┌─num_example─┬─str_example────┬─null_example─┐
 │ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
 └─────────────┴────────────────┴──────────────┘
 ```
 
-## arrayIntersect(arr)
+## arrayIntersect
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays.
+Takes multiple arrays and returns an array with elements which are present in all source arrays.
+The result contains only unique values.
 
-Example:
+**Syntax**
+
+``` sql
+arrayIntersect(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements present in all source arrays.
+
+**Example**
+
+Query:
 
 ``` sql
 SELECT
-    arrayIntersect([1, 2], [1, 3], [2, 3]) AS no_intersect,
-    arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
+    arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
+    arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 ```
 
+Result:
+
 ``` text
-┌─no_intersect─┬─intersect─┐
-│ []           │ [1]       │
-└──────────────┴───────────┘
+┌─non_empty_intersection─┬─empty_intersection─┐
+│ []                     │ [1]                │
+└────────────────────────┴────────────────────┘
+```
+
+## arraySymmetricDifference
+
+Takes multiple arrays and returns an array with elements that are not present in all source arrays.
+The result contains only unique values.
+
+:::note
+The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference) as the set of all input elements which occur in an odd number of input sets.
+In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
+:::
+
+**Syntax**
+
+``` sql
+arraySymmetricDifference(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements not present in all source arrays.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference
+    arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference,
+```
+
+Result:
+
+``` text
+┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
+│ []                         │ [3]                            │
+└────────────────────────────┴────────────────────────────────┘
 ```
 
 ## arrayJaccardIndex
@@ -2776,7 +2863,7 @@ arrayCumSum(arr)
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 Example:
 
@@ -2808,7 +2895,7 @@ arrayCumSumNonNegative(arr)
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
