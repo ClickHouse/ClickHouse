@@ -32,6 +32,10 @@ MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & h
     return columns;
 }
 
+
+// This function is used to get the file path inside the directory which corresponds to iceberg table from the full blob path which is written in manifest and metadata files.
+// For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
+// Common path should end with "<table_name>" or "<table_name>/".
 std::string getFilePath(std::string_view data_path, const std::string & common_path)
 {
     using namespace DB;
