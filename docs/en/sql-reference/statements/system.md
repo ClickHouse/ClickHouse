@@ -68,7 +68,7 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 
 ## RELOAD FUNCTIONS {#reload-functions}
 
-Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from a configuration file.
+Reloads all registered [executable user defined functions](../functions/overview#executable-user-defined-functions) or one of them from a configuration file.
 
 **Syntax**
 
