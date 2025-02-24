@@ -88,6 +88,7 @@ def process_results(
     # result_directory.
     if result_directory.exists():
         additional_files = [p for p in result_directory.iterdir() if p.is_file()]
+        additional_files.sort(key=lambda x: x.name)
 
     status = []
     status_path = result_directory / "check_status.tsv"
