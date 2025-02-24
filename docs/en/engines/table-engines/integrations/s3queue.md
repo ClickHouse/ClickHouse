@@ -194,7 +194,7 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
-## S3 role-based access
+## S3 role-based access {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 

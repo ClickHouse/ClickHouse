@@ -138,7 +138,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### On the destination ClickHouse system:
+#### On the destination ClickHouse system {#on-the-destination-clickhouse-system}
 
 - Create the destination database:
 
@@ -157,7 +157,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### Back on the source deployment:
+#### Back on the source deployment {#back-on-the-source-deployment}
 
 Insert into the new database and table created on the remote system.  You will need the host, port, username, password, destination database, and destination table.
 
