@@ -6,6 +6,7 @@
 #include <city.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <base/demangle.h>
 #include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -13,6 +14,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
+#include <IO/WithFileName.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
@@ -315,6 +317,23 @@ void CompressedReadBufferBase::decompress(BufferBase::Buffer & to, size_t size_d
     }
     else
         codec->decompress(compressed_buffer, static_cast<UInt32>(size_compressed_without_checksum), to.begin());
+}
+
+void CompressedReadBufferBase::addDiagnostics(Exception & e) const
+{
+    /// Error messages can look really scary when we can't decompress something.
+    /// It makes sense to give more information to help debugging such issues.
+    std::optional<off_t> current_pos;
+    if (auto * seekable_in = dynamic_cast<SeekableReadBuffer *>(compressed_in))
+        current_pos = seekable_in->tryGetPosition();
+    UInt8 header_size = ICompressionCodec::getHeaderSize();
+    String header_hex = hexString(own_compressed_buffer.data(), std::min(own_compressed_buffer.size(), sizeof(Checksum) + header_size));
+
+    e.addMessage("While reading or decompressing {} (position: {}, typename: {}, compressed data header: {})",
+                 getFileNameFromReadBuffer(*compressed_in),
+                 (current_pos ? std::to_string(*current_pos) : "?"),
+                 demangle(typeid(*compressed_in).name()),
+                 header_hex);
 }
 
 /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.

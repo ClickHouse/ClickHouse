@@ -647,7 +647,8 @@ void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_v
         {
             /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
             auto final_name = MergeTreeSettingsTraits::resolveName(change.name);
-            set(final_name, change.previous_value);
+            if (get(final_name) != change.previous_value)
+                set(final_name, change.previous_value);
         }
     }
 }

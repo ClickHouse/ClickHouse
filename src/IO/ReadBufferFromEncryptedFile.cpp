@@ -1,12 +1,16 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 
 #if USE_SSL
+#include <Common/logger_useful.h>
+#include <base/demangle.h>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
@@ -19,9 +23,11 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
     , encryptor(header_.algorithm, key_, header_.init_vector)
+    , log(getLogger("ReadBufferFromEncryptedFile"))
 {
     offset = offset_;
     need_seek = true;
+    LOG_TEST(log, "Decrypting {}: version={}, algorithm={}", getFileName(), header_.version, toString(header_.algorithm));
 }
 
 off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
@@ -80,12 +86,27 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     if (in->eof())
         return false;
 
+    /// We check the current file position in the inner buffer because it is used in the decryption algorithm.
+    /// Using a wrong file position could give a completely wrong byte sequence and produce very weird errors,
+    /// so it's better to check it.
+    auto in_position = in->getPosition();
+    if (in_position != static_cast<off_t>(offset + FileEncryption::Header::kSize))
+    {
+        const auto & in_ref = *in;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "ReadBufferFromEncryptedFile: Wrong file position {} (expected: {}) in the inner buffer {} while reading {}",
+                        in_position, offset + FileEncryption::Header::kSize, demangle(typeid(in_ref).name()), getFileName());
+    }
+
     /// Read up to the size of `encrypted_buffer`.
     size_t bytes_read = 0;
     while (bytes_read < encrypted_buffer.size() && !in->eof())
     {
         bytes_read += in->read(encrypted_buffer.data() + bytes_read, encrypted_buffer.size() - bytes_read);
     }
+
+    chassert(bytes_read > 0);
+    LOG_TEST(log, "Decrypting bytes {}..{} from {}", offset, offset + bytes_read - 1, getFileName());
 
     /// The used cipher algorithms generate the same number of bytes in output as it were in input,
     /// so after deciphering the numbers of bytes will be still `bytes_read`.
@@ -99,6 +120,11 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     offset += bytes_read;
     pos = working_buffer.begin();
     return true;
+}
+
+void ReadBufferFromEncryptedFile::prefetch(Priority priority)
+{
+    in->prefetch(priority);
 }
 
 }

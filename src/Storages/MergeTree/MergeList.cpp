@@ -114,6 +114,11 @@ MergeInfo MergeListElement::getInfo() const
     return res;
 }
 
+const MemoryTracker & MergeListElement::getMemoryTracker() const
+{
+    return thread_group->memory_tracker;
+}
+
 MergeListElement::~MergeListElement()
 {
     background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());

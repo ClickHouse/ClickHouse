@@ -32,6 +32,7 @@ public:
 
     std::optional<size_t> tryGetFileSize() override { return in->tryGetFileSize(); }
 
+    void prefetch(Priority priority) override;
 private:
     bool nextImpl() override;
 
@@ -43,6 +44,8 @@ private:
 
     Memory<> encrypted_buffer;
     FileEncryption::Encryptor encryptor;
+
+    LoggerPtr log;
 };
 
 }

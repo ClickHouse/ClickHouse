@@ -2124,8 +2124,10 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 }
             }
             client_context->setSettings(old_settings);
+            connection->setFormatSettings(getFormatSettings(client_context));
         });
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
+        connection->setFormatSettings(getFormatSettings(client_context));
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();

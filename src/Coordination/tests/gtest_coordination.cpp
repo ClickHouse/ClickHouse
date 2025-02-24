@@ -1386,6 +1386,81 @@ TYPED_TEST(CoordinationTest, ChangelogTestLostFiles2)
 
     assertBrokenFileRemoved("./logs", "changelog_31_40.bin" + this->extension);
 }
+
+TYPED_TEST(CoordinationTest, ChangelogTestBrokenWriteAt)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    {
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
+            DB::FlushSettings(),
+            this->keeper_context);
+        changelog.init(1, 0);
+
+        for (size_t i = 0; i < 20; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", 1);
+            changelog.append(entry);
+        }
+
+        changelog.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog);
+        EXPECT_TRUE(fs::exists("./logs/changelog_1_20.bin"));
+    }
+
+    DB::WriteBufferFromFile plain_buf(
+        "./logs/changelog_1_20.bin", DB::DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    plain_buf.truncate(plain_buf.size() - 3);
+    plain_buf.finalize();
+
+    {
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
+            DB::FlushSettings(),
+            this->keeper_context);
+        changelog.init(1, 0);
+
+        for (size_t i = 20; i < 25; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", 1);
+            changelog.append(entry);
+        }
+
+        changelog.end_of_append_batch(0, 0);
+        EXPECT_EQ(changelog.size(), 24);
+        waitDurableLogs(changelog);
+
+        auto entry = getLogEntry(std::to_string(19) + "_hello_world", 2);
+        changelog.write_at(18, entry);
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+
+        for (size_t i = 19; i < 25; ++i)
+        {
+            entry = getLogEntry(std::to_string(i) + "_hello_world", 2);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+    }
+
+    {
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{.force_sync = true, .compress_logs = false, .rotate_interval = 20},
+            DB::FlushSettings(),
+            this->keeper_context);
+        changelog.init(1, 0);
+
+        EXPECT_EQ(changelog.size(), 24);
+    }
+}
+
 struct IntNode
 {
     int value;

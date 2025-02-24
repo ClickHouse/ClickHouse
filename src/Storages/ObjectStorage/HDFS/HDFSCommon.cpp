@@ -99,7 +99,7 @@ void HDFSBuilderWrapper::loadFromConfig(
 }
 
 #if USE_KRB5
-void HDFSBuilderWrapper::runKinit()
+void HDFSBuilderWrapper::runKinit() const
 {
     LOG_DEBUG(getLogger("HDFSClient"), "Running KerberosInit");
     try

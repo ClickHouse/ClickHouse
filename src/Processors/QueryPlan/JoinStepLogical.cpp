@@ -387,7 +387,7 @@ bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::Join
         {
             auto [left_key_node, right_key_node] = leftAndRightNodes(predicate);
             bool null_safe_comparison = PredicateOperator::NullSafeEquals == predicate.op;
-            if (null_safe_comparison && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
+            if (null_safe_comparison && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))
             {
                 /**
                   * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
