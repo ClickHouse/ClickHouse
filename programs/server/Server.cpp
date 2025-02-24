@@ -1,5 +1,6 @@
 #include "Server.h"
 
+#include <cstring>
 #include <memory>
 #include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
@@ -123,6 +124,8 @@
 
 #include "config.h"
 #include <Common/config_version.h>
+
+#include <Server/HTTP/HTTP2Server.h>
 
 #if defined(OS_LINUX)
 #    include <cstdlib>
@@ -482,13 +485,15 @@ void Server::createServer(
     /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
     if (config.getString(port_name, "").empty())
         return;
-
+    
     /// If we already have an active server for this listen_host/port_name, don't create it again
     for (const auto & server : servers)
     {
         if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
             return;
     }
+    
+    LOG_INFO(&logger(), "Going to run {}", port_name);
 
     auto port = config.getInt(port_name);
     try
@@ -1049,7 +1054,6 @@ try
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
-
 #if WITH_COVERAGE
     LOG_INFO(log, "Query Profiler and TraceCollector are disabled because they work extremely slow with test coverage.");
 #endif
@@ -2860,6 +2864,29 @@ void Server::createServers(
                 UNUSED(port);
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HTTPS protocol is disabled because Poco library was built without NetSSL support.");
 #endif
+            });
+        }
+
+        if (server_type.shouldStart(ServerType::Type::HTTP2))
+        {
+            /// HTTP/2
+
+            LOG_INFO(&logger(), "Entered HTTP/2");
+
+            port_name = "http2_port";
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
+            {
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(config, socket, listen_host, port);
+                socket.setReceiveTimeout(settings.http_receive_timeout);
+                socket.setSendTimeout(settings.http_send_timeout);
+
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "HTTP/2 http://" + address.toString(),
+                    std::make_unique<HTTP2Server>(
+                        createHTTP2HandlerFactory(*this), server_pool, socket, http_params));
             });
         }
 
