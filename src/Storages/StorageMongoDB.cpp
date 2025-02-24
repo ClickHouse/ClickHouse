@@ -60,7 +60,7 @@ StorageMongoDB::StorageMongoDB(
     const String & comment)
     : IStorage{table_id_}
     , configuration{std::move(configuration_)}
-    , log(getLogger("StorageMongoDB (" + table_id_.table_name + ")"))
+    , log(getLogger("StorageMongoDB (" + table_id_.database_name "." + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
