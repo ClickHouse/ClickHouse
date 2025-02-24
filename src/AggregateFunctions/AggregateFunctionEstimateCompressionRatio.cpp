@@ -56,6 +56,14 @@ struct AggregationFunctionEstimateCompressionRatioData
 
     std::shared_ptr<NullWriteBuffer> null_buf;
     std::shared_ptr<CompressedWriteBuffer> compressed_buf;
+
+    [[maybe_unused]] ~AggregationFunctionEstimateCompressionRatioData()
+    {
+        if (compressed_buf)
+            compressed_buf->finalize();
+        if (null_buf)
+            null_buf->finalize();
+    }
 };
 
 class AggregateFunctionEstimateCompressionRatio final
