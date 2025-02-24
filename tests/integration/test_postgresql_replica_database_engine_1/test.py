@@ -743,6 +743,7 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
         # for i in range(NUM_TABLES):
         #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
         #     print(result) # Just debug
+        pass
 
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
