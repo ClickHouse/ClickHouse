@@ -300,6 +300,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         if (opt.has_value())
             setIfSmaller(T(*opt));
     }
+
     else
     {
         for (size_t i = row_begin; i < row_end; i++)
@@ -331,22 +332,6 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
     {
         for (size_t i = row_begin; i < row_end; i++)
             setIfGreater(column, i, arena);
-
-        /*
-        const auto * data = vec.getData().data();
-        const auto * begin = data + row_begin;
-        const auto * end = data + row_end;
-
-        T max_value = *begin;
-        const auto * curr = begin + 1;
-        while (curr < end)
-        {
-            max_value = max_value > *curr ? max_value : *curr;
-            ++curr;
-        }
-
-        setIfGreater(max_value);
-        */
     }
 }
 
