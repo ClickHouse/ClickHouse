@@ -4929,6 +4929,19 @@ class ClickHouseKiller(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clickhouse_node.start_clickhouse()
 
+# RAII class to pause and unpause container (also to unpause on exit / test failure)
+class ScopedContainerPause(object):
+    def __init__(self, cluster, instance_name):
+        self.cluster = cluster
+        self.instance_name = instance_name
+
+    def __enter__(self):
+        self.cluster.pause_container(self.instance_name)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.cluster.unpause_container(self.instance_name)
+
 
 @cache
 def is_arm():
