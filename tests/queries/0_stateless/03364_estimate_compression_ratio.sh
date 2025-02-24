@@ -12,7 +12,7 @@ formatted_tolerance=$(awk "BEGIN {printf \"%.2f\", $tolerance * 100}")%
 # all combinations of the following should be tested
 codecs=("ZSTD" "LZ4")
 block_sizes=(65536 1048576)
-num_rows_list=(100_000 250_000)
+num_rows_list=(10_000 500_000)
 
 log_if_debug() {
     if [ "$run_mode" != "CI" ]; then
@@ -46,7 +46,7 @@ create_table() {
         toString(number+rand()) as str_col,
         [toString(number+rand()), toString(number+rand())] as array_col,
         if(number % 20 = 0, number+rand(), NULL) as nullable_col,
-        if(number % 100 = 0, number+rand(), 0) as sparse_col,
+        if(number % 10 = 0, number+rand(), 0) as sparse_col,
         (number+rand(), toString(number+rand())) as tuple_col
     FROM system.numbers LIMIT $num_rows"
 
