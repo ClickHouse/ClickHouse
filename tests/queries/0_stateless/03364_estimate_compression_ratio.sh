@@ -14,35 +14,28 @@ codecs=("ZSTD" "LZ4")
 block_sizes=(65536 1048576)
 num_rows_list=(100_000 250_000)
 
-
 log_if_debug() {
     if [ "$run_mode" != "CI" ]; then
         echo "$@"
     fi
 }
 
-test_compression_ratio() {
-    local codec=$1
-    local block_size=$2
-    local num_rows=$3
-
-    log_if_debug "Testing with codec=$codec, block_size=$block_size, num_rows=$num_rows"
+create_table() {
+    local num_rows=$1
 
     query="DROP TABLE IF EXISTS $table_name"
     log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
 
     query="CREATE TABLE $table_name (
-        number_col UInt64 CODEC($codec),
-        str_col String CODEC($codec), 
-        array_col Array(String) CODEC($codec),
-        nullable_col Nullable(Int64) CODEC($codec),
-        sparse_col Int64 CODEC($codec),
-        tuple_col Tuple(Int64, String) CODEC($codec)
+        number_col UInt64,
+        str_col String,
+        array_col Array(String),
+        nullable_col Nullable(Int64),
+        sparse_col Int64,
+        tuple_col Tuple(Int64, String)
     ) ENGINE = MergeTree ORDER BY number_col
-    SETTINGS min_compress_block_size = $block_size,
-             max_compress_block_size = $block_size,
-             min_bytes_for_wide_part = 0"
+    SETTINGS min_bytes_for_wide_part = 0"
 
     log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
@@ -59,11 +52,30 @@ test_compression_ratio() {
 
     log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
+}
+
+apply_codec() {
+    local codec=$1
+    local block_size=$2
+
+    query="ALTER TABLE $table_name MODIFY COLUMN number_col UInt64 CODEC($codec),
+           MODIFY COLUMN str_col String CODEC($codec),
+           MODIFY COLUMN array_col Array(String) CODEC($codec),
+           MODIFY COLUMN nullable_col Nullable(Int64) CODEC($codec),
+           MODIFY COLUMN sparse_col Int64 CODEC($codec),
+           MODIFY COLUMN tuple_col Tuple(Int64, String) CODEC($codec)
+           SETTINGS min_compress_block_size = $block_size,
+                    max_compress_block_size = $block_size"
+
+    log_if_debug "Running: $query"
+    $CLICKHOUSE_CLIENT -q "$query"
 
     query="OPTIMIZE TABLE $table_name FINAL"
     log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT --query="$query"
+}
 
+test_compression_ratio() {
     # Estimated compression ratios
     query="SELECT 
         estimateCompressionRatio('$codec', $block_size)(number_col),
@@ -125,10 +137,13 @@ test_compression_ratio() {
     echo "OK - For codec=$codec block_size=$block_size num_rows=$num_rows: Estimated compression ratios are within $formatted_tolerance of actual ratios"
 }
 
-for codec in "${codecs[@]}"; do
-    for block_size in "${block_sizes[@]}"; do
-        for num_rows in "${num_rows_list[@]}"; do
-            test_compression_ratio "$codec" "$block_size" "$num_rows"
+for num_rows in "${num_rows_list[@]}"; do
+    create_table "$num_rows"
+    for codec in "${codecs[@]}"; do
+        for block_size in "${block_sizes[@]}"; do
+            apply_codec "$codec" "$block_size"
+            log_if_debug "Testing with codec=$codec, block_size=$block_size, num_rows=$num_rows"
+            test_compression_ratio
         done
     done
 done
