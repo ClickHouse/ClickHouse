@@ -1170,7 +1170,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             }
             else if (next_action == 1)
             {
-                /// Replace expression with the alias as an indentifier
+                /// Replace expression with the alias as an identifier
                 return std::make_shared<ASTIdentifier>(Strings{alias});
             }
         }
@@ -1190,9 +1190,16 @@ ASTPtr QueryFuzzer::generatePredicate()
 
     if (prob == 0)
     {
-        /// Add a predicate
+        /// Add a predicate, most of the times use a column in one of the sides
         colids.clear();
-        std::copy_if(column_like.begin(), column_like.end(), std::back_inserter(colids), identifier_lambda);
+        if (fuzz_rand() % 10 == 0)
+        {
+            colids = column_like;
+        }
+        else
+        {
+            std::copy_if(column_like.begin(), column_like.end(), std::back_inserter(colids), identifier_lambda);
+        }
         if (!colids.empty())
         {
             ASTPtr predicate = nullptr;
@@ -1488,10 +1495,13 @@ ASTPtr QueryFuzzer::addJoinClause()
             const auto * id1 = typeid_cast<ASTIdentifier *>(rand_col1->second.get());
 
             /// Use another random column
-            auto rand_col2 = colids.begin();
-            std::advance(rand_col2, fuzz_rand() % colids.size());
+            /// Most of the times, search from the identifier list
+            const auto & to_search = fuzz_rand() % 10 == 0 ? column_like : colids;
+            auto rand_col2 = to_search.begin();
+            std::advance(rand_col2, fuzz_rand() % to_search.size());
 
-            const String & nidentifier = (id1->tryGetAlias().empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1->tryGetAlias();
+            const String id1_alias = id1->tryGetAlias();
+            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
             ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
             ASTPtr exp2 = rand_col2->second->clone();
 
