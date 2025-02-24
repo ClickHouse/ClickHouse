@@ -35,3 +35,4 @@ if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
 fi
 
 exec "$@"
+# Rebuilt in PR #76639
