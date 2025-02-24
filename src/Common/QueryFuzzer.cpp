@@ -1078,7 +1078,6 @@ ASTPtr QueryFuzzer::reverseLiteralFuzzing(ASTPtr child)
     return nullptr;
 }
 
-
 void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
 {
     /// Permute list
@@ -1088,15 +1087,17 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
     }
     for (auto & child : expr_list.children)
     {
+        static const constexpr int asterisk_prob = 2000;
+
         if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
         {
             /// Return a '*' literal
-            if (fuzz_rand() % 500 == 0)
+            if (fuzz_rand() % asterisk_prob == 0)
                 child = std::make_shared<ASTAsterisk>();
             else if (fuzz_rand() % 13 == 0)
                 child = fuzzLiteralUnderExpressionList(child);
         }
-        else if (fuzz_rand() % 500 == 0 && (typeid_cast<ASTIdentifier *>(child.get()) || typeid_cast<ASTFunction *>(child.get())))
+        else if (fuzz_rand() % asterisk_prob == 0 && (typeid_cast<ASTIdentifier *>(child.get()) || typeid_cast<ASTFunction *>(child.get())))
         {
             /// Return a '*' literal
             child = std::make_shared<ASTAsterisk>();
