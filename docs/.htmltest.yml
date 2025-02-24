@@ -7,6 +7,3 @@ CheckMailto: false
 IgnoreAltMissing: true
 IgnoreEmptyHref: true
 IgnoreInternalEmptyHash: true
-IgnoreDirs:
-- "zh"
-- "ru"

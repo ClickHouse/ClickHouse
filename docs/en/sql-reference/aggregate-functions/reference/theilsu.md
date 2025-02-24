@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/theilsu
+slug: /en/sql-reference/aggregate-functions/reference/theilsu
 sidebar_position: 201
 ---
 

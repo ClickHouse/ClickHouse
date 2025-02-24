@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/fileCluster
+slug: /en/sql-reference/table-functions/fileCluster
 sidebar_position: 61
 sidebar_label: fileCluster
 ---
@@ -22,7 +22,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 **Arguments**
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
-- `path` — The relative path to the file from [user_files_path](/docs/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path).
+- `path` — The relative path to the file from [user_files_path](/docs/en/operations/server-configuration-parameters/settings.md#user_files_path). Path to file also supports [globs](#globs-in-path).
 - `format` — [Format](../../interfaces/formats.md#formats) of the files. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
 - `compression_method` — Compression method. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
@@ -62,7 +62,7 @@ Now, read data contents of `test1.csv` and `test2.csv` via `fileCluster` table f
 SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
 ```
 
-```response
+```
 ┌──i─┬─s──────┐
 │  1 │ file1  │
 │ 11 │ file11 │

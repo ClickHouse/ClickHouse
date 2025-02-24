@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/tuple-functions
+slug: /en/sql-reference/functions/tuple-functions
 sidebar_position: 180
 sidebar_label: Tuples
 ---
@@ -8,7 +8,7 @@ sidebar_label: Tuples
 
 A function that allows grouping multiple columns.
 For columns C1, C2, ... with the types T1, T2, ..., it returns a named Tuple(C1 T1, C2 T2, ...) type tuple containing these columns if their names are unique and can be treated as unquoted identifiers, otherwise a Tuple(T1, T2, ...) is returned. There is no cost to execute the function.
-Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can't be written to a table.
+Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
 
 The function implements the operator `(x, y, ...)`.
 

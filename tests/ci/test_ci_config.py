@@ -109,7 +109,7 @@ class TestCIConfig(unittest.TestCase):
                 elif "debug" in job:
                     expected_builds = [CI.BuildNames.PACKAGE_DEBUG]
                 elif job in (
-                    "Unit tests (binary)",
+                    "Unit tests (release)",
                     "ClickHouse Keeper Jepsen",
                     "ClickHouse Server Jepsen",
                 ):
@@ -169,18 +169,10 @@ class TestCIConfig(unittest.TestCase):
         # check stages
         for job in CI.JobNames:
             if job in CI.BuildNames:
-                if job in (
-                    CI.BuildNames.PACKAGE_RELEASE,
-                    CI.BuildNames.PACKAGE_AARCH64,
-                ):
-                    self.assertTrue(
-                        CI.get_job_ci_stage(job) in (CI.WorkflowStages.BUILDS_0,)
-                    )
-                else:
-                    self.assertTrue(
-                        CI.get_job_ci_stage(job)
-                        in (CI.WorkflowStages.BUILDS_1, CI.WorkflowStages.BUILDS_2)
-                    )
+                self.assertTrue(
+                    CI.get_job_ci_stage(job)
+                    in (CI.WorkflowStages.BUILDS_1, CI.WorkflowStages.BUILDS_2)
+                )
             else:
                 if job in (
                     CI.JobNames.STYLE_CHECK,
@@ -197,11 +189,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job)
-                        in (
-                            CI.WorkflowStages.TESTS_1,
-                            CI.WorkflowStages.TESTS_0,
-                            CI.WorkflowStages.TESTS_2,
-                        ),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -212,19 +200,10 @@ class TestCIConfig(unittest.TestCase):
         # check stages
         for job in CI.JobNames:
             if job in CI.BuildNames:
-                if job in (
-                    CI.BuildNames.PACKAGE_RELEASE,
-                    CI.BuildNames.PACKAGE_AARCH64,
-                ):
-                    self.assertTrue(
-                        CI.get_job_ci_stage(job) in (CI.WorkflowStages.BUILDS_0,),
-                        f"Invalid stage [{CI.get_job_ci_stage(job)}] for [{job}]",
-                    )
-                else:
-                    self.assertTrue(
-                        CI.get_job_ci_stage(job)
-                        in (CI.WorkflowStages.BUILDS_1, CI.WorkflowStages.BUILDS_2)
-                    )
+                self.assertTrue(
+                    CI.get_job_ci_stage(job)
+                    in (CI.WorkflowStages.BUILDS_1, CI.WorkflowStages.BUILDS_2)
+                )
             else:
                 if job in (
                     CI.JobNames.STYLE_CHECK,
@@ -241,11 +220,7 @@ class TestCIConfig(unittest.TestCase):
                 else:
                     self.assertTrue(
                         CI.get_job_ci_stage(job, non_blocking_ci=True)
-                        in (
-                            CI.WorkflowStages.TESTS_1,
-                            CI.WorkflowStages.TESTS_0,
-                            CI.WorkflowStages.TESTS_2_WW,
-                        ),
+                        in (CI.WorkflowStages.TESTS_1, CI.WorkflowStages.TESTS_2_WW),
                         msg=f"Stage for [{job}] is not correct",
                     )
 
@@ -420,7 +395,7 @@ class TestCIConfig(unittest.TestCase):
             "Style check",
             "Fast test",
             "binary_release",
-            "Unit tests (binary)",
+            "Unit tests (release)",
         ]
         self.assertCountEqual(expected_jobs_to_do, actual_jobs_to_do)
 

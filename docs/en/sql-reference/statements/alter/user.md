@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/alter/user
+slug: /en/sql-reference/statements/alter/user
 sidebar_position: 45
 sidebar_label: USER
 title: "ALTER USER"
@@ -47,7 +47,7 @@ Set assigned roles as default:
 ALTER USER user DEFAULT ROLE role1, role2
 ```
 
-If roles aren't previously assigned to a user, ClickHouse throws an exception.
+If roles aren’t previously assigned to a user, ClickHouse throws an exception.
 
 Set all the assigned roles to default:
 

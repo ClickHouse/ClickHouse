@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/groupbitmap
+slug: /en/sql-reference/aggregate-functions/reference/groupbitmap
 sidebar_position: 148
 ---
 

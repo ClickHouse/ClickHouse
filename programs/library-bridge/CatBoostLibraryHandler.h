@@ -2,9 +2,12 @@
 
 #include "CatBoostLibraryAPI.h"
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
 #include <base/defines.h>
-#include <base/types.h>
 #include "SharedLibrary.h"
 
 #include <chrono>
@@ -68,7 +71,7 @@ private:
     size_t cat_features_count TSA_GUARDED_BY(mutex);
     size_t tree_count TSA_GUARDED_BY(mutex);
 
-    MutableColumnPtr evalImpl(const ColumnRawPtrs & columns, bool cat_features_are_strings) const TSA_REQUIRES(mutex);
+    ColumnFloat64::MutablePtr evalImpl(const ColumnRawPtrs & columns, bool cat_features_are_strings) const TSA_REQUIRES(mutex);
 };
 
 using CatBoostLibraryHandlerPtr = std::shared_ptr<CatBoostLibraryHandler>;

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/string-replace-functions
+slug: /en/sql-reference/functions/string-replace-functions
 sidebar_position: 150
 sidebar_label: Replacing in Strings
 ---

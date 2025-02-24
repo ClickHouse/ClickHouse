@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/urlCluster
+slug: /en/sql-reference/table-functions/urlCluster
 sidebar_position: 201
 sidebar_label: urlCluster
 ---

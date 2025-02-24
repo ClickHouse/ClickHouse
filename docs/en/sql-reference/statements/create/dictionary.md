@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/create/dictionary
+slug: /en/sql-reference/statements/create/dictionary
 sidebar_position: 38
 sidebar_label: DICTIONARY
 title: "CREATE DICTIONARY"
@@ -154,7 +154,7 @@ LAYOUT(HASHED())
 
 ### Create a dictionary from another database
 
-Please see the details in [Dictionary sources](/docs/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
+Please see the details in [Dictionary sources](/docs/en/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
 
 **See Also**
 

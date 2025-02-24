@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/drop
+slug: /en/sql-reference/statements/drop
 sidebar_position: 44
 sidebar_label: DROP
 ---
@@ -23,7 +23,7 @@ DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 Deletes one or more tables.
 
 :::tip
-To undo the deletion of a table, please see [UNDROP TABLE](/docs/sql-reference/statements/undrop.md)
+To undo the deletion of a table, please see [UNDROP TABLE](/docs/en/sql-reference/statements/undrop.md)
 :::
 
 Syntax:

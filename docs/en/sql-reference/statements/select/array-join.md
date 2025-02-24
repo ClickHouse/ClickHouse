@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/array-join
+slug: /en/sql-reference/statements/select/array-join
 sidebar_label: ARRAY JOIN
 ---
 
@@ -19,6 +19,8 @@ FROM <left_subquery>
 ...
 ```
 
+You can specify only one `ARRAY JOIN` clause in a `SELECT` query.
+
 Supported types of `ARRAY JOIN` are listed below:
 
 - `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
@@ -26,7 +28,7 @@ Supported types of `ARRAY JOIN` are listed below:
 
 ## Basic ARRAY JOIN Examples
 
-The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let's create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
+The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let’s create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
 
 ```sql
 CREATE TABLE arrays_test

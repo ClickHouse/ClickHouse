@@ -1,11 +1,11 @@
 ---
-slug: /operations/ssl-zookeeper
+slug: /en/operations/ssl-zookeeper
 sidebar_position: 45
 sidebar_label: Secured Communication with Zookeeper
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
 
 <SelfManaged />
 

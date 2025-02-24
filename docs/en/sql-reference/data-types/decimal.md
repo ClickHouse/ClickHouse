@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/decimal
+slug: /en/sql-reference/data-types/decimal
 sidebar_position: 6
 sidebar_label: Decimal
 ---

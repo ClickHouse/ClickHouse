@@ -32,7 +32,6 @@ DEFINE_BINARY_PROTO_FUZZER(const Sentence& main)
 
             DB::WriteBufferFromOStream out(std::cerr, 4096);
             DB::formatAST(*ast, out);
-            out.finalize();
             std::cerr << std::endl;
         }
         catch (...) {}

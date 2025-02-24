@@ -21,7 +21,6 @@ csv.field_size_limit(sys.maxsize)
 def get_fasttest_cmd(
     workspace: Path,
     output_path: Path,
-    build_output_path: Path,
     repo_path: Path,
     pr_number: int,
     commit_sha: str,
@@ -38,9 +37,7 @@ def get_fasttest_cmd(
         f"-e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 "
         f"-e SCCACHE_BUCKET={S3_BUILDS_BUCKET} -e SCCACHE_S3_KEY_PREFIX=ccache/sccache "
         "-e stage=clone_submodules "
-        "--tmpfs /tmp/clickhouse "
         f"--volume={workspace}:/fasttest-workspace --volume={repo_path}:/repo "
-        f"--volume={build_output_path}:/build "
         f"--volume={output_path}:/test_output {image} /repo/tests/docker_scripts/fasttest_runner.sh"
     )
 
@@ -92,15 +89,9 @@ def main():
 
     repo_path = Path(REPO_COPY)
 
-    build_output_temp_path = repo_path / "ci" / "tmp"
-    build_output_temp_path.mkdir(parents=True, exist_ok=True)
-    build_output_path = build_output_temp_path / "build"
-    build_output_path.mkdir(parents=True, exist_ok=True)
-
     run_cmd = get_fasttest_cmd(
         workspace,
         output_path,
-        build_output_path,
         repo_path,
         pr_info.number,
         pr_info.sha,
@@ -123,8 +114,8 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_files = [f for f in output_path.glob('**/*') if f.is_file()]
-    additional_files.append(run_log_path)
+    additional_logs = [f for f in output_path.iterdir() if f.is_file()]
+    additional_logs.append(run_log_path)
 
     test_log_exists = (
         "test_log.txt" in test_output_files or "test_result.txt" in test_output_files
@@ -155,7 +146,7 @@ def main():
         status=state,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=additional_files,
+        additional_files=additional_logs,
         build_dir_for_upload=str(output_path / "binaries"),
     ).dump()
 

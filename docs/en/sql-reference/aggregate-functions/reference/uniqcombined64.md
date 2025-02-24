@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/uniqcombined64
+slug: /en/sql-reference/aggregate-functions/reference/uniqcombined64
 sidebar_position: 206
 ---
 

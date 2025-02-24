@@ -1,12 +1,7 @@
 ---
-description: "System table containing metrics which can be calculated instantly, or have a current value."
-slug: /operations/system-tables/metrics
-title: "metrics"
-keywords: ["system table", "metrics"]
+slug: /en/operations/system-tables/metrics
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# metrics
 
 Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
 

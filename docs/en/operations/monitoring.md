@@ -1,5 +1,5 @@
 ---
-slug: /operations/monitoring
+slug: /en/operations/monitoring
 sidebar_position: 45
 sidebar_label: Monitoring
 description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.
@@ -7,10 +7,9 @@ keywords: [monitoring, observability, advanced dashboard, dashboard, observabili
 ---
 
 # Monitoring
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_automated.md';
 
-:::note
-The monitoring data outlined in this guide is accessible in ClickHouse Cloud. In addition to being displayed through the built-in dashboard described below, both basic and advanced performance metrics can also be viewed directly in the main service console.
-:::
+<SelfManaged />
 
 You can monitor:
 

@@ -1,6 +1,5 @@
--- Tags: long, replica, no-replicated-database, no-shared-merge-tree
+-- Tags: long, replica, no-replicated-database
 -- Tag no-replicated-database: Fails due to additional replicas or shards
--- no-shared-merge-tree: depends on max_replicated_merges_in_queue
 
 SET replication_alter_partitions_sync = 2;
 

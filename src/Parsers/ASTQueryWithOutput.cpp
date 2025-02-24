@@ -13,10 +13,10 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
         cloned.out_file = out_file->clone();
         cloned.children.push_back(cloned.out_file);
     }
-    if (format_ast)
+    if (format)
     {
-        cloned.format_ast = format_ast->clone();
-        cloned.children.push_back(cloned.format_ast);
+        cloned.format = format->clone();
+        cloned.children.push_back(cloned.format);
     }
     if (settings_ast)
     {
@@ -44,7 +44,7 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
     if (out_file)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
-        out_file->format(ostr, s, state, frame);
+        out_file->formatImpl(ostr, s, state, frame);
 
         ostr << (s.hilite ? hilite_keyword : "");
         if (is_outfile_append)
@@ -56,16 +56,16 @@ void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s
         ostr << (s.hilite ? hilite_none : "");
     }
 
-    if (format_ast)
+    if (format)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
-        format_ast->format(ostr, s, state, frame);
+        format->formatImpl(ostr, s, state, frame);
     }
 
     if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings_ast->format(ostr, s, state, frame);
+        settings_ast->formatImpl(ostr, s, state, frame);
     }
 }
 
@@ -86,7 +86,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         };
 
         remove_if_exists(ast_with_output->out_file);
-        remove_if_exists(ast_with_output->format_ast);
+        remove_if_exists(ast_with_output->format);
         remove_if_exists(ast_with_output->settings_ast);
         remove_if_exists(ast_with_output->compression);
         remove_if_exists(ast_with_output->compression_level);

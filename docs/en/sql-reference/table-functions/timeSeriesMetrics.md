@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/timeSeriesMetrics
+slug: /en/sql-reference/table-functions/timeSeriesMetrics
 sidebar_position: 145
 sidebar_label: timeSeriesMetrics
 ---

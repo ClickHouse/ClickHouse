@@ -127,7 +127,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/anrieff/libcpuid
+	url = https://github.com/ClickHouse/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap
@@ -230,12 +230,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/qpl"]
-	path = contrib/qpl
-	url = https://github.com/intel/qpl
-[submodule "contrib/idxd-config"]
-	path = contrib/idxd-config
-	url = https://github.com/ClickHouse/idxd-config.git
 [submodule "contrib/QAT-ZSTD-Plugin"]
 	path = contrib/QAT-ZSTD-Plugin
 	url = https://github.com/intel/QAT-ZSTD-Plugin
@@ -314,6 +308,9 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
+[submodule "contrib/expected"]
+	path = contrib/expected
+	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing

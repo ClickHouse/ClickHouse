@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/qualify
+slug: /en/sql-reference/statements/select/qualify
 sidebar_label: QUALIFY
 ---
 
@@ -11,7 +11,7 @@ It is possible to reference window functions results from `SELECT` clause in `QU
 
 ## Limitations
 
-`QUALIFY` can't be used if there are no window functions to evaluate. Use `WHERE` instead.
+`QUALIFY` can’t be used if there are no window functions to evaluate. Use `WHERE` instead.
 
 ## Examples
 

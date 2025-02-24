@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/aggregatefunction
+slug: /en/sql-reference/data-types/aggregatefunction
 sidebar_position: 46
 sidebar_label: AggregateFunction
 ---

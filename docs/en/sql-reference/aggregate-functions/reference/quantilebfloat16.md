@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
+slug: /en/sql-reference/aggregate-functions/reference/quantilebfloat16
 sidebar_position: 171
 title: quantileBFloat16
 ---

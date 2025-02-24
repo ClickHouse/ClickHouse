@@ -1,25 +1,25 @@
 ---
 title: "Settings Overview"
 sidebar_position: 1
-slug: /operations/settings/
+slug: /en/operations/settings/
 ---
 
 # Settings Overview
 
 :::note
-XML-based Settings Profiles and [configuration files](/docs/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](/docs/operations/access-rights#settings-profiles-management).
+XML-based Settings Profiles and [configuration files](https://clickhouse.com/docs/en/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](https://clickhouse.com/docs/en/operations/access-rights#settings-profiles-management).
 :::
 
 There are two main groups of ClickHouse settings:
 
 - Global server settings
-- Session settings
+- Query-level settings
 
-The main distinction between both is that global server settings apply globally for the ClickHouse server, while session settings apply to user sessions or even individual queries.
+The main distinction between global server settings and query-level settings is that global server settings must be set in configuration files, while query-level settings can be set in configuration files or with SQL queries.
 
-Read about [global server settings](/docs/operations/server-configuration-parameters/settings.md) to learn more about configuring your ClickHouse server at the global server level.
+Read about [global server settings](/docs/en/operations/server-configuration-parameters/settings.md) to learn more about configuring your ClickHouse server at the global server level.
 
-Read about [session settings](/docs/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the session level.
+Read about [query-level settings](/docs/en/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the query level.
 
 ## See non-default settings
 

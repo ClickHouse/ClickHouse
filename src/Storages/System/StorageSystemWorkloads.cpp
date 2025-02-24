@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Parsers/queryToString.h>

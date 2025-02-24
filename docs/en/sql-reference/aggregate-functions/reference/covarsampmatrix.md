@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/covarsampmatrix
+slug: /en/sql-reference/aggregate-functions/reference/covarsampmatrix
 sidebar_position: 125
 ---
 

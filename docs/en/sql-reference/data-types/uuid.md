@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/uuid
+slug: /en/sql-reference/data-types/uuid
 sidebar_position: 24
 sidebar_label: UUID
 ---

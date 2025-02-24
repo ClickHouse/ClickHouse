@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/check-table
+slug: /en/sql-reference/statements/check-table
 sidebar_position: 41
 sidebar_label: CHECK TABLE
 title: "CHECK TABLE Statement"

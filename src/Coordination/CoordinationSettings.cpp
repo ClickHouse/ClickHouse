@@ -7,9 +7,6 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include "config.h"
-
-
 namespace DB
 {
 namespace ErrorCodes

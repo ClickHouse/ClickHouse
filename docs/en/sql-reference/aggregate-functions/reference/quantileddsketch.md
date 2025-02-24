@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileddsketch
+slug: /en/sql-reference/aggregate-functions/reference/quantileddsketch
 sidebar_position: 171
 title: quantileDD
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /operations/named-collections
+slug: /en/operations/named-collections
 sidebar_position: 69
 sidebar_label: "Named collections"
 title: "Named collections"
@@ -82,7 +82,7 @@ you can use `local_encrypted` or `keeper_encrypted`/`zookeeper_encrypted`.
 
 To use ZooKeeper/Keeper we also need to set up a `path` (path in ZooKeeper/Keeper, where named collections will be stored) to
 `named_collections_storage` section in configuration file. The following example uses encryption and ZooKeeper/Keeper:
-```xml
+```
 <clickhouse>
   <named_collections_storage>
     <type>zookeeper_encrypted</type>
@@ -545,28 +545,4 @@ CREATE TABLE queue
 ENGINE = Kafka(my_kafka_cluster)
 SETTINGS kafka_num_consumers = 4,
          kafka_thread_per_consumer = 1;
-```
-
-## Named collections for backups
-
-For the description of parameters see [Backup and Restore](./backup.md).
-
-### DDL example
-
-```sql
-BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
-```
-
-### XML example
-
-```xml
-<clickhouse>
-    <named_collections>
-        <named_collection_s3_backups>
-            <url>https://my-s3-bucket.s3.amazonaws.com/backup-S3/</url>
-            <access_key_id>ABC123</access_key_id>
-            <secret_access_key>Abc+123</secret_access_key>
-        </named_collection_s3_backups>
-    </named_collections>
-</clickhouse>
 ```

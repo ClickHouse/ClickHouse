@@ -751,9 +751,7 @@ def test_system_users():
 
     node1.query("DROP USER u1")
 
-    expected_error = (
-        "necessary to have the grant SELECT ON default.tbl WITH GRANT OPTION"
-    )
+    expected_error = "necessary to have the grant CREATE USER ON *.*"
     assert expected_error in node1.query_and_get_error(
         f"RESTORE TABLE system.users ON CLUSTER 'cluster' FROM {backup_name}", user="u2"
     )
@@ -1201,34 +1199,3 @@ def test_shutdown_waits_for_backup():
     node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node1.query("SYSTEM SYNC REPLICA tbl")
     assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV([3, 5])
-
-
-def test_replicated_table_after_alters():
-    node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x Int32"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
-    )
-
-    node1.query("INSERT INTO tbl VALUES (1)")
-    node1.query("ALTER TABLE tbl ADD COLUMN y Int32")
-    node1.query("INSERT INTO tbl VALUES (2, 20)")
-    node1.query("ALTER TABLE tbl ADD COLUMN z Int32")
-    node1.query("INSERT INTO tbl VALUES (3, 30, 300)")
-
-    backup_name = new_backup_name()
-
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
-    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-
-    node1.query("OPTIMIZE TABLE tbl FINAL")
-
-    assert node1.query("SELECT * FROM tbl ORDER BY x") == TSV(
-        [[1, 0, 0], [2, 20, 0], [3, 30, 300]]
-    )
-
-    assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV(
-        [[1, 0, 0], [2, 20, 0], [3, 30, 300]]
-    )

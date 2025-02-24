@@ -1,25 +1,17 @@
 #include "ConfigReloader.h"
 
-#include <filesystem>
-#include <memory>
-#include "ConfigProcessor.h"
-#include <Common/Exception.h>
-#include <Common/filesystemHelpers.h>
+#include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Poco/Util/Application.h>
+#include "ConfigProcessor.h"
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 
 namespace fs = std::filesystem;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_LOAD_CONFIG;
-}
-
 
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
@@ -139,24 +131,18 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (Coordination::isHardwareError(e.code))
                 need_reload_from_zk = true;
 
-            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
-            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
-
             if (throw_on_error)
-                exc->rethrow();
+                throw;
 
-            LOG_ERROR(log, "ZooKeeper error when loading config from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
+            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
             return std::nullopt;
         }
         catch (...)
         {
-            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
-            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
-
             if (throw_on_error)
-                exc->rethrow();
+                throw;
 
-            LOG_ERROR(log, "Error loading config from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
+            tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
             return std::nullopt;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
@@ -180,13 +166,9 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         catch (...)
         {
-            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
-            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
-
             if (throw_on_error)
-                exc->rethrow();
-
-            LOG_ERROR(log, "Error updating configuration from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
+                throw;
+            tryLogCurrentException(log, "Error updating configuration from '" + config_path + "' config.");
             return std::nullopt;
         }
 

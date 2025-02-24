@@ -10,7 +10,6 @@ from typing import List, Sequence, Tuple
 from ci_config import CI
 from env_helper import TEMP_PATH
 from functional_test_check import NO_CHANGES_MSG
-from pr_info import PRInfo
 from report import (
     ERROR,
     FAIL,
@@ -92,17 +91,6 @@ def main():
     logging.basicConfig(level=logging.INFO)
     # args = parse_args()
     stopwatch = Stopwatch()
-    if CI.Labels.PR_BUGFIX not in PRInfo().labels:
-        JobReport(
-            description="",
-            test_results=[],
-            status=SKIPPED.lower(),
-            start_time=stopwatch.start_time_str,
-            duration=stopwatch.duration_seconds,
-            additional_files=[],
-        ).dump()
-        return
-
     jobs_to_validate = [
         CI.JobNames.STATELESS_TEST_RELEASE,
         CI.JobNames.INTEGRATION_TEST,

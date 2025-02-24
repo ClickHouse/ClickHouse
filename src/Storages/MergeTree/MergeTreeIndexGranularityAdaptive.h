@@ -1,8 +1,6 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 
-#include <vector>
-
 namespace DB
 {
 

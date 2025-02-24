@@ -1,10 +1,11 @@
 ---
-description: "Analyzing Stack Overflow data with ClickHouse"
-slug: /getting-started/example-datasets/stackoverflow
+slug: /en/getting-started/example-datasets/stackoverflow
 sidebar_label: Stack Overflow
 sidebar_position: 1
-title: "Analyzing Stack Overflow data with ClickHouse"
+description: Analyzing Stack Overflow data with ClickHouse
 ---
+
+# Analyzing Stack Overflow data with ClickHouse
 
 This dataset contains every `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, and `PostLinks` that has occurred on Stack Overflow.
 

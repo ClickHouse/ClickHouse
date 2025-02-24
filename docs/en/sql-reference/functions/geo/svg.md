@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/geo/svg
+slug: /en/sql-reference/functions/geo/svg
 sidebar_label: SVG
 title: "Functions for Generating SVG images from Geo data"
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletiming
+slug: /en/sql-reference/aggregate-functions/reference/quantiletiming
 sidebar_position: 180
 ---
 

@@ -1,17 +1,10 @@
 ---
-slug: /sql-reference/functions/time-window-functions
+slug: /en/sql-reference/functions/time-window-functions
 sidebar_position: 175
 sidebar_label: Time Window
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-
 # Time Window Functions
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
 
 Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](../statements/create/view.md/#window-view-experimental) are listed below:
 
@@ -66,6 +59,8 @@ tumbleStart(time_attr, interval [, timezone]);
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
+The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
+
 **Returned values**
 
 - The inclusive lower bound of the corresponding tumbling window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
@@ -101,6 +96,8 @@ tumbleEnd(time_attr, interval [, timezone]);
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+
+The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
 **Returned values**
 
@@ -177,6 +174,8 @@ hopStart(time_attr, hop_interval, window_interval [, timezone]);
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
 
+The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
+
 **Returned values**
 
 - The inclusive lower bound of the corresponding hopping window. [DateTime](../data-types/datetime.md), [Tuple](../data-types/tuple.md) or [UInt32](../data-types/int-uint.md).
@@ -216,6 +215,8 @@ hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 - `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
+
+The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
 **Returned values**
 

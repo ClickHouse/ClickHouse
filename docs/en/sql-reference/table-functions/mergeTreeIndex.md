@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/mergeTreeIndex
+slug: /en/sql-reference/table-functions/mergeTreeIndex
 sidebar_position: 77
 sidebar_label: mergeTreeIndex
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/ipv4
+slug: /en/sql-reference/data-types/ipv4
 sidebar_position: 28
 sidebar_label: IPv4
 ---

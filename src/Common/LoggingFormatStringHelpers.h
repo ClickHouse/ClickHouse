@@ -6,7 +6,6 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 #include <mutex>
-#include <optional>
 #include <type_traits>
 #include <unordered_map>
 #include <Poco/Logger.h>
@@ -243,7 +242,7 @@ class LogFrequencyLimiterImpl
 public:
     LogFrequencyLimiterImpl(LoggerPtr logger_, time_t min_interval_s_) : logger(std::move(logger_)), min_interval_s(min_interval_s_) {}
 
-    LogFrequencyLimiterImpl * operator->() { return this; }
+    LogFrequencyLimiterImpl & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
     LogFrequencyLimiterImpl * getChannel() {return this; }
     const String & name() const { return logger->name(); }
@@ -281,7 +280,7 @@ class LogSeriesLimiter
 public:
     LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_);
 
-    LogSeriesLimiter * operator->() { return this; }
+    LogSeriesLimiter & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { return logger->is(priority); }
     LogSeriesLimiter * getChannel() {return this; }
     const String & name() const { return logger->name(); }
@@ -296,18 +295,16 @@ class LogToStrImpl
 {
     String & out_str;
     LoggerPtr logger;
-    std::optional<LogFrequencyLimiterImpl> maybe_nested;
+    std::unique_ptr<LogFrequencyLimiterImpl> maybe_nested;
     bool propagate_to_actual_log = true;
 public:
     LogToStrImpl(String & out_str_, LoggerPtr logger_) : out_str(out_str_), logger(std::move(logger_)) {}
-    LogToStrImpl(String & out_str_, LogFrequencyLimiterImpl && maybe_nested_)
+    LogToStrImpl(String & out_str_, std::unique_ptr<LogFrequencyLimiterImpl> && maybe_nested_)
         : out_str(out_str_), logger(maybe_nested_->getLogger()), maybe_nested(std::move(maybe_nested_)) {}
-
-    LogToStrImpl * operator->() { return this; }
+    LogToStrImpl & operator -> () { return *this; }
     bool is(Poco::Message::Priority priority) { propagate_to_actual_log &= logger->is(priority); return true; }
     LogToStrImpl * getChannel() {return this; }
     const String & name() const { return logger->name(); }
-
     void log(Poco::Message & message)
     {
         out_str = message.getText();

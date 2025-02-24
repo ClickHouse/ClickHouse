@@ -318,10 +318,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--random-order",
-        action="store_true",
-        dest="random_order",
-        help="Run tests in random order using pytest-random-order",
+        "--no-random",
+        action="store",
+        dest="no_random",
+        help="Disable tests order randomization",
     )
 
     parser.add_argument(
@@ -408,7 +408,9 @@ if __name__ == "__main__":
         f" --count {args.count}" if args.count is not None and args.count > 0 else ""
     )
 
-    rand_args = "--random-order" if args.random_order else ""
+    rand_args = ""
+    # if not args.no_random:
+    #     rand_args += f"--random-seed={os.getpid()}"
 
     net = ""
     if args.network:
@@ -523,4 +525,4 @@ if __name__ == "__main__":
         subprocess.check_call(cmd_pre_pull, shell=True)
 
     print(("Running pytest container as: '" + cmd + "'."))
-    subprocess.check_call(cmd, shell=True, bufsize=0)
+    subprocess.check_call(cmd, shell=True)

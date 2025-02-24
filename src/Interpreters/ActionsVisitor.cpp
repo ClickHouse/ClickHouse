@@ -45,6 +45,7 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
@@ -67,7 +68,6 @@ namespace Setting
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_as_common_type;
 }
 
@@ -87,7 +87,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
@@ -107,32 +106,12 @@ static size_t getTypeDepth(const DataTypePtr & type)
     return 0;
 }
 
-struct GetSetElementParams
-{
-    bool transform_null_in = true;
-    bool forbid_unknown_enum_values = false;
-};
-
-static std::optional<Field> convertFieldToTypeCheckEnum(const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool forbid_unknown_enum_values)
-{
-    try
-    {
-        return convertFieldToTypeStrict(from_value, from_type, to_type);
-    }
-    catch (const Exception & e)
-    {
-        if (!forbid_unknown_enum_values && isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
-            return {};
-        throw;
-    }
-}
-
 /// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
 /// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
 template<typename Collection>
-static ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, GetSetElementParams params)
+static ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, const DataTypes & value_types, const DataTypes & types, bool transform_null_in)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -148,8 +127,8 @@ static ColumnsWithTypeAndName createBlockFromCollection(const Collection & colle
         const auto& value = collection[collection_index];
         if (columns_num == 1)
         {
-            auto field = convertFieldToTypeCheckEnum(value, *value_types[collection_index], *types[0], params.forbid_unknown_enum_values);
-            bool need_insert_null = params.transform_null_in && types[0]->isNullable();
+            auto field = convertFieldToTypeStrict(value, *value_types[collection_index], *types[0]);
+            bool need_insert_null = transform_null_in && types[0]->isNullable();
             if (field && (!field->isNull() || need_insert_null))
                 columns[0]->insert(*field);
         }
@@ -159,7 +138,7 @@ static ColumnsWithTypeAndName createBlockFromCollection(const Collection & colle
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
                     String(value.getTypeName()));
 
-            const auto & tuple = value.template safeGet<Tuple>();
+            const auto & tuple = value.template safeGet<const Tuple &>();
             size_t tuple_size = tuple.size();
             if (tuple_size != columns_num)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
@@ -174,12 +153,12 @@ static ColumnsWithTypeAndName createBlockFromCollection(const Collection & colle
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                auto converted_field = convertFieldToTypeCheckEnum(tuple[i], *tuple_value_type[i], *types[i], params.forbid_unknown_enum_values);
+                auto converted_field = convertFieldToTypeStrict(tuple[i], *tuple_value_type[i], *types[i]);
                 if (!converted_field)
                     break;
                 tuple_values[i] = std::move(*converted_field);
 
-                bool need_insert_null = params.transform_null_in && types[i]->isNullable();
+                bool need_insert_null = transform_null_in && types[i]->isNullable();
                 if (tuple_values[i].isNull() && !need_insert_null)
                     break;
             }
@@ -352,18 +331,14 @@ ColumnsWithTypeAndName createBlockForSet(
     };
 
     ColumnsWithTypeAndName block;
-
-    GetSetElementParams set_params{
-        .transform_null_in = context->getSettingsRef()[Setting::transform_null_in],
-        .forbid_unknown_enum_values = context->getSettingsRef()[Setting::validate_enum_literals_in_operators],
-    };
+    bool tranform_null_in = context->getSettingsRef()[Setting::transform_null_in];
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
         DataTypes value_types{right_arg_type};
-        block = createBlockFromCollection(array, value_types, set_element_types, set_params);
+        block = createBlockFromCollection(array, value_types, set_element_types, tranform_null_in);
     }
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
@@ -372,14 +347,14 @@ ColumnsWithTypeAndName createBlockForSet(
         if (type_index == TypeIndex::Tuple)
         {
             const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.safeGet<Tuple>(), value_types, set_element_types, set_params);
+            block = createBlockFromCollection(right_arg_value.safeGet<const Tuple &>(), value_types, set_element_types, tranform_null_in);
         }
         else if (type_index == TypeIndex::Array)
         {
             const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.safeGet<Array>().size();
+            size_t right_arg_array_size = right_arg_value.safeGet<const Array &>().size();
             DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.safeGet<Array>(), value_types, set_element_types, set_params);
+            block = createBlockFromCollection(right_arg_value.safeGet<const Array &>(), value_types, set_element_types, tranform_null_in);
         }
         else
             throw_unsupported_type(right_arg_type);
@@ -483,7 +458,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, right_arg_func, std::move(block), context->getSettingsRef());
+    return prepared_sets.addFromTuple(set_key, std::move(block), context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -1337,7 +1312,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
                     String lambda_name = data.getUniqueName("__lambda");
 
-                    auto actions_settings = ExpressionActionsSettings(data.getContext(), CompileExpressions::yes);
+                    auto actions_settings = ExpressionActionsSettings::fromContext(data.getContext(), CompileExpressions::yes);
                     auto function_capture = std::make_shared<FunctionCaptureOverloadResolver>(
                             std::move(lambda_dag), actions_settings, captured, lambda_arguments, result_type, result_name, false);
                     data.addFunction(function_capture, captured, lambda_name);
@@ -1489,7 +1464,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                     return set;
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
+                    return data.prepared_sets->addFromStorage(set_key, storage_set->getSet());
             }
 
             if (!data.getContext()->isGlobalContext())
@@ -1519,7 +1494,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
 
         return data.prepared_sets->addFromSubquery(
-            set_key, right_in_operand, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
+            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
 
     const auto & last_actions = data.actions_stack.getLastActions();

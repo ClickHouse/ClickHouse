@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletdigestweighted
+slug: /en/sql-reference/aggregate-functions/reference/quantiletdigestweighted
 sidebar_position: 179
 ---
 

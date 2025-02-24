@@ -1,6 +1,6 @@
 ---
 title: "varSampStable"
-slug: /sql-reference/aggregate-functions/reference/varsampstable
+slug: /en/sql-reference/aggregate-functions/reference/varsampstable
 sidebar_position: 213
 ---
 

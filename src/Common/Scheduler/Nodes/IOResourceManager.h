@@ -126,7 +126,7 @@ public:
     ~IOResourceManager() override;
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     bool hasResource(const String & resource_name) const override;
-    ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override;
+    ClassifierPtr acquire(const String & workload_name) override;
     void forEachNode(VisitorFunc visitor) override;
 
 private:
@@ -235,7 +235,6 @@ private:
     class Classifier : public IClassifier
     {
     public:
-        explicit Classifier(const ClassifierSettings & settings_);
         ~Classifier() override;
 
         /// Implements IClassifier interface
@@ -249,7 +248,6 @@ private:
         void detach(const ResourcePtr & resource);
 
     private:
-        const ClassifierSettings settings;
         IOResourceManager * resource_manager;
         std::mutex mutex;
         struct Attachment

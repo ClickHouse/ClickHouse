@@ -35,8 +35,6 @@ public:
         args.insert(args.begin(), cluster_name_arg);
     }
 
-    bool canBeUsedToCreateTable() const override { return false; }
-
 protected:
     void parseArguments(const ASTPtr & ast, ContextPtr context) override
     {

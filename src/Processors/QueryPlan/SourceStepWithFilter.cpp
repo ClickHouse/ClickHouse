@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Common/JSONBuilder.h>
@@ -76,11 +75,6 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     }
 
     return block;
-}
-
-void SourceStepWithFilterBase::applyFilters(ActionDAGNodes added_filter_nodes)
-{
-    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, {});
 }
 
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)

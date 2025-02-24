@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/limit-by
+slug: /en/sql-reference/statements/select/limit-by
 sidebar_label: LIMIT BY
 ---
 

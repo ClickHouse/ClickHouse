@@ -4,7 +4,7 @@
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <random>
 
@@ -232,11 +232,12 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     bool refresh_append;
+    bool in_database_replicated;
 
     RefreshSet::Handle set_handle;
 
     /// Calls refreshTask() from background thread.
-    BackgroundSchedulePoolTaskHolder refresh_task;
+    BackgroundSchedulePool::TaskHolder refresh_task;
 
     CoordinationState coordination;
     ExecutionState execution;

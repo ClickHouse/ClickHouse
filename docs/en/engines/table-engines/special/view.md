@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/special/view
+slug: /en/engines/table-engines/special/view
 sidebar_position: 90
 sidebar_label:  View
 ---

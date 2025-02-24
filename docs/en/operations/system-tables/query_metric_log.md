@@ -1,15 +1,9 @@
 ---
-description: "System table containing a history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk."
-slug: /operations/system-tables/query_metric_log
-title: "query_metric_log"
-keywords: ["system table", "query_metric_log"]
+slug: /en/operations/system-tables/query_metric_log
 ---
+# query_metric_log
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
-
-Contains a history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
+Contains history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
 
 Once a query starts, data is collected at periodic intervals of `query_metric_log_interval` milliseconds (which is set to 1000
 by default). The data is also collected when the query finishes if the query takes longer than `query_metric_log_interval`.

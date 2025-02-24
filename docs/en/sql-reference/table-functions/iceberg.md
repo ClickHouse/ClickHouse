@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/iceberg
+slug: /en/sql-reference/table-functions/iceberg
 sidebar_position: 90
 sidebar_label: iceberg
 ---
@@ -73,15 +73,11 @@ At the moment, with the help of CH, you can read iceberg tables, the schema of w
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
-**Partition Pruning**
-
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
-
 **Aliases**
 
 Table function `iceberg` is an alias to `icebergS3` now.
 
 **See Also**
 
-- [Iceberg engine](/docs/engines/table-engines/integrations/iceberg.md)
-- [Iceberg cluster table function](/docs/sql-reference/table-functions/icebergCluster.md)
+- [Iceberg engine](/docs/en/engines/table-engines/integrations/iceberg.md)
+- [Iceberg cluster table function](/docs/en/sql-reference/table-functions/icebergCluster.md)

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/array-join
+slug: /en/sql-reference/functions/array-join
 sidebar_position: 15
 sidebar_label: arrayJoin
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/uniqthetasketch
+slug: /en/sql-reference/aggregate-functions/reference/uniqthetasketch
 sidebar_position: 209
 title: uniqTheta
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/string-search-functions
+slug: /en/sql-reference/functions/string-search-functions
 sidebar_position: 160
 sidebar_label: Searching in Strings
 ---

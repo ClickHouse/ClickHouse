@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/rank
+slug: /en/sql-reference/window-functions/rank
 sidebar_label: rank
 sidebar_position: 6
 ---

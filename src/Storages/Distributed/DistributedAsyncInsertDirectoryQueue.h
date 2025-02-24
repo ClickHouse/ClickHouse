@@ -2,7 +2,7 @@
 
 #include <mutex>
 #include <Client/ConnectionPool.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Cluster.h>
