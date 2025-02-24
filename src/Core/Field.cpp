@@ -872,11 +872,13 @@ template NearestFieldType<std::decay_t<Decimal64>> & Field::safeGet<Decimal64>()
 template NearestFieldType<std::decay_t<Decimal128>> & Field::safeGet<Decimal128>() &;
 template NearestFieldType<std::decay_t<Decimal256>> & Field::safeGet<Decimal256>() &;
 template NearestFieldType<std::decay_t<DateTime64>> & Field::safeGet<DateTime64>() &;
+template NearestFieldType<std::decay_t<Time64>> & Field::safeGet<Time64>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal32>>> & Field::safeGet<DecimalField<Decimal32>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal64>>> & Field::safeGet<DecimalField<Decimal64>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal128>>> & Field::safeGet<DecimalField<Decimal128>>() &;
 template NearestFieldType<std::decay_t<DecimalField<Decimal256>>> & Field::safeGet<DecimalField<Decimal256>>() &;
 template NearestFieldType<std::decay_t<DecimalField<DateTime64>>> & Field::safeGet<DecimalField<DateTime64>>() &;
+template NearestFieldType<std::decay_t<DecimalField<Time64>>> & Field::safeGet<DecimalField<Time64>>() &;
 template NearestFieldType<std::decay_t<AggregateFunctionStateData>> & Field::safeGet<AggregateFunctionStateData>() &;
 template NearestFieldType<std::decay_t<Array>> & Field::safeGet<Array>() &;
 template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
