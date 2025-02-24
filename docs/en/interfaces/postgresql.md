@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/postgresql
+slug: /interfaces/postgresql
 sidebar_position: 20
 sidebar_label: PostgreSQL Interface
 ---

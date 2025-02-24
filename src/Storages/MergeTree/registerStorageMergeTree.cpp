@@ -716,11 +716,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             for (const auto & index : args.query.columns_list->indices->children)
             {
                 metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, context));
-
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
-                if (((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
+                if (!args.query.attach && (
+                    ((*storage_settings)[MergeTreeSetting::add_minmax_index_for_numeric_columns]
                     || (*storage_settings)[MergeTreeSetting::add_minmax_index_for_string_columns])
-                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX))
+                    && index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)))
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot create table because index {} uses a reserved index name", index_name);
                 }

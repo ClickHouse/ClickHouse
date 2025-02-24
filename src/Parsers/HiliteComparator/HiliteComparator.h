@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <string>
 #include <string_view>
 
 
@@ -24,7 +23,7 @@ static const std::vector<Hilite> hilites = {
  * Consume all prefix hilites, by moving `ptr` to
  * If `last_hilite` is not `nullptr`, update the last hilite to be the last hilite of the prefix hilites.
  */
-void consume_hilites(const char * & ptr, Hilite * last_hilite = nullptr);
+void consume_hilites(std::string_view::iterator *, Hilite * last_hilite = nullptr);
 
 String remove_hilites(std::string_view string);
 

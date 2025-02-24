@@ -1,6 +1,6 @@
 ---
 description: "Dataset containing 400 million images with English image captions"
-slug: /en/getting-started/example-datasets/laion-400m-dataset
+slug: /getting-started/example-datasets/laion-400m-dataset
 sidebar_label: Laion-400M dataset
 title: "Laion-400M dataset"
 ---
@@ -110,7 +110,7 @@ SELECT url, caption FROM laion ORDER BY L2Distance(image_embedding, {target:Arra
 
 **Result**
 
-```
+```markdown
 ┌─url───────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption────────────────────────────────────────────────────────────────┐
 │ https://s3.amazonaws.com/filestore.rescuegroups.org/6685/pictures/animals/13884/13884995/63318230_463x463.jpg │ Adoptable Female Domestic Short Hair                                   │
 │ https://s3.amazonaws.com/pet-uploads.adoptapet.com/8/b/6/239905226.jpg                                        │ Adopt A Pet :: Marzipan - New York, NY                                 │
@@ -157,7 +157,7 @@ SELECT url, caption FROM laion_annoy ORDER BY l2Distance(image_embedding, {targe
 
 **Result**
 
-```
+```response
 ┌─url──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─caption──────────────────────────────────────────────────────────────┐
 │ http://tse1.mm.bing.net/th?id=OIP.R1CUoYp_4hbeFSHBaaB5-gHaFj                                                                                                                         │ bed bugs and pets can cats carry bed bugs pets adviser               │
 │ http://pet-uploads.adoptapet.com/1/9/c/1963194.jpg?336w                                                                                                                              │ Domestic Longhair Cat for adoption in Quincy, Massachusetts - Ashley │
@@ -176,7 +176,7 @@ The speed increased significantly at the cost of less accurate results. This is 
 
 ## Creating embeddings with UDFs
 
-One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](../../sql-reference/functions/index.md#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
+One usually wants to create embeddings for new images or new image captions and search for similar image / image caption pairs in the data. We can use [UDF](../../sql-reference/functions/overview#sql-user-defined-functions) to create the `target` vector without leaving the client. It is important to use the same model to create the data and new embeddings for searches. The following scripts utilize the `ViT-B/32` model which also underlies the dataset.
 
 ### Text embeddings
 

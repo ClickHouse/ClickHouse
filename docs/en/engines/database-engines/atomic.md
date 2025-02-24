@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/database-engines/atomic
+slug: /engines/database-engines/atomic
 sidebar_label: Atomic
 sidebar_position: 10
+title: "Atomic"
+description: "The `Atomic` engine supports non-blocking `DROP TABLE` and `RENAME TABLE` queries, and atomic `EXCHANGE TABLES`queries. The `Atomic` database engine is used by default."
 ---
 
 # Atomic 
@@ -24,7 +26,7 @@ CREATE DATABASE test [ENGINE = Atomic];
 
 Each table in the `Atomic` database has a persistent [UUID](../../sql-reference/data-types/uuid.md) and stores its data in the following directory:
 
-```
+```text
 /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
 ```
 
