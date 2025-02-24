@@ -2141,7 +2141,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 {
     for (auto & disk : getStoragePolicy()->getDisks())
-        disk->refresh();
+        disk->refresh(interval_milliseconds);
 
     Stopwatch watch;
     LOG_DEBUG(log, "Refreshing data parts");

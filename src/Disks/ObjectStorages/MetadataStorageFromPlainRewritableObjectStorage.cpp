@@ -223,10 +223,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
     LOG_DEBUG(log, "Loaded metadata for {} directories ({} currently, {} added, {} removed)",
         num_dirs_found, num_dirs_in_memory, num_dirs_added, num_dirs_removed);
+
+    previous_refresh.restart();
 }
 
-void MetadataStorageFromPlainRewritableObjectStorage::refresh()
+void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
+    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
+        return;
     load();
 }
 
