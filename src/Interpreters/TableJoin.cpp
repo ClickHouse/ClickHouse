@@ -1089,17 +1089,7 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
-        return false;
-    if (isSpecialStorage())
-        return false;
-    if (kind() != JoinKind::Left && kind() != JoinKind::Inner)
-        return false;
-    if (strictness() == JoinStrictness::Asof)
-        return false;
-    if (isSpecialStorage() || !oneDisjunct())
-        return false;
-    return true;
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), strictness(), isSpecialStorage(), oneDisjunct());
 }
 
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
@@ -1152,4 +1142,21 @@ void TableJoin::assertEnableEnalyzer() const
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
 }
 
+bool allowParallelHashJoin(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool is_special_storage,
+    bool one_disjunct)
+{
+    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
+        return false;
+    if (kind != JoinKind::Left && kind != JoinKind::Inner)
+        return false;
+    if (strictness == JoinStrictness::Asof)
+        return false;
+    if (is_special_storage || !one_disjunct)
+        return false;
+    return true;
+}
 }

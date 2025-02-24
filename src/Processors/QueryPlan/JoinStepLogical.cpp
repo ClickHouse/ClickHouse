@@ -837,6 +837,7 @@ UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, JoinTableSi
                                                                 : join_step.getExpressionActions().right_pre_join_actions;
     chassert(pre_join_actions);
     pre_join_actions->serialize(ctx.out, ctx.registry);
+    chassert(join_step.getJoinInfo().expression.disjunctive_conditions.empty(), "ConcurrentHashJoin supports only one disjunct currently");
     writeBinary(join_step.getJoinInfo().expression.condition.predicates.size(), wbuf);
     for (const auto & pred : join_step.getJoinInfo().expression.condition.predicates)
     {
@@ -857,7 +858,17 @@ void JoinStepLogical::calculateHashesFromSubtree(QueryPlanNode & subtree_root)
     const auto * join_step = typeid_cast<const JoinStepLogical *>(subtree_root.step.get());
     chassert(join_step);
     chassert(subtree_root.children.size() == 2);
-    hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, JoinTableSide::Left, *subtree_root.children.at(0));
-    hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, JoinTableSide::Right, *subtree_root.children.at(1));
+
+    // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
+    if (allowParallelHashJoin(
+            join_step->join_settings.join_algorithm,
+            join_step->join_info.kind,
+            join_step->join_info.strictness,
+            join_step->hasPreparedJoinStorage(),
+            join_step->getJoinInfo().expression.disjunctive_conditions.empty()))
+    {
+        hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, JoinTableSide::Left, *subtree_root.children.at(0));
+        hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, JoinTableSide::Right, *subtree_root.children.at(1));
+    }
 }
 }

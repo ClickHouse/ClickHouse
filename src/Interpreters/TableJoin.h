@@ -440,4 +440,10 @@ public:
     NamesAndTypesList correctedColumnsAddedByJoin() const;
 };
 
+bool allowParallelHashJoin(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool is_special_storage,
+    bool one_disjunct);
 }
