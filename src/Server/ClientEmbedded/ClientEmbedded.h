@@ -41,7 +41,7 @@ public:
         layered_configuration->addWriteable(configuration, 0);
     }
 
-    int run(const String & first_query);
+    int run(const NameToNameMap & envVars, const String & first_query);
 
     /// NOP. The embedded client runs inside the server process which has its own signal handlers.
     /// Thus we cannot override it in any way.

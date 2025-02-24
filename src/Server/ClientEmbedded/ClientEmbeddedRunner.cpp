@@ -12,14 +12,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ClientEmbeddedRunner::run(const String & starting_query)
+void ClientEmbeddedRunner::run(const NameToNameMap & envs, const String & starting_query)
 {
     if (started.test_and_set())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Client has been already started");
     }
     LOG_DEBUG(log, "Starting client");
-    client_thread = ThreadFromGlobalPool(&ClientEmbeddedRunner::clientRoutine, this, starting_query);
+    client_thread = ThreadFromGlobalPool(&ClientEmbeddedRunner::clientRoutine, this, envs, starting_query);
 }
 
 
@@ -44,14 +44,14 @@ ClientEmbeddedRunner::~ClientEmbeddedRunner()
     LOG_DEBUG(log, "Client has finished");
 }
 
-void ClientEmbeddedRunner::clientRoutine(String starting_query)
+void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_query)
 {
     try
     {
         auto descr = client_descriptors->getDescriptorsForClient();
         auto stre = client_descriptors->getStreamsForClient();
         ClientEmbedded client(std::move(db_session), descr.in, descr.out, descr.err, stre.in, stre.out, stre.err);
-        client.run(starting_query);
+        client.run(envs, starting_query);
     }
     catch (...)
     {

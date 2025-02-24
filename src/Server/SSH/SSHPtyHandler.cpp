@@ -86,6 +86,7 @@ public:
         channel_cb.channel_shell_request_function = shellRequestAdapter<ssh_session, ssh_channel>;
         channel_cb.channel_data_function = dataFunctionAdapter<ssh_session, ssh_channel, void *, uint32_t, int>;
         channel_cb.channel_pty_window_change_function = ptyResizeAdapter<ssh_session, ssh_channel, int, int, int, int>;
+        channel_cb.channel_env_request_function = envRequestAdapter<ssh_session, ssh_channel, const char *, const char*>;
         channel_cb.channel_exec_request_function = execRequestAdapter<ssh_session, ssh_channel, const char *>;
         channel_cb.channel_subsystem_request_function = subsystemRequestAdapter<ssh_session, ssh_channel, const char *>;
         ssh_callbacks_init(&channel_cb) ssh_set_channel_callbacks(channel.getCChannelPtr(), &channel_cb);
@@ -97,6 +98,7 @@ public:
     DescriptorSet client_input_output;
     ::ssh::SSHChannel channel;
     std::unique_ptr<Session> db_session;
+    NameToNameMap env;
     std::optional<ClientEmbeddedRunner> client_runner;
     Poco::Logger * log;
 
@@ -171,7 +173,7 @@ private:
 
         try
         {
-            client_runner->run();
+            client_runner->run(env);
             client_input_output = client_runner->getDescriptorsForServer();
             return SSH_OK;
         }
@@ -194,7 +196,7 @@ private:
 
         try
         {
-            client_runner->run();
+            client_runner->run(env);
             client_input_output = client_runner->getDescriptorsForServer();
             return SSH_OK;
         }
@@ -207,6 +209,15 @@ private:
 
     GENERATE_ADAPTER_FUNCTION(ChannelCallback, shellRequest, int)
 
+    int envRequest(ssh_session, ssh_channel, const char * env_name, const char * env_value)
+    {
+        LOG_TRACE(log, "Received env request");
+        env[env_name] = env_value;
+        return SSH_OK;
+    }
+
+    GENERATE_ADAPTER_FUNCTION(ChannelCallback, envRequest, int)
+
     int execNopty(const String & command)
     {
         if (db_session)
@@ -215,7 +226,7 @@ private:
             {
                 auto client_descriptors = std::make_unique<PipeClientDescriptorSet>();
                 client_runner.emplace(std::move(client_descriptors), std::move(db_session));
-                client_runner->run(command);
+                client_runner->run(env, command);
                 client_input_output = client_runner->getDescriptorsForServer();
             }
             catch (...)
@@ -238,7 +249,7 @@ private:
         {
             try
             {
-                client_runner->run(command);
+                client_runner->run(env, command);
                 client_input_output = client_runner->getDescriptorsForServer();
                 return SSH_OK;
             }
