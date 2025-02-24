@@ -13,15 +13,13 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
-#    include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
+#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
 
 namespace DB
 {
-
-
 
 class IcebergMetadata : public IDataLakeMetadata, private WithContext
 {

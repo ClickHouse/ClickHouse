@@ -336,30 +336,6 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
     auto manifest_list_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
 
-
-    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "dataSchema: {}", manifest_list_file_reader->dataSchema().toJson(true));
-
-    std::stringstream data_schema_root_ss;
-    manifest_list_file_reader->dataSchema().root()->printJson(data_schema_root_ss, 10);
-    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "dataSchema root: {}", data_schema_root_ss.str());
-
-    LOG_DEBUG(
-        &Poco::Logger::get("IcebergMetadata, ManifestList"),
-        "dataSchema root type: {}",
-        manifest_list_file_reader->dataSchema().root()->type());
-
-    for (size_t i = 0; i < manifest_list_file_reader->dataSchema().root()->leaves(); ++i)
-    {
-        const auto & field = manifest_list_file_reader->dataSchema().root()->leafAt(static_cast<int>(i));
-
-        const auto & field_name = manifest_list_file_reader->dataSchema().root()->nameAt(static_cast<int>(i));
-
-        std::stringstream ss;
-        field->printJson(ss, 10);
-        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "field: {}", ss.str());
-        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata, ManifestList"), "field name: {}", field_name);
-    }
-
     auto [name_to_index, name_to_data_type, header] = getColumnsAndTypesFromAvroByNames(
         manifest_list_file_reader->dataSchema().root(),
         {"manifest_path", "sequence_number"},

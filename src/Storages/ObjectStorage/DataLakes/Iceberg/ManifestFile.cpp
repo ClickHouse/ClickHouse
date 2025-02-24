@@ -71,20 +71,10 @@ ManifestFileContentImpl::ManifestFileContentImpl(
 {
     this->schema_id = schema_id_;
 
-    LOG_DEBUG(&Poco::Logger::get("ManifestFileContentImpl"), "dataSchema: {}", manifest_file_reader_->dataSchema().toJson(true));
-
-    LOG_DEBUG(&Poco::Logger::get("ManifestFileContentImpl"), "readerSchema: {}", manifest_file_reader_->readerSchema().toJson(true));
-
-
     avro::NodePtr root_node = manifest_file_reader_->dataSchema().root();
 
     auto [name_to_index, name_to_data_type, manifest_file_header] = getColumnsAndTypesFromAvroByNames(
         root_node, {"status", "data_file", "sequence_number"}, {avro::Type::AVRO_INT, avro::Type::AVRO_RECORD, avro::Type::AVRO_UNION});
-
-    for (const auto & [key, value] : name_to_index)
-    {
-        LOG_DEBUG(&Poco::Logger::get("ManifestFileContentImpl name_to_index"), "key: {} value: {}", key, value);
-    }
 
     if (name_to_index.find("status") == name_to_index.end())
         throw Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: status");

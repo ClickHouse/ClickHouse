@@ -11,6 +11,7 @@
 namespace DB::ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int BAD_TYPE_OF_FIELD;
 }
 
 namespace Iceberg
