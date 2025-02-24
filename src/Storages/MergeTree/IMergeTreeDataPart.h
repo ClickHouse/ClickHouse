@@ -736,6 +736,8 @@ private:
     template <typename Writer>
     void writeMetadata(const String & filename, const WriteSettings & settings, Writer && writer);
 
+    void loadMetadataVersion(StorageMetadataPtr metadata_snapshot);
+
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
