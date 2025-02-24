@@ -2038,7 +2038,8 @@ private:
                     return item == "checksums.txt"
                     || item == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME
                     || item == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME
-                    || item == "columns.txt";
+                    || item == "columns.txt"
+                    || item == "txn_version.txt";
                 }),
             files_in_part.end());
 
