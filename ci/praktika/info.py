@@ -1,7 +1,11 @@
 import json
+import os
 import urllib
 from pathlib import Path
 from typing import Optional
+
+from praktika.runtime import RunConfig
+from praktika.settings import Settings
 
 
 class Info:
@@ -10,6 +14,7 @@ class Info:
         from ._environment import _Environment
 
         self.env = _Environment.get()
+        self.workflow = None
 
     @property
     def sha(self):
@@ -18,6 +23,10 @@ class Info:
     @property
     def pr_number(self):
         return self.env.PR_NUMBER
+
+    @property
+    def workflow_name(self):
+        return self.env.WORKFLOW_NAME
 
     @property
     def pr_body(self):
@@ -71,22 +80,46 @@ class Info:
     def is_local_run(self):
         return self.env.LOCAL_RUN
 
+    # TODO: Consider defining secrets outside of workflow as it project data in most of the cases
+    def get_secret(self, name):
+        from praktika.mangle import _get_workflows
+
+        if not self.workflow:
+            self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
+        return self.workflow.get_secret(name)
+
+    def get_job_report_url(self, latest=False):
+        url = self.get_report_url(latest=latest)
+        return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
+
     def get_report_url(self, latest=False):
+        sha = self.env.SHA
+        if latest:
+            sha = "latest"
+        return self.get_specific_report_url(
+            pr_number=self.env.PR_NUMBER, branch=self.env.BRANCH, sha=sha
+        )
+
+    def dump(self):
+        self.env.dump()
+
+    def get_specific_report_url(self, pr_number, branch, sha, job_name=""):
         from praktika.settings import Settings
 
+        if pr_number:
+            ref_param = f"PR={pr_number}"
+        else:
+            assert branch
+            ref_param = f"REF={branch}"
         path = Settings.HTML_S3_PATH
         for bucket, endpoint in Settings.S3_BUCKET_TO_HTTP_ENDPOINT.items():
             if bucket in path:
                 path = path.replace(bucket, endpoint)
                 break
-        if self.env.PR_NUMBER:
-            if latest:
-                sha = "latest"
-            else:
-                sha = self.env.SHA
-        else:
-            sha = self.env.SHA
-        return f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?PR={self.env.PR_NUMBER}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        res = f"https://{path}/{Path(Settings.HTML_PAGE_FILE).name}?{ref_param}&sha={sha}&name_0={urllib.parse.quote(self.env.WORKFLOW_NAME, safe='')}"
+        if job_name:
+            res += f"&name_1={urllib.parse.quote(job_name, safe='')}"
+        return res
 
     @staticmethod
     def get_workflow_input_value(input_name) -> Optional[str]:
@@ -99,3 +132,28 @@ class Info:
         except Exception as e:
             print(f"ERROR: Exception, while reading workflow input [{e}]")
         return None
+
+    def store_custom_data(self, key, value):
+        assert (
+            self.env.JOB_NAME == "Config Workflow"
+        ), "Custom data can be stored only in Config Workflow Job"
+        custom_data = {key: value}
+        if Path(Settings.CUSTOM_DATA_FILE).is_file():
+            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+                custom_data = json.load(f)
+                custom_data[key] = value
+        with open(Settings.CUSTOM_DATA_FILE, "w", encoding="utf8") as f:
+            json.dump(custom_data, f, indent=4)
+
+    def get_custom_data(self, key=None):
+        # todo: remove intermediary file CUSTOM_DATA_FILE and store/get directly to/from RunConfig
+        if Path(Settings.CUSTOM_DATA_FILE).is_file():
+            # first check CUSTOM_DATA_FILE in case data is not yet in RunConfig
+            #   might happen if data stored in one pre-hook and fetched in another
+            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+                custom_data = json.load(f)
+        else:
+            custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+        if key:
+            return custom_data.get(key, None)
+        return custom_data

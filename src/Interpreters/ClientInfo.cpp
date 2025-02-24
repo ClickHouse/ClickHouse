@@ -1,16 +1,17 @@
-#include <Interpreters/ClientInfo.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <unistd.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <Common/config_version.h>
 
 #include <format>
+#include <unistd.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -20,6 +21,44 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+ClientInfo::ClientInfo()
+{
+    current_address = std::make_shared<Poco::Net::SocketAddress>();
+    initial_address = std::make_shared<Poco::Net::SocketAddress>();
+}
+
+std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
+{
+    if (forwarded_for.empty())
+        return {};
+    String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
+    boost::trim(last);
+
+    /// IPv6 address with port
+    if (last[0] == '[')
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
+
+    const auto colons = std::count(last.begin(), last.end(), ':');
+
+    /// IPv6 address without port
+    if (colons > 1)
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
+
+    /// IPv4 address with port
+    if (colons == 1)
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
+
+    /// IPv4 address without port
+    return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
+}
+
+String ClientInfo::getLastForwardedForHost() const
+{
+    auto addr = getLastForwardedFor();
+    return addr ? addr->host().toString() : "";
+}
+
 
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 {
@@ -32,7 +71,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 
     writeBinary(initial_user, out);
     writeBinary(initial_query_id, out);
-    writeBinary(initial_address.toString(), out);
+    writeBinary(initial_address->toString(), out);
 
     if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
         writeBinary(initial_query_start_time_microseconds, out);
@@ -104,6 +143,17 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         writeVarUInt(script_query_number, out);
         writeVarUInt(script_line_number, out);
     }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    {
+        if (!jwt.empty())
+        {
+            writeBinary(static_cast<UInt8>(1), out);
+            writeBinary(jwt, out);
+        }
+        else
+            writeBinary(static_cast<UInt8>(0), out);
+    }
 }
 
 
@@ -123,7 +173,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     String initial_address_string;
     readBinary(initial_address_string, in);
-    initial_address = Poco::Net::SocketAddress(initial_address_string);
+    initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address_string);
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {
@@ -200,6 +250,14 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         readVarUInt(script_query_number, in);
         readVarUInt(script_line_number, in);
     }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    {
+        UInt8 have_jwt = 0;
+        readBinary(have_jwt, in);
+        if (have_jwt)
+            readBinary(jwt, in);
+    }
 }
 
 
@@ -225,11 +283,6 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 String ClientInfo::getVersionStr() const
 {
     return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-}
-
-VersionNumber ClientInfo::getVersionNumber() const
-{
-    return VersionNumber(client_version_major, client_version_minor, client_version_patch);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()

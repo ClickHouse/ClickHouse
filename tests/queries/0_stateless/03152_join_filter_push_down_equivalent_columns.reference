@@ -4,7 +4,7 @@ EXPLAIN header = 1, indexes = 1
 SELECT name FROM users INNER JOIN users2 USING name WHERE users.name ='Alice';
 Expression ((Project names + (Projection + )))
 Header: name String
-  Join (JOIN FillRightFirst)
+  Join
   Header: __table1.name String
     Filter (( + Change column names to column identifiers))
     Header: __table1.name String
@@ -34,7 +34,7 @@ EXPLAIN header = 1, indexes = 1
 SELECT name FROM users LEFT JOIN users2 USING name WHERE users.name ='Alice';
 Expression ((Project names + (Projection + )))
 Header: name String
-  Join (JOIN FillRightFirst)
+  Join
   Header: __table1.name String
     Filter (( + Change column names to column identifiers))
     Header: __table1.name String
@@ -64,7 +64,7 @@ EXPLAIN header = 1, indexes = 1
 SELECT name FROM users RIGHT JOIN users2 USING name WHERE users2.name ='Alice';
 Expression ((Project names + (Projection + )))
 Header: name String
-  Join (JOIN FillRightFirst)
+  Join
   Header: __table2.name String
     Filter (( + Change column names to column identifiers))
     Header: __table1.name String

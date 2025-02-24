@@ -1,10 +1,9 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
-#include <variant>
-#include <cstdint>
 
 #include <Core/Block.h>
 #include <Core/Defines.h>

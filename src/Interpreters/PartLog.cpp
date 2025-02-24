@@ -5,14 +5,15 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <DataTypes/DataTypeMap.h>
 
 #include <Common/CurrentThread.h>
 
@@ -251,10 +252,7 @@ bool PartLog::addNewParts(
             elem.table_name = table_id.table_name;
             elem.table_uuid = table_id.uuid;
             elem.partition_id = part->info.partition_id;
-            {
-                WriteBufferFromString out(elem.partition);
-                part->partition.serializeText(part->storage, out, {});
-            }
+            elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
             elem.part_name = part->name;
             elem.disk_name = part->getDataPartStorage().getDiskName();
             elem.path_on_disk = part->getDataPartStorage().getFullPath();

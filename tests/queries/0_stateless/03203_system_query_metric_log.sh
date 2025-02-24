@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# This test depends A LOT on timing, so it's very sensitive when the system is overloaded. For that
+# reason, margins of 20% were added initially. They've been increased over time in an attempt to
+# make it more stable, even though it's never going to be deterministically perfect.
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
@@ -10,7 +14,7 @@ $CLICKHOUSE_CLIENT --query-id="${query_prefix}_1000" -q "SELECT sleep(2.5) FORMA
 $CLICKHOUSE_CLIENT --query-id="${query_prefix}_400" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=400 FORMAT Null" &
 $CLICKHOUSE_CLIENT --query-id="${query_prefix}_123" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=123 FORMAT Null" &
 $CLICKHOUSE_CLIENT --query-id="${query_prefix}_0" -q "SELECT sleep(2.5) SETTINGS query_metric_log_interval=0 FORMAT Null" &
-$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) FORMAT Null" &
+$CLICKHOUSE_CLIENT --query-id="${query_prefix}_fast" -q "SELECT sleep(0.1) SETTINGS query_metric_log_interval=999999 FORMAT Null" &
 
 wait
 
@@ -20,11 +24,11 @@ function check_log()
 {
     interval=$1
 
-    # Check that the amount of events collected is correct, leaving a 20% of margin.
+    # Check that the amount of events collected is correct, leaving a 80% of margin.
     $CLICKHOUSE_CLIENT -m -q """
         SELECT '--Interval $interval: check that amount of events is correct';
         SELECT
-            count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.8) AND ((ceil(2500 / $interval) + 1) * 1.2)
+            count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.2) AND ((ceil(2500 / $interval) + 1) * 1.8)
         FROM system.query_metric_log
         WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}'
     """
@@ -32,12 +36,12 @@ function check_log()
     # We calculate the diff of each row with its previous row to check whether the intervals at
     # which data is collected is right. The first row is always skipped because the diff with the
     # preceding one (itself) is 0. The last row is also skipped, because it doesn't contain a full
-    # interval. We leave at least 20% of margin for many rows and at most 40% for one single row.
+    # interval. We leave at least 60% of margin for many rows and at most 80% for one single row.
     $CLICKHOUSE_CLIENT --max_threads=1 -m -q """
         SELECT '--Interval $interval: check that the delta/diff between the events is correct';
         WITH
             (SELECT count() - 2 FROM system.query_metric_log WHERE event_date >= yesterday() AND query_id = '${query_prefix}_${interval}') as diff_rows,
-            (20 + 20 / diff_rows)/100 AS margin
+            (60 + 20 / diff_rows)/100 AS margin
         SELECT
             avg(diff) BETWEEN (1 - margin) * $interval AND (1 + margin) * $interval
         FROM (

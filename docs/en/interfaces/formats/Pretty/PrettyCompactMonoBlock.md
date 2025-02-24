@@ -1,6 +1,6 @@
 ---
 title : PrettyCompactMonoBlock
-slug : /en/interfaces/formats/PrettyCompactMonoBlock
+slug: /interfaces/formats/PrettyCompactMonoBlock
 keywords : [PrettyCompactMonoBlock]
 input_format: false
 output_format: true

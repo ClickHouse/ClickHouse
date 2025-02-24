@@ -24,22 +24,22 @@ Please use the manual from the [setup](../getting-started/install.md#setup-the-d
 
 - The completed warning messages are as one of following:
 
-```
+```bash
 N: Skipping acquire of configured file 'main/binary-i386/Packages' as repository 'https://packages.clickhouse.com/deb stable InRelease' doesn't support architecture 'i386'
 ```
 
-```
+```bash
 E: Failed to fetch https://packages.clickhouse.com/deb/dists/stable/main/binary-amd64/Packages.gz  File has unexpected size (30451 != 28154). Mirror sync in progress?
 ```
 
-```
+```text
 E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Origin' value from 'Artifactory' to 'ClickHouse'
 E: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Label' value from 'Artifactory' to 'ClickHouse'
 N: Repository 'https://packages.clickhouse.com/deb stable InRelease' changed its 'Suite' value from 'stable' to ''
 N: This must be accepted explicitly before updates for this repository can be applied. See apt-secure(8) manpage for details.
 ```
 
-```
+```bash
 Err:11 https://packages.clickhouse.com/deb stable InRelease
   400  Bad Request [IP: 172.66.40.249 443]
 ```
@@ -58,7 +58,7 @@ Possible issue: the cache is wrong, maybe it's broken after updated GPG key in 2
 
 The solution is to clean out the cache and lib directory for yum:
 
-```
+```bash
 sudo find /var/lib/yum/repos/ /var/cache/yum/ -name 'clickhouse-*' -type d -exec rm -rf {} +
 sudo rm -f /etc/yum.repos.d/clickhouse.repo
 ```
@@ -69,7 +69,7 @@ After that follow the [install guide](../getting-started/install.md#from-rpm-pac
 
 You are running a simple `docker run clickhouse/clickhouse-server` and it crashes with a stack trace similar to following:
 
-```
+```bash
 $ docker run -it clickhouse/clickhouse-server
 ........
 2024.11.06 21:04:48.912036 [ 1 ] {} <Information> SentryWriter: Sending crash reports is disabled
@@ -155,7 +155,7 @@ Revision: 54413
 
 **See system.d logs**
 
-If you do not find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
+If you do not find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server

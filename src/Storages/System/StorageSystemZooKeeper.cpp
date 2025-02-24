@@ -24,6 +24,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Processors/ISource.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -32,7 +33,6 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string.hpp>
 #include <algorithm>
-#include <deque>
 
 
 namespace DB
