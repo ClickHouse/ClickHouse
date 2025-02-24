@@ -34,3 +34,54 @@ Header: __table1.number UInt64
     Positions: 0
       ReadFromSystemNumbers
       Header: number UInt64
+CreatingSets (Create sets before main query execution)
+Header: a UInt64
+        b UInt64
+        c UInt64
+  Expression ((Project names + (Projection + (WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))))
+  Header: a UInt64
+          b UInt64
+          c UInt64
+  Actions: INPUT : 1 -> number UInt64 : 0
+           COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
+           INPUT : 0 -> intDiv(__table2.number, 3_UInt8) UInt64 : 2
+           ALIAS number :: 0 -> __table2.number UInt64 : 3
+           ALIAS intDiv(__table2.number, 3_UInt8) :: 2 -> b UInt64 : 0
+           FUNCTION plus(__table2.number : 3, 1_UInt8 :: 1) -> plus(__table2.number, 1_UInt8) UInt64 : 2
+           ALIAS __table2.number :: 3 -> a UInt64 : 1
+           ALIAS b :: 0 -> __table1.b UInt64 : 3
+           ALIAS plus(__table2.number, 1_UInt8) :: 2 -> c UInt64 : 0
+           ALIAS a :: 1 -> __table1.a UInt64 : 2
+           ALIAS __table1.b :: 3 -> b UInt64 : 1
+           ALIAS c :: 0 -> __table1.c UInt64 : 3
+           ALIAS __table1.a :: 2 -> a UInt64 : 0
+           ALIAS __table1.c :: 3 -> c UInt64 : 2
+  Positions: 0 1 2
+    Filter (((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))[split])
+    Header: number UInt64
+            intDiv(__table2.number, 3_UInt8) UInt64
+    Filter column: in(tuple(__table1.a, __table1.b), __set_17988369749598037363_1615166783508439734) (removed)
+    Actions: INPUT : 0 -> number UInt64 : 0
+             COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
+             COLUMN Set -> __set_17988369749598037363_1615166783508439734 Set : 2
+             FUNCTION intDiv(number : 0, 3_UInt8 :: 1) -> intDiv(__table2.number, 3_UInt8) UInt64 : 3
+             FUNCTION tuple(number : 0, intDiv(__table2.number, 3_UInt8) : 3) -> tuple(__table1.a, __table1.b) Tuple(UInt64, UInt64) : 1
+             FUNCTION in(tuple(__table1.a, __table1.b) :: 1, __set_17988369749598037363_1615166783508439734 :: 2) -> in(tuple(__table1.a, __table1.b), __set_17988369749598037363_1615166783508439734) UInt8 : 4
+    Positions: 0 3 4
+      ReadFromSystemNumbers
+      Header: number UInt64
+  CreatingSet (Create set for subquery)
+  Empty header
+  Set: __set_8045255763150986358_7025140800487938978
+    Expression ((Project names + (Projection + Change column names to column identifiers)))
+    Header: a UInt64
+            b UInt64
+    Actions: INPUT : 0 -> number UInt64 : 0
+             COLUMN Const(UInt8) -> 2_UInt8 UInt8 : 1
+             ALIAS number :: 0 -> __table1.number UInt64 : 2
+             FUNCTION intDiv(__table1.number : 2, 2_UInt8 :: 1) -> intDiv(__table1.number, 2_UInt8) UInt64 : 0
+             ALIAS __table1.number :: 2 -> a UInt64 : 1
+             ALIAS intDiv(__table1.number, 2_UInt8) :: 0 -> b UInt64 : 2
+    Positions: 1 2
+      ReadFromSystemNumbers
+      Header: number UInt64

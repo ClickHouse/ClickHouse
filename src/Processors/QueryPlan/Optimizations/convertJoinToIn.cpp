@@ -6,10 +6,9 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/PreparedSets.h>
-#include <Interpreters/TableJoin.h>
 
 
 namespace DB::Setting
@@ -36,31 +35,46 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
+    Header left_predicate_header;
+    Header right_predicate_header;
+    /// column in predicate is null, so use input's
+    for (const auto & predicate : join_info.expression.condition.predicates)
+    {
+        left_predicate_header.insert(
+            left_input_header.getByName(predicate.left_node.getColumn().name));
+        right_predicate_header.insert(
+            right_input_header.getByName(predicate.right_node.getColumn().name));
+    }
+
     const auto & output_header = join->getOutputHeader();
 
     bool left = false;
     bool right = false;
     for (const auto & column_with_type_and_name : output_header)
     {
-        left |= left_input_header.has(column_with_type_and_name.name);
-        right |= right_input_header.has(column_with_type_and_name.name);
+        left |= left_predicate_header.has(column_with_type_and_name.name);
+        right |= right_predicate_header.has(column_with_type_and_name.name);
     }
 
     if (left && right)
         return 0;
 
-    ActionsDAG actions(left_input_header.getColumnsWithTypeAndName());
+    ActionsDAG actions(left_predicate_header.getColumnsWithTypeAndName());
 
-    /// left parameter of IN funtion
+    /// left parameter of IN function
     std::vector<const ActionsDAG::Node *> left_columns = actions.getOutputs();
-    const ActionsDAG::Node * in_lhs_arg = left_columns.front();
+    FunctionOverloadResolverPtr func_tuple_builder =
+        std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+    const ActionsDAG::Node * in_lhs_arg = left_columns.size() == 1 ?
+        left_columns.front() :
+        &actions.addFunction(func_tuple_builder, std::move(left_columns), {});
 
-    /// right parameter of IN funtion
+    /// right parameter of IN function
     auto context = join->getContext();
     const auto & settings = context->getSettingsRef();
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         CityHash_v1_0_2::uint128(),
-        right_input_header.getColumnsWithTypeAndName(),
+        right_predicate_header.getColumnsWithTypeAndName(),
         settings[Setting::transform_null_in],
         PreparedSets::getSizeLimitsForSet(settings),
         settings[Setting::use_index_for_in_with_subqueries_max_values]);
@@ -75,7 +89,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     actions.getOutputs().push_back(&in_node);
 
     /// Attach IN to FilterStep
-    auto filter_step = std::make_unique<FilterStep>(left_input_header,
+    auto filter_step = std::make_unique<FilterStep>(left_predicate_header,
         std::move(actions),
         in_node.result_name,
         false);
@@ -87,7 +101,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     creating_sets_step->setStepDescription("Create sets before main query execution");
 
     /// creating_set_step as right subtree
-    auto creating_set_step = future_set->build(right_input_header, context);
+    auto creating_set_step = future_set->build(right_predicate_header, context);
 
     /// Replace JoinStepLogical with FilterStep, but keep left subtree and remove right subtree
     parent_node->step = std::move(filter_step);
