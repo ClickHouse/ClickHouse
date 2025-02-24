@@ -7,6 +7,12 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event WhereFilterPassedRows;
+    extern const Event WhereFilterPassedBytes;
+}
+
 namespace DB
 {
 
@@ -181,6 +187,14 @@ void FilterTransform::doTransform(Chunk & chunk)
     }
     else
         num_filtered_rows = filter_description->countBytesInFilter();
+
+    ProfileEvents::increment(ProfileEvents::WhereFilterPassedRows, num_filtered_rows);
+    size_t num_filtered_bytes = 0;
+    for (const auto & column: columns) {
+        if (column)
+            num_filtered_bytes += column->byteSize();
+    }
+    ProfileEvents::increment(ProfileEvents::WhereFilterPassedBytes, num_filtered_bytes);
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
