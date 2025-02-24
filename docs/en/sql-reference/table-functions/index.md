@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/
+slug: /sql-reference/table-functions/
 sidebar_label: Table Functions
 sidebar_position: 1
 ---

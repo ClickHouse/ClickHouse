@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/settings/memory-overcommit
+slug: /operations/settings/memory-overcommit
 ---
 # Memory overcommit
 

@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/special/set
+slug: /engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
 ---
@@ -21,7 +21,7 @@ When creating a table, the following settings are applied:
 
 #### persistent
 
-Disables persistency for the Set and [Join](/docs/en/engines/table-engines/special/join.md/#join) table engines.
+Disables persistency for the Set and [Join](/docs/engines/table-engines/special/join.md/#join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 
