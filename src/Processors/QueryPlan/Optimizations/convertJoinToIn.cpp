@@ -35,6 +35,19 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
+    const auto & output_header = join->getOutputHeader();
+
+    bool left = false;
+    bool right = false;
+    for (const auto & column_with_type_and_name : output_header)
+    {
+        left |= left_input_header.has(column_with_type_and_name.name);
+        right |= right_input_header.has(column_with_type_and_name.name);
+    }
+    /// All come from left side?
+    if (!(left && !right))
+        return 0;
+
     Header left_predicate_header;
     Header right_predicate_header;
     /// column in predicate is null, so use input's
@@ -45,19 +58,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         right_predicate_header.insert(
             right_input_header.getByName(predicate.right_node.getColumn().name));
     }
-
-    const auto & output_header = join->getOutputHeader();
-
-    bool left = false;
-    bool right = false;
-    for (const auto & column_with_type_and_name : output_header)
-    {
-        left |= left_predicate_header.has(column_with_type_and_name.name);
-        right |= right_predicate_header.has(column_with_type_and_name.name);
-    }
-
-    if (left && right)
-        return 0;
 
     ActionsDAG actions(left_predicate_header.getColumnsWithTypeAndName());
 

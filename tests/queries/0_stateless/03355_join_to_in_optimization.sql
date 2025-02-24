@@ -29,3 +29,19 @@ WHERE (l.a, l.b) IN (
     FROM numbers(10)
 )
 SETTINGS query_plan_use_new_logical_join_step = 1;
+
+SELECT deleted
+FROM
+(
+    SELECT
+        1 AS deleted,
+        'k' AS a,
+        'v' AS b
+) AS q
+INNER JOIN
+(
+    SELECT
+        'k' AS a,
+        'v' AS c
+) AS s ON q.a = s.a
+WHERE deleted AND (b = c)
