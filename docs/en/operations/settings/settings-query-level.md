@@ -1,6 +1,7 @@
 ---
 sidebar_label: Query-level Session Settings
 title: Query-level Session Settings
+description: "Settings at the query-level"
 slug: /operations/settings/query-level
 ---
 
