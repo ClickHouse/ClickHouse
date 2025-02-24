@@ -82,7 +82,8 @@ ColumnsDescription TableFunctionObjectStorage<
 {
     if (configuration->structure == "auto")
     {
-        context->checkAccess(getSourceAccessType());
+        if (const auto access_object = getSourceAccessObject())
+            context->checkAccess(AccessType::READ, toStringSource(*access_object));
         ColumnsDescription columns;
         auto storage = getObjectStorage(context, !is_insert_query);
         std::string sample_path;
