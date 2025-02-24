@@ -80,9 +80,16 @@ namespace
 
             switch (kind)
             {
-                case Kind::currentProfiles: profile_ids = context->getCurrentProfiles(); break;
-                case Kind::enabledProfiles: profile_ids = context->getEnabledProfiles(); break;
-                case Kind::defaultProfiles: profile_ids = context->getUser()->settings.toProfileIDs(); break;
+                case Kind::currentProfiles:
+                    profile_ids = context->getCurrentProfiles();
+                    break;
+                case Kind::enabledProfiles:
+                    profile_ids = context->getEnabledProfiles();
+                    break;
+                case Kind::defaultProfiles:
+                    if (context->getUserID())
+                        profile_ids = context->getUser()->settings.toProfileIDs();
+                    break;
             }
 
             profile_names = manager.tryReadNames(profile_ids);
