@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BlockNameMap.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/SchemaInferenceUtils.h>
@@ -64,7 +65,7 @@ protected:
     const FormatSettings format_settings;
     const NamesAndTypes fields;
     /// Maps column names and their positions in header.
-    Block::NameMap name_to_index;
+    BlockNameMap name_to_index;
     Serializations serializations;
     std::unique_ptr<JSONColumnsReaderBase> reader;
     BlockMissingValues block_missing_values;

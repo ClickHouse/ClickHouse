@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/check-grant
+slug: /sql-reference/statements/check-grant
 sidebar_position: 56
 sidebar_label: CHECK GRANT
 title: "CHECK GRANT Statement"

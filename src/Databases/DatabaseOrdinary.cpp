@@ -17,6 +17,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
@@ -322,23 +323,46 @@ void DatabaseOrdinary::loadTableFromMetadata(
 
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
-    try
-    {
-        auto [table_name, table] = createTableFromAST(
-            query,
-            name.database,
-            getTableDataPath(query),
-            local_context,
-            mode);
+    constexpr size_t max_tries = 3;
+    size_t tries = 0;
+    time_t sleep_time = 1;
 
-        attachTable(local_context, table_name, table, getTableDataPath(query));
-    }
-    catch (Exception & e)
+    while (true)
     {
-        e.addMessage(
-            "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-            + " from query " + serializeAST(query));
-        throw;
+        try
+        {
+            auto [table_name, table] = createTableFromAST(
+                query,
+                name.database,
+                getTableDataPath(query),
+                local_context,
+                mode);
+
+            attachTable(local_context, table_name, table, getTableDataPath(query));
+            return;
+        }
+        catch (Coordination::Exception & e)
+        {
+            e.addMessage(
+                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+                + " from query " + serializeAST(query));
+
+            if (!Coordination::isHardwareError(e.code))
+                throw;
+            tryLogCurrentException(log);
+            sleepForSeconds(sleep_time);
+            sleep_time *= 2;
+            ++tries;
+            if (tries > max_tries)
+                throw;
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+                + " from query " + serializeAST(query));
+            throw;
+        }
     }
 }
 

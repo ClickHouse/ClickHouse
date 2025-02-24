@@ -35,6 +35,13 @@ struct DeserializeStateSparse : public ISerialization::DeserializeBinaryBulkStat
         num_trailing_defaults = 0;
         has_value_after_defaults = false;
     }
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeStateSparse>(*this);
+        new_state->nested = nested ? nested->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void serializeOffsets(const IColumn::Offsets & offsets, WriteBuffer & ostr, size_t start, size_t end)

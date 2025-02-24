@@ -16,6 +16,7 @@ class Job:
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
+        with_git_submodules: bool = False
 
     @dataclass
     class Config:
@@ -47,6 +48,8 @@ class Job:
         run_unless_cancelled: bool = False
 
         allow_merge_on_failure: bool = False
+
+        enable_commit_status: bool = False
 
         parameter: Any = None
 

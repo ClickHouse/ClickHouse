@@ -11,7 +11,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/RowRefs.h>
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>

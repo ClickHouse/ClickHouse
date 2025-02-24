@@ -9,7 +9,7 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
@@ -59,7 +59,7 @@ bool ColumnFixedString::isDefaultAt(size_t index) const
 
 void ColumnFixedString::insert(const Field & x)
 {
-    const String & s = x.safeGet<const String &>();
+    const String & s = x.safeGet<String>();
     insertData(s.data(), s.size());
 }
 
@@ -67,7 +67,7 @@ bool ColumnFixedString::tryInsert(const Field & x)
 {
     if (x.getType() != Field::Types::Which::String)
         return false;
-    const String & s = x.safeGet<const String &>();
+    const String & s = x.safeGet<String>();
     if (s.size() > n)
         return false;
     insertData(s.data(), s.size());

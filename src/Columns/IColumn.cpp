@@ -32,7 +32,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int BAD_COLLATION;
+extern const int CANNOT_GET_SIZE_OF_FIELD;
+extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 String IColumn::dumpStructure() const
@@ -93,6 +96,127 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const ColumnConst 
 size_t IColumn::estimateCardinalityInPermutedRange(const IColumn::Permutation & /*permutation*/, const EqualRange & equal_range) const
 {
     return equal_range.size();
+}
+
+IColumn::MutablePtr IColumn::cloneResized(size_t /*size*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName());
+}
+
+UInt64 IColumn::get64(size_t /*n*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
+}
+
+Float64 IColumn::getFloat64(size_t /*n*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not supported for {}", getName());
+}
+
+Float32 IColumn::getFloat32(size_t /*n*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
+}
+
+UInt64 IColumn::getUInt(size_t /*n*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getUInt is not supported for {}", getName());
+}
+
+Int64 IColumn::getInt(size_t /*n*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInt is not supported for {}", getName());
+}
+
+bool IColumn::getBool(size_t /*n*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
+}
+
+StringRef IColumn::serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
+}
+
+char * IColumn::serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
+}
+
+StringRef
+IColumn::serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
+}
+
+char * IColumn::serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
+}
+
+void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
+}
+
+#if USE_EMBEDDED_COMPILER
+llvm::Value * IColumn::compileComparator(
+    llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", getName());
+}
+#endif
+
+int IColumn::compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
+{
+    throw Exception(
+        ErrorCodes::BAD_COLLATION,
+        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+        "or for Array or Tuple, containing it.");
+}
+
+void IColumn::getPermutationWithCollation(
+    const Collator & /*collator*/,
+    PermutationSortDirection /*direction*/,
+    PermutationSortStability /*stability*/,
+    size_t /*limit*/,
+    int /*nan_direction_hint*/,
+    Permutation & /*res*/) const
+{
+    throw Exception(
+        ErrorCodes::BAD_COLLATION,
+        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+        "or for Array or Tuple, containing them.");
+}
+
+void IColumn::updatePermutationWithCollation(
+    const Collator & /*collator*/,
+    PermutationSortDirection /*direction*/,
+    PermutationSortStability /*stability*/,
+    size_t /*limit*/,
+    int /*nan_direction_hint*/,
+    Permutation & /*res*/,
+    EqualRanges & /*equal_ranges*/) const
+{
+    throw Exception(
+        ErrorCodes::BAD_COLLATION,
+        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
+        "or for Array or Tuple, containing them.");
+}
+
+bool IColumn::structureEquals(const IColumn &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
+}
+
+std::string_view IColumn::getRawData() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName());
+}
+
+size_t IColumn::sizeOfValueIfFixed() const
+{
+    throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName());
 }
 
 bool isColumnNullable(const IColumn & column)

@@ -1,6 +1,6 @@
 ---
 title : PostgreSQLWire
-slug : /en/interfaces/formats/PostgreSQLWire
+slug: /interfaces/formats/PostgreSQLWire
 keywords : [PostgreSQLWire]
 ---
 

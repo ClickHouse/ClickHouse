@@ -451,6 +451,24 @@ bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerializatio
     return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
 }
 
+bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
+{
+    if (path.empty())
+        return false;
+
+    switch (path[path.size() - 1].type)
+    {
+        case SubstreamType::DynamicStructure: [[fallthrough]];
+        case SubstreamType::ObjectStructure: [[fallthrough]];
+        case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
+        case SubstreamType::DictionaryKeys: [[fallthrough]];
+        case SubstreamType::VariantDiscriminators:
+            return true;
+        default:
+            return false;
+    }
+}
+
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
     assert(prefix_len <= path.size());

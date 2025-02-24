@@ -107,8 +107,8 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
     bool show_zeros = context->getSettingsRef()[Setting::system_events_show_zero_values];
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
-        String database = (*col_database_to_filter)[i].safeGet<const String &>();
-        String table = (*col_table_to_filter)[i].safeGet<const String &>();
+        String database = (*col_database_to_filter)[i].safeGet<String>();
+        String table = (*col_table_to_filter)[i].safeGet<String>();
 
         auto statistics = tables[database][table]->getRocksDBStatistics();
         if (!statistics)

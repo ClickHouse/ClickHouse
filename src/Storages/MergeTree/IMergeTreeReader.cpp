@@ -11,6 +11,7 @@
 #include <Columns/ColumnArray.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
