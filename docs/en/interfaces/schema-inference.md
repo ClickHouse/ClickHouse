@@ -1340,7 +1340,7 @@ Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 
 ### Settings for text formats {#settings-for-text-formats}
 
-#### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference
+#### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference {#input-format-max-rows-to-read-for-schema-inference}
 
 These settings control the amount of data to be read while schema inference.
 The more rows/bytes are read, the more time is spent on schema inference, but the greater the chance to

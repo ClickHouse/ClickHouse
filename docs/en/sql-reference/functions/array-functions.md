@@ -1839,7 +1839,7 @@ Result:
 └────────────────────────┴────────────────────┘
 ```
 
-## arraySymmetricDifference
+## arraySymmetricDifference {#arraysymmetricdifference}
 
 Takes multiple arrays and returns an array with elements that are not present in all source arrays.
 The result contains only unique values.

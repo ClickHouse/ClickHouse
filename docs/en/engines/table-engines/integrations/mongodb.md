@@ -59,7 +59,7 @@ ENGINE = MongoDB(uri, collection);
 - `collection` — Remote collection name.
 
 
-## Types mappings
+## Types mappings {#types-mappings}
 
 | MongoDB            | ClickHouse                                                            |
 |--------------------|-----------------------------------------------------------------------|
@@ -75,7 +75,7 @@ ENGINE = MongoDB(uri, collection);
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
 
-## Supported clauses
+## Supported clauses {#supported-clauses}
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
@@ -182,7 +182,7 @@ LIMIT 3;
    └────────────────────────┴────────┘
 ```
 
-## Troubleshooting
+## Troubleshooting {#troubleshooting}
 You can see the generated MongoDB query in DEBUG level logs.
 
 Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.

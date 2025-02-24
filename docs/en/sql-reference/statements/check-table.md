@@ -161,7 +161,7 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
-## If the Data Is Corrupted
+## If the Data Is Corrupted {#if-the-data-is-corrupted}
 
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
 

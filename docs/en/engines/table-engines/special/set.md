@@ -19,7 +19,7 @@ For a rough server restart, the block of data on the disk might be lost or damag
 
 When creating a table, the following settings are applied:
 
-#### persistent
+#### persistent {#persistent}
 
 Disables persistency for the Set and [Join](/docs/engines/table-engines/special/join.md/#join) table engines.
 

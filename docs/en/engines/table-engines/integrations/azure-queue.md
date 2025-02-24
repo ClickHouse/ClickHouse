@@ -77,7 +77,7 @@ SELECT * FROM stats ORDER BY key;
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-## Introspection
+## Introspection {#introspection}
 
 Enable logging for the table via the table setting `enable_logging_to_s3queue_log=1`.
 
