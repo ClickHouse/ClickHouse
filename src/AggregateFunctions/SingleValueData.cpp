@@ -302,7 +302,11 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
     }
     else if constexpr (std::is_same_v<T, UInt256>)
     {
-        std::optional<T> opt = findExtremeMinBigInt(vec.getData().data(), row_begin, row_end);
+        mask.resize_exact(row_end);
+        for (size_t i = 0; i < row_end; i++)
+            mask[i] = 1;
+
+        std::optional<T> opt = findExtremeMinBigInt(vec.getData().data(), mask.data(), row_begin, row_end);
         if (opt.has_value())
             setIfSmaller(*opt);
     }
@@ -335,7 +339,11 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
     }
     else if constexpr (std::is_same_v<T, UInt256>)
     {
-        std::optional<T> opt = findExtremeMaxBigInt(vec.getData().data(), row_begin, row_end);
+        mask.resize_exact(row_end);
+        for (size_t i = 0; i < row_end; i++)
+            mask[i] = 1;
+
+        std::optional<T> opt = findExtremeMaxBigInt(vec.getData().data(), mask.data(), row_begin, row_end);
         if (opt.has_value())
             setIfGreater(*opt);
     }
