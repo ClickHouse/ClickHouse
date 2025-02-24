@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/
+slug: /sql-reference/statements/select/
 sidebar_position: 32
 sidebar_label: SELECT
 ---
@@ -281,7 +281,7 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
-Other ways to make settings see [here](../../../operations/settings/index.md).
+Other ways to make settings see [here](../../../operations/settings/overview).
 
 **Example**
 

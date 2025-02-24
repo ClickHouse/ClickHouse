@@ -1,10 +1,10 @@
 ---
 description: "System table containing metrics which can be calculated instantly, or have a current value."
-slug: /en/operations/system-tables/metrics
+slug: /operations/system-tables/metrics
 title: "metrics"
 keywords: ["system table", "metrics"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

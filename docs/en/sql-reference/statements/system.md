@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/system
+slug: /sql-reference/statements/system
 sidebar_position: 36
 sidebar_label: SYSTEM
 ---
@@ -68,7 +68,7 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 
 ## RELOAD FUNCTIONS
 
-Reloads all registered [executable user defined functions](../functions/index.md#executable-user-defined-functions) or one of them from a configuration file.
+Reloads all registered [executable user defined functions](../functions/overview#executable-user-defined-functions) or one of them from a configuration file.
 
 **Syntax**
 
@@ -434,7 +434,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA
 
-Waits until the specified [replicated database](/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
+Waits until the specified [replicated database](/docs/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql

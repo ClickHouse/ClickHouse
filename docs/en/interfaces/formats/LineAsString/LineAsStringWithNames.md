@@ -1,6 +1,6 @@
 ---
 title : LineAsStringWithNames
-slug : /en/interfaces/formats/LineAsStringWithNames
+slug: /interfaces/formats/LineAsStringWithNames
 keywords : [LineAsStringWithNames]
 input_format: true
 output_format: true

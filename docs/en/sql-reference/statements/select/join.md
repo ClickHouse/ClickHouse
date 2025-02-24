@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/join
+slug: /sql-reference/statements/select/join
 sidebar_label: Joining Tables
 ---
 

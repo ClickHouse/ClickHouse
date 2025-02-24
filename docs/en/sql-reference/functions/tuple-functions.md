@@ -1,7 +1,8 @@
 ---
-slug: /en/sql-reference/functions/tuple-functions
+slug: /sql-reference/functions/tuple-functions
 sidebar_position: 180
 sidebar_label: Tuples
+title: Tuple Functions
 ---
 
 ## tuple

@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/integrations/kafka
+slug: /engines/table-engines/integrations/kafka
 sidebar_position: 110
 sidebar_label: Kafka
+title: "Kafka"
+description: "The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available."
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -12,7 +14,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <CloudNotSupportedBadge/>
 
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/docs/en/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
+ClickHouse Cloud users are recommended to use [ClickPipes](/docs/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
 :::
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/array-functions
+slug: /sql-reference/functions/array-functions
 sidebar_position: 10
 sidebar_label: Arrays
 ---
@@ -811,7 +811,7 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 
 Returns the number of elements for which `func(arr1[i], ..., arrN[i])` returns something other than 0. If `func` is not specified, it returns the number of non-zero elements in the array.
 
-Note that the `arrayCount` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayCount` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayDotProduct
 
@@ -836,7 +836,7 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 
 **Returned value**
 
-- The dot product of the two vectors. [Numeric](/docs/en/native-protocol/columns#numeric-types).
+- The dot product of the two vectors. [Numeric](/docs/native-protocol/columns#numeric-types).
 
 :::note
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
@@ -1290,7 +1290,7 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]);
 - `NaN` values are right before `NULL`.
 - `Inf` values are right before `NaN`.
 
-Note that `arraySort` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
+Note that `arraySort` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument. In this case, sorting order is determined by the result of the lambda function applied to the elements of the array.
 
 Let's consider the following example:
 
@@ -1400,7 +1400,7 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, -4, NULL, inf, -inf]) as res;
 - `NaN` values are right before `NULL`.
 - `-Inf` values are right before `NaN`.
 
-Note that the `arrayReverseSort` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument. Example is shown below.
+Note that the `arrayReverseSort` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument. Example is shown below.
 
 ``` sql
 SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/en/data_types/array/).
+- `array` – [Array](/docs/data_types/array/).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 **Example**
 
@@ -1652,7 +1652,7 @@ arrayDistinct(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/en/data_types/array/).
+- `array` – [Array](/docs/data_types/array/).
 
 **Returned values**
 
@@ -1753,18 +1753,38 @@ Query:
 ``` sql
 SELECT arrayEnumerateDenseRanked(2,[[10,10,30,20],[40,50,10,30]],2);
 ```
-
 Result:
 
 ``` text
 [[1,1,2,3],[1,2,3,4]]
 ```
 
-## arrayUnion(arr)
+## arrayUnion
 
-Takes multiple arrays, returns an array that contains all elements that are present in any of the source arrays.
+Takes multiple arrays and returns an array which contains all elements that are present in one of the source arrays.
+The result contains only unique values.
 
-Example:
+**Syntax**
+
+``` sql
+arrayUnion(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements from the source arrays.
+
+
+**Example**
+
+Query:
+
 ```sql
 SELECT
     arrayUnion([-2, 1], [10, 1], [-2], []) as num_example,
@@ -1772,28 +1792,95 @@ SELECT
     arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 ```
 
+Result:
+
 ```text
 ┌─num_example─┬─str_example────┬─null_example─┐
 │ [10,-2,1]   │ ['hello','hi'] │ [3,2,1,NULL] │
 └─────────────┴────────────────┴──────────────┘
 ```
 
-## arrayIntersect(arr)
+## arrayIntersect
 
-Takes multiple arrays, returns an array with elements that are present in all source arrays.
+Takes multiple arrays and returns an array with elements which are present in all source arrays.
+The result contains only unique values.
 
-Example:
+**Syntax**
+
+``` sql
+arrayIntersect(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements present in all source arrays.
+
+**Example**
+
+Query:
 
 ``` sql
 SELECT
-    arrayIntersect([1, 2], [1, 3], [2, 3]) AS no_intersect,
-    arrayIntersect([1, 2], [1, 3], [1, 4]) AS intersect
+    arrayIntersect([1, 2], [1, 3], [2, 3]) AS empty_intersection,
+    arrayIntersect([1, 2], [1, 3], [1, 4]) AS non_empty_intersection
 ```
 
+Result:
+
 ``` text
-┌─no_intersect─┬─intersect─┐
-│ []           │ [1]       │
-└──────────────┴───────────┘
+┌─non_empty_intersection─┬─empty_intersection─┐
+│ []                     │ [1]                │
+└────────────────────────┴────────────────────┘
+```
+
+## arraySymmetricDifference
+
+Takes multiple arrays and returns an array with elements that are not present in all source arrays.
+The result contains only unique values.
+
+:::note
+The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference) as the set of all input elements which occur in an odd number of input sets.
+In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
+:::
+
+**Syntax**
+
+``` sql
+arraySymmetricDifference(arr1, arr2, ..., arrN)
+```
+
+**Arguments**
+
+- `arrN` — [Array](../data-types/array.md).
+
+The function can take any number of arrays of different types.
+
+**Returned value**
+
+- [Array](../data-types/array.md) with distinct elements not present in all source arrays.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT
+    arraySymmetricDifference([1, 2], [1, 2], [1, 2]) AS empty_symmetric_difference
+    arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_difference,
+```
+
+Result:
+
+``` text
+┌─empty_symmetric_difference─┬─non_empty_symmetric_difference─┐
+│ []                         │ [3]                            │
+└────────────────────────────┴────────────────────────────────┘
 ```
 
 ## arrayJaccardIndex
@@ -2278,7 +2365,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 └─────────────────────┘
 ```
 
-Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayMap` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayFilter(func, arr1, ...)
 
@@ -2311,7 +2398,7 @@ SELECT
 └─────┘
 ```
 
-Note that the `arrayFilter` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayFilter` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayFill(func, arr1, ...)
 
@@ -2329,7 +2416,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 └──────────────────────────────────┘
 ```
 
-Note that the `arrayFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayFill` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayReverseFill(func, arr1, ...)
 
@@ -2347,7 +2434,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 └────────────────────────────────────┘
 ```
 
-Note that the `arrayReverseFill` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayReverseFill` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arraySplit(func, arr1, ...)
 
@@ -2365,7 +2452,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └─────────────────┘
 ```
 
-Note that the `arraySplit` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arraySplit` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayReverseSplit(func, arr1, ...)
 
@@ -2383,19 +2470,19 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 └───────────────────┘
 ```
 
-Note that the `arrayReverseSplit` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayReverseSplit` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayExists(\[func,\] arr1, ...)
 
 Returns 1 if there is at least one element in `arr` for which `func(arr1[i], ..., arrN[i])` returns something other than 0. Otherwise, it returns 0.
 
-Note that the `arrayExists` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayExists` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayAll(\[func,\] arr1, ...)
 
 Returns 1 if `func(arr1[i], ..., arrN[i])` returns something other than 0 for all the elements in arrays. Otherwise, it returns 0.
 
-Note that the `arrayAll` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayAll` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayFirst(func, arr1, ...)
 
@@ -2423,7 +2510,7 @@ arrayFirstOrNull(func, arr1, ...)
 
 **Implementation details**
 
-Note that the `arrayFirstOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayFirstOrNull` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 **Example**
 
@@ -2467,7 +2554,7 @@ Result:
 
 Returns the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayLastOrNull
 
@@ -2491,7 +2578,7 @@ arrayLastOrNull(func, arr1, ...)
 
 **Implementation details**
 
-Note that the `arrayLastOrNull` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayLastOrNull` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 **Example**
 
@@ -2523,13 +2610,13 @@ Result:
 
 Returns the index of the first element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayLastIndex(func, arr1, ...)
 
 Returns the index of the last element in the `arr1` array for which `func(arr1[i], ..., arrN[i])` returns something other than 0.
 
-Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
+Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You must pass a lambda function to it as the first argument, and it can't be omitted.
 
 ## arrayMin
 
@@ -2537,7 +2624,7 @@ Returns the minimum of elements in the source array.
 
 If the `func` function is specified, returns the mininum of elements converted by this function.
 
-Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayMin` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 **Syntax**
 
@@ -2594,7 +2681,7 @@ Returns the maximum of elements in the source array.
 
 If the `func` function is specified, returns the maximum of elements converted by this function.
 
-Note that the `arrayMax` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayMax` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 **Syntax**
 
@@ -2651,7 +2738,7 @@ Returns the sum of elements in the source array.
 
 If the `func` function is specified, returns the sum of elements converted by this function.
 
-Note that the `arraySum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arraySum` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 **Syntax**
 
@@ -2713,7 +2800,7 @@ Returns the average of elements in the source array.
 
 If the `func` function is specified, returns the average of elements converted by this function.
 
-Note that the `arrayAvg` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayAvg` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 **Syntax**
 
@@ -2776,7 +2863,7 @@ arrayCumSum(arr)
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 Example:
 
@@ -2790,7 +2877,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 └──────────────┘
 ```
 
-Note that the `arrayCumSum` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arrayCumSum` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayCumSumNonNegative(\[func,\] arr1, ...)
 
@@ -2808,7 +2895,7 @@ arrayCumSumNonNegative(arr)
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/docs/en/data_types/int_uint/#uint-ranges), [Int\*](/docs/en/data_types/int_uint/#int-ranges), [Float\*](/docs/en/data_types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/docs/data_types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
@@ -2820,7 +2907,7 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 └───────────┘
 ```
 
-Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You can pass a lambda function to it as the first argument.
+Note that the `arraySumNonNegative` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions). You can pass a lambda function to it as the first argument.
 
 ## arrayProduct
 

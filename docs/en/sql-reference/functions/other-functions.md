@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/other-functions
+slug: /sql-reference/functions/other-functions
 sidebar_position: 140
 sidebar_label: Other
 ---
@@ -386,7 +386,7 @@ materialize(x)
 
 **Parameters**
 
-- `x` — A constant. [Constant](../functions/index.md/#constants).
+- `x` — A constant. [Constant](overview.md/#constants).
 
 **Returned value**
 
@@ -1238,7 +1238,7 @@ least(a, b)
 ```
 
 :::note
-Version [24.12](/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/docs/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## greatest
@@ -1252,7 +1252,7 @@ greatest(a, b)
 ```
 
 :::note
-Version [24.12](/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/docs/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## uptime
@@ -3029,7 +3029,7 @@ Result:
 
 ## getSetting
 
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
+Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings).
 
 **Syntax**
 
@@ -3060,11 +3060,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/index.md#custom_settings)
+- [Custom Settings](../../operations/settings/overview#custom_settings)
 
 ## getSettingOrDefault
 
-Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3099,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/index.md#custom_settings)
+- [Custom Settings](../../operations/settings/overview#custom_settings)
 
 ## isDecimalOverflow
 
@@ -4198,7 +4198,7 @@ If the function is used in the context of a distributed query, it returns non-em
 
 ## showCertificate
 
-Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](/docs/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
 
 **Syntax**
 
@@ -4373,7 +4373,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the ID of a [transaction](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the ID of a [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4383,7 +4383,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4423,7 +4423,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the newest snapshot (Commit Sequence Number) of a [transaction](/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4434,7 +4434,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4470,7 +4470,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4481,7 +4481,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**

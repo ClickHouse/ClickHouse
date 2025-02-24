@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/settings/settings-users
+slug: /operations/settings/settings-users
 sidebar_position: 63
 sidebar_label: User Settings
+description: "Settings for configuring users and roles."
+title: "Users and Roles Settings"
 ---
 
 # Users and Roles Settings

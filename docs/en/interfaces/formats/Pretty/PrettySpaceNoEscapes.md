@@ -1,6 +1,6 @@
 ---
 title : PrettySpaceNoEscapes
-slug : /en/interfaces/formats/PrettySpaceNoEscapes
+slug: /interfaces/formats/PrettySpaceNoEscapes
 keywords : [PrettySpaceNoEscapes]
 input_format: false
 output_format: true
