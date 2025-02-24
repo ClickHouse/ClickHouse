@@ -57,19 +57,19 @@ FOR_BASIC_NUMERIC_TYPES(EXTERN_INSTANTIATION)
 
 template <typename T>
 requires(is_big_int_v<T>)
-std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, size_t start, size_t end);
+std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end);
 
 template <typename T>
 requires(is_big_int_v<T>)
-std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, size_t start, size_t end);
+std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end);
 
 #define EXTERN_INSTANTIATION(T) \
-    extern template std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, size_t start, size_t end); \
-    extern template std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, size_t start, size_t end);
+    extern template std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end); \
+    extern template std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end);
 
-// EXTERN_INSTANTIATION(Int128)
-// EXTERN_INSTANTIATION(Int256)
-// EXTERN_INSTANTIATION(UInt128)
+EXTERN_INSTANTIATION(Int128)
+EXTERN_INSTANTIATION(Int256)
+EXTERN_INSTANTIATION(UInt128)
 EXTERN_INSTANTIATION(UInt256)
 #undef EXTERN_INSTANTIATION
 }
