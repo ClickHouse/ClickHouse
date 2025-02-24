@@ -289,12 +289,15 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
     if (canceled)
     {
-        LOG_INFO(
-            log,
-            "WriteBufferFromS3 was canceled."
-            "The file might not be written to S3. "
-            "{}.",
-            getVerboseLogDetails());
+        if (!isEmpty())
+        {
+            LOG_INFO(
+                log,
+                "WriteBufferFromS3 was canceled."
+                "The file might not be written to S3. "
+                "{}.",
+                getVerboseLogDetails());
+        }
     }
     else if (!finalized)
     {
@@ -458,7 +461,10 @@ void WriteBufferFromS3::abortMultipartUpload()
 {
     if (multipart_upload_id.empty())
     {
-        LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
+        if (!isEmpty())
+        {
+            LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
+        }
         return;
     }
 
