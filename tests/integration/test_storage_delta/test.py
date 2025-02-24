@@ -180,8 +180,6 @@ def create_initial_data_file(
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_single_log_file(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -207,8 +205,6 @@ def test_single_log_file(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_partition_by(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -232,8 +228,6 @@ def test_partition_by(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_checkpoint(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -310,8 +304,6 @@ def test_checkpoint(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_multiple_log_files(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -351,8 +343,6 @@ def test_multiple_log_files(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_metadata(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -387,8 +377,6 @@ def test_metadata(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_types(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     TABLE_NAME = randomize_table_name("test_types")
     spark = started_cluster.spark_session
     result_file = randomize_table_name(f"{TABLE_NAME}_result_2")
@@ -466,8 +454,6 @@ def test_types(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_restart_broken(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken"
@@ -530,8 +516,6 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_restart_broken_table_function(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = "broken2"
@@ -587,8 +571,6 @@ def test_restart_broken_table_function(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_partition_columns(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
@@ -792,8 +774,6 @@ SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.mini
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_complex_types(started_cluster, use_delta_kernel):
     node = started_cluster.instances["node1"]
-    if node.is_built_with_address_sanitizer():
-        return
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
 
@@ -889,8 +869,6 @@ def test_complex_types(started_cluster, use_delta_kernel):
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
     instance = started_cluster.instances["node1"]
-    if instance.is_built_with_address_sanitizer():
-        return
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
     TABLE_NAME = randomize_table_name("test_filesystem_cache")
@@ -953,8 +931,6 @@ def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
 def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kernel):
     node1 = started_cluster.instances["node1"]
     node2 = started_cluster.instances["node2"]
-    if node1.is_built_with_address_sanitizer():
-        return
 
     DB_NAME = randomize_table_name("db")
     TABLE_NAME = randomize_table_name("test_replicated_database_and_unavailable_s3")
