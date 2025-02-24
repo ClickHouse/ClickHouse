@@ -107,7 +107,7 @@ Poco::Util::LayeredConfiguration & ClientEmbedded::getClientConfiguration()
 }
 
 
-int ClientEmbedded::run(const String & first_query)
+int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 {
 try
 {
@@ -115,6 +115,47 @@ try
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);
+
+    /**
+    * To pass the environment variables through the SSH protocol you need to follow
+    * the format: ssh -o SetEnv="key1=value1 key2=value2"
+    * But the whole code is used to work with command line options, so we reconstruct them back.
+    */
+    Arguments arguments;
+    arguments.reserve(envVars.size() * 2);
+    for (const auto & [key, value] : envVars)
+    {
+        arguments.emplace_back("--" + key);
+        arguments.emplace_back(value);
+    }
+
+    OptionsDescription options_description;
+    addCommonOptions(options_description);
+    addSettingsToProgramOptionsAndSubscribeToChanges(options_description);
+
+    po::variables_map options;
+    auto parser = po::command_line_parser(arguments)
+                      .options(options_description.main_description.value())
+                      .allow_unregistered();
+    auto parsed = parser.run();
+    po::store(parsed, options);
+    po::notify(options);
+
+    if (options.count("version") || options.count("V"))
+    {
+        showClientVersion();
+        cleanup();
+        return 0;
+    }
+
+    if (options.count("help"))
+    {
+        printHelpMessage(options_description);
+        cleanup();
+        return 0;
+    }
+
+    addOptionsToTheClientConfiguration(options);
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
