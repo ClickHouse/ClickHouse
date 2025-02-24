@@ -495,6 +495,46 @@ Result:
 └──────────────────────────────┴─────────────────────────┘
 ```
 
+## compareSubstrings {#comparesubstrings}
+
+Compare two strings lexicographically.
+
+**Syntax**
+
+```sql
+compareSubstrings(string1, string2, string1_offset, string2_offset, num_bytes);
+```
+
+**Arguments**
+
+- `string1` — The first string to compare. [String](../data-types/string.md)
+- `string2` - The second string to compare.[String](../data-types/string.md)
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. [UInt*](../data-types/int-uint.md).
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly. [UInt*](../data-types/int-uint.md).
+
+**Returned value**
+
+- -1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] < `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- 0 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] = `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+- 1 — If `string1`[`string1_offset` : `string1_offset` + `num_bytes`] > `string2`[`string2_offset` : `string2_offset` + `num_bytes`].
+
+**Example**
+
+Query:
+
+```sql
+SELECT compareSubstrings('Saxony', 'Anglo-Saxon', 0, 6, 5) AS result,
+```
+
+Result:
+
+```result
+┌─result─┐
+│      0 │
+└────────┘
+```
+
 ## lower {#lower}
 
 Converts the ASCII Latin symbols in a string to lowercase.
@@ -2399,6 +2439,7 @@ Result:
 │ foo                        │
 └────────────────────────────┘
 ```
+
 ## stringCompare {#stringcompare}
 
 Compare two strings lexicographically.
@@ -2406,7 +2447,7 @@ Compare two strings lexicographically.
 **Syntax**
 
 ```sql
-stringComare(string1, string2[, str1_off, string2_offset, num_bytes]);
+stringCompare(string1, string2[, str1_off, string2_offset, num_bytes]);
 ```
 
 **Arguments**
@@ -2453,3 +2494,4 @@ Result:
 1. │      -1 │       0 │       1 │
    └─────────┴─────────┴─────────┘
 ```
+
