@@ -69,7 +69,8 @@ When ClickHouse is started up with local cache for remote filesystem enabled, us
 
 ### Query Hive Table with ORC Input Format  {#query-hive-table-with-orc-input-format}
 
-#### Create Table in Hive
+#### Create Table in Hive {#create-table-in-hive}
+
 ``` text
 hive > CREATE TABLE `test`.`test_orc`(
   `f_tinyint` tinyint,
@@ -190,7 +191,7 @@ day:                  2021-09-18
 
 ### Query Hive Table with Parquet Input Format {#query-hive-table-with-parquet-input-format}
 
-#### Create Table in Hive {#create-table-in-hive}
+#### Create Table in Hive {#create-table-in-hive-1}
 
 ``` text
 hive >
@@ -313,7 +314,7 @@ day:                  2021-09-18
 
 ### Query Hive Table with Text Input Format {#query-hive-table-with-text-input-format}
 
-#### Create Table in Hive {#create-table-in-hive}
+#### Create Table in Hive {#create-table-in-hive-2}
 
 ``` text
 hive >
