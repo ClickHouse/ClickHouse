@@ -7,6 +7,7 @@
 
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
+#include <iostream>
 #endif
 
 
@@ -224,8 +225,8 @@ std::optional<size_t> findExtremeMaxIndex(const T * __restrict ptr, size_t start
 FOR_BASIC_NUMERIC_TYPES(INSTANTIATION)
 #undef INSTANTIATION
 
-
-DECLARE_AVX512F_SPECIFIC_CODE(
+/*
+DECLARE_AVX512VL_SPECIFIC_CODE(
 template <bool is_min, bool add_all_elements, bool add_if_cond_zero>
 static std::optional<UInt256>
 findExtremeUInt256(const UInt256 * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
@@ -248,10 +249,14 @@ findExtremeUInt256(const UInt256 * __restrict ptr, const UInt8 * __restrict cond
     if (i >= count)
         return std::nullopt;
 
+    const size_t prefetch_distance = 4;
     __mmask8 mask = 0xFF;
     __m256i extreme = _mm256_loadu_epi64(reinterpret_cast<const __m256i *>(&ret));
     for (; i < count; ++i)
     {
+        if (i + prefetch_distance < count)
+            _mm_prefetch(reinterpret_cast<const char *>(&ptr[i + prefetch_distance]), _MM_HINT_T0);
+
         if constexpr (add_all_elements)
         {
             __m256i candidate = _mm256_loadu_epi64(reinterpret_cast<const __m256i *>(&ptr[i]));
@@ -268,33 +273,108 @@ findExtremeUInt256(const UInt256 * __restrict ptr, const UInt8 * __restrict cond
     return ret;
 }
 )
+*/
 
-template <typename T, bool is_min, bool add_all_elements, bool add_if_cond_zero>
+MULTITARGET_FUNCTION_AVX2_SSE42(
+    MULTITARGET_FUNCTION_HEADER(
+        template <bool is_min>
+        static std::optional<UInt256> NO_INLINE),
+    findExtremeUInt256Impl,
+    MULTITARGET_FUNCTION_BODY((const UInt256 * __restrict ptr, UInt8 * __restrict mask, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        UInt256 result{};
+        for (unsigned i = 0; i < 4; ++i)
+        {
+            unsigned item_idx = UInt256::_impl::little(i);
+
+            UInt64 extreme_item = 0;
+            size_t row_idx = row_begin;
+            for (; row_idx < row_end; ++row_idx)
+            {
+                if (mask[row_idx])
+                {
+                    extreme_item = ptr[row_idx].items[item_idx];
+                    break;
+                }
+            }
+
+            if (row_idx >= row_end)
+                return std::nullopt;
+
+            size_t next_j = row_idx;
+            for (row_idx = next_j; row_idx < row_end; ++row_idx)
+            {
+                if constexpr (is_min)
+                {
+                    UInt64 final = ptr[row_idx].items[item_idx] * (!!mask[row_idx]) + (!mask[row_idx]) * std::numeric_limits<UInt64>::max();
+                    extreme_item = std::min(extreme_item, final);
+                }
+                else
+                {
+
+                    UInt64 final = ptr[row_idx].items[item_idx] * (!!mask[row_idx]) + (!mask[row_idx]) * std::numeric_limits<UInt64>::lowest();
+                    extreme_item = std::max(extreme_item, final);
+                }
+            }
+            result.items[item_idx] = extreme_item;
+
+            for (row_idx = next_j; row_idx < row_end; ++row_idx)
+            {
+                mask[row_idx] &= (extreme_item == ptr[row_idx].items[item_idx]);
+            }
+        }
+        return result;
+    }
+))
+
+
+template <typename T, bool is_min>
 static std::optional<T>
-findExtremeBigInt(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
+findExtremeBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end)
 requires(is_big_int_v<T>)
 {
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::AVX512F))
-        if constexpr (std::is_same_v<T, UInt256> && std::endian::native == std::endian::little)
-            return TargetSpecific::AVX512F::findExtremeUInt256<is_min, add_all_elements, add_if_cond_zero>(ptr, condition_map, start, end);
+        if constexpr (std::is_same_v<T, UInt256>)
+        {
+            if (isArchSupported(TargetArch::AVX2))
+            {
+                std::cout << "xxxx" << std::endl;
+                return findExtremeUInt256ImplAVX2<is_min>(ptr, mask, start, end);
+            }
+
+            if (isArchSupported(TargetArch::SSE42))
+            {
+                std::cout << "xxxx" << std::endl;
+                return findExtremeUInt256ImplSSE42<is_min>(ptr, mask, start, end);
+            }
+        }
 #endif
     return std::nullopt;
 }
 
 template <typename T>
 requires(is_big_int_v<T>)
-std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, size_t start, size_t end)
+std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end)
 {
-    return findExtremeBigInt<T, true, true, false>(ptr, nullptr, start, end);
+    return findExtremeBigInt<T, true>(ptr, mask, start, end);
 }
 
 template <typename T>
 requires(is_big_int_v<T>)
-std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, size_t start, size_t end)
+std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end)
 {
-    return findExtremeBigInt<T, false, true, false>(ptr, nullptr, start, end);
+    return findExtremeBigInt<T, false>(ptr, mask, start, end);
 
 }
+
+#define INSTANTIATION(T) \
+    template std::optional<T> findExtremeMinBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end); \
+    template std::optional<T> findExtremeMaxBigInt(const T * __restrict ptr, UInt8 * __restrict mask, size_t start, size_t end);
+
+INSTANTIATION(Int128)
+INSTANTIATION(Int256)
+INSTANTIATION(UInt128)
+INSTANTIATION(UInt256)
+#undef INSTANTIATION
 
 }
