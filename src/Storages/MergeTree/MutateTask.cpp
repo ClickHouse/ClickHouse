@@ -103,13 +103,12 @@ String getDebugString(const Strings & arg)
 {
     WriteBufferFromOwnString out;
     {
-        auto iter = arg.begin();
-        if (iter != arg.end())
-            out << *iter;
-        ++iter;
-        for (; iter != arg.end( ); iter++ )
-            out << ", " << *iter;
-        out.finalize();
+        auto it = arg.begin();
+        if (it != arg.end())
+            out << *it;
+        ++it;
+        for (; it != arg.end(); ++it)
+            out << ", " << *it;
     }
     return out.str();
 }
@@ -2029,7 +2028,7 @@ private:
 
         Strings files_in_part = getPartFiles(ctx->new_data_part);
 
-        // This is a pedantic check that the checksums file contains exactly the records with wit actual files
+        // This is a pedantic check that the checksums file contains exactly the records with actual files
         // There are some suspicion that some time it could contain excess files
         files_in_part.erase(
             std::remove_if(files_in_part.begin(), files_in_part.end(), [] (auto & item)
