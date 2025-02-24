@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/count
+slug: /sql-reference/aggregate-functions/reference/count
 sidebar_position: 120
 ---
 

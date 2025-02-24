@@ -31,7 +31,6 @@
     Nice to have:
     - resizable columns
     - display totals
-    - display types in the header
     - show/hide the editor
     - check for readonly
     - query caching
@@ -138,6 +137,9 @@
             position: relative;
             background: var(--table-header-color);
             border-right: 1px solid var(--border-color);
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            grid-template-areas: "databases-icon" "contents" "github-icon";
         }
 
         #main
@@ -158,10 +160,19 @@
             transform: translate(1px, 1px);
         }
 
+        #databases-icon
+        {
+            grid-area: databases-icon;
+        }
+
+        #databases
+        {
+            grid-area: contents;
+        }
+
         #github-icon
         {
-            position: absolute;
-            bottom: 0.25rem;
+            grid-area: github-icon;
         }
 
         #github-icon-light, #github-icon-dark
@@ -195,6 +206,11 @@
         {
             color: var(--button-text-color);
             background-color: var(--button-color);
+        }
+
+        .no-tables
+        {
+            color: var(--misc-text-color);
         }
 
         .tables
@@ -333,7 +349,7 @@
 
         #run_div
         {
-            margin-top: 1rem;
+            margin-top: 0.5rem;
             display: grid;
             place-items: center;
             gap: 1rem;
@@ -414,6 +430,12 @@
         #toggle-light, #toggle-dark
         {
             cursor: pointer;
+            user-select: none;
+        }
+
+        [data-theme="light"] #toggle-light, [data-theme="dark"] #toggle-dark
+        {
+            display: none;
         }
 
         #data_div
@@ -674,7 +696,7 @@
 
 <body>
     <div id="menu">
-        <div class="menu-icon">
+        <div id="databases-icon" class="menu-icon">
             <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
         </div>
         <div id="databases"></div>
@@ -699,7 +721,7 @@
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
                 <div id="stats"></div>
-                <div id="theme"><span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span></div>
+                <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </div>
         <div id="data_div">
@@ -932,7 +954,10 @@ async function loadTables(server_address, user, password, database, container) {
     }
 
     if (json.data.length == 0) {
-        tables_elem.append('no tables');
+        let table = document.createElement('div');
+        table.className = 'no-tables';
+        table.append('no tables');
+        tables_elem.append(table);
     }
 }
 
@@ -1655,7 +1680,7 @@ function appendHeader(meta) {
     row_idx = 0;
 }
 
-const max_rows = 10_000;
+const max_rows = 1_000;
 const max_cells = 100_000;
 
 let current_selected_cell = null;

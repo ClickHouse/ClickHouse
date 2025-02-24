@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/symbols
+description: "System table useful for C++ experts and ClickHouse engineers containing information for introspection of the `clickhouse` binary."
+slug: /operations/system-tables/symbols
+title: "symbols"
+keywords: ["system table", "symbols"]
 ---
-# symbols
 
 Contains information for introspection of `clickhouse` binary. It requires the introspection privilege to access.
 This table is only useful for C++ experts and ClickHouse engineers.

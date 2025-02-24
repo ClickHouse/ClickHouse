@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/explain
+slug: /sql-reference/statements/explain
 sidebar_position: 39
 sidebar_label: EXPLAIN
 title: "EXPLAIN Statement"
@@ -136,7 +136,7 @@ Example:
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
 
-```
+```sql
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64

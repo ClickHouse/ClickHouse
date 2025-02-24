@@ -1,13 +1,15 @@
 ---
-slug: /en/engines/table-engines/integrations/iceberg
+slug: /engines/table-engines/integrations/iceberg
 sidebar_position: 90
 sidebar_label: Iceberg
+title: "Iceberg Table Engine"
+description: "This engine provides a read-only integration with existing Apache Iceberg tables in Amazon S3, Azure, HDFS and locally stored tables."
 ---
 
 # Iceberg Table Engine
 
 :::warning 
-We recommend using the [Iceberg Table Function](/docs/en/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
+We recommend using the [Iceberg Table Function](/docs/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
 The Iceberg Table Engine is available but may have limitations. ClickHouse wasn't originally designed to support tables with externally changing schemas, which can affect the functionality of the Iceberg Table Engine. As a result, some features that work with regular tables may be unavailable or may not function correctly, especially when using the old analyzer.
 
@@ -91,4 +93,4 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 ## See also
 
-- [iceberg table function](/docs/en/sql-reference/table-functions/iceberg.md)
+- [iceberg table function](/docs/sql-reference/table-functions/iceberg.md)

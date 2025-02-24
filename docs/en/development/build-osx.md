@@ -1,5 +1,5 @@
 ---
-slug: /en/development/build-osx
+slug: /development/build-osx
 sidebar_position: 15
 sidebar_label: Build on macOS for macOS
 ---
