@@ -13,11 +13,17 @@
                 <path>cached_s3/</path>
                 <disk>s3</disk>
             </cached_s3>
+            <cached_s3_encrypted>
+                <type>encrypted</type>
+                <disk>cached_s3</disk>
+                <key>1234567812345678</key>
+                <path>cached_s3_encrypted/</path>
+            </cached_s3_encrypted>
         </disks>
         <policies>
             <s3>
                 <volumes>
-                    <main><disk>cached_s3</disk></main>
+                    <main><disk>cached_s3_encrypted</disk></main>
                 </volumes>
             </s3>
         </policies>
