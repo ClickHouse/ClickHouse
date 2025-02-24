@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/dynamic
+slug: /en/sql-reference/data-types/dynamic
 sidebar_position: 62
 sidebar_label: Dynamic
 ---

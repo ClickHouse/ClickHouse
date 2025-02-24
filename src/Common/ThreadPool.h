@@ -17,6 +17,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Priority.h>

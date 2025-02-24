@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparrayintersect
+slug: /en/sql-reference/aggregate-functions/reference/grouparrayintersect
 sidebar_position: 141
 ---
 

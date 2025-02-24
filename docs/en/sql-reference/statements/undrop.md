@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/undrop
+slug: /en/sql-reference/statements/undrop
 sidebar_label: UNDROP
 ---
 
@@ -14,7 +14,7 @@ a system table called `system.dropped_tables`.
 If you have a materialized view without a `TO` clause associated with the dropped table, then you will also have to UNDROP the inner table of that view.
 
 :::tip
-Also see [DROP TABLE](/docs/sql-reference/statements/drop.md)
+Also see [DROP TABLE](/docs/en/sql-reference/statements/drop.md)
 :::
 
 Syntax:

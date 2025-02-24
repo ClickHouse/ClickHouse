@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
+slug: /en/sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
 sidebar_position: 156
 sidebar_label: kolmogorovSmirnovTest
 ---

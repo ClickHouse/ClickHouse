@@ -1,6 +1,6 @@
 ---
 title : PrettySpace
-slug: /interfaces/formats/PrettySpace
+slug : /en/interfaces/formats/PrettySpace
 keywords : [PrettySpace]
 input_format: false
 output_format: true

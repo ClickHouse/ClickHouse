@@ -1,9 +1,9 @@
 ---
-description: "Dataset containing all of the commits and changes for the ClickHouse repository"
-slug: /getting-started/example-datasets/github
+slug: /en/getting-started/example-datasets/github
 sidebar_label: Github Repo
 sidebar_position: 1
-title: "Writing Queries in ClickHouse using GitHub Data"
+description: Analyze the ClickHouse GitHub repo or any repository of your choosing
+title: 'Writing Queries in ClickHouse using GitHub Data'
 ---
 
 This dataset contains all of the commits and changes for the ClickHouse repository. It can be generated using the native `git-import` tool distributed with ClickHouse.
@@ -40,7 +40,7 @@ clickhouse git-import -h
 
 This help also provides the DDL for each of the above tables e.g.
 
-```sql
+```
 CREATE TABLE git.commits
 (
     hash String,
@@ -173,7 +173,7 @@ CREATE TABLE git.line_changes
 ) ENGINE = MergeTree ORDER BY time;
 ```
 
-Insert the data using `INSERT INTO SELECT` and the [s3 function](/docs/integrations/s3/s3-table-functions/). For example, below, we insert the ClickHouse files into each of their respective tables:
+Insert the data using `INSERT INTO SELECT` and the [s3 function](https://clickhouse.com/docs/en/integrations/s3/s3-table-functions/). For example, below, we insert the ClickHouse files into each of their respective tables:
 
 *commits*
 

@@ -1,7 +1,4 @@
 <clickhouse>
-    <logger>
-        <level>trace</level>
-    </logger>
     <storage_configuration>
         <disks>
             <log_local>
@@ -48,7 +45,7 @@
         <raft_configuration>
             <server>
                 <id>1</id>
-                <hostname>node_snapshot</hostname>
+                <hostname>node</hostname>
                 <port>9234</port>
             </server>
         </raft_configuration>

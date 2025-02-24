@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/singlevalueornull
+slug: /en/sql-reference/aggregate-functions/reference/singlevalueornull
 sidebar_position: 184
 ---
 

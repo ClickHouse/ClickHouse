@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/MutationsInterpreter.h>
 
 
 namespace DB

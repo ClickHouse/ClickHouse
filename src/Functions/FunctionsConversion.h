@@ -21,7 +21,6 @@
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
-#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>

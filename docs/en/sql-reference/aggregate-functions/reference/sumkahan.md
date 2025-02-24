@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/sumkahan
+slug: /en/sql-reference/aggregate-functions/reference/sumkahan
 sidebar_position: 197
 title: sumKahan
 ---

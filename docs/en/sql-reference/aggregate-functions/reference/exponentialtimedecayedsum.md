@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
+slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
 sidebar_position: 136
 title: exponentialTimeDecayedSum
 ---

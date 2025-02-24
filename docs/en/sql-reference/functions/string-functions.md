@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/string-functions
+slug: /en/sql-reference/functions/string-functions
 sidebar_position: 170
 sidebar_label: Strings
 ---
@@ -832,10 +832,6 @@ Result:
 └─────────────────┘
 ```
 
-:::note `||` operator
-Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
-:::
-
 ## concatAssumeInjective
 
 Like [concat](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective. Can be used for optimization of GROUP BY.
@@ -1036,7 +1032,7 @@ SELECT substringIndex('www.clickhouse.com', '.', 2)
 ```
 
 Result:
-```sql
+```
 ┌─substringIndex('www.clickhouse.com', '.', 2)─┐
 │ www.clickhouse                               │
 └──────────────────────────────────────────────┘
@@ -1473,7 +1469,7 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Arguments**
 
-- `trim_character` — The characters to trim. [String](../data-types/string.md).
+- `trim_character` — Specified characters for trim. [String](../data-types/string.md).
 - `input_string` — String for trim. [String](../data-types/string.md).
 
 **Returned value**
@@ -1501,15 +1497,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimLeft(input_string[, trim_characters])
+trimLeft(input_string)
 ```
 
-Alias: `ltrim`.
+Alias: `ltrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1536,15 +1531,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from the 
 **Syntax**
 
 ``` sql
-trimRight(input_string[, trim_characters])
+trimRight(input_string)
 ```
 
-Alias: `rtrim`.
+Alias: `rtrim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1571,15 +1565,14 @@ Removes the consecutive occurrences of whitespace (ASCII-character 32) from both
 **Syntax**
 
 ``` sql
-trimBoth(input_string[, trim_characters])
+trimBoth(input_string)
 ```
 
-Alias: `trim`.
+Alias: `trim(input_string)`.
 
 **Arguments**
 
-- `input_string` — The string to trim. [String](../data-types/string.md).
-- `trim_characters` — The characters to trim. Optional. [String](../data-types/string.md). If not specified, `' '` ( single whitespace) is used as trim character.
+- `input_string` — string to trim. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1616,6 +1609,146 @@ The result type is UInt32.
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
+
+## normalizeQuery
+
+Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with placeholder `?`.
+
+**Syntax**
+
+``` sql
+normalizeQuery(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Sequence of characters with placeholders. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizeQuery('[1, 2, 3, x]') AS query;
+```
+
+Result:
+
+```result
+┌─query────┐
+│ [?.., x] │
+└──────────┘
+```
+
+## normalizeQueryKeepNames
+
+Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs). This helps better analyze complex query logs.
+
+**Syntax**
+
+``` sql
+normalizeQueryKeepNames(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Sequence of characters with placeholders. [String](../data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
+```
+
+Result:
+
+```result
+┌─normalizeQuery('SELECT 1 AS aComplexName123')─┬─normalizeQueryKeepNames('SELECT 1 AS aComplexName123')─┐
+│ SELECT ? AS `?`                               │ SELECT ? AS aComplexName123                            │
+└───────────────────────────────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+## normalizedQueryHash
+
+Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query logs.
+
+**Syntax**
+
+``` sql
+normalizedQueryHash(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
+```
+
+Result:
+
+```result
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+## normalizedQueryHashKeepNames
+
+Like [normalizedQueryHash](#normalizedqueryhash) it returns identical 64bit hash values without the values of literals for similar queries but it does not replace complex aliases (containing whitespace, more than two digits
+or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can be helpful to analyze query logs.
+
+**Syntax**
+
+``` sql
+normalizedQueryHashKeepNames(x)
+```
+
+**Arguments**
+
+- `x` — Sequence of characters. [String](../data-types/string.md).
+
+**Returned value**
+
+- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+
+**Example**
+
+``` sql
+SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
+SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
+```
+
+Result:
+
+```result
+┌─normalizedQueryHash─┐
+│                   0 │
+└─────────────────────┘
+┌─normalizedQueryHashKeepNames─┐
+│                            1 │
+└──────────────────────────────┘
+```
 
 ## normalizeUTF8NFC
 
@@ -2398,58 +2531,4 @@ Result:
 ┌─firstLine('foo\nbar\nbaz')─┐
 │ foo                        │
 └────────────────────────────┘
-```
-## stringCompare
-
-Compare two strings lexicographically.
-
-**Syntax**
-
-```sql
-stringComare(string1, string2[, str1_off, string2_offset, num_bytes]);
-```
-
-**Arguments**
-
-- `string1` — The first string to compare. [String](../data-types/string.md)
-- `string2` - The second string to compare.[String](../data-types/string.md)
-- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional, positive number.
-- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional, positive number.
-- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.
-
-**Returned value**
-
-- -1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
-If `string1_offset` >= len(`string1`) and `string2_offset` < len(`string2`).
-- 0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
-If `string1_offset` >= len(`string1`) and `string2_offset` >= len(`string2`).
-- 1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
-If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
-
-**Example**
-
-```sql
-SELECT
-    stringCompare('alice', 'bob', 0, 0, 3) as result1,
-    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
-    stringCompare('bob', 'alice', 0, 0, 3) as result3
-```
-Result:
-```result
-   ┌─result1─┬─result2─┬─result3─┐
-1. │      -1 │       0 │       1 │
-   └─────────┴─────────┴─────────┘
-```
-
-```sql
-SELECT
-    stringCompare('alice', 'alicia') as result2,
-    stringCompare('alice', 'alice') as result1,
-    stringCompare('bob', 'alice') as result3
-```
-Result:
-```result
-   ┌─result2─┬─result1─┬─result3─┐
-1. │      -1 │       0 │       1 │
-   └─────────┴─────────┴─────────┘
 ```

@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -62,16 +61,6 @@ void PartMovesBetweenShardsOrchestrator::run()
 
 
     task->scheduleAfter(sleep_ms);
-}
-
-void PartMovesBetweenShardsOrchestrator::start()
-{
-    task->activateAndSchedule();
-}
-
-void PartMovesBetweenShardsOrchestrator::wakeup()
-{
-     task->schedule();
 }
 
 void PartMovesBetweenShardsOrchestrator::shutdown()

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/grant
+slug: /en/sql-reference/statements/grant
 sidebar_position: 38
 sidebar_label: GRANT
 ---
@@ -66,7 +66,7 @@ It means that `john` has the permission to execute:
 - `SELECT x FROM db.table`.
 - `SELECT y FROM db.table`.
 
-`john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
+`john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns. In this case ClickHouse returns all the data.
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or smaller scope.
 
@@ -124,209 +124,149 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
 
 ## Privileges
 
-A Privilege is a permission given to a user to execute specific kinds of queries.
+Privilege is a permission to execute specific kind of queries.
 
-Privileges have a hierarchical structure and a set of permitted queries depends on the privilege scope.
+Privileges have a hierarchical structure. A set of permitted queries depends on the privilege scope.
 
-The hierarchy of privileges in ClickHouse is shown below:
+Hierarchy of privileges:
 
-- [`ALL`](#all)
-    - [`ACCESS MANAGEMENT`](#access-management)
-          - `ALLOW SQL SECURITY NONE`
-          - `ALTER QUOTA`
-          - `ALTER ROLE`
-          - `ALTER ROW POLICY` 
-          - `ALTER SETTINGS PROFILE`
-          - `ALTER USER`
-          - `CREATE QUOTA`
-          - `CREATE ROLE`
-          - `CREATE ROW POLICY`
-          - `CREATE SETTINGS PROFILE`
-          - `CREATE USER`
-          - `DROP QUOTA`
-          - `DROP ROLE`
-          - `DROP ROW POLICY`
-          - `DROP SETTINGS PROFILE`
-          - `DROP USER`
-          - `ROLE ADMIN`
-          - `SHOW ACCESS`
-              - `SHOW QUOTAS`
-              - `SHOW ROLES`
-              - `SHOW ROW POLICIES`
-              - `SHOW SETTINGS PROFILES`
-              - `SHOW USERS`
-    - [`ALTER`](#alter)
-          - `ALTER DATABASE`
-              - `ALTER DATABASE SETTINGS`
-          - `ALTER TABLE`
-                - `ALTER COLUMN`
-                    - `ALTER ADD COLUMN`
-                    - `ALTER CLEAR COLUMN`
-                    - `ALTER COMMENT COLUMN`
-                    - `ALTER DROP COLUMN`
-                    - `ALTER MATERIALIZE COLUMN`
-                    - `ALTER MODIFY COLUMN`
-                    - `ALTER RENAME COLUMN` 
-                - `ALTER CONSTRAINT`
-                    - `ALTER ADD CONSTRAINT`
-                    - `ALTER DROP CONSTRAINT` 
-                - `ALTER DELETE`
-                - `ALTER FETCH PARTITION`
-                - `ALTER FREEZE PARTITION`
-                - `ALTER INDEX`
-                    - `ALTER ADD INDEX`
-                    - `ALTER CLEAR INDEX`
-                    - `ALTER DROP INDEX`
-                    - `ALTER MATERIALIZE INDEX`
-                    - `ALTER ORDER BY`
-                    - `ALTER SAMPLE BY` 
-                - `ALTER MATERIALIZE TTL`
-                - `ALTER MODIFY COMMENT`
-                - `ALTER MOVE PARTITION`
-                - `ALTER PROJECTION`
-                - `ALTER SETTINGS`
-                - `ALTER STATISTICS`
-                    - `ALTER ADD STATISTICS`
-                    - `ALTER DROP STATISTICS`
-                    - `ALTER MATERIALIZE STATISTICS`
-                    - `ALTER MODIFY STATISTICS` 
-                - `ALTER TTL`
-                - `ALTER UPDATE` 
-          - `ALTER VIEW`
-              - `ALTER VIEW MODIFY QUERY`
-              - `ALTER VIEW REFRESH`
-              - `ALTER VIEW MODIFY SQL SECURITY`
-    - [`BACKUP`](#backup)
-    - [`CLUSTER`](#cluster)
-    - [`CREATE`](#create)
+- [SELECT](#select)
+- [INSERT](#insert)
+- [ALTER](#alter)
+    - `ALTER TABLE`
+        - `ALTER UPDATE`
+        - `ALTER DELETE`
+        - `ALTER COLUMN`
+            - `ALTER ADD COLUMN`
+            - `ALTER DROP COLUMN`
+            - `ALTER MODIFY COLUMN`
+            - `ALTER COMMENT COLUMN`
+            - `ALTER CLEAR COLUMN`
+            - `ALTER RENAME COLUMN`
+        - `ALTER INDEX`
+            - `ALTER ORDER BY`
+            - `ALTER SAMPLE BY`
+            - `ALTER ADD INDEX`
+            - `ALTER DROP INDEX`
+            - `ALTER MATERIALIZE INDEX`
+            - `ALTER CLEAR INDEX`
+        - `ALTER CONSTRAINT`
+            - `ALTER ADD CONSTRAINT`
+            - `ALTER DROP CONSTRAINT`
+        - `ALTER TTL`
+            - `ALTER MATERIALIZE TTL`
+        - `ALTER SETTINGS`
+        - `ALTER MOVE PARTITION`
+        - `ALTER FETCH PARTITION`
+        - `ALTER FREEZE PARTITION`
+    - `ALTER VIEW`
+        - `ALTER VIEW REFRESH`
+        - `ALTER VIEW MODIFY QUERY`
+        - `ALTER VIEW MODIFY SQL SECURITY`
+- [CREATE](#create)
+    - `CREATE DATABASE`
+    - `CREATE TABLE`
         - `CREATE ARBITRARY TEMPORARY TABLE`
             - `CREATE TEMPORARY TABLE`
-        - `CREATE DATABASE`
-        - `CREATE DICTIONARY`
-        - `CREATE FUNCTION`
-        - `CREATE RESOURCE`
-        - `CREATE TABLE`
-        - `CREATE VIEW`
-        - `CREATE WORKLOAD`
-    - [`dictGet`](#dictget)
-    - [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
-    - [`DROP`](#drop)
-        - `DROP DATABASE`
-        - `DROP DICTIONARY`
-        - `DROP FUNCTION`
-        - `DROP RESOURCE`
-        - `DROP TABLE`
-        - `DROP VIEW` 
-        - `DROP WORKLOAD`
-    - [`INSERT`](#insert)
-    - [`INTROSPECTION`](#introspection)
-        - `addressToLine`
-        - `addressToLineWithInlines`
-        - `addressToSymbol`
-        - `demangle`
-    - `KILL QUERY`
-    - `KILL TRANSACTION`
-    - `MOVE PARTITION BETWEEN SHARDS`
-    - [`NAMED COLLECTION ADMIN`](#named-collection-admin)
-        - `ALTER NAMED COLLECTION`
-        - `CREATE NAMED COLLECTION`
-        - `DROP NAMED COLLECTION`
-        - `NAMED COLLECTION`
-        - `SHOW NAMED COLLECTIONS`
-        - `SHOW NAMED COLLECTIONS SECRETS`
-    - [`OPTIMIZE`](#optimize)
-    - [`SELECT`](#select)
-    - [`SET DEFINER`](/docs/en/sql-reference/statements/create/view#sql_security)
-    - [`SHOW`](#show)
-        - `SHOW COLUMNS` 
-        - `SHOW DATABASES`
-        - `SHOW DICTIONARIES`
-        - `SHOW TABLES`
-    - `SHOW FILESYSTEM CACHES`
-    - [`SOURCES`](#sources)
-        - `AZURE`
-        - `FILE`
-        - `HDFS`
-        - `HIVE`
-        - `JDBC`
-        - `KAFKA`
-        - `MONGO`
-        - `MYSQL`
-        - `NATS`
-        - `ODBC`
-        - `POSTGRES`
-        - `RABBITMQ`
-        - `REDIS`
-        - `REMOTE`
-        - `S3`
-        - `SQLITE`
-        - `URL`
-    - [`SYSTEM`](#system)
-        - `SYSTEM CLEANUP`
-        - `SYSTEM DROP CACHE`
-            - `SYSTEM DROP COMPILED EXPRESSION CACHE`
-            - `SYSTEM DROP CONNECTIONS CACHE`
-            - `SYSTEM DROP DISTRIBUTED CACHE`
-            - `SYSTEM DROP DNS CACHE`
-            - `SYSTEM DROP FILESYSTEM CACHE`
-            - `SYSTEM DROP FORMAT SCHEMA CACHE`
-            - `SYSTEM DROP MARK CACHE`
-            - `SYSTEM DROP MMAP CACHE`
-            - `SYSTEM DROP PAGE CACHE`
-            - `SYSTEM DROP PRIMARY INDEX CACHE`
-            - `SYSTEM DROP QUERY CACHE`
-            - `SYSTEM DROP S3 CLIENT CACHE`
-            - `SYSTEM DROP SCHEMA CACHE`
-            - `SYSTEM DROP UNCOMPRESSED CACHE`
-        - `SYSTEM DROP PRIMARY INDEX CACHE`
-        - `SYSTEM DROP REPLICA`
-        - `SYSTEM FAILPOINT`
-        - `SYSTEM FETCHES`
-        - `SYSTEM FLUSH`
-            - `SYSTEM FLUSH ASYNC INSERT QUEUE`
-            - `SYSTEM FLUSH LOGS`
-        - `SYSTEM JEMALLOC`
-        - `SYSTEM KILL QUERY`
-        - `SYSTEM KILL TRANSACTION`
-        - `SYSTEM LISTEN`
-        - `SYSTEM LOAD PRIMARY KEY`
-        - `SYSTEM MERGES`
-        - `SYSTEM MOVES`
-        - `SYSTEM PULLING REPLICATION LOG`
-        - `SYSTEM REDUCE BLOCKING PARTS`
-        - `SYSTEM REPLICATION QUEUES`
-        - `SYSTEM REPLICA READINESS`
-        - `SYSTEM RESTART DISK`
-        - `SYSTEM RESTART REPLICA`
-        - `SYSTEM RESTORE REPLICA`
-        - `SYSTEM RELOAD`
-            - `SYSTEM RELOAD ASYNCHRONOUS METRICS`
-            - `SYSTEM RELOAD CONFIG`
-                - `SYSTEM RELOAD DICTIONARY`
-                - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
-                - `SYSTEM RELOAD FUNCTION`
-                - `SYSTEM RELOAD MODEL`
-                - `SYSTEM RELOAD USERS`
-        - `SYSTEM SENDS`
-            - `SYSTEM DISTRIBUTED SENDS`
-            - `SYSTEM REPLICATED SENDS`
-        - `SYSTEM SHUTDOWN`
-        - `SYSTEM SYNC DATABASE REPLICA`
-        - `SYSTEM SYNC FILE CACHE`
-        - `SYSTEM SYNC FILESYSTEM CACHE`
-        - `SYSTEM SYNC REPLICA`
-        - `SYSTEM SYNC TRANSACTION LOG`
-        - `SYSTEM THREAD FUZZER`
-        - `SYSTEM TTL MERGES`
-        - `SYSTEM UNFREEZE`
-        - `SYSTEM UNLOAD PRIMARY KEY`
-        - `SYSTEM VIEWS`
-        - `SYSTEM VIRTUAL PARTS UPDATE`
-        - `SYSTEM WAIT LOADING PARTS`
-    - [`TABLE ENGINE`](#table-engine)
-    - [`TRUNCATE`](#truncate)
-    - `UNDROP TABLE` 
-- [`NONE`](#none)
+    - `CREATE VIEW`
+    - `CREATE DICTIONARY`
+    - `CREATE FUNCTION`
+- [DROP](#drop)
+    - `DROP DATABASE`
+    - `DROP TABLE`
+    - `DROP VIEW`
+    - `DROP DICTIONARY`
+    - `DROP FUNCTION`
+- [TRUNCATE](#truncate)
+- [OPTIMIZE](#optimize)
+- [SHOW](#show)
+    - `SHOW DATABASES`
+    - `SHOW TABLES`
+    - `SHOW COLUMNS`
+    - `SHOW DICTIONARIES`
+- [KILL QUERY](#kill-query)
+- [ACCESS MANAGEMENT](#access-management)
+    - `CREATE USER`
+    - `ALTER USER`
+    - `DROP USER`
+    - `CREATE ROLE`
+    - `ALTER ROLE`
+    - `DROP ROLE`
+    - `CREATE ROW POLICY`
+    - `ALTER ROW POLICY`
+    - `DROP ROW POLICY`
+    - `CREATE QUOTA`
+    - `ALTER QUOTA`
+    - `DROP QUOTA`
+    - `CREATE SETTINGS PROFILE`
+    - `ALTER SETTINGS PROFILE`
+    - `DROP SETTINGS PROFILE`
+    - `SHOW ACCESS`
+        - `SHOW_USERS`
+        - `SHOW_ROLES`
+        - `SHOW_ROW_POLICIES`
+        - `SHOW_QUOTAS`
+        - `SHOW_SETTINGS_PROFILES`
+    - `ROLE ADMIN`
+- [SYSTEM](#system)
+    - `SYSTEM SHUTDOWN`
+    - `SYSTEM DROP CACHE`
+        - `SYSTEM DROP DNS CACHE`
+        - `SYSTEM DROP MARK CACHE`
+        - `SYSTEM DROP UNCOMPRESSED CACHE`
+    - `SYSTEM RELOAD`
+        - `SYSTEM RELOAD CONFIG`
+        - `SYSTEM RELOAD DICTIONARY`
+            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        - `SYSTEM RELOAD FUNCTION`
+        - `SYSTEM RELOAD FUNCTIONS`
+    - `SYSTEM MERGES`
+    - `SYSTEM TTL MERGES`
+    - `SYSTEM FETCHES`
+    - `SYSTEM MOVES`
+    - `SYSTEM SENDS`
+        - `SYSTEM DISTRIBUTED SENDS`
+        - `SYSTEM REPLICATED SENDS`
+    - `SYSTEM REPLICATION QUEUES`
+    - `SYSTEM SYNC REPLICA`
+    - `SYSTEM RESTART REPLICA`
+    - `SYSTEM FLUSH`
+        - `SYSTEM FLUSH DISTRIBUTED`
+        - `SYSTEM FLUSH LOGS`
+    - `CLUSTER` (see also `access_control_improvements.on_cluster_queries_require_cluster_grant` configuration directive)
+- [INTROSPECTION](#introspection)
+    - `addressToLine`
+    - `addressToLineWithInlines`
+    - `addressToSymbol`
+    - `demangle`
+- [SOURCES](#sources)
+    - `AZURE`
+    - `FILE`
+    - `HDFS`
+    - `HIVE`
+    - `JDBC`
+    - `KAFKA`
+    - `MONGO`
+    - `MYSQL`
+    - `NATS`
+    - `ODBC`
+    - `POSTGRES`
+    - `RABBITMQ`
+    - `REDIS`
+    - `REMOTE`
+    - `S3`
+    - `SQLITE`
+    - `URL`
+- [dictGet](#dictget)
+- [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
+- [NAMED COLLECTION ADMIN](#named-collection-admin)
+    - `CREATE NAMED COLLECTION`
+    - `DROP NAMED COLLECTION`
+    - `ALTER NAMED COLLECTION`
+    - `SHOW NAMED COLLECTIONS`
+    - `SHOW NAMED COLLECTIONS SECRETS`
+    - `NAMED COLLECTION`
+- [TABLE ENGINE](#table-engine)
 
 Examples of how this hierarchy is treated:
 
@@ -379,7 +319,7 @@ Consider the following privilege:
 GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can't execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
+This privilege allows `john` to execute any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`, for example, `SELECT x FROM db.table`. `john` can’t execute `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. Processing this query, ClickHouse does not return any data, even `x` and `y`. The only exception is if a table contains only `x` and `y` columns, in this case ClickHouse returns all the data.
 
 ### INSERT
 
@@ -447,10 +387,6 @@ Examples of how this hierarchy is treated:
 - The `DETACH` operation needs the [DROP](#drop) privilege.
 - To stop mutation by the [KILL MUTATION](../../sql-reference/statements/kill.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
 
-### BACKUP
-
-Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](../../operations/backup.md).
-
 ### CREATE
 
 Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [ATTACH](../../sql-reference/statements/attach.md) DDL-queries according to the following hierarchy of privileges:
@@ -466,30 +402,6 @@ Allows executing [CREATE](../../sql-reference/statements/create/index.md) and [A
 **Notes**
 
 - To delete the created table, a user needs [DROP](#drop).
-
-### CLUSTER
-
-Allows executing `ON CLUSTER` queries.
-
-```sql title="Syntax"
-GRANT CLUSTER ON *.* TO <username>
-```
-
-By default, queries with `ON CLUSTER` require the user to have the `CLUSTER` grant.
-You will get the following error if you to try to use `ON CLUSTER` in a query without first granting the `CLUSTER` privilege:
-
-```text
-Not enough privileges. To execute this query, it's necessary to have the grant CLUSTER ON *.*. 
-```
-
-The default behavior can be changed by setting the `on_cluster_queries_require_cluster_grant` setting,
-located in the `access_control_improvements` section of `config.xml` (see below), to `false`.
-
-```yaml title="config.xml"
-<access_control_improvements>
-    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
-</access_control_improvements>
-```
 
 ### DROP
 
@@ -698,13 +610,13 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/cloud/security/cloud-access-management#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/en/cloud/security/cloud-access-management#initial-settings) for further details.
 Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 
 ### NONE
 
-Doesn't grant any privileges.
+Doesn’t grant any privileges.
 
 ### ADMIN OPTION
 

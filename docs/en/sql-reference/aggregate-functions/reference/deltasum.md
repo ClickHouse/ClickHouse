@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/deltasum
+slug: /en/sql-reference/aggregate-functions/reference/deltasum
 sidebar_position: 129
 ---
 

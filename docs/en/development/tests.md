@@ -1,5 +1,5 @@
 ---
-slug: /development/tests
+slug: /en/development/tests
 sidebar_position: 40
 sidebar_label: Testing
 ---
@@ -164,7 +164,7 @@ In the meantime, some other tests might be added with the same numeric prefix, b
 
 Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
 
-```sql
+```
 select x; -- { serverError 49 }
 ```
 
@@ -212,7 +212,7 @@ Unit tests (and other test programs) are located in `tests` subdirectories acros
 To run unit tests, type `ninja test`.
 Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
 
-It's not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
 
 You can run individual gtest checks by calling the executable directly, for example:
 
@@ -372,7 +372,7 @@ ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/L
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
 LibFuzzer is used for isolated fuzz testing of library code.
-Fuzzers are implemented as part of test code and have "_fuzzer" name postfixes.
+Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
 Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`.
 LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
@@ -468,7 +468,7 @@ To check for some common style violations, you can use `utils/check-style` scrip
 To force proper style of your code, you can use `clang-format`.
 File `.clang-format` is located at the sources root.
 It mostly corresponding with our actual code style.
-But it's not recommended to apply `clang-format` to existing files because it makes formatting worse.
+But it’s not recommended to apply `clang-format` to existing files because it makes formatting worse.
 You can use `clang-format-diff` tool that you can find in clang source repository.
 
 Alternatively you can try `uncrustify` tool to reformat your code.
@@ -498,4 +498,4 @@ We run tests with [GitHub Actions](https://github.com/features/actions).
 Build jobs and tests are run in Sandbox on per commit basis.
 Resulting packages and test results are published in GitHub and can be downloaded by direct links.
 Artifacts are stored for several months.
-When you send a pull request on GitHub, we tag it as "can be tested" and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.

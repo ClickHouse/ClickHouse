@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/distinctdynamictypes
+slug: /en/sql-reference/aggregate-functions/reference/distinctdynamictypes
 sidebar_position: 215
 ---
 

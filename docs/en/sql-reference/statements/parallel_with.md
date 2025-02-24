@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/parallel_with
+slug: /en/sql-reference/statements/parallel_with
 sidebar_position: 53
 sidebar_label: PARALLEL WITH
 ---

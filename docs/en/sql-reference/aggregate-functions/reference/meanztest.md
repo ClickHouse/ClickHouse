@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/meanztest
+slug: /en/sql-reference/aggregate-functions/reference/meanztest
 sidebar_position: 166
 sidebar_label: meanZTest
 ---

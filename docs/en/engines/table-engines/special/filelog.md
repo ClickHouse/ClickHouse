@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/special/filelog
+slug: /en/engines/table-engines/special/filelog
 sidebar_position: 160
 sidebar_label: FileLog
 ---

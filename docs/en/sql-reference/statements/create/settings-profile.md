@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/create/settings-profile
+slug: /en/sql-reference/statements/create/settings-profile
 sidebar_position: 43
 sidebar_label: SETTINGS PROFILE
 title: "CREATE SETTINGS PROFILE"

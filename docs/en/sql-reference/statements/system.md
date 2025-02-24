@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/system
+slug: /en/sql-reference/statements/system
 sidebar_position: 36
 sidebar_label: SYSTEM
 ---
@@ -87,7 +87,7 @@ RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 ## DROP DNS CACHE
 
-Clears ClickHouse's internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
+Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_max_entries, dns_cache_update_period parameters.
 
@@ -128,13 +128,13 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 ## DROP UNCOMPRESSED CACHE
 
 Clears the uncompressed data cache.
-The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
-Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
+Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
 Clears the compiled expression cache.
-The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](../../operations/settings/settings.md#compile_expressions).
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
 
 ## DROP QUERY CACHE
 
@@ -148,7 +148,7 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
+Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
 Supported formats:
 
@@ -160,17 +160,11 @@ SYSTEM DROP FORMAT SCHEMA CACHE [FOR Protobuf]
 
 ## FLUSH LOGS
 
-Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
+Flushes buffered log messages to system tables, e.g. system.query_log. Mainly useful for debugging since most system tables have a default flush interval of 7.5 seconds.
 This will also create system tables even if message queue is empty.
 
 ```sql
-SYSTEM FLUSH LOGS [ON CLUSTER cluster_name] [log_name|[database.table]] [, ...]
-```
-
-If you don't want to flush everything, you can flush one or more individual logs by passing either their name or their target table:
-
-```sql
-SYSTEM FLUSH LOGS query_log, system.query_views_log;
+SYSTEM FLUSH LOGS [ON CLUSTER cluster_name]
 ```
 
 ## RELOAD CONFIG
@@ -201,7 +195,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](../../operations/settings/settings.md#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [START DISTRIBUTED SENDS](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
 
 ### STOP DISTRIBUTED SENDS
 
@@ -210,10 +204,6 @@ Disables background data distribution when inserting data into distributed table
 ``` sql
 SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
-
-:::note
-In case of [`prefer_localhost_replica`](../../operations/settings/settings.md#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
-:::
 
 ### FLUSH DISTRIBUTED
 
@@ -434,7 +424,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA
 
-Waits until the specified [replicated database](/docs/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
+Waits until the specified [replicated database](https://clickhouse.com/docs/en/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql

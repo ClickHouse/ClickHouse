@@ -934,7 +934,7 @@ FixedString 被简单地表示为字节序列。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-另见：[input_format_values_interpret_expressions](/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
+另见：[input_format_values_interpret_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_interpret_expressions)和[input_format_values_deduce_templates_of_expressions](https://clickhouse.com/docs/en/operations/settings/settings/#settings-input_format_values_deduce_templates_of_expressions)。
 
 ## Vertical {#vertical}
 
@@ -1336,7 +1336,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 要与Hadoop交换数据，您可以使用 [HDFS表引擎](../engines/table-engines/integrations/hdfs.md).
 
 ## LineAsString {#lineasstring}
-这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](/sql-reference/statements/create/table/#default)、[MATERIALIZED](/sql-reference/statements/create/table/#materialized)或者被忽略。
+这种格式下，每行输入数据都会当做一个字符串。这种格式仅适用于仅有一列[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型的列的表。其余列必须设置为[DEFAULT](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#default)、[MATERIALIZED](https://clickhouse.com/docs/en/sql-reference/statements/create/table/#materialized)或者被忽略。
 
 ### 示例：
 查询如下：
@@ -1355,8 +1355,8 @@ SELECT * FROM line_as_string;
 ## Regexp {#regexp}
 每一列输入数据根据正则表达式解析。使用`Regexp`格式时，可以使用如下设置：
 
--  `format_regexp`，[String](/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
-- `format_regexp_escaping_rule`，[String](/sql-reference/data-types/string/)类型。支持如下转义规则：
+-  `format_regexp`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。包含[re2](https://github.com/google/re2/wiki/Syntax)格式的正则表达式。
+- `format_regexp_escaping_rule`，[String](https://clickhouse.com/docs/en/sql-reference/data-types/string/)类型。支持如下转义规则：
   - CSV(规则相同于[CSV](https://clickhouse.com/docs/zh/interfaces/formats/#csv))
   - JSON(相同于[JSONEachRow](https://clickhouse.com/docs/zh/interfaces/formats/#jsoneachrow))
   - Escaped(相同于[TSV](https://clickhouse.com/docs/zh/interfaces/formats/#tabseparated))

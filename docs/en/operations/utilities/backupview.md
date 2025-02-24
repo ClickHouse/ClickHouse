@@ -1,11 +1,11 @@
 ---
-slug: /operations/utilities/backupview
+slug: /en/operations/utilities/backupview
 title: clickhouse_backupview
 ---
 
 # clickhouse_backupview {#clickhouse_backupview}
 
-Python module to help analyzing backups made by the [BACKUP](/docs/operations/backup) command.
+Python module to help analyzing backups made by the [BACKUP](https://clickhouse.com/docs/en/operations/backup) command.
 The main motivation was to allows getting some information from a backup without actually restoring it.
 
 This module provides functions to

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/tuple
+slug: /en/sql-reference/data-types/tuple
 sidebar_position: 34
 sidebar_label: Tuple(T1, T2, ...)
 ---

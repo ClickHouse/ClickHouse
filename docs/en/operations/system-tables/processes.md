@@ -1,10 +1,9 @@
 ---
-description: "System table used for implementing the `SHOW PROCESSLIST` query."
-slug: /operations/system-tables/processes
-title: "processes"
-keywords: ["system table", "processes"]
+slug: /en/operations/system-tables/processes
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
+# processes
 
 <SystemTableCloud/>
 

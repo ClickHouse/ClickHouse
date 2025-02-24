@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/other-functions
+slug: /en/sql-reference/functions/other-functions
 sidebar_position: 140
 sidebar_label: Other
 ---
@@ -713,7 +713,7 @@ Given the database name, the table name, and the column name as constant strings
 **Syntax**
 
 ```sql
-hasColumnInTable(\['hostname'\[, 'username'\[, 'password'\]\],\] 'database', 'table', 'column')
+hasColumnInTable(\[‘hostname’\[, ‘username’\[, ‘password’\]\],\] ‘database’, ‘table’, ‘column’)
 ```
 
 **Parameters**
@@ -830,9 +830,9 @@ There are two variations of this function:
 
 `array_from` – Constant array of values to convert.
 
-`array_to` – Constant array of values to convert the values in 'from' to.
+`array_to` – Constant array of values to convert the values in ‘from’ to.
 
-`default` – Which value to use if 'x' is not equal to any of the values in 'from'.
+`default` – Which value to use if ‘x’ is not equal to any of the values in ‘from’.
 
 `array_from` and `array_to` must have equally many elements.
 
@@ -868,7 +868,7 @@ ORDER BY c DESC
 
 ### transform(x, array_from, array_to)
 
-Similar to the other variation but has no 'default' argument. In case no match can be found, `x` is returned.
+Similar to the other variation but has no ‘default’ argument. In case no match can be found, `x` is returned.
 
 Example:
 
@@ -1238,7 +1238,7 @@ least(a, b)
 ```
 
 :::note
-Version [24.12](/docs/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## greatest
@@ -1252,12 +1252,12 @@ greatest(a, b)
 ```
 
 :::note
-Version [24.12](/docs/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](https://clickhouse.com/docs/en/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## uptime
 
-Returns the server's uptime in seconds.
+Returns the server’s uptime in seconds.
 If executed in the context of a distributed table, this function generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 **Syntax**
@@ -1295,7 +1295,7 @@ Returns the current version of ClickHouse as a string in the form of:
 - Patch version
 - Number of commits since the previous stable release.
 
-```text
+```plaintext
 major_version.minor_version.patch_version.number_of_commits_since_the_previous_stable_release
 ```
 
@@ -1507,147 +1507,6 @@ Result:
 │                      9 │
 └────────────────────────┘
 ```
-
-## normalizeQuery
-
-Replaces literals, sequences of literals and complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs) with placeholder `?`.
-
-**Syntax**
-
-``` sql
-normalizeQuery(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Sequence of characters with placeholders. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('[1, 2, 3, x]') AS query;
-```
-
-Result:
-
-```result
-┌─query────┐
-│ [?.., x] │
-└──────────┘
-```
-
-## normalizeQueryKeepNames
-
-Replaces literals, sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs). This helps better analyze complex query logs.
-
-**Syntax**
-
-``` sql
-normalizeQueryKeepNames(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Sequence of characters with placeholders. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
-```
-
-Result:
-
-```result
-┌─normalizeQuery('SELECT 1 AS aComplexName123')─┬─normalizeQueryKeepNames('SELECT 1 AS aComplexName123')─┐
-│ SELECT ? AS `?`                               │ SELECT ? AS aComplexName123                            │
-└───────────────────────────────────────────────┴────────────────────────────────────────────────────────┘
-```
-
-## normalizedQueryHash
-
-Returns identical 64bit hash values without the values of literals for similar queries. Can be helpful to analyze query logs.
-
-**Syntax**
-
-``` sql
-normalizedQueryHash(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
-```
-
-Result:
-
-```result
-┌─res─┐
-│   1 │
-└─────┘
-```
-
-## normalizedQueryHashKeepNames
-
-Like [normalizedQueryHash](#normalizedqueryhash) it returns identical 64bit hash values without the values of literals for similar queries but it does not replace complex aliases (containing whitespace, more than two digits
-or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can be helpful to analyze query logs.
-
-**Syntax**
-
-``` sql
-normalizedQueryHashKeepNames(x)
-```
-
-**Arguments**
-
-- `x` — Sequence of characters. [String](../data-types/string.md).
-
-**Returned value**
-
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
-
-**Example**
-
-``` sql
-SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
-SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
-```
-
-Result:
-
-```result
-┌─normalizedQueryHash─┐
-│                   0 │
-└─────────────────────┘
-┌─normalizedQueryHashKeepNames─┐
-│                            1 │
-└──────────────────────────────┘
-```
-
 
 ## neighbor
 
@@ -3054,7 +2913,7 @@ SELECT getSetting('custom_a');
 
 Result:
 
-```text
+```
 123
 ```
 
@@ -3091,7 +2950,7 @@ SELECT getSettingOrDefault('custom_undef3', NULL);
 
 Result:
 
-```text
+```
 my_value
 100
 NULL
@@ -3420,40 +3279,6 @@ Query:
 CREATE TABLE tmp (str String) ENGINE = Log;
 INSERT INTO tmp (*) VALUES ('a');
 SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
-```
-
-Result:
-
-```text
-┌─count()─┐
-│ 1       │
-└─────────┘
-```
-
-## initialQueryStartTime
-
-Returns the start time of the initial current query.
-
-`initialQueryStartTime` returns the same results on different shards (see example).
-
-**Syntax**
-
-```sql
-initialQueryStartTime()
-```
-
-**Returned value**
-
-- The start time of the initial current query. [DateTime](../data-types/datetime.md)
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE tmp (str String) ENGINE = Log;
-INSERT INTO tmp (*) VALUES ('a');
-SELECT count(DISTINCT t) FROM (SELECT initialQueryStartTime() AS t FROM remote('127.0.0.{1..3}', currentDatabase(), 'tmp') GROUP BY queryID());
 ```
 
 Result:
@@ -4198,7 +4023,7 @@ If the function is used in the context of a distributed query, it returns non-em
 
 ## showCertificate
 
-Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](/docs/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](https://clickhouse.com/docs/en/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
 
 **Syntax**
 
@@ -4373,17 +4198,17 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the ID of a [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the ID of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
-```xml
+```
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4423,18 +4248,18 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the newest snapshot (Commit Sequence Number) of a [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
-```xml
+```
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4470,18 +4295,18 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
 
-```xml
+```
 <clickhouse>
   <allow_experimental_transactions>1</allow_experimental_transactions>
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](https://clickhouse.com/docs/en/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**

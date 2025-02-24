@@ -243,9 +243,12 @@ void DWARFBlockInputFormat::initializeIfNeeded()
         pool->scheduleOrThrowOnError(
             [this, thread_group = CurrentThread::getGroup()]()
             {
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
                 try
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "DWARFDecoder");
+                    setThreadName("DWARFDecoder");
 
                     std::unique_lock lock(mutex);
                     while (!units_queue.empty() && !is_stopped)
@@ -643,18 +646,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // If the offset is relative to the current unit, we convert it to be relative to the .debug_info
                         // section start. This seems more convenient for the user (e.g. for JOINs), but it's
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
-                        if (need[COL_ATTR_INT])
-                        {
-                            uint64_t ref;
-                            if (std::optional<uint64_t> offset = val.getAsRelativeReference())
-                                ref = val.getUnit()->getOffset() + *offset;
-                            else if (offset = val.getAsDebugInfoReference(); offset)
-                                ref = *offset;
-                            else
-                                ref = 0;
-
-                            col_attr_int->insertValue(ref);
-                        }
+                        if (need[COL_ATTR_INT]) col_attr_int->insertValue(val.getAsReference().value_or(0));
                         if (need[COL_ATTR_STR]) col_attr_str->insertDefault();
                         break;
 

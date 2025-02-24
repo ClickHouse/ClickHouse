@@ -1,5 +1,5 @@
 ---
-slug: /operations/workload-scheduling
+slug: /en/operations/workload-scheduling
 sidebar_position: 69
 sidebar_label: "Workload scheduling"
 title: "Workload scheduling"
@@ -210,12 +210,12 @@ Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default
 :::
 
 ## See also
- - [system.scheduler](/docs/operations/system-tables/scheduler.md)
- - [system.workloads](/docs/operations/system-tables/workloads.md)
- - [system.resources](/docs/operations/system-tables/resources.md)
- - [merge_workload](/docs/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
- - [merge_workload](/docs/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
- - [mutation_workload](/docs/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
- - [mutation_workload](/docs/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
- - [workload_path](/docs/operations/server-configuration-parameters/settings.md#workload_path) global server setting
- - [workload_zookeeper_path](/docs/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting
+ - [system.scheduler](/docs/en/operations/system-tables/scheduler.md)
+ - [system.workloads](/docs/en/operations/system-tables/workloads.md)
+ - [system.resources](/docs/en/operations/system-tables/resources.md)
+ - [merge_workload](/docs/en/operations/settings/merge-tree-settings.md#merge_workload) merge tree setting
+ - [merge_workload](/docs/en/operations/server-configuration-parameters/settings.md#merge_workload) global server setting
+ - [mutation_workload](/docs/en/operations/settings/merge-tree-settings.md#mutation_workload) merge tree setting
+ - [mutation_workload](/docs/en/operations/server-configuration-parameters/settings.md#mutation_workload) global server setting
+ - [workload_path](/docs/en/operations/server-configuration-parameters/settings.md#workload_path) global server setting
+ - [workload_zookeeper_path](/docs/en/operations/server-configuration-parameters/settings.md#workload_zookeeper_path) global server setting

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/offset
+slug: /en/sql-reference/statements/select/offset
 sidebar_label: OFFSET
 title: "OFFSET FETCH Clause"
 ---

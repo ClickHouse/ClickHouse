@@ -1,5 +1,5 @@
 ---
-slug: /operations/analyzer
+slug: /en/operations/analyzer
 sidebar_label: Analyzer
 title: Analyzer
 description: Details about ClickHouse's query analyzer

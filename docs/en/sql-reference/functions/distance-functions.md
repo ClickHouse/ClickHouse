@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/distance-functions
+slug: /en/sql-reference/functions/distance-functions
 sidebar_position: 55
 sidebar_label: Distance
 ---

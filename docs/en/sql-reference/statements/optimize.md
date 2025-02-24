@@ -1,14 +1,14 @@
 ---
-slug: /sql-reference/statements/optimize
+slug: /en/sql-reference/statements/optimize
 sidebar_position: 47
 sidebar_label: OPTIMIZE
 title: "OPTIMIZE Statement"
 ---
 
-This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/docs/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
+This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/docs/en/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
 
 :::note
-`OPTIMIZE` can't fix the `Too many parts` error.
+`OPTIMIZE` can’t fix the `Too many parts` error.
 :::
 
 **Syntax**
@@ -17,7 +17,7 @@ This query tries to initialize an unscheduled merge of data parts for tables. No
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
 ```
 
-The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family (including [materialized views](../../sql-reference/statements/create/view.md#materialized-view)) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren't supported.
+The `OPTIMIZE` query is supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family (including [materialized views](../../sql-reference/statements/create/view.md#materialized-view)) and the [Buffer](../../engines/table-engines/special/buffer.md) engines. Other table engines aren’t supported.
 
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all replicas (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `2`) or on current replica (if the [alter_sync](../../operations/settings/settings.md#alter-sync) setting is set to `1`).
 
@@ -72,18 +72,15 @@ CREATE TABLE example (
 PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
-
 ``` sql
 INSERT INTO example (primary_key, secondary_key, value, partition_key)
 VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```
-
 ``` sql
 SELECT * FROM example;
 ```
 Result:
-
-```sql
+```
 
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           0 │             0 │     0 │             0 │
@@ -97,7 +94,6 @@ Result:
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
 All following examples are executed against this state with 5 rows.
 
 #### `DEDUPLICATE`
@@ -106,14 +102,11 @@ When columns for deduplication are not specified, all of them are taken into acc
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE;
 ```
-
 ``` sql
 SELECT * FROM example;
 ```
-
 Result:
-
-```response
+```
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -125,22 +118,16 @@ Result:
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
 #### `DEDUPLICATE BY *`
-
 When columns are specified implicitly, the table is deduplicated by all columns that are not `ALIAS` or `MATERIALIZED`. Considering the table above, these are `primary_key`, `secondary_key`, `value`, and `partition_key` columns:
-
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 ```
-
 ``` sql
 SELECT * FROM example;
 ```
-
 Result:
-
-```response
+```
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -152,21 +139,17 @@ Result:
 │           1 │             1 │     3 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
 #### `DEDUPLICATE BY * EXCEPT`
 Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
 
 ``` sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
 ```
-
 ``` sql
 SELECT * FROM example;
 ```
-
 Result:
-
-```response
+```
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -177,21 +160,16 @@ Result:
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
 #### `DEDUPLICATE BY <list of columns>`
-
 Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns:
-
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
 ```
-
 ``` sql
 SELECT * FROM example;
 ```
 Result:
-
-```response
+```
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -202,22 +180,16 @@ Result:
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-
 #### `DEDUPLICATE BY COLUMNS(<regex>)`
-
 Deduplicate by all columns matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
-
 ```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
 ```
-
 ``` sql
 SELECT * FROM example;
 ```
-
 Result:
-
-```response
+```
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           0 │             0 │     0 │             0 │
 └─────────────┴───────────────┴───────┴───────────────┘

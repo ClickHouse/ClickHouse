@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/format
+slug: /en/sql-reference/table-functions/format
 sidebar_position: 65
 sidebar_label: format
 ---

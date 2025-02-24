@@ -1,6 +1,6 @@
 ---
 title : ODBCDriver2
-slug: /interfaces/formats/ODBCDriver2
+slug : /en/interfaces/formats/ODBCDriver2
 keywords : [ODBCDriver2]
 ---
 

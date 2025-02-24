@@ -1,4 +1,3 @@
-#include <Common/Exception.h>
 #include <IO/StdStreamBufFromReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/rename
+slug: /en/sql-reference/statements/rename
 sidebar_position: 48
 sidebar_label: RENAME
 ---

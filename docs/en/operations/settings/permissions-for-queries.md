@@ -1,5 +1,5 @@
 ---
-slug: /operations/settings/permissions-for-queries
+slug: /en/operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: Permissions for Queries
 ---
@@ -40,7 +40,7 @@ Possible values:
 Default value: 0
 
 :::note
-After setting `readonly = 1`, the user can't change `readonly` and `allow_ddl` settings in the current session.
+After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl` settings in the current session.
 
 When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
 

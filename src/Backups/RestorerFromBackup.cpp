@@ -24,7 +24,6 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <base/insertAtEnd.h>
 #include <Core/Settings.h>
 

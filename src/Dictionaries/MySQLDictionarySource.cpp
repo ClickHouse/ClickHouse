@@ -136,9 +136,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                     addresses,
                     named_collection->getAnyOrDefault<String>({"user", "username"}, ""),
                     named_collection->getOrDefault<String>("password", ""),
-                    named_collection->getOrDefault<String>("ssl_ca", ""),
-                    named_collection->getOrDefault<String>("ssl_cert", ""),
-                    named_collection->getOrDefault<String>("ssl_key", ""),
                     mysql_settings));
         }
         else
@@ -264,7 +261,6 @@ bool MySQLDictionarySource::isModified() const
 {
     if (!configuration.invalidate_query.empty())
     {
-        LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
         if (response == invalidate_query_response)
             return false;

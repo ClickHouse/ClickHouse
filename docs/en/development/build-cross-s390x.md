@@ -1,5 +1,5 @@
 ---
-slug: /development/build-cross-s390x
+slug: /en/development/build-cross-s390x
 sidebar_position: 30
 sidebar_label: Build on Linux for s390x (zLinux)
 ---

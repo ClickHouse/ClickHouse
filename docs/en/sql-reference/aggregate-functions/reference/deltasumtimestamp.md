@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/deltasumtimestamp
+slug: /en/sql-reference/aggregate-functions/reference/deltasumtimestamp
 sidebar_position: 130
 title: deltaSumTimestamp
 ---

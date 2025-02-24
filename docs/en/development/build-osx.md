@@ -1,5 +1,5 @@
 ---
-slug: /development/build-osx
+slug: /en/development/build-osx
 sidebar_position: 15
 sidebar_label: Build on macOS for macOS
 ---
@@ -69,10 +69,10 @@ cmake --open .
 
 ## Caveats
 
-If you intend to run `clickhouse-server`, make sure to increase the system's `maxfiles` variable.
+If you intend to run `clickhouse-server`, make sure to increase the system’s `maxfiles` variable.
 
 :::note
-You'll need to use sudo.
+You’ll need to use sudo.
 :::
 
 To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
@@ -119,4 +119,4 @@ Load the file (or reboot):
 sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-To check if it's working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
+To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.

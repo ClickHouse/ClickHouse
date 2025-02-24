@@ -1,6 +1,6 @@
 ---
 title : Values
-slug: /interfaces/formats/Values
+slug : /en/interfaces/formats/Values
 keywords : [Values]
 input_format: true
 output_format: true
@@ -22,8 +22,8 @@ The `Values` format prints every row in brackets.
 - Strings, dates, and dates with times are output in quotes. 
 - Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
 
-During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
-[`NULL`](/docs/sql-reference/syntax.md) is represented as `NULL`.
+During formatting, extra spaces aren’t inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
+[`NULL`](/docs/en/sql-reference/syntax.md) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in the `Values` format: 
 - single quotes

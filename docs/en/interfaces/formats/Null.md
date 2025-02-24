@@ -1,6 +1,6 @@
 ---
 title : "Null"
-slug: /interfaces/formats/Null
+slug : /en/interfaces/formats/Null
 keywords : ["Null"]
 input_format: false
 output_format: true

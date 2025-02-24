@@ -1,6 +1,6 @@
 ---
 title : MySQLWire
-slug: /interfaces/formats/MySQLWire
+slug : /en/interfaces/formats/MySQLWire
 keywords : [MySQLWire]
 ---
 

@@ -1,6 +1,6 @@
 ---
 title : JSONStringsEachRow
-slug: /interfaces/formats/JSONStringsEachRow
+slug : /en/interfaces/formats/JSONStringsEachRow
 keywords : [JSONStringsEachRow]
 input_format: false
 output_format: true

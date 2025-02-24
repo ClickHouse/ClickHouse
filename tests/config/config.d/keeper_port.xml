@@ -2,7 +2,6 @@
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
-        <four_letter_word_allow_list>*</four_letter_word_allow_list>
 
         <create_snapshot_on_exit>0</create_snapshot_on_exit>
         <digest_enabled>1</digest_enabled>

@@ -4,9 +4,9 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
-
 #include <cstdint>
+#include <Common/Exception.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
 namespace Iceberg
 {

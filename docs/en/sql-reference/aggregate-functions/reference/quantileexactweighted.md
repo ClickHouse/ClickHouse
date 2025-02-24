@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexactweighted
+slug: /en/sql-reference/aggregate-functions/reference/quantileexactweighted
 sidebar_position: 174
 ---
 
@@ -65,4 +65,4 @@ Result:
 **See Also**
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](/docs/sql-reference/aggregate-functions/reference/quantiles)
+- [quantiles](/docs/en/sql-reference/aggregate-functions/reference/quantiles)

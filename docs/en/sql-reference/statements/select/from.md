@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/from
+slug: /en/sql-reference/statements/select/from
 sidebar_label: FROM
 ---
 

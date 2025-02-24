@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/special/buffer
+slug: /en/engines/table-engines/special/buffer
 sidebar_position: 120
 sidebar_label:  Buffer
 ---
@@ -9,7 +9,7 @@ sidebar_label:  Buffer
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/docs/guides/best-practices/asyncinserts.md).
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/docs/en/guides/best-practices/asyncinserts.md).
 :::
 
 ``` sql
@@ -66,7 +66,7 @@ Example:
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
-Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the 'merge.hits' table. A single buffer is created and the data is flushed if either:
+Creating a `merge.hits_buffer` table with the same structure as `merge.hits` and using the Buffer engine. When writing to this table, data is buffered in RAM and later written to the ‘merge.hits’ table. A single buffer is created and the data is flushed if either:
 - 100 seconds have passed since the last flush (`max_time`) or
 - 1 million rows have been written (`max_rows`) or
 - 100 MB of data have been written (`max_bytes`) or
@@ -98,10 +98,10 @@ When adding data to a Buffer table, one of the buffers is locked. This causes de
 
 Data that is inserted into a Buffer table may end up in the subordinate table in a different order and in different blocks. Because of this, a Buffer table is difficult to use for writing to a CollapsingMergeTree correctly. To avoid problems, you can set `num_layers` to 1.
 
-If the destination table is replicated, some expected characteristics of replicated tables are lost when writing to a Buffer table. The random changes to the order of rows and sizes of data parts cause data deduplication to quit working, which means it is not possible to have a reliable 'exactly once' write to replicated tables.
+If the destination table is replicated, some expected characteristics of replicated tables are lost when writing to a Buffer table. The random changes to the order of rows and sizes of data parts cause data deduplication to quit working, which means it is not possible to have a reliable ‘exactly once’ write to replicated tables.
 
 Due to these disadvantages, we can only recommend using a Buffer table in rare cases.
 
-A Buffer table is used when too many INSERTs are received from a large number of servers over a unit of time, and data can't be buffered before insertion, which means the INSERTs can't run fast enough.
+A Buffer table is used when too many INSERTs are received from a large number of servers over a unit of time, and data can’t be buffered before insertion, which means the INSERTs can’t run fast enough.
 
 Note that it does not make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second while inserting larger blocks of data can produce over a million rows per second.

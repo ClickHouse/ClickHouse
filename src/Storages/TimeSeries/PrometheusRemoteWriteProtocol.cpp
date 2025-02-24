@@ -5,11 +5,8 @@
 
 #include <algorithm>
 
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -30,7 +27,6 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -276,7 +272,7 @@ namespace
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             const auto & column_description = get_column_description(column_name);

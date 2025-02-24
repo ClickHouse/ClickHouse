@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/integrations/jdbc
+slug: /en/engines/table-engines/integrations/jdbc
 sidebar_position: 100
 sidebar_label: JDBC
 ---
@@ -45,7 +45,7 @@ ENGINE = JDBC(datasource_uri, external_database, external_table)
 
 ## Usage Example {#usage-example}
 
-Creating a table in MySQL server by connecting directly with it's console client:
+Creating a table in MySQL server by connecting directly with it’s console client:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (

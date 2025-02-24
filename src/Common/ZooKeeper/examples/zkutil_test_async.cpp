@@ -1,6 +1,5 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
-#include <iostream>
 
 
 int main(int argc, char ** argv)

@@ -813,7 +813,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getEnabledQuota(
     const UUID & user_id,
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
-    const std::shared_ptr<Poco::Net::IPAddress> & address,
+    const Poco::Net::IPAddress & address,
     const String & forwarded_address,
     const String & custom_quota_key) const
 {
@@ -838,7 +838,7 @@ std::shared_ptr<const EnabledQuota> AccessControl::getAuthenticationQuota(
         return quota_cache->getEnabledQuota(*user_id,
                                             user->getName(),
                                             roles_info->enabled_roles,
-                                            std::make_shared<Poco::Net::IPAddress>(address),
+                                            address,
                                             forwarded_address,
                                             quota_key,
                                             throw_if_client_key_empty);

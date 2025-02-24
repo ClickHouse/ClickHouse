@@ -10,12 +10,10 @@ from typing import Tuple
 
 import docker_images_helper
 from ci_config import CI
-from ci_utils import Shell
-from env_helper import REPO_COPY, S3_BUILDS_BUCKET
-from git_helper import Git, checkout_submodules, unshallow
+from env_helper import REPO_COPY, S3_BUILDS_BUCKET, TEMP_PATH
+from git_helper import Git
 from pr_info import PRInfo
 from report import FAILURE, SUCCESS, JobReport, StatusType
-from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 from version_helper import (
@@ -154,19 +152,11 @@ def main():
     build_config = CI.JOB_CONFIGS[build_name].build_config
     assert build_config
 
-    repo_path = Path(REPO_COPY)
-    temp_path = repo_path / "ci" / "tmp"
+    temp_path = Path(TEMP_PATH)
     temp_path.mkdir(parents=True, exist_ok=True)
+    repo_path = Path(REPO_COPY)
 
     pr_info = PRInfo()
-
-    if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
-        print("Unshallow repo")
-        unshallow()
-
-    print("Fetch submodules")
-    # TODO: test sparse checkout: update-submodules.sh?
-    checkout_submodules()
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -186,7 +176,7 @@ def main():
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = temp_path / "build"
+    build_output_path = temp_path / build_name
     build_output_path.mkdir(parents=True, exist_ok=True)
 
     docker_image = docker_images_helper.pull_image(
@@ -228,24 +218,6 @@ def main():
                 "The dockerd looks down, won't upload anything and generate report"
             )
             sys.exit(1)
-    else:
-        static_bin_name = CI.get_build_config(build_name).static_binary_name
-        if pr_info.is_master and static_bin_name:
-            s3 = S3Helper()
-            # Full binary with debug info:
-            s3_path_full = "/".join(
-                (pr_info.base_ref, static_bin_name, "clickhouse-full")
-            )
-            binary_full = Path(build_output_path) / "clickhouse"
-            url_full = s3.upload_build_file_to_s3(binary_full, s3_path_full)
-            print(f"::notice ::Binary static URL (with debug info): {url_full}")
-            # Stripped binary without debug info:
-            s3_path_compact = "/".join(
-                (pr_info.base_ref, static_bin_name, "clickhouse")
-            )
-            binary_compact = Path(build_output_path) / "clickhouse-stripped"
-            url_compact = s3.upload_build_file_to_s3(binary_compact, s3_path_compact)
-            print(f"::notice ::Binary static URL (compact): {url_compact}")
 
     JobReport(
         description=version.describe,

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/ip-address-functions
+slug: /en/sql-reference/functions/ip-address-functions
 sidebar_position: 95
 sidebar_label: IP Addresses
 ---
@@ -57,7 +57,7 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Since using 'xxx' is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
+Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
 
 ### IPv6NumToString(x)
 

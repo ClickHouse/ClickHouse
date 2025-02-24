@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/jdbc
+slug: /en/sql-reference/table-functions/jdbc
 sidebar_position: 100
 sidebar_label: jdbc
 ---

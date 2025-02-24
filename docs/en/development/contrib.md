@@ -1,5 +1,5 @@
 ---
-slug: /development/contrib
+slug: /en/development/contrib
 sidebar_position: 60
 sidebar_label: Third-Party Libraries
 ---

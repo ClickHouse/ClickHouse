@@ -1,6 +1,6 @@
 ---
 title : CustomSeparatedWithNamesAndTypes
-slug: /interfaces/formats/CustomSeparatedWithNamesAndTypes
+slug : /en/interfaces/formats/CustomSeparatedWithNamesAndTypes
 keywords : [CustomSeparatedWithNamesAndTypes]
 input_format: true
 output_format: true

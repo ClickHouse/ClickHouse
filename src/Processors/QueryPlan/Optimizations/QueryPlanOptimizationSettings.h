@@ -69,7 +69,6 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_ann_queries;
 
     bool keep_logical_steps;
-    bool is_explain;
 };
 
 }

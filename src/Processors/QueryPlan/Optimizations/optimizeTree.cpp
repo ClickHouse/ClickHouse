@@ -80,15 +80,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 continue;
 
             if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
-            {
-                if (optimization_settings.is_explain)
-                    return;
-
                 throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
                                 "Too many optimizations applied to query plan. Current limit {}",
                                 max_optimizations_to_apply);
-            }
-
 
             /// Try to apply optimization.
             Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
@@ -215,13 +209,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 applied_projection_names.insert(*applied_projection);
 
                 if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
-                {
-                    /// Limit only first pass in EXPLAIN mode.
-                    if (!optimization_settings.is_explain)
-                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                        "Too many projection optimizations applied to query plan. Current limit {}",
-                                        max_optimizations_to_apply);
-                }
+                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                    "Too many projection optimizations applied to query plan. Current limit {}",
+                                    max_optimizations_to_apply);
 
                 /// Stack is updated after this optimization and frame is not valid anymore.
                 /// Try to apply optimizations again to newly added plan steps.

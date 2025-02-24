@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/odbc
+slug: /en/sql-reference/table-functions/odbc
 sidebar_position: 150
 sidebar_label: odbc
 ---

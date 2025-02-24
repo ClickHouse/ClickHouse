@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/map
+slug: /en/sql-reference/data-types/map
 sidebar_position: 36
 sidebar_label: Map(K, V)
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/files
+slug: /en/sql-reference/functions/files
 sidebar_position: 75
 sidebar_label: Files
 ---

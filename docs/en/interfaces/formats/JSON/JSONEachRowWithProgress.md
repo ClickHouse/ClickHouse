@@ -1,6 +1,6 @@
 ---
 title : JSONEachRowWithProgress
-slug: /interfaces/formats/JSONEachRowWithProgress
+slug : /en/interfaces/formats/JSONEachRowWithProgress
 keywords : [JSONEachRowWithProgress]
 input_format: false
 output_format: true

@@ -4,7 +4,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
-#include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
@@ -404,7 +403,14 @@ void PipelineExecutor::spawnThreadsImpl()
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            ThreadGroupSwitcher switcher(thread_group, "QueryPipelineEx");
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachFromGroupIfNotDetached();
+            );
+            setThreadName("QueryPipelineEx");
+
+            if (thread_group)
+                CurrentThread::attachToGroup(thread_group);
 
             try
             {

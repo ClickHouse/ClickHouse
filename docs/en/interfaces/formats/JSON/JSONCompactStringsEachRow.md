@@ -1,6 +1,6 @@
 ---
 title : JSONCompactStringsEachRow
-slug: /interfaces/formats/JSONCompactStringsEachRow
+slug : /en/interfaces/formats/JSONCompactStringsEachRow
 keywords : [JSONCompactStringsEachRow]
 input_format: true
 output_format: true

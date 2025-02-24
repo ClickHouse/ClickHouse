@@ -34,6 +34,9 @@
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc
+[submodule "contrib/unixodbc"]
+	path = contrib/unixodbc
+	url = https://github.com/ClickHouse/UnixODBC
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -124,7 +127,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/anrieff/libcpuid
+	url = https://github.com/ClickHouse/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap
@@ -173,6 +176,9 @@
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
+[submodule "contrib/nanodbc"]
+	path = contrib/nanodbc
+	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/apache/datasketches-cpp
@@ -224,12 +230,6 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
-[submodule "contrib/qpl"]
-	path = contrib/qpl
-	url = https://github.com/intel/qpl
-[submodule "contrib/idxd-config"]
-	path = contrib/idxd-config
-	url = https://github.com/ClickHouse/idxd-config.git
 [submodule "contrib/QAT-ZSTD-Plugin"]
 	path = contrib/QAT-ZSTD-Plugin
 	url = https://github.com/intel/QAT-ZSTD-Plugin

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/having
+slug: /en/sql-reference/statements/select/having
 sidebar_label: HAVING
 ---
 
@@ -11,4 +11,4 @@ It is possible to reference aggregation results from `SELECT` clause in `HAVING`
 
 ## Limitations
 
-`HAVING` can't be used if aggregation is not performed. Use `WHERE` instead.
+`HAVING` can’t be used if aggregation is not performed. Use `WHERE` instead.

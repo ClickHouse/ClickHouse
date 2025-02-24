@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/bitmap-functions
+slug: /en/sql-reference/functions/bitmap-functions
 sidebar_position: 25
 sidebar_label: Bitmap
 ---

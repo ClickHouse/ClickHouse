@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraysample
+slug: /en/sql-reference/aggregate-functions/reference/grouparraysample
 sidebar_position: 145
 ---
 

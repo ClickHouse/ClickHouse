@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/stddevpop
+slug: /en/sql-reference/aggregate-functions/reference/stddevpop
 sidebar_position: 188
 ---
 

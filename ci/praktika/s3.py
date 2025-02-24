@@ -34,7 +34,7 @@ class S3:
         assert len(s3_path.split("/")) > 2, "check to not delete too much"
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
         if include:
-            cmd += f' --exclude "*" --include "{include}"'
+            cmd += f' --include "{include}" --exclude "*"'
         cls.run_command_with_retries(cmd, retries=1)
         return
 
@@ -83,8 +83,9 @@ class S3:
             for k, v in metadata.items():
                 command += f" --metadata {k}={v}"
 
+        cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
-            command += " --content-type text/plain"
+            cmd += " --content-type text/plain"
         res = cls.run_command_with_retries(command)
         return res
 

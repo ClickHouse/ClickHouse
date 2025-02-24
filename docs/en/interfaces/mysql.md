@@ -1,5 +1,5 @@
 ---
-slug: /interfaces/mysql
+slug: /en/interfaces/mysql
 sidebar_position: 20
 sidebar_label: MySQL Interface
 ---
@@ -62,14 +62,14 @@ For ClickHouse Cloud hostname like `foobar.us-east1.aws.clickhouse.cloud`, the `
 
 You can create extra users to use with the MySQL interface if, for example, you need to apply extra settings.
 
-1. Optional - create a [settings profile](/docs/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
+1. Optional - create a [settings profile](https://clickhouse.com/docs/en/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
 
     ```sql
     CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
     ```
 
     `prefer_column_name_to_alias` is used just as an example, you can use other settings there.
-2. [Create a user](/docs/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
+2. [Create a user](https://clickhouse.com/docs/en/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
 
     ```sql
     CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
@@ -82,7 +82,7 @@ You can create extra users to use with the MySQL interface if, for example, you 
     ```
 
     where `my_custom_profile` is the name of the profile you created earlier.
-3. [Grant](/docs/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
+3. [Grant](https://clickhouse.com/docs/en/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
 
     ```sql
     GRANT SELECT ON system.query_log TO mysql4foobar_team1;
@@ -94,7 +94,7 @@ You can create extra users to use with the MySQL interface if, for example, you 
 
 If you created a new MySQL user, and you see the following error while connecting via MySQL CLI client:
 
-```sql
+```
 ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
 ```
 
@@ -112,7 +112,7 @@ Add the [mysql_port](../operations/server-configuration-parameters/settings.md#m
 
 Startup your ClickHouse server and look for a log message similar to the following that mentions Listening for MySQL compatibility protocol:
 
-```bash
+```
 {} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
 ```
 
@@ -149,7 +149,7 @@ mysql>
 ```
 
 For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
 
 Restrictions:
 

@@ -1,6 +1,6 @@
 ---
 title : Form
-slug: /interfaces/formats/Form
+slug : /en/interfaces/formats/Form
 keywords : [Form]
 input_format: true
 output_format: false

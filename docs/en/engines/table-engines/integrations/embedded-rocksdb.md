@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/integrations/embedded-rocksdb
+slug: /en/engines/table-engines/integrations/embedded-rocksdb
 sidebar_position: 50
 sidebar_label: EmbeddedRocksDB
 ---
@@ -222,5 +222,5 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins
-- [`join_algorithm` setting](/docs/operations/settings/settings.md#join_algorithm)
-- [JOIN clause](/docs/sql-reference/statements/select/join.md)
+- [`join_algorithm` setting](/docs/en/operations/settings/settings.md#join_algorithm)
+- [JOIN clause](/docs/en/sql-reference/statements/select/join.md)

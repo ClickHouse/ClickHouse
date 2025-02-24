@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexact
+slug: /en/sql-reference/aggregate-functions/reference/quantileexact
 sidebar_position: 173
 ---
 
@@ -32,26 +32,7 @@ Alias: `medianExact`.
 
 Type:
 
-- For numeric data types the output format will be the same as the input format. For example:
-
-```sql
-
-SELECT
-    toTypeName(quantileExact(number)) AS `quantile`,
-    toTypeName(quantileExact(number::Int32)) AS `quantile_int32`,
-    toTypeName(quantileExact(number::Float32)) AS `quantile_float32`,
-    toTypeName(quantileExact(number::Float64)) AS `quantile_float64`,
-    toTypeName(quantileExact(number::Int64)) AS `quantile_int64`
-FROM numbers(1)
-
-
-   ┌─quantile─┬─quantile_int32─┬─quantile_float32─┬─quantile_float64─┬─quantile_int64─┐
-1. │ UInt64   │ Int32          │ Float32          │ Float64          │ Int64          │
-   └──────────┴────────────────┴──────────────────┴──────────────────┴────────────────┘
-
-1 row in set. Elapsed: 0.002 sec.
-```
-
+- [Float64](../../../sql-reference/data-types/float.md) for numeric data type input.
 - [Date](../../../sql-reference/data-types/date.md) if input values have the `Date` type.
 - [DateTime](../../../sql-reference/data-types/datetime.md) if input values have the `DateTime` type.
 

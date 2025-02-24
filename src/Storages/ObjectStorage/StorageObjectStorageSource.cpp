@@ -1,7 +1,6 @@
 #include "StorageObjectStorageSource.h"
 #include <memory>
 #include <optional>
-#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>

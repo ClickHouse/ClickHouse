@@ -1,11 +1,9 @@
 ---
-description: "System table similar to `system.numbers` but reads are parallelized and numbers can be returned in any order."
-slug: /operations/system-tables/numbers_mt
-title: "numbers_mt"
-keywords: ["system table", "numbers_mt"]
+slug: /en/operations/system-tables/numbers_mt
 ---
+# numbers_mt
 
-The same as [`system.numbers`](../../operations/system-tables/numbers.md) but reads are parallelized. The numbers can be returned in any order.
+The same as [system.numbers](../../operations/system-tables/numbers.md) but reads are parallelized. The numbers can be returned in any order.
 
 Used for tests.
 

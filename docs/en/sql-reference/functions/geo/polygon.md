@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/geo/polygons
+slug: /en/sql-reference/functions/geo/polygons
 sidebar_label: Polygons
 title: "Functions for Working with Polygons"
 ---

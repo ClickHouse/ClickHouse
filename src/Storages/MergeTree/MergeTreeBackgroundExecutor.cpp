@@ -24,18 +24,8 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int NOT_IMPLEMENTED;
 }
 
-void RoundRobinRuntimeQueue::updatePolicy(std::string_view)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
-}
-
-void PriorityRuntimeQueue::updatePolicy(std::string_view)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
-}
 
 template <class Queue>
 MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(

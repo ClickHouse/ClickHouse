@@ -2,7 +2,7 @@
 sidebar_label: Install
 keywords: [clickhouse, install, getting started, quick start]
 description: Install ClickHouse
-slug: /install
+slug: /en/install
 ---
 
 import Tabs from '@theme/Tabs';
@@ -39,7 +39,7 @@ On Linux, macOS and FreeBSD:
    ```
 
    :::note
-   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/docs/knowledgebase/fix-developer-verification-error-in-macos).
+   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
    :::
 
 2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
@@ -81,7 +81,7 @@ On Linux, macOS and FreeBSD:
    You are ready to start sending SQL commands to ClickHouse!
 
 :::tip
-The [Quick Start](/docs/quick-start.mdx) walks through the steps for creating tables and inserting data.
+The [Quick Start](/docs/en/quick-start.mdx) walks through the steps for creating tables and inserting data.
 :::
 
 ## Production Deployments {#available-installation-options}
@@ -139,7 +139,7 @@ You can also download and install packages manually from [here](https://packages
 #### Install standalone ClickHouse Keeper
 
 :::tip
-In production environment we [strongly recommend](/docs/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -208,7 +208,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 #### Install standalone ClickHouse Keeper
 
 :::tip
-In production environment we [strongly recommend](/docs/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we [strongly recommend](/docs/en/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -277,7 +277,7 @@ tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
 sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
 ```
 
-For production environments, it's recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
 
 ### From Docker Image {#from-docker-image}
 
@@ -287,18 +287,18 @@ To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.doc
 
 ### Compile From Source {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](/docs/development/build.md) or [macOS](/docs/development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](/docs/en/development/build.md) or [macOS](/docs/en/development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages.
 
-```xml
+```
 Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
-You'll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
+You’ll need to create data and metadata folders manually and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
-```bash
+```
 /var/lib/clickhouse/data/default/
 /var/lib/clickhouse/metadata/default/
 ```
@@ -331,7 +331,7 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
 :::note
-For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/docs/knowledgebase/fix-developer-verification-error-in-macos).
+For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](https://clickhouse.com/docs/knowledgebase/fix-developer-verification-error-in-macos).
 :::
 
 ## Launch {#launch}
@@ -375,7 +375,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section ["Configuration Files"](/docs/operations/configuration-files.md).
+For more information, see the section [“Configuration Files”](/docs/en/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -386,11 +386,11 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section ["Command-line client"](/docs/interfaces/cli.md).
+For more information, see the section [“Command-line client”](/docs/en/interfaces/cli.md).
 
 Example:
 
-```bash
+```
 $ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
@@ -411,7 +411,7 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/tutorial.md).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/en/tutorial.md).
 
 ## Recommendations for Self-Managed ClickHouse
 
@@ -428,9 +428,9 @@ The required volume of RAM generally depends on:
 - The complexity of queries.
 - The amount of data that is processed in queries.
 
-To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/sql-reference/statements/select/join.md#select-join) and other operations you use.
+To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/en/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/en/sql-reference/statements/select/join.md#select-join) and other operations you use.
 
-To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/docs/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
+To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/docs/en/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
 
 We recommend to disable the operating system's swap file in production environments.
 

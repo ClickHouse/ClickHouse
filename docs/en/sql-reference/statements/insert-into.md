@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/insert-into
+slug: /en/sql-reference/statements/insert-into
 sidebar_position: 33
 sidebar_label: INSERT INTO
 ---
@@ -47,7 +47,7 @@ INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
 SELECT * FROM insert_select_testtable;
 ```
 
-```text
+```
 ┌─a─┬─b─┬─c─┐
 │ 2 │   │ 2 │
 └───┴───┴───┘
@@ -67,7 +67,7 @@ If a list of columns does not include all existing columns, the rest of the colu
 - The values calculated from the `DEFAULT` expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-Data can be passed to the INSERT in any [format](/docs/interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
+Data can be passed to the INSERT in any [format](/docs/en/interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -89,7 +89,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/docs/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/interfaces/http/).
+You can insert data separately from the query by using the [command-line client](/docs/en/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/en/interfaces/http/).
 
 :::note
 If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ the `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
@@ -178,7 +178,7 @@ clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
 ```
 
 :::tip
-In addition to selecting multiple files with `*`, you can use ranges (`{1,2}` or `{1..9}`) and other [glob substitutions](/docs/sql-reference/table-functions/file.md/#globs-in-path). These three all would work with the example above:
+In addition to selecting multiple files with `*`, you can use ranges (`{1,2}` or `{1..9}`) and other [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path). These three all would work with the example above:
 
 ```sql
 INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
@@ -252,11 +252,11 @@ Performance will not decrease if:
 
 It is possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To use asynchronous inserts, enable the [`async_insert`](../../operations/settings/settings.md#async-insert) setting.
 
-Using `async_insert` or the [`Buffer` table engine](/engines/table-engines/special/buffer) results in additional buffering.
+Using `async_insert` or the [`Buffer` table engine](/en/engines/table-engines/special/buffer) results in additional buffering.
 
 ### Large or long-running inserts
 
-When you are inserting large amounts of data, ClickHouse will optimize write performance through a process called "squashing". Small blocks of inserted data in memory are merged and squashed into larger blocks before being written to disk. Squashing reduces the overhead associated with each write operation. In this process, inserted data will be available to query after ClickHouse completes writing each [`max_insert_block_size`](/operations/settings/settings#max_insert_block_size) rows.
+When you are inserting large amounts of data, ClickHouse will optimize write performance through a process called "squashing". Small blocks of inserted data in memory are merged and squashed into larger blocks before being written to disk. Squashing reduces the overhead associated with each write operation. In this process, inserted data will be available to query after ClickHouse completes writing each [`max_insert_block_size`](/en/operations/settings/settings#max_insert_block_size) rows.
 
 **See Also**
 

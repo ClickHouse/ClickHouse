@@ -14,12 +14,10 @@
 #include <Poco/MongoDB/OpMsgCursor.h>
 #include <Poco/MongoDB/ObjectId.h>
 
-#include <Common/logger_useful.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/UUID.h>
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>

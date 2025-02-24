@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/null
+slug: /en/sql-reference/table-functions/null
 sidebar_position: 140
 sidebar_label: null function
 title: 'null'

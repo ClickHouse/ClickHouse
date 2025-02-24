@@ -1,10 +1,11 @@
 ---
-description: "2.5 billion rows of climate data for the last 120 yrs"
-slug: /getting-started/example-datasets/noaa
+slug: /en/getting-started/example-datasets/noaa
 sidebar_label: NOAA Global Historical Climatology Network 
 sidebar_position: 1
-title: "NOAA Global Historical Climatology Network"
+description: 2.5 billion rows of climate data for the last 120 yrs
 ---
+
+# NOAA Global Historical Climatology Network 
 
 This dataset contains weather measurements for the last 120 years. Each row is a measurement for a point in time and station.
 
@@ -98,7 +99,7 @@ Summarizing the format documentation and the columns in order:
     - WSFG - Peak gust wind speed (tenths of meters per second)
     - WT** = Weather Type where ** defines the weather type. Full list of weather types here.
 - DATA VALUE = 5 character data value for ELEMENT i.e. the value of the measurement.
-- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to "P" - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
+- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to “P” - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
 - Q-FLAG is the measurement quality flag with 14 possible values. We are only interested in data with an empty value i.e. it did not fail any quality assurance checks.
 - S-FLAG is the source flag for the observation. Not useful for our analysis and ignored.
 - OBS-TIME = 4-character time of observation in hour-minute format (i.e. 0700 =7:00 am). Typically not present in older data. We ignore this for our purposes.
@@ -116,7 +117,7 @@ FROM file('*.csv.gz', CSV, 'station_id String, date String, measurement String, 
 2679264563
 ```
 
-With over 2.6 billion rows, this isn't a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
+With over 2.6 billion rows, this isn’t a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
 
 
 ### Pivot data
@@ -269,7 +270,7 @@ Reassuringly consistent with the [documented record](https://en.wikipedia.org/wi
 
 ### Best ski resorts
 
-Using a [list of ski resorts](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv) in the united states and their respective locations, we join these against the top 1000 weather stations with the most in any month in the last 5 yrs. Sorting this join by [geoDistance](/docs/sql-reference/functions/geo/coordinates/#geodistance) and restricting the results to those where the distance is less than 20km, we select the top result per resort and sort this by total snow. Note we also restrict resorts to those above 1800m, as a broad indicator of good skiing conditions.
+Using a [list of ski resorts](https://gist.githubusercontent.com/gingerwizard/dd022f754fd128fdaf270e58fa052e35/raw/622e03c37460f17ef72907afe554cb1c07f91f23/ski_resort_stats.csv) in the united states and their respective locations, we join these against the top 1000 weather stations with the most in any month in the last 5 yrs. Sorting this join by [geoDistance](https://clickhouse.com/docs/en/sql-reference/functions/geo/coordinates/#geodistance) and restricting the results to those where the distance is less than 20km, we select the top result per resort and sort this by total snow. Note we also restrict resorts to those above 1800m, as a broad indicator of good skiing conditions.
 
 ```sql
 SELECT

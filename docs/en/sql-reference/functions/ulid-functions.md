@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/ulid-functions
+slug: /en/sql-reference/functions/ulid-functions
 sidebar_position: 190
 sidebar_label: ULID
 ---

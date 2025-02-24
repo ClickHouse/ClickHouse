@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/variant
+slug: /en/sql-reference/data-types/variant
 sidebar_position: 40
 sidebar_label: Variant(T1, T2, ...)
 ---

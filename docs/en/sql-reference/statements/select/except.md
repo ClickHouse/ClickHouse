@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/except
+slug: /en/sql-reference/statements/select/except
 sidebar_label: EXCEPT
 ---
 

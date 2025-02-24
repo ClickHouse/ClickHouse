@@ -79,22 +79,10 @@ def wait_rabbitmq_to_start(rabbitmq_docker_id, cookie, timeout=180):
             time.sleep(0.5)
 
 
-def kill_rabbitmq(rabbitmq_id, rabbitmq_cookie):
-    try:
-        p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
-        p.wait(timeout=30)
-        return p.returncode == 0
-    except Exception as ex:
-        print("Exception stopping rabbit MQ, will try forcefully", ex)
-        try:
-            p = subprocess.Popen(
-                ("docker", "stop", "-s", "9", rabbitmq_id), stdout=subprocess.PIPE
-            )
-            p.wait(timeout=30)
-            return p.returncode == 0
-        except Exception as e:
-            print("Exception stopping rabbit MQ forcefully", e)
-            revive_rabbitmq(rabbitmq_id, rabbitmq_cookie)
+def kill_rabbitmq(rabbitmq_id):
+    p = subprocess.Popen(("docker", "stop", rabbitmq_id), stdout=subprocess.PIPE)
+    p.wait(timeout=60)
+    return p.returncode == 0
 
 
 def revive_rabbitmq(rabbitmq_id, cookie):
@@ -2195,7 +2183,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster):
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
+    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(4)
     revive_rabbitmq(
         rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie
@@ -2282,7 +2270,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster):
     else:
         pytest.fail(f"Time limit of 180 seconds reached. The count is still 0.")
 
-    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie)
+    kill_rabbitmq(rabbitmq_cluster.rabbitmq_docker_id)
     time.sleep(8)
     revive_rabbitmq(
         rabbitmq_cluster.rabbitmq_docker_id, rabbitmq_cluster.rabbitmq_cookie

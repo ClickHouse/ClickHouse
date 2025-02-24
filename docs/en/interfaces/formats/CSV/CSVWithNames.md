@@ -1,6 +1,6 @@
 ---
 title : CSVWithNames
-slug: /interfaces/formats/CSVWithNames
+slug : /en/interfaces/formats/CSVWithNames
 keywords : [CSVWithNames]
 input_format: true
 output_format: true
@@ -13,7 +13,7 @@ alias: []
 
 ## Description
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](/docs/interfaces/formats/TabSeparatedWithNames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/docs/en/interfaces/formats/TabSeparatedWithNames).
 
 ## Example Usage
 

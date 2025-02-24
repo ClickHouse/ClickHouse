@@ -1,6 +1,6 @@
 ---
 title : ProtobufSingle
-slug: /interfaces/formats/ProtobufSingle
+slug : /en/interfaces/formats/ProtobufSingle
 keywords : [ProtobufSingle]
 input_format: true
 output_format: true

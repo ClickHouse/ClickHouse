@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/flame_graph
+slug: /en/sql-reference/aggregate-functions/reference/flame_graph
 sidebar_position: 138
 ---
 

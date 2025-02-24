@@ -1034,6 +1034,12 @@ SinkToStoragePtr StorageHive::write(const ASTPtr & /*query*/, const StorageMetad
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not implemented for StorageHive");
 }
 
+std::optional<UInt64> StorageHive::totalRows(const Settings & settings) const
+{
+    /// query_info is not used when prune_level == PruneLevel::None
+    return totalRowsImpl(settings, {}, getContext(), PruneLevel::None);
+}
+
 std::optional<UInt64> StorageHive::totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context_) const
 {
     return totalRowsImpl(context_->getSettingsRef(), &filter_actions_dag, context_, PruneLevel::Partition);

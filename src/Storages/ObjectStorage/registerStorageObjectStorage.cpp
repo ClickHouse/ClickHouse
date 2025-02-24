@@ -8,8 +8,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
-#include <Databases/LoadingStrictnessLevel.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include "Common/logger_useful.h"
+#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
 namespace DB
 {
@@ -63,9 +63,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
-        // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
+        configuration->createObjectStorage(context, /* is_readonly */ false),
         args.getContext(),
         args.table_id,
         args.columns,

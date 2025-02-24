@@ -1,10 +1,9 @@
 ---
-description: "System table containing information about async inserts. Each entry represents an insert query buffered into an async insert query."
-slug: /operations/system-tables/asynchronous_insert_log
-title: "asynchronous_insert_log"
-keywords: ["system table", "asynchronous_insert_log"]
+slug: /en/operations/system-tables/asynchronous_insert_log
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
+# asynchronous_insert_log
 
 <SystemTableCloud/>
 
@@ -25,7 +24,7 @@ Columns:
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `format` ([String](/docs/sql-reference/data-types/string.md)) — Format name.
+- `format` ([String](/docs/en/sql-reference/data-types/string.md)) — Format name.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query.
 - `bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of inserted bytes.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.

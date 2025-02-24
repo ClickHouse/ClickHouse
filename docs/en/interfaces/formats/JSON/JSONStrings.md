@@ -1,6 +1,6 @@
 ---
 title : JSONStrings
-slug: /interfaces/formats/JSONStrings
+slug : /en/interfaces/formats/JSONStrings
 keywords : [JSONStrings]
 input_format: true
 output_format: true

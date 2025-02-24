@@ -1,8 +1,6 @@
-#include <Access/Common/SQLSecurityDefs.h>
-#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
-#include <base/EnumReflection.h>
-
+#include <magic_enum.hpp>
+#include <Access/Common/SQLSecurityDefs.h>
 #include <boost/range/adaptor/map.hpp>
 
 

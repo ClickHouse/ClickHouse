@@ -9,8 +9,6 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/randomSeed.h>
 
-#include <Core/BackgroundSchedulePool.h>
-
 #include <pcg_random.hpp>
 
 #include <cmath>

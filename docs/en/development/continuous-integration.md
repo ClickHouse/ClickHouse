@@ -1,5 +1,5 @@
 ---
-slug: /development/continuous-integration
+slug: /en/development/continuous-integration
 sidebar_position: 55
 sidebar_label: Continuous Integration (CI)
 ---

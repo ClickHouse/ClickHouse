@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/last_value
+slug: /en/sql-reference/aggregate-functions/reference/last_value
 sidebar_position: 160
 ---
 

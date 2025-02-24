@@ -119,9 +119,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
-    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
-    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
-    extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
 }
 
 namespace ErrorCodes
@@ -254,11 +251,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
-
-    getMergeTreePrefixesDeserializationThreadPool().initialize(
-        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
-        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
-        server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 }
 
 
@@ -724,16 +716,18 @@ void LocalServer::processConfig()
     /// There is no need for concurrent queries, override max_concurrent_queries.
     global_context->getProcessList().setMaxSize(0);
 
-    size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
-    const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
     const size_t physical_server_memory = getMemoryAmount();
-    const size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
+
+    size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
+    double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+
+    size_t default_max_server_memory_usage = static_cast<size_t>(physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
     if (max_server_memory_usage == 0)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Changed setting 'max_server_memory_usage' to {}"
-                      " ({} available memory * {:.2f} max_server_memory_usage_to_ram_ratio)",
+        LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+                      " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
                  formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                  formatReadableSizeWithBinarySuffix(physical_server_memory),
                  max_server_memory_usage_to_ram_ratio);
@@ -741,9 +735,10 @@ void LocalServer::processConfig()
     else if (max_server_memory_usage > default_max_server_memory_usage)
     {
         max_server_memory_usage = default_max_server_memory_usage;
-        LOG_INFO(log, "Lowered setting 'max_server_memory_usage' to {}"
-                      " because the system has little few memory. The new value was"
-                      " calculated as {} available memory * {:.2f} max_server_memory_usage_to_ram_ratio",
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+                      " because the system has low amount of memory. The amount was"
+                      " calculated as {} available"
+                      " * {:.2f} max_server_memory_usage_to_ram_ratio",
                  formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                  formatReadableSizeWithBinarySuffix(physical_server_memory),
                  max_server_memory_usage_to_ram_ratio);

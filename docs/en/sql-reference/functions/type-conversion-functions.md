@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/type-conversion-functions
+slug: /en/sql-reference/functions/type-conversion-functions
 sidebar_position: 185
 sidebar_label: Type Conversion
 ---
@@ -5329,7 +5329,7 @@ toTypeName(b): Decimal(76, 0)
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
 All these functions accept one argument.
 
-When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can't be parsed, an exception is thrown and the request is canceled.
+When converting to or from a string, the value is formatted or parsed using the same rules as for the TabSeparated format (and almost all other text formats). If the string can’t be parsed, an exception is thrown and the request is canceled.
 
 When converting dates to numbers or vice versa, the date corresponds to the number of days since the beginning of the Unix epoch.
 When converting dates with times to numbers or vice versa, the date with time corresponds to the number of seconds since the beginning of the Unix epoch.
@@ -6041,7 +6041,7 @@ reinterpretAsDate(x)
 **Implementation details**
 
 :::note
-If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
 :::
 
 **Example**
@@ -6081,7 +6081,7 @@ reinterpretAsDateTime(x)
 **Implementation details**
 
 :::note
-If the provided string isn't long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
+If the provided string isn’t long enough, the function works as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored.
 :::
 
 **Example**
@@ -6178,7 +6178,7 @@ Result:
 In addition to the UUID functions listed here, there is dedicated [UUID function documentation](../functions/uuid-functions.md).
 :::
 
-Accepts a 16 byte string and returns a UUID by interpreting each 8-byte half in little-endian byte order. If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
+Accepts a 16 byte string and returns a UUID containing bytes representing the corresponding value in network byte order (big-endian). If the string isn't long enough, the function works as if the string is padded with the necessary number of null bytes to the end. If the string is longer than 16 bytes, the extra bytes at the end are ignored.
 
 **Syntax**
 
@@ -6262,7 +6262,7 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 Result:
 
-```text
+```
 ┌─int_to_uint─┬─int_to_float─┬─string_to_int─┐
 │         255 │        1e-45 │            49 │
 └─────────────┴──────────────┴───────────────┘
@@ -6308,7 +6308,7 @@ SELECT
 
 Result:
 
-```yaml
+```
 ┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
 │              255 │                  1.50 │                  1 │
 └──────────────────┴───────────────────────┴────────────────────┘
@@ -6939,7 +6939,7 @@ parseDateTime(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -6988,7 +6988,7 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7033,7 +7033,7 @@ parseDateTime64(str[, format[, timezone]])
 
 - `str` — The String to be parsed.
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7062,7 +7062,7 @@ parseDateTime64InJodaSyntax(str[, format[, timezone]])
 
 - `str` — The String to be parsed.
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7082,7 +7082,7 @@ Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except t
 
 Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](../data-types/datetime.md/#data_type-datetime) data type.
 
-The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
+The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse’s and some other date and time formats.
 
 **Syntax**
 
@@ -7253,7 +7253,7 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 
 - `time_string` — String containing a date or date with time to convert. [String](../data-types/string.md).
 - `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/docs/en/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -7276,7 +7276,7 @@ FORMAT PrettyCompactMonoBlock;
 
 Result:
 
-```sql
+```
 ┌──────────────────────────a─┬─t──────────────────────────────┐
 │ 2021-01-01 01:01:00.123000 │ DateTime64(3)                  │
 │ 2021-01-01 00:00:00.000000 │ DateTime64(3)                  │
@@ -7677,7 +7677,7 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/docs/interfaces/formats.md/#csv), [TSV](/docs/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
@@ -7748,7 +7748,7 @@ formatRowNoNewline(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/docs/interfaces/formats.md/#csv), [TSV](/docs/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/docs/en/interfaces/formats.md/#csv), [TSV](/docs/en/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**

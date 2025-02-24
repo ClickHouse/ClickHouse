@@ -25,7 +25,7 @@ ClickHouse中的查询可以分为几种类型:
 
 限制读取数据、写入数据和更改设置查询的权限。
 
-查看查询如何划分为 **[上述](/docs/operations/settings/permissions-for-queries)** 的多种类型。
+查看查询如何划分为 **[上述](/docs/en/operations/settings/permissions-for-queries)** 的多种类型。
 
 可能的值:
 

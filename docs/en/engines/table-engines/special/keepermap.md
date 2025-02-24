@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/special/keeper-map
+slug: /en/engines/table-engines/special/keeper-map
 sidebar_position: 150
 sidebar_label: KeeperMap
 ---

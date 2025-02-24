@@ -8,8 +8,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Storages/ColumnsDescription.h>
+#include "Interpreters/ActionsDAG.h"
+#include "Storages/ColumnsDescription.h"
 
 #include <memory>
 namespace DB

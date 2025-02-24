@@ -9,11 +9,13 @@
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
 #include <Storages/StorageSnapshot.h>
 #include <Common/ActionLock.h>
+#include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
@@ -23,6 +25,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 using StorageActionBlockType = size_t;
 
@@ -63,8 +70,6 @@ class BackupEntriesCollector;
 class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
-
-class ActionsDAG;
 
 struct ColumnSize
 {
@@ -444,7 +449,10 @@ public:
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/,
-        bool /*async_insert*/);
+        bool /*async_insert*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
+    }
 
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed
@@ -473,7 +481,10 @@ public:
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /* metadata_snapshot */,
         ContextPtr /* context */,
-        TableExclusiveLockHolder &);
+        TableExclusiveLockHolder &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
+    }
 
     virtual void checkTableCanBeRenamed(const StorageID & /*new_name*/) const {}
 
@@ -500,7 +511,10 @@ public:
     virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /// Updates metadata that can be changed by other processes
-    virtual void updateExternalDynamicMetadata(ContextPtr);
+    virtual void updateExternalDynamicMetadata(ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
+    }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -538,20 +552,38 @@ public:
         bool /*deduplicate*/,
         const Names & /* deduplicate_by_columns */,
         bool /*cleanup*/,
-        ContextPtr /*context*/);
+        ContextPtr /*context*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
+    }
 
     /// Mutate the table contents
-    virtual void mutate(const MutationCommands &, ContextPtr);
+    virtual void mutate(const MutationCommands &, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
+    }
 
     /// Cancel a mutation.
-    virtual CancellationCode killMutation(const String & /*mutation_id*/);
+    virtual CancellationCode killMutation(const String & /*mutation_id*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
+    }
 
-    virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/);
+    virtual void waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
+    }
 
-    virtual void setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/);
+    virtual void setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
+    }
 
     /// Cancel a part move to shard.
-    virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/);
+    virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part moves between shards are not supported by storage {}", getName());
+    }
 
     /** If the table have to do some complicated work on startup,
       *  that must be postponed after creation of table object

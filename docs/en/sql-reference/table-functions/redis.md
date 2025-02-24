@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/redis
+slug: /en/sql-reference/table-functions/redis
 sidebar_position: 170
 sidebar_label: redis
 ---
@@ -34,7 +34,7 @@ redis(host:port, key, structure[, db_index[, password[, pool_size]]])
 
 - queries with key equals or in filtering will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
 
-[Named collections](/docs/operations/named-collections.md) are not supported for `redis` table function at the moment.
+[Named collections](/docs/en/operations/named-collections.md) are not supported for `redis` table function at the moment.
 
 **Returned Value**
 
@@ -63,5 +63,5 @@ INSERT INTO TABLE FUNCTION redis(
 
 **See Also**
 
-- [The `Redis` table engine](/docs/engines/table-engines/integrations/redis.md)
-- [Using redis as a dictionary source](/docs/sql-reference/dictionaries/index.md#redis)
+- [The `Redis` table engine](/docs/en/engines/table-engines/integrations/redis.md)
+- [Using redis as a dictionary source](/docs/en/sql-reference/dictionaries/index.md#redis)

@@ -126,7 +126,7 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             UniqueTableName to(elem.to_database_name, elem.to_table_name);
             ddl_guards[from]->releaseTableLock();
             ddl_guards[to]->releaseTableLock();
-            return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+            return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
 
         StorageID from_table_id{elem.from_database_name, elem.from_table_name};

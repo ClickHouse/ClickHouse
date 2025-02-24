@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/integrations/ExternalDistributed
+slug: /en/engines/table-engines/integrations/ExternalDistributed
 sidebar_position: 55
 sidebar_label: ExternalDistributed
 title: ExternalDistributed

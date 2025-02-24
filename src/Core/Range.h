@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 /** Range between fields, used for index analysis
   * (various arithmetic on intervals of various forms).
@@ -26,7 +27,9 @@ struct FieldRef : public Field
     FieldRef(T && value) : Field(std::forward<T>(value)) {} /// NOLINT
 
     /// Create as reference to field in block.
-    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_);
+    FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
+        : Field((*(*columns_)[column_idx_].column)[row_idx_]),
+          columns(columns_), row_idx(row_idx_), column_idx(column_idx_) {}
 
     bool isExplicit() const { return columns == nullptr; }
 

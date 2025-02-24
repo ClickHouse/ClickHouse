@@ -280,10 +280,6 @@ mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/c
 # NOTE Disable thread fuzzer before server start with data after stress test.
 # In debug build it can take a lot of time.
 unset "${!THREAD_@}"
-# Also disable cannot_allocate_thread_fault_injection_probability, since this
-# will not allow to load tables asynchronously. Anyway the stress tests was
-# running with fault injection.
-rm /etc/clickhouse-server/config.d/cannot_allocate_thread_injection.xml
 
 start_server
 

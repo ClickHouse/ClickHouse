@@ -1,6 +1,6 @@
 ---
 title : ProtobufList
-slug: /interfaces/formats/ProtobufList
+slug : /en/interfaces/formats/ProtobufList
 keywords : [ProtobufList]
 input_format: true
 output_format: true

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/prewhere
+slug: /en/sql-reference/statements/select/prewhere
 sidebar_label: PREWHERE
 ---
 

@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/mergetree-family/graphitemergetree
+slug: /en/engines/table-engines/mergetree-family/graphitemergetree
 sidebar_position: 90
 sidebar_label:  GraphiteMergeTree
 ---

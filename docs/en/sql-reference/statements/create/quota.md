@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/create/quota
+slug: /en/sql-reference/statements/create/quota
 sidebar_position: 42
 sidebar_label: QUOTA
 title: "CREATE QUOTA"

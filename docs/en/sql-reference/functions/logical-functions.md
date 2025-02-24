@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/logical-functions
+slug: /en/sql-reference/functions/logical-functions
 sidebar_position: 110
 sidebar_label: Logical
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /guides/developer/transactional
+slug: /en/guides/developer/transactional
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -87,7 +87,7 @@ These examples are with a single node ClickHouse server with ClickHouse Keeper e
 #### Basic configuration for a single ClickHouse server node with ClickHouse Keeper enabled
 
 :::note
-See the [deployment](/deployment-guides/terminology.md) documentation for details on deploying ClickHouse server and a proper quorum of ClickHouse Keeper nodes.  The configuration shown here is for experimental purposes.
+See the [deployment](docs/en/deployment-guides/terminology.md) documentation for details on deploying ClickHouse server and a proper quorum of ClickHouse Keeper nodes.  The configuration shown here is for experimental purposes.
 :::
 
 ```xml title=/etc/clickhouse-server/config.d/config.xml
@@ -145,26 +145,22 @@ Ok.
 
 :::tip
 If you see the following error, then check your configuration file to make sure that `allow_experimental_transactions` is set to `1` (or any value other than `0` or `false`).
-
-```response
+```
 Code: 48. DB::Exception: Received from localhost:9000.
 DB::Exception: Transactions are not supported.
 (NOT_IMPLEMENTED)
 ```
 
 You can also check ClickHouse Keeper by issuing
-
-```bash
+```
 echo ruok | nc localhost 9181
 ```
-
 ClickHouse Keeper should respond with `imok`.
 :::
 
 ```sql
 ROLLBACK
 ```
-
 ```response
 Ok.
 ```
@@ -183,7 +179,6 @@ CREATE TABLE mergetree_table
 ENGINE = MergeTree
 ORDER BY n
 ```
-
 ```response
 Ok.
 ```
@@ -193,7 +188,6 @@ Ok.
 ```sql
 BEGIN TRANSACTION
 ```
-
 ```response
 Ok.
 ```
@@ -201,7 +195,6 @@ Ok.
 ```sql
 INSERT INTO mergetree_table FORMAT Values (10)
 ```
-
 ```response
 Ok.
 ```
@@ -210,13 +203,11 @@ Ok.
 SELECT *
 FROM mergetree_table
 ```
-
 ```response
 ┌──n─┐
 │ 10 │
 └────┘
 ```
-
 :::note
 You can query the table from within a transaction and see that the row was inserted even though it has not yet been committed.
 :::
@@ -224,15 +215,12 @@ You can query the table from within a transaction and see that the row was inser
 #### Rollback the transaction, and query the table again
 
 Verify that the transaction is rolled back:
-
 ```sql
 ROLLBACK
 ```
-
 ```response
 Ok.
 ```
-
 ```sql
 SELECT *
 FROM mergetree_table
@@ -255,7 +243,6 @@ Ok.
 ```sql
 INSERT INTO mergetree_table FORMAT Values (42)
 ```
-
 ```response
 Ok.
 ```
@@ -263,7 +250,6 @@ Ok.
 ```sql
 COMMIT
 ```
-
 ```response
 Ok. Elapsed: 0.002 sec.
 ```
@@ -272,7 +258,6 @@ Ok. Elapsed: 0.002 sec.
 SELECT *
 FROM mergetree_table
 ```
-
 ```response
 ┌──n─┐
 │ 42 │
@@ -289,7 +274,6 @@ SELECT *
 FROM system.transactions
 FORMAT Vertical
 ```
-
 ```response
 Row 1:
 ──────

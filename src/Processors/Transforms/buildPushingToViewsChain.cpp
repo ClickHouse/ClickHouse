@@ -4,7 +4,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/CountingTransform.h>
@@ -509,12 +508,6 @@ Chain buildPushingToViewsChain(
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
-    auto log = getLogger("buildPushingToViewsChain");
-    LOG_TEST(log, "Views: {}", views.size());
-
-    if (no_destination && views.empty())
-        LOG_WARNING(log, "No views attached and no_destination = 1");
-
     ViewsDataPtr views_data;
     if (!views.empty())
     {
@@ -523,6 +516,7 @@ Chain buildPushingToViewsChain(
     }
 
     std::vector<Chain> chains;
+
     for (const auto & view_id : views)
     {
         try

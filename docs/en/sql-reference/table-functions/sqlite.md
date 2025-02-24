@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/sqlite
+slug: /en/sql-reference/table-functions/sqlite
 sidebar_position: 185
 sidebar_label: sqlite
 title: sqlite

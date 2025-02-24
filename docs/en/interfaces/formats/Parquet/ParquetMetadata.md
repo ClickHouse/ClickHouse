@@ -1,6 +1,6 @@
 ---
 title : ParquetMetadata
-slug: /interfaces/formats/ParquetMetadata
+slug : /en/interfaces/formats/ParquetMetadata
 keywords : [ParquetMetadata]
 ---
 

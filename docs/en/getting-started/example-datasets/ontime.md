@@ -1,9 +1,10 @@
 ---
-description: "Dataset containing the on-time performance of airline flights"
-slug: /getting-started/example-datasets/ontime
+slug: /en/getting-started/example-datasets/ontime
 sidebar_label: OnTime Airline Flight Data
-title: "OnTime"
+description: Dataset containing the on-time performance of airline flights
 ---
+
+# OnTime 
 
 This dataset contains data from Bureau of Transportation Statistics.
 
@@ -145,7 +146,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 
 Alternatively, you can import data from a saved copy by the following query:
 
-```sql
+```
 INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
 ```
 

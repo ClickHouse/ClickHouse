@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/kurtpop
+slug: /en/sql-reference/aggregate-functions/reference/kurtpop
 sidebar_position: 157
 ---
 

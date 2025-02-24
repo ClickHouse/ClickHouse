@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/encryption-functions
+slug: /en/sql-reference/functions/encryption-functions
 sidebar_position: 70
 sidebar_label: Encryption
 ---
@@ -145,7 +145,7 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 
 Result:
 
-```response
+```
 ┌─ciphertexts_equal─┐
 │                 1 │
 └───────────────────┘
@@ -176,7 +176,7 @@ SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '1234567891012131415161718
 
 Result:
 
-```response
+```text
 ┌─ciphertext───┐
 │ 24E9E4966469 │
 └──────────────┘
@@ -334,7 +334,7 @@ ORDER BY user_id ASC
 
 Result:
 
-```response
+```
 ┌──────────────────dt─┬─user_id─┬─value──┐
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │

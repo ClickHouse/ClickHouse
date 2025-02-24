@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/table-functions/cluster
+slug: /en/sql-reference/table-functions/cluster
 sidebar_position: 30
 sidebar_label: cluster
 title: "cluster, clusterAllReplicas"

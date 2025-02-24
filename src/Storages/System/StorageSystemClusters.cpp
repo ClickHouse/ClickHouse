@@ -17,7 +17,6 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
     {
         {"cluster", std::make_shared<DataTypeString>(), "The cluster name."},
         {"shard_num", std::make_shared<DataTypeUInt32>(), "The shard number in the cluster, starting from 1."},
-        {"shard_name", std::make_shared<DataTypeString>(), "The name of the shard in the cluster."},
         {"shard_weight", std::make_shared<DataTypeUInt32>(), "The relative weight of the shard when writing data."},
         {"internal_replication", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether this host is a part on ensemble which can replicate the data on its own."},
         {"replica_num", std::make_shared<DataTypeUInt32>(), "The replica number in the shard, starting from 1."},
@@ -95,8 +94,6 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
                 res_columns[res_index++]->insert(cluster_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.shard_num);
-            if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(shard_info.shard_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.weight);
             if (columns_mask[src_index++])

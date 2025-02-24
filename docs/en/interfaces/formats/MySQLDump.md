@@ -1,6 +1,6 @@
 ---
 title : MySQLDump
-slug: /interfaces/formats/MySQLDump
+slug : /en/interfaces/formats/MySQLDump
 keywords : [MySQLDump]
 input_format: true
 output_format: false
@@ -80,6 +80,6 @@ SETTINGS input_format_mysql_dump_table_name = 'test2'
 
 ## Format Settings
 
-You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/docs/operations/settings/settings-formats.md/#input_format_mysql_dump_table_name) setting.
-If setting [`input_format_mysql_dump_map_columns`](/docs/operations/settings/settings-formats.md/#input_format_mysql_dump_map_columns) is set to `1` and the dump contains a `CREATE` query for specified table or column names in the `INSERT` query, the columns from the input data will map to the columns from the table by name.
-Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/docs/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+You can specify the name of the table from which to read data from using the [`input_format_mysql_dump_table_name`](/docs/en/operations/settings/settings-formats.md/#input_format_mysql_dump_table_name) setting.
+If setting [`input_format_mysql_dump_map_columns`](/docs/en/operations/settings/settings-formats.md/#input_format_mysql_dump_map_columns) is set to `1` and the dump contains a `CREATE` query for specified table or column names in the `INSERT` query, the columns from the input data will map to the columns from the table by name.
+Columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.

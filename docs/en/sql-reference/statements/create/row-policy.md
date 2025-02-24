@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/create/row-policy
+slug: /en/sql-reference/statements/create/row-policy
 sidebar_position: 41
 sidebar_label: ROW POLICY
 title: "CREATE ROW POLICY"
@@ -50,7 +50,7 @@ It's allowed to have more than one policy enabled on the same table for the same
 
 By default, policies are combined using the boolean `OR` operator. For example, the following policies:
 
-```sql
+``` sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 ```
@@ -63,14 +63,14 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 
 Here is the general formula:
 
-```text
+```
 row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
                  (all of the restrictive policies's conditions are non-zero)
 ```
 
 For example, the following policies:
 
-```sql
+``` sql
 CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ```
@@ -81,7 +81,7 @@ Database policies are combined with table policies.
 
 For example, the following policies:
 
-```sql
+``` sql
 CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
 CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ```

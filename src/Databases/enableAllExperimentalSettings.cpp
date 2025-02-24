@@ -1,5 +1,4 @@
 #include <Interpreters/Context.h>
-#include <Core/Field.h>
 
 namespace DB
 {
@@ -44,7 +43,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_suspicious_primary_key", 1);
     context->setSetting("allow_suspicious_ttl_expressions", 1);
     context->setSetting("allow_suspicious_variant_types", 1);
-    context->setSetting("enable_deflate_qpl_codec", 1);
     context->setSetting("enable_zstd_qat_codec", 1);
     context->setSetting("allow_create_index_without_type", 1);
     context->setSetting("allow_experimental_s3queue", 1);
