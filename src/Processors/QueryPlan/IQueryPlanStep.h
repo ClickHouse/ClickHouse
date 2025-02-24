@@ -38,8 +38,6 @@ using Headers = std::vector<Header>;
 
 struct ExplainPlanOptions;
 
-struct QueryPlanNode;
-
 /// Single step of query plan.
 class IQueryPlanStep
 {

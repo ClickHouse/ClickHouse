@@ -719,7 +719,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
     }
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_sample_block, right_sample_block, query_context, *hash_table_key_hash_right);
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, query_context, hash_table_key_hash_right.value_or(0));
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }

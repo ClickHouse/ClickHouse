@@ -75,7 +75,13 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
 
-    // protected:
+    void setHashTableCacheKeys(UInt64 left_key_hash, UInt64 right_key_hash)
+    {
+        hash_table_key_hash_left = left_key_hash;
+        hash_table_key_hash_right = right_key_hash;
+    }
+
+protected:
     void updateOutputHeader() override;
 
     std::vector<std::pair<String, String>> describeJoinActions() const;

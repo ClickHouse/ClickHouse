@@ -363,16 +363,16 @@ UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide si
     return hash.get64();
 }
 
-void calculateHashesFromSubtree(QueryPlanNode & node, SipHash * hash)
+void calculateHashesFromSubtree(QueryPlan::Node & node, SipHash * hash)
 {
     if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
     {
         // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
         const bool calculate = hash
             || allowParallelHashJoin(
-                                   join_step->join_settings.join_algorithm,
-                                   join_step->join_info.kind,
-                                   join_step->join_info.strictness,
+                                   join_step->getJoinSettings().join_algorithm,
+                                   join_step->getJoinInfo().kind,
+                                   join_step->getJoinInfo().strictness,
                                    join_step->hasPreparedJoinStorage(),
                                    join_step->getJoinInfo().expression.disjunctive_conditions.empty());
         if (calculate)
@@ -381,33 +381,34 @@ void calculateHashesFromSubtree(QueryPlanNode & node, SipHash * hash)
             SipHash left;
             calculateHashesFromSubtree(*node.children.at(0), &left);
             left.update(calculateHashFromStep(*join_step, JoinTableSide::Left));
-            join_step->hash_table_key_hash_left = left.get64();
             SipHash right;
             calculateHashesFromSubtree(*node.children.at(1), &right);
             right.update(calculateHashFromStep(*join_step, JoinTableSide::Right));
-            join_step->hash_table_key_hash_right = right.get64();
+            join_step->setHashTableCacheKeys(left.get64(), right.get64());
 
             if (hash)
-                hash->update(*join_step->hash_table_key_hash_left ^ *join_step->hash_table_key_hash_right);
+                hash->update(left.get64() ^ right.get64());
         }
     }
-
-    for (auto & child : node.children)
-        calculateHashesFromSubtree(*child, hash);
-
-    if (hash)
+    else
     {
-        if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+        for (auto & child : node.children)
+            calculateHashesFromSubtree(*child, hash);
+
+        if (hash)
         {
-            hash->update(calculateHashFromStep(*source));
-        }
-        else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
-        {
-            hash->update(calculateHashFromStep(*read));
-        }
-        else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
-        {
-            hash->update(calculateHashFromStep(*transform));
+            if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
+            {
+                hash->update(calculateHashFromStep(*source));
+            }
+            else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
+            {
+                hash->update(calculateHashFromStep(*read));
+            }
+            else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+            {
+                hash->update(calculateHashFromStep(*transform));
+            }
         }
     }
 }

@@ -75,7 +75,9 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+
 #include <ranges>
 
 namespace DB
