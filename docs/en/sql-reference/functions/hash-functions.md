@@ -1964,11 +1964,11 @@ This cryptographic hash-function is used a lot in [EVM-based blockchains](https:
 
 **Arguments**
 
-- s - input string for keccack-256 hash calculation. [String](../data-types/string.md).
+- s - input string for Keccak-256 hash calculation. [String](../data-types/string.md).
 
 **Return value**
 
-- keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
+- Keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
 
 **Example**
 

@@ -230,7 +230,7 @@ struct Keccak256Impl
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
         auto h = ethash::keccak256(
-            reinterpret_cast<const uint8_t*>(begin), 
+            reinterpret_cast<const uint8_t*>(begin),
             size
         );
         memcpy(out_char_data, h.bytes, Keccak256Impl::length);

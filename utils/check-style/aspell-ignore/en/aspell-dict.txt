@@ -521,6 +521,7 @@ KafkaProducers
 KafkaWrites
 Kahan
 Kaser
+Keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
