@@ -36,7 +36,7 @@ private:
     {
         if (time < 0)
             is_negative = true;
-        
+
         auto time_to_split = is_negative ? time * (-1) : time;
 
         const auto components = time_zone.toTimeComponents(static_cast<DateLUTImpl::Time>(time_to_split));
@@ -129,7 +129,7 @@ private:
             m_second = static_cast<unsigned char>((s_copy[5] - '0') * 10 + (s_copy[6] - '0'));
         }
         else
-            throw std::runtime_error("Cannot parse LocalTime: " + std::string(s, length));    
+            throw std::runtime_error("Cannot parse LocalTime: " + std::string(s, length));
 
         // Initialize padding
         std::memset(pad, 0, sizeof(pad));
