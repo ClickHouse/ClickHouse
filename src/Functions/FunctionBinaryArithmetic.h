@@ -24,6 +24,8 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -56,6 +58,7 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include "Common/logger_useful.h"
 
 #include <absl/container/inlined_vector.h>
 
@@ -124,6 +127,11 @@ template <> inline constexpr bool IsArray<DataTypeArray> = true;
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
+
+template <typename DataType> constexpr bool IsDateOrTimeOrDateTime = false;
+template <> inline constexpr bool IsDateOrTimeOrDateTime<DataTypeDate> = true;
+template <> inline constexpr bool IsDateOrTimeOrDateTime<DataTypeTime> = true;
+template <> inline constexpr bool IsDateOrTimeOrDateTime<DataTypeDateTime> = true;
 
 template <typename DataType> constexpr bool IsIPv4 = false;
 template <> inline constexpr bool IsIPv4<DataTypeIPv4> = true;
@@ -200,7 +208,7 @@ public:
         Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,
 
         /// number <op> number -> see corresponding impl
-        Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>>,
+        Case<!IsDateOrTimeOrDateTime<LeftDataType> && !IsDateOrTimeOrDateTime<RightDataType>, DataTypeFromFieldType<typename Op::ResultType>>,
 
         /// Date + Integral -> Date
         /// Integral + Date -> Date
@@ -214,7 +222,7 @@ public:
             IsOperation<Operation>::minus,
             Switch<
                 Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
-                Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
+                Case<IsDateOrTimeOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
 
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
@@ -227,8 +235,8 @@ public:
         Case<
             IsOperation<Operation>::modulo || IsOperation<Operation>::positive_modulo,
             Switch<
-                Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
-                Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
+                Case<IsDateOrTimeOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
+                Case<IsDateOrTimeOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeFloat64>>>>;
 };
 }
 
@@ -825,7 +833,7 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeUInt8, DataTypeUInt16, DataTypeUInt32, DataTypeUInt64, DataTypeUInt128, DataTypeUInt256,
             DataTypeInt8, DataTypeInt16, DataTypeInt32, DataTypeInt64, DataTypeInt128, DataTypeInt256,
             DataTypeDecimal32, DataTypeDecimal64, DataTypeDecimal128, DataTypeDecimal256,
-            DataTypeDate, DataTypeDateTime,
+            DataTypeDate, DataTypeDateTime, DataTypeTime,
             DataTypeFixedString, DataTypeString,
             DataTypeInterval>;
 
@@ -853,8 +861,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_arg_is_date_or_datetime_or_string = isDateOrDate32OrDateTimeOrDateTime64(type0) || isString(type0);
-        bool second_arg_is_date_or_datetime_or_string = isDateOrDate32OrDateTimeOrDateTime64(type1) || isString(type1);
+        bool first_arg_is_date_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0) || isString(type0); // TODO: CHANGE NAME
+        bool second_arg_is_date_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1) || isString(type1);
 
         /// Exactly one argument must be Date or DateTime or String
         if (first_arg_is_date_or_datetime_or_string == second_arg_is_date_or_datetime_or_string)
@@ -910,8 +918,8 @@ class FunctionBinaryArithmetic : public IFunction
     static FunctionOverloadResolverPtr
     getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        bool first_arg_is_date_or_datetime = isDateOrDate32OrDateTimeOrDateTime64(type0);
-        bool second_arg_is_date_or_datetime = isDateOrDate32OrDateTimeOrDateTime64(type1);
+        bool first_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0);
+        bool second_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1);
 
         /// Exactly one argument must be Date or DateTime
         if (first_arg_is_date_or_datetime == second_arg_is_date_or_datetime)
@@ -1296,7 +1304,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnsWithTypeAndName new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (isDateOrDate32OrDateTimeOrDateTime64(arguments[1].type) || isString(arguments[1].type))
+        if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(arguments[1].type) || isString(arguments[1].type))
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -1733,7 +1741,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (isDateOrDate32OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
+            if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -1916,6 +1924,19 @@ public:
                         if constexpr (std::is_same_v<LeftDataType, DataTypeDateTime>)
                             tz = &left;
                         type_res = std::make_shared<ResultDataType>(*tz);
+                    }
+                    else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
+                    {
+                        // Special case for DateTime: binary OPS should reuse timezone
+                        // of DateTime argument as timezeone of result type.
+                        // NOTE: binary plus/minus are not allowed on DateTime64, and we are not handling it here.
+
+                        const TimezoneMixin * tz = nullptr;
+                        if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
+                            tz = &right;
+                        if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
+                            tz = &left;
+                        type_res = std::make_shared<DataTypeTime>(*tz);
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();
@@ -2540,8 +2561,8 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         WhichDataType data_type_lhs(arguments[0]);
         WhichDataType data_type_rhs(arguments[1]);
-        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime()) ||
-            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime()))
+        if ((data_type_lhs.isDateOrDate32() || data_type_lhs.isDateTime() || data_type_lhs.isTime()) ||
+            (data_type_rhs.isDateOrDate32() || data_type_rhs.isDateTime() || data_type_rhs.isTime()))
             return false;
 
         return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
