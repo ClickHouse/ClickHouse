@@ -1,6 +1,4 @@
 <test>
-    <!-- Run all queries from this test file pls -->
-
     <query>SELECT entropy(SearchEngineID) FROM hits_100m_single settings max_threads = 1</query>
     <query>SELECT entropy(SearchPhrase) FROM hits_10m_single</query>
     <query>SELECT entropy(MobilePhoneModel) FROM hits_100m_single</query>

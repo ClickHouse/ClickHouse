@@ -1,6 +1,4 @@
 <test>
-    <!-- Run all queries from this test file pls -->
-
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
     </preconditions>

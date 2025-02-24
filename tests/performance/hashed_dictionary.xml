@@ -1,6 +1,4 @@
 <test>
-    <!-- Run all queries from this test file pls -->
-
     <create_query>
         CREATE TABLE simple_key_hashed_dictionary_source_table
         (
