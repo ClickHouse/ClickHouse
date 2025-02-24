@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-keeper-client
+slug: /operations/utilities/clickhouse-keeper-client
 sidebar_label: clickhouse-keeper-client
 ---
 
@@ -65,4 +65,4 @@ keeper foo bar
 -   `delete_stale_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
 -   `find_big_family [path] [n]` -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)
 -   `sync '<path>'` -- Synchronizes node between processes and leader
--   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration
+-   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

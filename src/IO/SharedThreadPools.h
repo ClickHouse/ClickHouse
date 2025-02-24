@@ -52,6 +52,9 @@ StaticThreadPool & getIOThreadPool();
 /// ThreadPool used for the Backup IO.
 StaticThreadPool & getBackupsIOThreadPool();
 
+/// ThreadPool used for FETCH PARTITION
+StaticThreadPool & getFetchPartitionThreadPool();
+
 /// ThreadPool used for the loading of Outdated data parts for MergeTree tables.
 StaticThreadPool & getActivePartsLoadingThreadPool();
 

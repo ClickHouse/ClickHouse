@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/geo/
+slug: /sql-reference/functions/geo/
 sidebar_label: Geo
 sidebar_position: 62
 title: "Geo Functions"

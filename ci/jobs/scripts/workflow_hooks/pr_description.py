@@ -173,14 +173,9 @@ def check_labels(category, info):
             pr_labels_to_remove.append(label)
 
     if info.pr_number:
-        changed_files_str = Shell.get_output(
-            f"gh pr view {info.pr_number} --repo {info.repo_name} --json files --jq '.files[].path'",
-            strict=True,
-        )
-        if "contrib/" in changed_files_str:
+        changed_files = info.get_custom_data("changed_files")
+        if "contrib/" in " ".join(changed_files):
             pr_labels_to_add.append(Labels.SUBMODULE_CHANGED)
-        changed_files = changed_files_str.split("\n")
-        info.store_custom_data("changed_files", changed_files)
 
     if any(label in Labels.AUTO_BACKPORT for label in pr_labels_to_add):
         backport_labels = [Labels.MUST_BACKPORT, Labels.MUST_BACKPORT_CLOUD]

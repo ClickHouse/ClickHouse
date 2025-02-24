@@ -46,6 +46,7 @@
 #include <Poco/Logger.h>
 #include <Common/JSONBuilder.h>
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 #include <algorithm>
 #include <iterator>

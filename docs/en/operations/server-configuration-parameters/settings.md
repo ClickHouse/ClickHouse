@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/server-configuration-parameters/settings
+slug: /operations/server-configuration-parameters/settings
 sidebar_position: 57
 sidebar_label: Global Server Settings
 description: This section contains descriptions of server settings that cannot be changed at the session or query level.
@@ -8,11 +8,11 @@ keywords: [global server settings]
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import SystemLogParameters from '_snippets/_system-log-parameters.md'
+import SystemLogParameters from '@site/docs/operations/server-configuration-parameters/_snippets/_system-log-parameters.md'
 
 # Global Server Settings
 
-This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/en/operations/configuration-files).
+This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/operations/configuration-files).
 
 Other settings are described in the "[Settings](../../operations/settings/index.md#session-settings-intro)" section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
@@ -91,7 +91,7 @@ Default: `0`
 
 ## background_buffer_flush_schedule_pool_size
 
-The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/docs/en/engines/table-engines/special/buffer) in the background.
+The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/docs/engines/table-engines/special/buffer) in the background.
 
 Type: `UInt64`
 
@@ -99,7 +99,7 @@ Default: `16`
 
 ## background_common_pool_size
 
-The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/docs/en/engines/table-engines/mergetree-family) tables in the background.
+The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/docs/engines/table-engines/mergetree-family) tables in the background.
 
 Type: `UInt64`
 
@@ -115,7 +115,7 @@ Default: `16`
 
 ## background_fetches_pool_size
 
-The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/docs/en/engines/table-engines/mergetree-family) tables in the background.
+The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/docs/engines/table-engines/mergetree-family) tables in the background.
 
 Type: `UInt64`
 
@@ -418,7 +418,7 @@ Default: `SLRU`
 
 ## mark_cache_size
 
-Maximum size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/docs/engines/table-engines/mergetree-family) family of tables).
 
 :::note
 This setting can be modified at runtime and will take effect immediately.
@@ -467,7 +467,7 @@ Limit on total number of concurrently executed queries. Note that limits on `INS
 See also:
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_all_users`](/docs/en/operations/settings/settings/#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_all_users`](/docs/operations/settings/settings/#max_concurrent_queries_for_all_users)
 
 :::note
 
@@ -521,8 +521,8 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries`](#max_concurrent_queries)
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](/docs/en/operations/settings/settings#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_all_users`](/docs/en/operations/settings/settings#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_user`](/docs/operations/settings/settings#max_concurrent_select_queries)
+- [`max_concurrent_queries_for_all_users`](/docs/operations/settings/settings#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
 :::
@@ -904,8 +904,8 @@ A value of `0` means unlimited.
 :::
 
 See also:
-- [`max_temporary_data_on_disk_size_for_user`](/docs/en/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
-- [`max_temporary_data_on_disk_size_for_query`](/docs/en/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
+- [`max_temporary_data_on_disk_size_for_user`](/docs/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
+- [`max_temporary_data_on_disk_size_for_query`](/docs/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
 
 Type: `UInt64`
 
@@ -947,9 +947,9 @@ The amount of data in mapped files can be monitored in the following system tabl
 
 | System Table                                                                                                                                                                                                                                                                                                                                                       | Metric                                                                                                   |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| [`system.metrics`](/docs/en/operations/system-tables/metrics) and [`system.metric_log`](/docs/en/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
-| [`system.asynchronous_metrics_log`](/docs/en/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
-| [`system.events`](/docs/en/operations/system-tables/events), [`system.processes`](/docs/en/operations/system-tables/processes), [`system.query_log`](/docs/en/operations/system-tables/query_log), [`system.query_thread_log`](/docs/en/operations/system-tables/query_thread_log), [`system.query_views_log`](/docs/en/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
+| [`system.metrics`](/docs/operations/system-tables/metrics) and [`system.metric_log`](/docs/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
+| [`system.asynchronous_metrics_log`](/docs/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
+| [`system.events`](/docs/operations/system-tables/events), [`system.processes`](/docs/operations/system-tables/processes), [`system.query_log`](/docs/operations/system-tables/query_log), [`system.query_thread_log`](/docs/operations/system-tables/query_thread_log), [`system.query_views_log`](/docs/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
 
 :::note
 The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
@@ -1063,7 +1063,7 @@ Default: `10000`
 
 ## tmp_policy
 
-Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/en/engines/table-engines/mergetree-family/mergetree) documentation.
+Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/engines/table-engines/mergetree-family/mergetree) documentation.
 
 :::note
 - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
@@ -1366,7 +1366,7 @@ Default: `1073741824`
 
 ## database_atomic_delay_before_drop_table_sec
 
-The delay during which a dropped table can be restored using the [`UNDROP`](/docs/en/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+The delay during which a dropped table can be restored using the [`UNDROP`](/docs/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 
 Default: `480`
@@ -1619,7 +1619,7 @@ The following settings can be configured by sub-tags:
 | `url`              | A location for redirect                                                                                                                                               |
 | `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
 | `status`           | Use with static type, response status code                                                                                                                            |
-| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params                             |
+| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params                             |
 | `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
 | `content_type`     | Use with static type, response content-type                                                                                                                           |
 | `response_content` | Use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
@@ -1908,8 +1908,8 @@ The following settings can be configured by sub-tags:
 |--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `host`                         | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
 | `port`                         | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
-| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
-| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
+| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `\{user_dn\}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
 | `verification_cooldown`        | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
 | `enable_tls`                   | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
 | `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).                                                                                                                                                                                                                                                                                                                |
@@ -1924,9 +1924,9 @@ Setting `user_dn_detection` can be configured with sub-tags:
 
 | Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all '{user_name}' and '{bind_dn}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
+| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}` and '\{bind_dn\}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
 | `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |                                                                                                                               
-| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
+| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, and `\{base_dn\}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
 
 Example:
 
@@ -2670,7 +2670,7 @@ Keys for server/client settings:
 | `loadDefaultCAFile`           | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
 | `cipherList`                  | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
 | `cacheSessions`               | Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                         | `false`                                    |
-| `sessionIdContext`            | A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.                                                                                                                                                        | `${application.name}`                      |
+| `sessionIdContext`            | A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching.                                                                                                                                                        | `$\{application.name\}`                      |
 | `sessionCacheSize`            | The maximum number of sessions that the server caches. A value of `0` means unlimited sessions.                                                                                                                                                                                                                                                                                                                                                                        | [1024\*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978)                            |
 | `sessionTimeout`              | Time for caching the session on the server in hours.                                                                                                                                                                                                                                                                                                                                                                                                                   | `2`                                        |
 | `extendedVerification`        | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
@@ -3109,7 +3109,7 @@ Example:
 ## query_masking_rules
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-[`system.query_log`](/docs/en/operations/system-tables/query_log), [`system.text_log`](/docs/en/operations/system-tables/text_log), [`system.processes`](/docs/en/operations/system-tables/processes) tables, and in logs sent to the client. That allows preventing
+[`system.query_log`](/docs/operations/system-tables/query_log), [`system.text_log`](/docs/operations/system-tables/text_log), [`system.processes`](/docs/operations/system-tables/processes) tables, and in logs sent to the client. That allows preventing
 sensitive data leakage from SQL queries such as names, emails, personal identifiers or credit card numbers to logs.
 
 **Example**
@@ -3134,7 +3134,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 
 The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parseable queries).
 
-The [`system.events`](/docs/en/operations/system-tables/events) table has counter `QueryMaskingRulesMatch` which has an overall number of query masking rules matches.
+The [`system.events`](/docs/operations/system-tables/events) table has counter `QueryMaskingRulesMatch` which has an overall number of query masking rules matches.
 
 For distributed queries each server has to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
@@ -3156,6 +3156,25 @@ For the value of the `incl` attribute, see the section "[Configuration files](..
 - [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
 - [Cluster Discovery](../../operations/cluster-discovery.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
+
+## remote_url_allow_hosts
+
+List of hosts which are allowed to be used in URL-related storage engines and table functions.
+
+When adding a host with the `\<host\>` xml tag:
+- it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
+- if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
+- if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
+- if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
+- if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
+
+For example: 
+
+```sql
+<remote_url_allow_hosts>
+    <host>clickhouse.com</host>
+</remote_url_allow_hosts>
+```
 
 ## timezone
 
@@ -3445,7 +3464,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 
 ## use_minimalistic_part_header_in_zookeeper
 
-Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family. It can be specified:
+Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/docs/engines/table-engines/mergetree-family) family. It can be specified:
 
 **Globally in the [merge_tree](#merge_tree) section of the `config.xml` file**
 
@@ -3475,7 +3494,7 @@ Default: 0
 ## distributed_ddl
 
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
-Works only if [ZooKeeper](/docs/en/operations/server-configuration-parameters/settings#zookeeper) is enabled.
+Works only if [ZooKeeper](/docs/operations/server-configuration-parameters/settings#zookeeper) is enabled.
 
 The configurable settings within `<distributed_ddl>` include:
 
@@ -3766,7 +3785,7 @@ Select a parent field in the tabs below to view their children:
 It's possible that the proxy servers change dynamically. In that
 case, you can define the endpoint of a resolver. ClickHouse sends
 an empty GET request to that endpoint, the remote resolver should return the proxy host.
-ClickHouse will use it to form the proxy URI using the following template: `{proxy_scheme}://{proxy_host}:{proxy_port}`
+ClickHouse will use it to form the proxy URI using the following template: `\{proxy_scheme\}://\{proxy_host\}:{proxy_port}`
 
 **Configuration template**
 
@@ -3911,18 +3930,38 @@ Type: `String`
 Default: `default`
 
 **See Also**
-- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+- [Workload Scheduling](/docs/operations/workload-scheduling.md)
 
 ## mutation_workload
 
 Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
 
 **See Also**
-- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+- [Workload Scheduling](/docs/operations/workload-scheduling.md)
 
 Type: `String`
 
 Default: `default`
+
+## throw_on_unknown_workload
+
+Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
+
+- If `true`, RESOURCE_ACCESS_DENIED exception is thrown from a query that is trying to access unknown workload. Useful to enforce resource scheduling for all queries after WORKLOAD hierarchy is established and contains WORKLOAD default.
+- If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
+
+**See Also**
+- [Workload Scheduling](/docs/operations/workload-scheduling.md)
+
+Type: String
+
+Default: false
+
+**Example**
+
+```xml
+<throw_on_unknown_workload>true</throw_on_unknown_workload>
+```
 
 ## workload_path
 
@@ -3935,7 +3974,7 @@ The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` 
 ```
 
 **See Also**
-- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [Workload Hierarchy](/docs/operations/workload-scheduling.md#workloads)
 - [workload_zookeeper_path](#workload_zookeeper_path)
 
 ## workload_zookeeper_path
@@ -3949,7 +3988,7 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 ```
 
 **See Also**
-- [Workload Hierarchy](/docs/en/operations/workload-scheduling.md#workloads)
+- [Workload Hierarchy](/docs/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
 
 ## use_legacy_mongodb_integration

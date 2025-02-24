@@ -11,6 +11,9 @@ namespace CurrentMetrics
     extern const Metric BackupsIOThreads;
     extern const Metric BackupsIOThreadsActive;
     extern const Metric BackupsIOThreadsScheduled;
+    extern const Metric MergeTreeFetchPartitionThreads;
+    extern const Metric MergeTreeFetchPartitionThreadsActive;
+    extern const Metric MergeTreeFetchPartitionThreadsScheduled;
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsLoaderThreadsScheduled;
@@ -139,6 +142,12 @@ StaticThreadPool & getIOThreadPool()
 StaticThreadPool & getBackupsIOThreadPool()
 {
     static StaticThreadPool instance("BackupsIOThreadPool", CurrentMetrics::BackupsIOThreads, CurrentMetrics::BackupsIOThreadsActive, CurrentMetrics::BackupsIOThreadsScheduled);
+    return instance;
+}
+
+StaticThreadPool & getFetchPartitionThreadPool()
+{
+    static StaticThreadPool instance("MergeTreeFetchPartitionThreadPool", CurrentMetrics::MergeTreeFetchPartitionThreads, CurrentMetrics::MergeTreeFetchPartitionThreadsActive, CurrentMetrics::MergeTreeFetchPartitionThreadsScheduled);
     return instance;
 }
 

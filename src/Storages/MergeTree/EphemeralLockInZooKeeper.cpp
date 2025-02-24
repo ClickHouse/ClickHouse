@@ -101,6 +101,12 @@ void EphemeralLockInZooKeeper::unlock()
     zookeeper = nullptr;
 }
 
+void EphemeralLockInZooKeeper::checkCreated() const
+{
+    if (!isLocked())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
+}
+
 void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops)
 {
     checkCreated();
