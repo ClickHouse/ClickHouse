@@ -715,7 +715,8 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         desc.order_by.begin(), desc.order_by.end());
 
     if (definition.frame_type != WindowFrame::FrameType::ROWS
-        && definition.frame_type != WindowFrame::FrameType::RANGE)
+        && definition.frame_type != WindowFrame::FrameType::RANGE
+        && definition.frame_type != WindowFrame::FrameType::SESSION)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Window frame '{}' is not implemented (while processing '{}')",
@@ -756,6 +757,13 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
         auto [value, _] = evaluateConstantExpression(definition.frame_begin_offset,
             context_.shared_from_this());
         desc.frame.begin_offset = value;
+    }
+
+    if (definition.frame_type == WindowFrame::FrameType::SESSION)
+    {
+        auto [value, _] = evaluateConstantExpression(definition.session_window_threshold,
+                context_.shared_from_this());
+        desc.frame.session_window_threshold = value;
     }
 }
 

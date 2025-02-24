@@ -44,6 +44,12 @@ ASTPtr ASTWindowDefinition::clone() const
         result->children.push_back(result->frame_end_offset);
     }
 
+    if (session_window_threshold)
+    {
+        result->session_window_threshold = session_window_threshold->clone();
+        result->children.push_back(result->session_window_threshold);
+    }
+
     return result;
 }
 
@@ -97,6 +103,13 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             ostr << " ";
 
         format_frame.need_parens = true;
+
+        if (frame_type == WindowFrame::FrameType::SESSION)
+        {
+            ostr << frame_type << " ";
+            session_window_threshold->formatImpl(ostr, settings, state, format_frame);
+            return;
+        }
 
         ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)

@@ -76,6 +76,12 @@ void WindowNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
         buffer << '\n' << std::string(indent + 2, ' ') << "FRAME END OFFSET\n";
         getFrameEndOffsetNode()->dumpTreeImpl(buffer, format_state, indent + 4);
     }
+
+    if (hasFrameSessionWindowThreshold())
+    {
+        buffer << '\n' << std::string(indent + 2, ' ') << "FRAME SESSION\n";
+        getFrameSessionWindowThresholdNode()->dumpTreeImpl(buffer, format_state, indent + 4);
+    }
 }
 
 bool WindowNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
@@ -140,6 +146,12 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
     {
         window_definition->children.push_back(getFrameEndOffsetNode()->toAST(options));
         window_definition->frame_end_offset = window_definition->children.back();
+    }
+
+    if (hasFrameSessionWindowThreshold())
+    {
+        window_definition->children.push_back(getFrameSessionWindowThresholdNode()->toAST(options));
+        window_definition->session_window_threshold = window_definition->children.back();
     }
 
     return window_definition;
