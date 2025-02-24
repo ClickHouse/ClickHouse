@@ -44,10 +44,10 @@ std::string getFilePath(std::string_view data_path, const std::string & common_p
     while (pos != std::string::npos)
     {
         auto potential_position = pos + common_path.size();
-        if ((std::string_view(data_path.data() + potential_position, 4) == "data")
-            || (std::string_view(data_path.data() + potential_position, 5) == "/data")
-            || (std::string_view(data_path.data() + potential_position, 8) == "metadata")
-            || (std::string_view(data_path.data() + potential_position, 9) == "/metadata"))
+        if ((std::string_view(data_path.data() + potential_position, 5) == "data/")
+            || (std::string_view(data_path.data() + potential_position, 6) == "/data/")
+            || (std::string_view(data_path.data() + potential_position, 9) == "metadata/")
+            || (std::string_view(data_path.data() + potential_position, 10) == "/metadata/"))
         {
             good_pos = pos;
             break;
