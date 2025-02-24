@@ -7,12 +7,12 @@ run_mode="${1:-CI}"
 column_names=("number_col" "str_col" "array_col" "nullable_col" "sparse_col" "tuple_col")
 table_name="table_for_estimate_compression_ratio"
 tolerance=0.25
-formatted_tolerance=$(echo "scale=2; $tolerance * 100" | bc)%
+formatted_tolerance=$(awk "BEGIN {printf \"%.2f\", $tolerance * 100}")%
 
 # all combinations of the following should be tested
 codecs=("ZSTD" "LZ4")
 block_sizes=(65536 1048576)
-num_rows_list=(250_000 500_000)
+num_rows_list=(100_000 250_000)
 
 
 log_if_debug() {
@@ -41,7 +41,8 @@ test_compression_ratio() {
         tuple_col Tuple(Int64, String) CODEC($codec)
     ) ENGINE = MergeTree ORDER BY number_col
     SETTINGS min_compress_block_size = $block_size,
-             max_compress_block_size = $block_size"
+             max_compress_block_size = $block_size,
+             min_bytes_for_wide_part = 0"
 
     log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
@@ -103,14 +104,14 @@ test_compression_ratio() {
 
     for col in "${column_names[@]}"; do
         actual_ratio=$(echo "$actual_ratios" | grep "$col" | cut -f2)
-        min_ratio=$(echo "$actual_ratio * (1 - $tolerance)" | bc)
-        max_ratio=$(echo "$actual_ratio * (1 + $tolerance)" | bc)
+        min_ratio=$(awk "BEGIN {print $actual_ratio * (1 - $tolerance)}")
+        max_ratio=$(awk "BEGIN {print $actual_ratio * (1 + $tolerance)}")
         estimated_ratio=${estimated_ratios[$col]}
-        percentage_difference=$(echo "scale=2; 100 * ($estimated_ratio - $actual_ratio) / $actual_ratio" | bc)
+        percentage_difference=$(awk "BEGIN {printf \"%.2f\", 100 * ($estimated_ratio - $actual_ratio) / $actual_ratio}")
 
         log_if_debug "$col Actual compression ratio: $actual_ratio, estimated compression ratio: $estimated_ratio, tolerance range: $min_ratio - $max_ratio, percentage difference: $percentage_difference%"
 
-        if (( $(echo "$estimated_ratio < $min_ratio || $estimated_ratio > $max_ratio" | bc -l) )); then
+        if (( $(awk "BEGIN {print ($estimated_ratio < $min_ratio || $estimated_ratio > $max_ratio) ? 1 : 0}") )); then
             echo "With codec=$codec block_size=$block_size num_rows=$num_rows:"
             echo "Estimated $col compression ratio $estimated_ratio is not within tolerance range compared to actual ratio ($actual_ratio +/- $formatted_tolerance), the percentage difference is $percentage_difference%"
             ((failures++))
