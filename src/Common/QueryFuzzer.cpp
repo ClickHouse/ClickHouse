@@ -1151,7 +1151,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             // Add alias to the expression to be used later on
             const String next_alias = "alias" + std::to_string(alias_counter++);
 
-            ident->setAlias(std::move(next_alias));
+            ident->setAlias(next_alias);
         }
         else if (!alias.empty())
         {
@@ -1531,7 +1531,7 @@ ASTPtr QueryFuzzer::addArrayJoinClause()
     {
         auto array_join = std::make_shared<ASTArrayJoin>();
         array_join->kind = fuzz_rand() % 2 == 0 ? ASTArrayJoin::Kind::Left : ASTArrayJoin::Kind::Inner;
-        array_join->children.push_back(std::move(arr_join_list));
+        array_join->children.push_back(arr_join_list);
         array_join->expression_list = array_join->children.back();
 
         auto table_join = std::make_shared<ASTTablesInSelectQueryElement>();
