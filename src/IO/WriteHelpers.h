@@ -1055,18 +1055,13 @@ inline void writeTime64Text(const Time64 & time64, UInt32 scale, WriteBuffer & b
     static constexpr UInt32 MaxScale = DecimalUtils::max_precision<Time64>;
     scale = scale > MaxScale ? MaxScale : scale;
 
-    auto components = DecimalUtils::split(time64, scale);
-
-    // using T = typename Time64::NativeType;
-    // if (time64.value < 0 && components.fractional)
-    // {
-    //     components.fractional = DecimalUtils::scaleMultiplier<T>(scale) + (components.whole ? T(-1) : T(1)) * components.fractional;
-    //     --components.whole;
-    // }
-
-    LOG_TRACE(getLogger("DEBUGGING TIME^$ DATA TYPE"), "components.whole = {}, components.fractional = {}", components.whole, components.fractional);
+    bool is_negative = (time64.value < 0);
+    Time64::NativeType whole = is_negative ? -time64.value : time64.value;
+    auto components = DecimalUtils::split(Time64(whole), scale);
 
     LocalTime local_time(components.whole);
+    if (is_negative)
+        local_time.negative(true);
     writeTimeText<delimiter1>(local_time, buf);
 
     if (scale > 0)

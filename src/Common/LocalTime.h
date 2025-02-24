@@ -201,7 +201,7 @@ public:
     unsigned char second() const { return m_second; }
 
     // Mutator methods
-    void negative(bool b) {is_negative = b; }
+    void negative(bool b) { is_negative = b; }
     void hour(unsigned short x) { m_hour = x; } /// NOLINT
     void minute(unsigned char x) { m_minute = x; }
     void second(unsigned char x) { m_second = x; }
