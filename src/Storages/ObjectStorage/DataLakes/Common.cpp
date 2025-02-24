@@ -6,12 +6,9 @@
 namespace DB
 {
 
-std::vector<String> listFiles(
-    const IObjectStorage & object_storage,
-    const StorageObjectStorage::Configuration & configuration,
-    const String & prefix, const String & suffix)
+std::vector<String> listFiles(const IObjectStorage & object_storage, const std::string & path, const String & prefix, const String & suffix)
 {
-    auto key = std::filesystem::path(configuration.getPath()) / prefix;
+    auto key = std::filesystem::path(path) / prefix;
     RelativePathsWithMetadata files_with_metadata;
     object_storage.listObjects(key, files_with_metadata, 0);
     Strings res;

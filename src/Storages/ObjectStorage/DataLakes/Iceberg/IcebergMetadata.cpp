@@ -186,7 +186,7 @@ Int32 IcebergMetadata::parseTableSchema(
 std::pair<Int32, String>
 getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
 {
-    const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
+    const auto metadata_files = listFiles(*object_storage, configuration.getPath(), "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
         throw Exception(

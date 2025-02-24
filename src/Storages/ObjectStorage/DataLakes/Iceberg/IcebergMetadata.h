@@ -29,7 +29,6 @@ public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
-
     static constexpr auto name = "Iceberg";
 
     IcebergMetadata(

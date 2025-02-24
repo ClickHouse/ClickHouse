@@ -44,7 +44,7 @@ Strings HudiMetadata::getDataFilesImpl() const
 {
     auto configuration_ptr = configuration.lock();
     auto log = getLogger("HudiMetadata");
-    const auto keys = listFiles(*object_storage, *configuration_ptr, "", Poco::toLower(configuration_ptr->format));
+    const auto keys = listFiles(*object_storage, configuration_ptr->getPath(), "", Poco::toLower(configuration_ptr->format));
 
     using Partition = std::string;
     using FileID = std::string;
