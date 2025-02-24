@@ -1,0 +1,3 @@
+OK - For codec=ZSTD block_size=65536 num_rows=250_000: Estimated compression ratios are within 20.00% of actual ratios
+With codec=ZSTD block_size=1048576 num_rows=250_000 (iteration 12):
+Estimated tuple_col compression ratio 2.3488333501283187 is not within tolerance range compared to actual ratio (2.9535745491545424 +/- 20.00%), the percentage difference is -20.47%
