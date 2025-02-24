@@ -28,6 +28,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
+#include <Core/Joins.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -770,7 +771,7 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
     return {};
 }
 
-UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, bool left_side, QueryPlanNode & subtree_root)
+UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, JoinTableSide side, QueryPlanNode & subtree_root)
 {
     WriteBufferFromOwnString wbuf;
     SerializedSetsRegistry registry;
@@ -822,6 +823,7 @@ UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, bool left_s
                 }
                 catch (const Exception & e)
                 {
+                    // Some steps currently missing serialization support. Let's just skip them.
                     if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
                         throw;
                 }
@@ -831,14 +833,14 @@ UInt64 calculateHashesFromSubtree(const JoinStepLogical & join_step, bool left_s
     }
 
     writeStringBinary(join_step.getSerializationName(), wbuf);
-    const auto & pre_join_actions
-        = left_side ? join_step.getExpressionActions().left_pre_join_actions : join_step.getExpressionActions().right_pre_join_actions;
+    const auto & pre_join_actions = side == JoinTableSide::Left ? join_step.getExpressionActions().left_pre_join_actions
+                                                                : join_step.getExpressionActions().right_pre_join_actions;
     chassert(pre_join_actions);
     pre_join_actions->serialize(ctx.out, ctx.registry);
     writeBinary(join_step.getJoinInfo().expression.condition.predicates.size(), wbuf);
     for (const auto & pred : join_step.getJoinInfo().expression.condition.predicates)
     {
-        const auto & node = left_side ? pred.left_node : pred.right_node;
+        const auto & node = side == JoinTableSide::Left ? pred.left_node : pred.right_node;
         writeStringBinary(node.getColumnName(), wbuf);
         writeBinary(static_cast<UInt8>(pred.op), wbuf);
     }
@@ -855,7 +857,7 @@ void JoinStepLogical::calculateHashesFromSubtree(QueryPlanNode & subtree_root)
     const auto * join_step = typeid_cast<const JoinStepLogical *>(subtree_root.step.get());
     chassert(join_step);
     chassert(subtree_root.children.size() == 2);
-    hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, /* left_side = */ true, *subtree_root.children.at(0));
-    hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, /* left_side = */ false, *subtree_root.children.at(1));
+    hash_table_key_hash_left = DB::calculateHashesFromSubtree(*this, JoinTableSide::Left, *subtree_root.children.at(0));
+    hash_table_key_hash_right = DB::calculateHashesFromSubtree(*this, JoinTableSide::Right, *subtree_root.children.at(1));
 }
 }
