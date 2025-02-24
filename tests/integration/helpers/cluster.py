@@ -3200,11 +3200,19 @@ class ClickHouseCluster:
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
-    def pause_container(self, instance_name):
+    def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    def unpause_container(self, instance_name):
+    def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    @contextmanager
+    def pause_container(self, instance_name):
+        self._pause_container(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
