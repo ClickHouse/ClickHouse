@@ -505,17 +505,14 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
+    /// Use specific target analysis for function analysis manager
     auto target_analysis = machine->getTargetIRAnalysis();
     fam.registerPass([&] { return target_analysis; });
 
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
-    pto.LoopInterleaving = true;
-    pto.LoopVectorization = true;
-    pto.LoopUnrolling = true;
+    /// Following options can be good for performance
     pto.ForgetAllSCEVInLoopUnroll = false;
-    pto.CallGraphProfile = true;
-    pto.UnifiedLTO = false;
     pto.MergeFunctions = false;
     pto.EagerlyInvalidateAnalyses = true;
 
@@ -525,7 +522,7 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     pb.registerFunctionAnalyses(fam);
     pb.registerLoopAnalyses(lam);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
-    /// Add passes the same with ExtraVectorizerPasses = true
+    /// Add passes the same with LLVM option: ExtraVectorizerPasses = true
     pb.registerOptimizerLastEPCallback(
         [&](llvm::ModulePassManager& module_pm, llvm::OptimizationLevel)
         {
@@ -548,9 +545,9 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
     mpm.run(module, mam);
 
-    #ifdef PRINT_ASSEMBLY
+#ifdef PRINT_ASSEMBLY
     DumpModuleIR(module);
-    #endif
+#endif
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
