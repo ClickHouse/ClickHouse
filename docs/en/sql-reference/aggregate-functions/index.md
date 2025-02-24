@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/
+slug: /sql-reference/aggregate-functions/
 sidebar_label: Aggregate Functions
 sidebar_position: 33
 ---
@@ -34,7 +34,7 @@ Consider this table:
 └───┴──────┘
 ```
 
-Let’s say you need to total the values in the `y` column:
+Let's say you need to total the values in the `y` column:
 
 ``` sql
 SELECT sum(y) FROM t_null_big
@@ -75,7 +75,7 @@ FROM t_null_big
 └────────────────────┴─────────────────────┘
 ```
 
-Also you can use [Tuple](/docs/en/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. A `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
+Also you can use [Tuple](/docs/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. A `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
 
 ```sql
 SELECT

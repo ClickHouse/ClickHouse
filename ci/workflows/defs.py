@@ -293,15 +293,19 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_MUSL = "amd_musl"
     RISCV64 = "riscv64"
     S390X = "s390x"
-    LOONGARCH64 = "loongarch"
+    LOONGARCH64 = "loongarch64"
     FUZZERS = "fuzzers"
 
 
 class JobNames:
+    DOCKER_BUILDS_ARM = "Dockers build (arm)"
+    DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
     FAST_TEST = "Fast test"
     BUILD = "Build"
+    UNITTEST = "Unit tests"
     STATELESS = "Stateless tests"
+    BUGFIX_VALIDATION = "Bugfix validation"
     STATEFUL = "Stateful tests"
     INTEGRATION = "Integration tests"
     STRESS = "Stress test"
@@ -354,15 +358,7 @@ class ArtifactNames:
     CH_S390X = "CH_S390X_BIN"
     CH_LOONGARCH64 = "CH_LOONGARCH64_BIN"
 
-    CH_ODBC_B_AMD_DEBUG = "CH_ODBC_B_AMD_DEBUG"
-    CH_ODBC_B_AMD_RELEASE = "CH_ODBC_B_AMD_RELEASE"
-    CH_ODBC_B_AMD_ASAN = "CH_ODBC_B_AMD_ASAN"
-    CH_ODBC_B_AMD_TSAN = "CH_ODBC_B_AMD_TSAN"
-    CH_ODBC_B_AMD_MSAN = "CH_ODBC_B_AMD_MSAN"
-    CH_ODBC_B_AMD_UBSAN = "CH_ODBC_B_AMD_UBSAN"
-    CH_ODBC_B_ARM_RELEASE = "CH_ODBC_B_ARM_RELEASE"
-    CH_ODBC_B_ARM_ASAN = "CH_ODBC_B_ARM_ASAN"
-
+    FAST_TEST = "FAST_TEST"
     UNITTEST_AMD_ASAN = "UNITTEST_AMD_ASAN"
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
@@ -402,6 +398,19 @@ ARTIFACTS = [
     *Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/unit_tests_dbms",
+    ).parametrize(
+        names=[
+            ArtifactNames.UNITTEST_AMD_ASAN,
+            ArtifactNames.UNITTEST_AMD_TSAN,
+            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_AMD_UBSAN,
+            ArtifactNames.UNITTEST_AMD_BINARY,
+        ]
+    ),
+    *Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/clickhouse",
     ).parametrize(
         names=[
@@ -429,21 +438,10 @@ ARTIFACTS = [
             ArtifactNames.CH_LOONGARCH64,
         ]
     ),
-    *Artifact.Config(
-        name="...",
+    Artifact.Config(
+        name=ArtifactNames.FAST_TEST,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/clickhouse-odbc-bridge",
-    ).parametrize(
-        names=[
-            ArtifactNames.CH_ODBC_B_AMD_DEBUG,
-            ArtifactNames.CH_ODBC_B_AMD_ASAN,
-            ArtifactNames.CH_ODBC_B_AMD_TSAN,
-            ArtifactNames.CH_ODBC_B_AMD_MSAN,
-            ArtifactNames.CH_ODBC_B_AMD_UBSAN,
-            ArtifactNames.CH_ODBC_B_AMD_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_RELEASE,
-            ArtifactNames.CH_ODBC_B_ARM_ASAN,
-        ]
+        path=f"{TEMP_DIR}/build/*",
     ),
     *Artifact.Config(
         name="*",
@@ -534,11 +532,6 @@ ARTIFACTS = [
             ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
         ]
     ),
-    # Artifact.Config(
-    #     name=ArtifactNames.PERF_REPORTS_ARM,
-    #     type=Artifact.Type.S3,
-    #     path=f"{Settings.TEMP_DIR}/perf_wd/*.html",
-    # ),
 ]
 
 
@@ -562,6 +555,7 @@ class Jobs:
                 "./src",
             ],
         ),
+        provides=[ArtifactNames.FAST_TEST],
     )
 
     build_jobs = Job.Config(
@@ -617,52 +611,46 @@ class Jobs:
             [
                 ArtifactNames.CH_AMD_DEBUG,
                 ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.CH_ODBC_B_AMD_DEBUG,
             ],
             [
                 ArtifactNames.CH_AMD_RELEASE,
                 ArtifactNames.DEB_AMD_RELEASE,
-                ArtifactNames.CH_ODBC_B_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
             [
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
-                ArtifactNames.CH_ODBC_B_AMD_ASAN,
-                # ArtifactNames.UNITTEST_AMD_ASAN,
+                ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
-                ArtifactNames.CH_ODBC_B_AMD_TSAN,
-                # ArtifactNames.UNITTEST_AMD_TSAN,
+                ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
-                ArtifactNames.CH_ODBC_B_AMD_MSAN,
-                # ArtifactNames.UNITTEST_AMD_MSAN,
+                ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
-                ArtifactNames.CH_ODBC_B_AMD_UBSAN,
+                ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
             [
                 ArtifactNames.CH_AMD_BINARY,
+                ArtifactNames.UNITTEST_AMD_BINARY,
             ],
             [
                 ArtifactNames.CH_ARM_RELEASE,
                 ArtifactNames.DEB_ARM_RELEASE,
-                ArtifactNames.CH_ODBC_B_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
-                ArtifactNames.CH_ODBC_B_ARM_ASAN,
             ],
             # special builds
             [ArtifactNames.CH_AMD_COV_BIN],
@@ -737,12 +725,12 @@ class Jobs:
             # RunnerLabels.FUNC_TESTER_ARM,
         ],
         requires=[
-            [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
-            [ArtifactNames.CH_AMD_DEBUG, ArtifactNames.CH_ODBC_B_AMD_DEBUG],
-            # [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-            # [ArtifactNames.CH_AMD_RELEASE, ArtifactNames.CH_ODBC_B_AMD_RELEASE],
-            # [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
-            # [ArtifactNames.CH_ARM_ASAN, ArtifactNames.CH_ODBC_B_ARM_ASAN],
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_AMD_DEBUG],
+            # [ArtifactNames.CH_AMD_RELEASE],
+            # [ArtifactNames.CH_AMD_RELEASE],
+            # [ArtifactNames.CH_ARM_ASAN],
+            # [ArtifactNames.CH_ARM_ASAN],
         ],
     )
 
@@ -1069,7 +1057,6 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.ASTFUZZER}",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,
@@ -1092,7 +1079,6 @@ class Jobs:
         runs_on=["..params.."],
         command=f"python3 ./tests/ci/ci_fuzzer_check.py {JobNames.BUZZHOUSE}",
         allow_merge_on_failure=True,
-        no_download_requires=True,
     ).parametrize(
         parameter=[
             BuildTypes.AMD_DEBUG,

@@ -38,7 +38,8 @@ namespace
         return identifier->name();
     }
 
-    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>> getKeyValueFromAST(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
+    std::optional<std::pair<std::string, std::variant<Field, ASTPtr>>>
+    getKeyValueFromASTImpl(ASTPtr ast, bool fallback_to_ast_value, ContextPtr context)
     {
         const auto * function = ast->as<ASTFunction>();
         if (!function || function->name != "equals")
@@ -71,16 +72,16 @@ namespace
         auto value = literal_value->as<ASTLiteral>()->value;
         return std::pair{key, Field(value)};
     }
+}
 
-    std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
-    {
-        auto res = getKeyValueFromAST(ast, true, context);
+std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
+{
+    auto res = getKeyValueFromASTImpl(ast, true, context);
 
-        if (!res || !std::holds_alternative<Field>(res->second))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", queryToString(ast));
+    if (!res || !std::holds_alternative<Field>(res->second))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", queryToString(ast));
 
-        return {res->first, std::get<Field>(res->second)};
-    }
+    return {res->first, std::get<Field>(res->second)};
 }
 
 std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
@@ -129,7 +130,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     for (auto * it = std::next(asts.begin()); it != asts.end(); ++it)
     {
-        auto value_override = getKeyValueFromAST(*it, /* fallback_to_ast_value */complex_args != nullptr, context);
+        auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
         if (!value_override)
         {

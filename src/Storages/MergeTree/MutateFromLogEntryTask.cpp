@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>

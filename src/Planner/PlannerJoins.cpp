@@ -45,6 +45,9 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 
+#include <stack>
+
+
 namespace DB
 {
 namespace Setting
@@ -866,7 +869,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                     right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
-            if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
+            if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))
             {
                 /**
                   * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
@@ -1124,7 +1127,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 query_context->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
                 settings[Setting::max_size_to_preallocate_for_joins]};
             return std::make_shared<ConcurrentHashJoin>(
-                query_context, table_join, query_context->getSettingsRef()[Setting::max_threads], right_table_expression_header, params);
+                table_join, query_context->getSettingsRef()[Setting::max_threads], right_table_expression_header, params);
         }
 
         return std::make_shared<HashJoin>(

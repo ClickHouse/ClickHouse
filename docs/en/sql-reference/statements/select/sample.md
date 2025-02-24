@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/sample
+slug: /sql-reference/statements/select/sample
 sidebar_label: SAMPLE
 ---
 
@@ -11,7 +11,7 @@ When data sampling is enabled, the query is not performed on all the data, but o
 
 Approximated query processing can be useful in the following cases:
 
-- When you have strict latency requirements (like below 100ms) but you can’t justify the cost of additional hardware resources to meet them.
+- When you have strict latency requirements (like below 100ms) but you can't justify the cost of additional hardware resources to meet them.
 - When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 - Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 
@@ -66,7 +66,7 @@ When using the `SAMPLE n` clause, you do not know which relative percent of data
 
 The `_sample_factor` column contains relative coefficients that are calculated dynamically. This column is created automatically when you [create](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) a table with the specified sampling key. The usage examples of the `_sample_factor` column are shown below.
 
-Let’s consider the table `visits`, which contains the statistics about site visits. The first example shows how to calculate the number of page views:
+Let's consider the table `visits`, which contains the statistics about site visits. The first example shows how to calculate the number of page views:
 
 ``` sql
 SELECT sum(PageViews * _sample_factor)

@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/third-party/client-libraries
+slug: /interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: Client Libraries
 description: Third-party client libraries
@@ -8,7 +8,7 @@ description: Third-party client libraries
 # Client Libraries from Third-party Developers
 
 :::note
-ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
 :::
 
 ### Python

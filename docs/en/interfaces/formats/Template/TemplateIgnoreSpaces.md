@@ -1,6 +1,6 @@
 ---
 title : TemplateIgnoreSpaces
-slug : /en/interfaces/formats/TemplateIgnoreSpaces
+slug: /interfaces/formats/TemplateIgnoreSpaces
 keywords : [TemplateIgnoreSpaces]
 input_format: true
 output_format: false
@@ -17,7 +17,7 @@ Similar to [`Template`], but skips whitespace characters between delimiters and 
 However, if format strings contain whitespace characters, these characters will be expected in the input stream. 
 Also allows specifying empty placeholders (`${}` or `${:None}`) to split some delimiter into separate parts to ignore spaces between them. 
 Such placeholders are used only for skipping whitespace characters.
-It’s possible to read `JSON` using this format if the values of columns have the same order in all rows.
+It's possible to read `JSON` using this format if the values of columns have the same order in all rows.
 
 :::note
 This format is suitable only for input.
@@ -25,7 +25,7 @@ This format is suitable only for input.
 
 ## Example Usage
 
-The following request can be used for inserting data from its output example of format [JSON](/docs/en/interfaces/formats/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/docs/interfaces/formats/JSON):
 
 ```sql
 INSERT INTO table_name 

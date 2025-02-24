@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/with
+slug: /sql-reference/statements/select/with
 sidebar_label: WITH
 ---
 
@@ -39,7 +39,7 @@ WITH <identifier> AS <subquery expression>
 
 ## Examples
 
-**Example 1:** Using constant expression as “variable”
+**Example 1:** Using constant expression as "variable"
 
 ``` sql
 WITH '2019-08-01 15:23:00' as ts_upper_bound
@@ -110,7 +110,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 :::note
-Recursive CTEs rely on the [new query analyzer](https://clickhouse.com/docs/en/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
+Recursive CTEs rely on the [new query analyzer](/docs/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
 Starting from version `24.8` the new analyzer has been fully promoted to production, and the setting `allow_experimental_analyzer` has been renamed to `enable_analyzer`.
 :::
 

@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/integrations/nats
+slug: /engines/table-engines/integrations/nats
 sidebar_position: 140
 sidebar_label: NATS
 ---
@@ -52,10 +52,10 @@ Required parameters:
 
 Optional parameters:
 
-- `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
-- `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
+- `nats_max_reconnect` – Maximum amount of reconnection attempts per try to connect to NATS. Default: `5`.
 - `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).

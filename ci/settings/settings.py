@@ -27,12 +27,16 @@ SECRET_CI_DB_USER = "clickhouse-test-stat-login"
 SECRET_CI_DB_PASSWORD = "clickhouse-test-stat-password"
 
 USE_CUSTOM_GH_AUTH = True
-#TODO switch to clickhouse-ci bot
 SECRET_GH_APP_ID: str = "woolenwolf_gh_app.clickhouse-app-id"
 SECRET_GH_APP_PEM_KEY: str = "woolenwolf_gh_app.clickhouse-app-key"
 
 INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 
-DISABLED_WORKFLOWS = ["new_pull_request.py", "defs.py"]
+DISABLED_WORKFLOWS = [
+    "new_pull_request.py",
+    "defs.py",
+    "job_configs.py",
+]
 PYTHONPATHS = ""
 DEFAULT_LOCAL_TEST_WORKFLOW = "PRNEW"
+READY_FOR_MERGE_CUSTOM_STATUS_NAME = "Mergeable Check"

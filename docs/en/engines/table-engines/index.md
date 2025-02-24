@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/
+slug: /engines/table-engines/
 toc_folder_title: Table Engines
 toc_priority: 26
 toc_title: Introduction
@@ -34,7 +34,7 @@ Engines in the family:
 
 ### Log {#log}
 
-Lightweight [engines](../../engines/table-engines/log-family/index.md) with minimum functionality. They’re the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
+Lightweight [engines](../../engines/table-engines/log-family/index.md) with minimum functionality. They're the most effective when you need to quickly write many small tables (up to approximately 1 million rows) and read them later as a whole.
 
 Engines in the family:
 
@@ -84,7 +84,7 @@ Engines in the family:
 
 Virtual column is an integral table engine attribute that is defined in the engine source code.
 
-You shouldn’t specify virtual columns in the `CREATE TABLE` query and you can’t see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can’t insert data into virtual columns.
+You shouldn't specify virtual columns in the `CREATE TABLE` query and you can't see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can't insert data into virtual columns.
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 

@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <mutex>
 
-#include <Interpreters/Set.h>
+#include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>

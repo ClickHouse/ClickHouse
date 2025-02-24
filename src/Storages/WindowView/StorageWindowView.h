@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/Block_fwd.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
+#include <Common/SharedMutex.h>
 
 #include <mutex>
 
@@ -241,8 +242,8 @@ private:
 
     ASTPtr inner_table_engine;
 
-    BackgroundSchedulePool::TaskHolder clean_cache_task;
-    BackgroundSchedulePool::TaskHolder fire_task;
+    BackgroundSchedulePoolTaskHolder clean_cache_task;
+    BackgroundSchedulePoolTaskHolder fire_task;
 
     String window_view_timezone;
     String function_now_timezone;

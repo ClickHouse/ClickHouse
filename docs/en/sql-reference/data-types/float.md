@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/float
+slug: /sql-reference/data-types/float
 sidebar_position: 4
 sidebar_label: Float32 | Float64 | BFloat16
 title: Float32 | Float64 | BFloat16 Types
@@ -22,7 +22,7 @@ ORDER BY tuple();
 # Generate 1 000 000 random numbers with 2 decimal places and store them as a float and as a decimal
 INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000;
 ```
-```
+```sql
 SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
 
 ┌──────sum(my_float)─┬─sum(my_decimal)─┐
@@ -64,7 +64,7 @@ SELECT 1 - 0.9
 ```
 
 - The result of the calculation depends on the calculation method (the processor type and architecture of the computer system).
-- Floating-point calculations might result in numbers such as infinity (`Inf`) and “not-a-number” (`NaN`). This should be taken into account when processing the results of calculations.
+- Floating-point calculations might result in numbers such as infinity (`Inf`) and "not-a-number" (`NaN`). This should be taken into account when processing the results of calculations.
 - When parsing floating-point numbers from text, the result might not be the nearest machine-representable number.
 
 ## NaN and Inf

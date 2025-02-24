@@ -8,6 +8,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -360,7 +361,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -381,7 +382,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
@@ -402,7 +403,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.safeGet<const String &>();
+            String prefix = value.safeGet<String>();
             if (prefix.empty())
                 return false;
 
@@ -423,7 +424,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.safeGet<const String &>();
+            const String & expression = value.safeGet<String>();
 
             /// This optimization can't process alternation - this would require
             /// a comprehensive parsing of regular expression.
@@ -1945,8 +1946,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNEleme
             /// Analyze (x, y)
             RPNElement::MultiColumnsFunctionDescription column_desc;
             column_desc.function_name = func_name;
-            auto first_argument = func.getArgumentAt(0).toFunctionNode();
 
+            /// TODO: support index analysis for first argument of Point/Tuple type.
+            if (!func.getArgumentAt(0).isFunction())
+                return false;
+
+            auto first_argument = func.getArgumentAt(0).toFunctionNode();
             if (first_argument.getArgumentsSize() != 2 || first_argument.getFunctionName() != "tuple")
                 return false;
 

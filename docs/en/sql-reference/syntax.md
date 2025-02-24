@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/syntax
+slug: /sql-reference/syntax
 sidebar_position: 2
 sidebar_label: Syntax
 title: Syntax
@@ -332,8 +332,8 @@ Some aggregate functions can contain two lists of arguments in brackets. For exa
 quantile (0.9)(x) 
 ```
 
-These aggregate functions are called “parametric” functions, 
-and the arguments in the first list are called “parameters”.
+These aggregate functions are called "parametric" functions, 
+and the arguments in the first list are called "parameters".
 
 :::note
 The syntax of aggregate functions without parameters is the same as for regular functions.
@@ -345,7 +345,7 @@ Operators are converted to their corresponding functions during query parsing, t
 
 For example, the expression 
 
-```
+```text
 1 + 2 * 3 + 4
 ```
 
@@ -361,9 +361,9 @@ Data types and table engines in the `CREATE` query are written the same way as i
 In other words, they may or may not contain an argument list in brackets. 
 
 For more information, see the sections:
-- [Data types](/docs/en/sql-reference/data-types/index.md)
-- [Table engines](/docs/en/engines/table-engines/index.md)
-- [CREATE](/docs/en/sql-reference/statements/create/index.md).
+- [Data types](/docs/sql-reference/data-types/index.md)
+- [Table engines](/docs/engines/table-engines/index.md)
+- [CREATE](/docs/sql-reference/statements/create/index.md).
 
 ## Expressions
 
@@ -417,7 +417,7 @@ SELECT (1 AS n) + 2, n`.
 SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 ```
 
-- Be careful with aliases that are the same as column or table names. Let’s consider the following example:
+- Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
 ``` sql
 CREATE TABLE t
@@ -449,4 +449,4 @@ You can change this default behavior by setting [prefer_column_name_to_alias](..
 ## Asterisk
 
 In a `SELECT` query, an asterisk can replace the expression. 
-For more information, see the section [SELECT](/docs/en/sql-reference/statements/select/index.md#asterisk).
+For more information, see the section [SELECT](/docs/sql-reference/statements/select/index.md#asterisk).
