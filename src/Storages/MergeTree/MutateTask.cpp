@@ -3,6 +3,7 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
@@ -34,12 +35,14 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
+#include <algorithm>
 
 namespace ProfileEvents
 {
@@ -94,6 +97,56 @@ enum class ExecuteTTLType : uint8_t
     NORMAL = 1,
     RECALCULATE= 2,
 };
+
+
+String getDebugString(const Strings & arg)
+{
+    WriteBufferFromOwnString out;
+    {
+        auto iter = arg.begin();
+        if (iter != arg.end())
+            out << *iter;
+        ++iter;
+        for (; iter != arg.end( ); iter++ )
+            out << ", " << *iter;
+        out.finalize();
+    }
+    return out.str();
+}
+
+
+Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part, bool with_projection_files = false)
+{
+    constexpr std::string proj_suffix = ".proj";
+
+    Strings files_in_part;
+
+    auto & storage = part->getDataPartStorage();
+    for (auto it = storage.iterate(); it->isValid(); it->next())
+    {
+        if (!it->isFile() && with_projection_files)
+        {
+            auto prj_name = it->name();
+            chassert(prj_name.ends_with(proj_suffix), "not a projection name");
+
+            auto prj_storage = storage.getProjection(prj_name);
+            for (auto prj_it = prj_storage->iterate(); prj_it->isValid(); prj_it->next())
+            {
+                chassert(prj_it->isFile(), "supposed to be a file");
+                auto fname = fs::path(prj_name) / prj_it->name();
+                files_in_part.push_back(fname);
+            }
+
+            continue;
+        }
+
+        files_in_part.push_back(it->name());
+    }
+
+    std::sort(files_in_part.begin(), files_in_part.end());
+    return files_in_part;
+}
+
 
 namespace MutationHelpers
 {
@@ -1923,11 +1976,8 @@ private:
         }
     }
 
-
     void finalize()
     {
-        size_t files_count = ctx->hardlinked_files.hardlinks_from_source_part.size();
-
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -1936,8 +1986,6 @@ private:
             auto changed_checksums =
                 static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
                     ctx->new_data_part, ctx->new_data_part->checksums);
-
-            files_count += changed_checksums.files.size();
 
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
 
@@ -1948,9 +1996,6 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (!rename_to.empty())
-                ++files_count;
-
             if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
             {
                 ctx->new_data_part->checksums.files.erase(rename_from);
@@ -1962,15 +2007,47 @@ private:
             }
         }
 
-        ctx->new_data_part->checksums.files.erase(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
+        constexpr std::string proj_suffix = ".proj";
 
-        if (files_count != ctx->new_data_part->checksums.files.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid files count in checksums, checksums has {} files, new part has {} files, files in checksums: {}",
-                ctx->new_data_part->checksums.files.size(),
-                files_count,
-                ctx->new_data_part->checksums.getDebugString());
+        // checksums should not contain records with not existed projections
+        // this might be not a proper fix
+        // it is better to remove projection close to the place where the decision to remove them is made
+        NameSet active_projections;
+        for (const auto & ptr : ctx->projections_to_recalc)
+            active_projections.insert(ptr->name + proj_suffix);
+
+        for (const auto & ptr : ctx->projections_to_build)
+            active_projections.insert(ptr->name + proj_suffix);
+
+        for (const auto & name : ctx->files_to_skip)
+        {
+            if (name.ends_with(proj_suffix) && !active_projections.contains(name) && ctx->new_data_part->checksums.has(name))
+                ctx->new_data_part->checksums.remove(name);
+        }
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
+
+        Strings files_in_part = getPartFiles(ctx->new_data_part);
+
+        // This is a pedantic check that the checksums file contains exactly the records with wit actual files
+        // There are some suspicion that some time it could contain excess files
+        files_in_part.erase(
+            std::remove_if(files_in_part.begin(), files_in_part.end(), [] (auto & item)
+                {
+                    // this files are not listed in "checksums.txt"
+                    return item == "checksums.txt"
+                    || item == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME
+                    || item == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME
+                    || item == "columns.txt";
+                }),
+            files_in_part.end());
+
+        if (files_in_part.size() != ctx->new_data_part->checksums.files.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid files count in checksums, checksums has {} files, new part has {} files, files in checksums: {}, files in part: {}",
+                ctx->new_data_part->checksums.files.size(),
+                files_in_part.size(),
+                getDebugString(ctx->new_data_part->checksums.getFileNames()),
+                getDebugString(files_in_part));
     }
 
     enum class State : uint8_t
