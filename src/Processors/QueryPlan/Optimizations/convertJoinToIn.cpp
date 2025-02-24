@@ -34,8 +34,8 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (join->getJoinSettings().join_use_nulls)
         return 0;
 
-    auto left_input_header = join->getInputHeaders().front();
-    auto right_input_header = join->getInputHeaders().back();
+    const auto & left_input_header = join->getInputHeaders().front();
+    const auto & right_input_header = join->getInputHeaders().back();
     const auto & output_header = join->getOutputHeader();
 
     bool left = false;
@@ -49,75 +49,63 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (left && right)
         return 0;
 
-
     ActionsDAG actions(left_input_header.getColumnsWithTypeAndName());
 
+    /// left parameter of IN funtion
     std::vector<const ActionsDAG::Node *> left_columns = actions.getOutputs();
     const ActionsDAG::Node * in_lhs_arg = left_columns.front();
 
+    /// right parameter of IN funtion
     auto context = join->getContext();
     const auto & settings = context->getSettingsRef();
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        CityHash_v1_0_2::uint128(), nullptr,
-        nullptr, nullptr,
+        CityHash_v1_0_2::uint128(),
+        right_input_header.getColumnsWithTypeAndName(),
         settings[Setting::transform_null_in],
         PreparedSets::getSizeLimitsForSet(settings),
         settings[Setting::use_index_for_in_with_subqueries_max_values]);
 
     chassert(future_set->get() == nullptr);
-    auto column_set = ColumnSet::create(1, future_set);
-    ColumnPtr set_col = std::move(column_set);
+    ColumnPtr set_col = ColumnSet::create(1, future_set);
     const ActionsDAG::Node * in_rhs_arg = &actions.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 
+    /// IN function
     auto func_in = FunctionFactory::instance().get("in", context);
     auto & in_node = actions.addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
     actions.getOutputs().push_back(&in_node);
 
-    auto where_step = std::make_unique<FilterStep>(left_input_header,
+    /// Attach IN to FilterStep
+    auto filter_step = std::make_unique<FilterStep>(left_input_header,
         std::move(actions),
         in_node.result_name,
         false);
-    where_step->setStepDescription("WHERE");
+    filter_step->setStepDescription("WHERE");
 
-    /// Replace JoinStepLogical with FilterStep
-    parent_node->step = std::move(where_step);
-    QueryPlan::Node * right_tree = parent_node->children[1];
-    parent_node->children.pop_back();
-
-    // PreparedSets::Subqueries subqueries(1, future_set);
-    // auto delayed_creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
-    //     output_header,
-    //     std::move(subqueries),
-    //     context);
-    // delayed_creating_sets_step->setStepDescription("DelayedCreatingSetsStep");
-
+    /// CreatingSetsStep as root
     Headers input_headers{output_header};
     auto creating_sets_step = std::make_unique<CreatingSetsStep>(input_headers);
     creating_sets_step->setStepDescription("Create sets before main query execution");
 
-    // auto creating_set_step = std::make_unique<CreatingSetStep>(
-    //     plan->getCurrentHeader(),
-    //     set_and_key,
-    //     nullptr,
-    //     SizeLimits(settings[Setting::max_rows_to_transfer],
-    //                settings[Setting::max_bytes_to_transfer],
-    //                settings[Setting::transfer_overflow_mode]),
-    //     context);
-    // creating_set_step->setStepDescription("Create set for subquery");
+    /// creating_set_step as right subtree
     auto creating_set_step = future_set->build(right_input_header, context);
 
-    /// CreatingSetsStep should be the root, so use swap
-    auto & last_node = nodes.back();
-    auto & new_node = nodes.emplace_back();
-    std::swap(last_node, new_node);
-    // last_node.step = std::move(delayed_creating_sets_step);
-    last_node.step = std::move(creating_sets_step);
-    last_node.children.push_back(&new_node);
+    /// Replace JoinStepLogical with FilterStep, but keep left subtree and remove right subtree
+    parent_node->step = std::move(filter_step);
+    QueryPlan::Node * right_tree = parent_node->children[1];
+    parent_node->children.pop_back();
 
+    /// CreatingSetsStep should be the root, use swap
+    auto & new_root = nodes.back();
+    auto & old_root = nodes.emplace_back();
+    std::swap(new_root, old_root);
+    new_root.step = std::move(creating_sets_step);
+    new_root.children.push_back(&old_root);
+
+    /// Attach CreatingSetStep node to the CreatingSetsStep node
     auto & creating_set_node = nodes.emplace_back();
     creating_set_node.step = std::move(creating_set_step);
     creating_set_node.children.push_back(right_tree);
-    last_node.children.push_back(&creating_set_node);
+    new_root.children.push_back(&creating_set_node);
 
     return 1;
 }

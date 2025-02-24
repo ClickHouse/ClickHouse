@@ -147,9 +147,7 @@ public:
 
     FutureSetFromSubquery(
         Hash hash_,
-        ASTPtr ast_,
-        StoragePtr external_table_,
-        std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+        const ColumnsWithTypeAndName & header,
         bool transform_null_in,
         SizeLimits size_limits,
         size_t max_size_for_index);

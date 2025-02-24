@@ -170,18 +170,17 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 
 FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
-    ASTPtr ast_,
-    StoragePtr external_table_,
-    std::shared_ptr<FutureSetFromSubquery> external_table_set_,
+    const ColumnsWithTypeAndName & header,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
-    : hash(hash_), ast(std::move(ast_)), external_table(std::move(external_table_)), external_table_set(std::move(external_table_set_))
+    : hash(hash_)
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    set_and_key->set->setHeader(header);
 }
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
