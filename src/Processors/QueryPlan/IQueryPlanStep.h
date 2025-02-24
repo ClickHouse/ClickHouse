@@ -112,13 +112,6 @@ public:
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
 
-    /// For example, `HashTablesStatistics` key
-    virtual bool needsToCalculateHashesFromSubtree() const { return false; }
-    virtual void calculateHashesFromSubtree([[maybe_unused]] QueryPlanNode & subtree_root)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "calculateHashesFromSubtree is not implemented");
-    }
-
 protected:
     virtual void updateOutputHeader() = 0;
 
