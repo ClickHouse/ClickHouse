@@ -42,7 +42,7 @@ fi
 
 STATUS=0
 for fname in ${ROOT_PATH}/docs/${CHECK_LANG}/**/*.md; do
-    errors=$(cat "$fname" \
+    errors=$(preprocess_file "$fname" \
         | aspell list \
             -W 3 \
             --personal=aspell-dict.txt \
