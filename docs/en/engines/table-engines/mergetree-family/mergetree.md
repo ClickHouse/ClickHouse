@@ -57,11 +57,11 @@ For a detailed description of the parameters, see the [CREATE TABLE](/docs/sql-r
 
 ### Query Clauses {#mergetree-query-clauses}
 
-#### ENGINE
+#### ENGINE {#engine}
 
 `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine has no parameters.
 
-#### ORDER_BY
+#### ORDER_BY {#order_by}
 
 `ORDER BY` — The sorting key.
 
@@ -72,20 +72,20 @@ If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
 Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY tuple()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
 
-#### PARTITION BY
+#### PARTITION BY {#partition-by}
 
 `PARTITION BY` — The [partitioning key](/docs/engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
 For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
-#### PRIMARY KEY
+#### PRIMARY KEY {#primary-key}
 
 `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key). Optional.
 
 Specifying a sorting key (using `ORDER BY` clause) implicitly specifies a primary key.
 It is usually not necessary to specify the primary key in addition to the sorting key.
 
-#### SAMPLE BY
+#### SAMPLE BY {#sample-by}
 
 `SAMPLE BY` — A sampling expression. Optional.
 
@@ -94,7 +94,7 @@ The sampling expression must result in an unsigned integer.
 
 Example: `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-####  TTL
+####  TTL {#ttl}
 
 `TTL` — A list of rules that specify the storage duration of rows and the logic of automatic parts movement [between disks and volumes](#table_engine-mergetree-multiple-volumes). Optional.
 
@@ -105,7 +105,7 @@ Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an ac
 
 For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
-#### SETTINGS
+#### SETTINGS {#settings}
 
 See [MergeTree Settings](../../../operations/settings/merge-tree-settings.md).
 
@@ -343,25 +343,25 @@ INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 
 ### Available Types of Indices {#available-types-of-indices}
 
-#### MinMax
+#### MinMax {#minmax}
 
 Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
 
 Syntax: `minmax`
 
-#### Set
+#### Set {#set}
 
 Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
 
 Syntax: `set(max_rows)`
 
-#### Bloom Filter
+#### Bloom Filter {#bloom-filter}
 
 Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns. An optional `false_positive` parameter with possible values between 0 and 1 specifies the probability of receiving a false positive response from the filter. Default value: 0.025. Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`. For the `Map` data type, the client can specify if the index should be created for keys or values using [mapKeys](/docs/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/docs/sql-reference/functions/tuple-map-functions.md/#mapvalues) function.
 
 Syntax: `bloom_filter([false_positive])`
 
-#### N-gram Bloom Filter
+#### N-gram Bloom Filter {#n-gram-bloom-filter}
 
 Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all n-grams from a block of data. Only works with datatypes: [String](/docs/sql-reference/data-types/string.md), [FixedString](/docs/sql-reference/data-types/fixedstring.md) and [Map](/docs/sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
 
@@ -416,13 +416,13 @@ Of course, you can also use those functions to estimate parameters by other cond
 The functions refer to the content [here](https://hur.st/bloomfilter).
 
 
-#### Token Bloom Filter
+#### Token Bloom Filter {#token-bloom-filter}
 
 The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
 
 Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
 
-#### Special-purpose
+#### Special-purpose {#special-purpose}
 
 - An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
 - An experimental full-text index to support full-text search. See [here](invertedindexes.md) for details.
@@ -548,7 +548,7 @@ The `TTL` clause can't be used for key columns.
 
 **Examples**
 
-#### Creating a table with `TTL`:
+#### Creating a table with `TTL`: {#creating-a-table-with-ttl}
 
 ``` sql
 CREATE TABLE tab
@@ -563,7 +563,7 @@ PARTITION BY toYYYYMM(d)
 ORDER BY d;
 ```
 
-#### Adding TTL to a column of an existing table
+#### Adding TTL to a column of an existing table {#adding-ttl-to-a-column-of-an-existing-table}
 
 ``` sql
 ALTER TABLE tab
@@ -571,7 +571,7 @@ ALTER TABLE tab
     c String TTL d + INTERVAL 1 DAY;
 ```
 
-#### Altering TTL of the column
+#### Altering TTL of the column {#altering-ttl-of-the-column}
 
 ``` sql
 ALTER TABLE tab
@@ -609,7 +609,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 
 **Examples**
 
-#### Creating a table with `TTL`:
+#### Creating a table with `TTL`: {#creating-a-table-with-ttl-1}
 
 ``` sql
 CREATE TABLE tab
@@ -625,7 +625,7 @@ TTL d + INTERVAL 1 MONTH DELETE,
     d + INTERVAL 2 WEEK TO DISK 'bbb';
 ```
 
-#### Altering `TTL` of the table:
+#### Altering `TTL` of the table: {#altering-ttl-of-the-table}
 
 ``` sql
 ALTER TABLE tab
@@ -646,7 +646,7 @@ ORDER BY d
 TTL d + INTERVAL 1 MONTH DELETE WHERE toDayOfWeek(d) = 1;
 ```
 
-#### Creating a table, where expired rows are recompressed:
+#### Creating a table, where expired rows are recompressed: {#creating-a-table-where-expired-rows-are-recompressed}
 
 ```sql
 CREATE TABLE table_for_recompression
@@ -689,7 +689,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 - [ttl_only_drop_parts](/docs/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
 
-## Disk types
+## Disk types {#disk-types}
 
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)

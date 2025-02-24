@@ -1350,7 +1350,7 @@ Default values:
 -   `25000` for `input_format_max_rows_to_read_for_schema_inference`.
 -   `33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
 
-#### column_names_for_schema_inference
+#### column_names_for_schema_inference {#column-names-for-schema-inference}
 
 The list of column names to use in schema inference for formats without explicit column names. Specified names will be used instead of default `c1,c2,c3,...`. The format: `column1,column2,column3,...`.
 
@@ -1367,7 +1367,7 @@ DESC format(TSV, 'Hello, World!	42	[1, 2, 3]') settings column_names_for_schema_
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### schema_inference_hints
+#### schema_inference_hints {#schema-inference-hints}
 
 The list of column names and types to use in schema inference instead of automatically determined types. The format: 'column_name1 column_type1, column_name2 column_type2, ...'.
 This setting can be used to specify the types of columns that could not be determined automatically or for optimizing the schema.
@@ -1387,7 +1387,7 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### schema_inference_make_columns_nullable
+#### schema_inference_make_columns_nullable ${#schema-inference-make-columns-nullable}
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
 If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
@@ -1447,7 +1447,7 @@ DESC format(JSONEachRow, $$
 └─────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_integers
+#### input_format_try_infer_integers {#input-format-try-infer-integers}
 
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats.
 If all numbers in the column from sample data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -1504,7 +1504,7 @@ DESC format(JSONEachRow, $$
 └────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_datetimes
+#### input_format_try_infer_datetimes {#input-format-try-infer-datetimes}
 
 If enabled, ClickHouse will try to infer type `DateTime` or `DateTime64` from string fields in schema inference for text formats.
 If all fields from a column in sample data were successfully parsed as datetimes, the result type will be `DateTime` or `DateTime64(9)` (if any datetime had fractional part),
@@ -1553,7 +1553,7 @@ DESC format(JSONEachRow, $$
 └────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_datetimes_only_datetime64
+#### input_format_try_infer_datetimes_only_datetime64 {#input-format-try-infer-datetimes-only-datetime64}
 
 If enabled, ClickHouse will always infer `DateTime64(9)` when `input_format_try_infer_datetimes` is enabled even if datetime values don't contain fractional part.
 
@@ -1579,7 +1579,7 @@ DESC format(JSONEachRow, $$
 
 Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/operations/settings/settings-formats.md#date_time_input_format)
 
-#### input_format_try_infer_dates
+#### input_format_try_infer_dates {#input-format-try-infer-dates}
 
 If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats.
 If all fields from a column in sample data were successfully parsed as dates, the result type will be `Date`,
@@ -1625,7 +1625,7 @@ DESC format(JSONEachRow, $$
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_exponent_floats
+#### input_format_try_infer_exponent_floats {#input-format-try-infer-exponent-floats}
 
 If enabled, ClickHouse will try to infer floats in exponential form for text formats (except JSON where numbers in exponential form are always inferred).
 

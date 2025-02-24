@@ -256,7 +256,7 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-### Converting a Variant column to an ordinary column
+### Converting a Variant column to an ordinary column {#converting-a-variant-column-to-an-ordinary-column}
 
 It is possible to convert a `Variant` column to an ordinary column. In this case all nested variants will be converted to a destination type:
 
@@ -274,7 +274,7 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-### Converting a Variant to another Variant
+### Converting a Variant to another Variant {#converting-a-variant-to-another-variant}
 
 It is possible to convert a `Variant` column to another `Variant` column, but only if the destination `Variant` column contains all nested types from the original `Variant`:
 
@@ -293,7 +293,7 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 ```
 
 
-## Reading Variant type from the data
+## Reading Variant type from the data {#reading-variant-type-from-the-data}
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Variant` type. During data parsing ClickHouse tries to insert value into most appropriate variant type.
 
@@ -327,7 +327,7 @@ $$)
 ```
 
 
-## Comparing values of Variant type
+## Comparing values of Variant type {#comparing-values-of-variant-data}
 
 Values of a `Variant` type can be compared only with values with the same `Variant` type.
 
@@ -446,7 +446,7 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **Note** by default `Variant` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
 
-## JSONExtract functions with Variant
+## JSONExtract functions with Variant {#jsonextract-functions-with-variant}
 
 All `JSONExtract*` functions support `Variant` type:
 

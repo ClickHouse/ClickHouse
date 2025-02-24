@@ -7,7 +7,7 @@ keywords: ['updates', 'collapsing']
 
 # CollapsingMergeTree
 
-## Description
+## Description {#description}
 
 The `CollapsingMergeTree` engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
 and adds logic for collapsing rows during the merge process.
@@ -23,7 +23,7 @@ This engine may significantly reduce the volume of storage,
 increasing the efficiency of `SELECT` queries as a consequence.
 :::
 
-## Parameters
+## Parameters {#parameters}
 
 All parameters of this table engine, with the exception of the `Sign` parameter,
 have the same meaning as in [`MergeTree`](/docs/engines/table-engines/mergetree-family/mergetree).
@@ -177,7 +177,7 @@ you can use the [`FINAL`](../../../sql-reference/statements/select/from.md#final
 For CollapsingMergeTree, only the latest state row for each key is returned.
 :::
 
-## Examples
+## Examples {#examples}
 
 ### Example of Use {#example-of-use}
 
