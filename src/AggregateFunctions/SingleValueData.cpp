@@ -293,7 +293,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         if (opt.has_value())
             setIfSmaller(*opt);
     }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
     {
         using U = NativeType<T>;
         std::optional<U> opt = findExtremeMin(reinterpret_cast<const U *>(vec.getData().data()), row_begin, row_end);
@@ -321,7 +321,7 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         if (opt.has_value())
             setIfGreater(*opt);
     }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
     {
         using U = NativeType<T>;
         std::optional<U> opt = findExtremeMax(reinterpret_cast<const U *>(vec.getData().data()), row_begin, row_end);
@@ -363,7 +363,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
         if (opt.has_value())
             setIfSmaller(*opt);
     }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
     {
         using U = NativeType<T>;
 
@@ -425,7 +425,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
         if (opt.has_value())
             setIfGreater(*opt);
     }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64>)
+    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
     {
         using U = NativeType<T>;
         std::optional<U> opt;
