@@ -1,5 +1,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/defines.h>
+#include <utility>
 
 // MemoryTrackerBlockerInThread
 thread_local uint64_t MemoryTrackerBlockerInThread::counter = 0;

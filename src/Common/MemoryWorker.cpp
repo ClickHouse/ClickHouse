@@ -322,7 +322,7 @@ void MemoryWorker::backgroundThread()
         MemoryTracker::updateRSS(resident);
 
         if (page_cache)
-            page_cache->autoResize(total_memory_tracker.getRSS(), total_memory_tracker.getHardLimit());
+            page_cache->autoResize(resident, total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
         if (resident > total_memory_tracker.getHardLimit())

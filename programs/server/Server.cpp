@@ -1121,12 +1121,19 @@ try
             server_settings[ServerSetting::page_cache_block_size],
             server_settings[ServerSetting::page_cache_lookahead_blocks],
             std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
-            server_settings[ServerSetting::page_cache_policy], server_settings[ServerSetting::page_cache_size_ratio], server_settings[ServerSetting::page_cache_min_size], server_settings[ServerSetting::page_cache_max_size], server_settings[ServerSetting::page_cache_free_memory_ratio]);
+            server_settings[ServerSetting::page_cache_policy],
+            server_settings[ServerSetting::page_cache_size_ratio],
+            server_settings[ServerSetting::page_cache_min_size],
+            server_settings[ServerSetting::page_cache_max_size],
+            server_settings[ServerSetting::page_cache_free_memory_ratio]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
     }
 
     MemoryWorker memory_worker(
-        server_settings[ServerSetting::memory_worker_period_ms], server_settings[ServerSetting::memory_worker_correct_memory_tracker], global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup], global_context->getPageCache());
+        server_settings[ServerSetting::memory_worker_period_ms],
+        server_settings[ServerSetting::memory_worker_correct_memory_tracker],
+        global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup],
+        global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(

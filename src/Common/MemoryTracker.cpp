@@ -312,6 +312,9 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
     if (unlikely(
             current_hard_limit && (will_be > current_hard_limit || (level == VariableContext::Global && will_be_rss > current_hard_limit))))
     {
+        /// Try to evict from userspace page cache or kill a lower-priority query to free up memory.
+        /// These operations are relatively slow, so we do them only if memoryTrackerCanThrow;
+        /// otherwise all allocations may get slow when above memory limit.
         if (memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
         {
             OvercommitResult overcommit_result = OvercommitResult::NONE;

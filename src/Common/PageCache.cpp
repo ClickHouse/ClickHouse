@@ -39,7 +39,7 @@ UInt128 PageCacheKey::hash() const
     hash.update(path.data(), path.size());
     if (!file_version.empty())
     {
-        hash.update("\0", 1);
+        hash.update("\0", 1); // indicate presence of `file_version` and unambiguously separate it from `path`
         hash.update(file_version.data(), file_version.size());
     }
     return hash.get128();
@@ -159,7 +159,7 @@ void PageCache::autoResize(size_t memory_usage, size_t memory_limit)
             int64_t bucket = now / history_window.count();
             if (bucket > cur_bucket + 1)
                 peak_memory_buckets = {0, 0};
-            else if (bucket > cur_bucket)
+            else if (bucket == cur_bucket + 1)
                 peak_memory_buckets = {0, peak_memory_buckets[0]};
             cur_bucket = bucket;
             peak_memory_buckets[0] = std::max(peak_memory_buckets[0], usage_excluding_cache);
@@ -169,7 +169,7 @@ void PageCache::autoResize(size_t memory_usage, size_t memory_limit)
 
     size_t reduced_limit = size_t(memory_limit * (1. - std::min(free_memory_ratio, 1.)));
     size_t target_size = reduced_limit - std::min(peak, reduced_limit);
-    target_size = std::min(max_size_in_bytes, std::max(min_size_in_bytes, target_size));
+    target_size = std::clamp(target_size, min_size_in_bytes, max_size_in_bytes);
 
     setMaxSizeInBytes(target_size);
 

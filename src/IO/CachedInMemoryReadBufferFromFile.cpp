@@ -36,10 +36,9 @@ String CachedInMemoryReadBufferFromFile::getInfoForLog()
 
 bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
-    /// This is a weird method. Seek to what offset? If the target offset is in cache then the seek
-    /// is cheap. Let's assume that the caller means a short seek that would stay within
-    /// working_buffer if it's not empty.
-    return available() == 0;
+    /// This is a weird method. Seek to what offset? If the target offset is in cache or within the
+    /// working_buffer then the seek is cheap.
+    return available() == 0 || last_read_hit_cache;
 }
 
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
@@ -115,8 +114,10 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
         cache_key.offset = file_offset_of_buffer_end / block_size * block_size;
         cache_key.size = std::min(block_size, file_size.value() - cache_key.offset);
 
+        last_read_hit_cache = true;
         chunk = cache->getOrSet(cache_key, settings.read_from_page_cache_if_exists_otherwise_bypass_cache, settings.page_cache_inject_eviction, [&](auto cell)
         {
+            last_read_hit_cache = false;
             Buffer prev_in_buffer = in->internalBuffer();
             SCOPE_EXIT({ in->set(prev_in_buffer.begin(), prev_in_buffer.size()); });
 

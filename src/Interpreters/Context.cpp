@@ -3304,14 +3304,19 @@ void Context::clearUncompressedCache() const
         cache->clear();
 }
 
-void Context::setPageCache(size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio)
+void Context::setPageCache(
+    size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window,
+    const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
+    double free_memory_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->page_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
 
-    shared->page_cache = std::make_shared<PageCache>(default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio, min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
+    shared->page_cache = std::make_shared<PageCache>(
+        default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio,
+        min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
 }
 
 PageCachePtr Context::getPageCache() const
