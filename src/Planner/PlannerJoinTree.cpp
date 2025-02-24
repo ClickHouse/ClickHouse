@@ -2057,7 +2057,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     join_step_logical->setPreparedJoinStorage(
         tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
 
-    auto & join_expression_actions = join_step_logical->getExpressionActions();
+    const auto & join_expression_actions = join_step_logical->getExpressionActions();
     appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
     appendSetsFromActionsDAG(*join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
     appendSetsFromActionsDAG(*join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);
