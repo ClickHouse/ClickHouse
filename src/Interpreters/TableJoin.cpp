@@ -978,16 +978,6 @@ void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
     right_storage_join = storage;
 }
 
-void TableJoin::setRightStorageName(const std::string & storage_name)
-{
-    right_storage_name = storage_name;
-}
-
-const std::string & TableJoin::getRightStorageName() const
-{
-    return right_storage_name;
-}
-
 String TableJoin::renamedRightColumnName(const String & name) const
 {
     if (const auto it = renames.find(name); it != renames.end())
@@ -1101,7 +1091,7 @@ bool TableJoin::allowParallelHashJoin() const
 {
     if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
-    if (!right_storage_name.empty())
+    if (isSpecialStorage())
         return false;
     if (kind() != JoinKind::Left && kind() != JoinKind::Inner)
         return false;

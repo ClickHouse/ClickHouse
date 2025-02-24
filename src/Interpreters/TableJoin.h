@@ -204,8 +204,6 @@ private:
 
     std::shared_ptr<const IKeyValueEntity> right_kv_storage;
 
-    std::string right_storage_name;
-
     bool is_join_with_constant = false;
 
     bool enable_analyzer = false;
@@ -430,16 +428,12 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
-    /// Remember storage name in case of joining with dictionary or another special storage
-    void setRightStorageName(const std::string & storage_name);
-    const std::string & getRightStorageName() const;
-
     void setStorageJoin(std::shared_ptr<const IKeyValueEntity> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
 
     std::shared_ptr<StorageJoin> getStorageJoin() const { return right_storage_join; }
 
-    bool isSpecialStorage() const { return !right_storage_name.empty() || right_storage_join || right_kv_storage; }
+    bool isSpecialStorage() const { return right_storage_join || right_kv_storage; }
 
     std::shared_ptr<const IKeyValueEntity> getStorageKeyValue() { return right_kv_storage; }
 
