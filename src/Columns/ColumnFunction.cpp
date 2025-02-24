@@ -327,7 +327,16 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce() const
+ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecuteProfile * profile) const
+{
+    if (profile)
+        return reduceImpl<true>(profile);
+    else
+        return reduceImpl<false>(nullptr);
+}
+
+template <bool with_profile>
+ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profile [[maybe_unused]]) const
 {
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
@@ -337,6 +346,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
                         "arguments but {} columns were captured.",
                         function->getName(), toString(args), toString(captured));
 
+    Stopwatch watch;
     ColumnsWithTypeAndName columns = captured_columns;
     /// Arguments of lazy executed function can also be lazy executed.
     if (is_short_circuit_argument)
@@ -350,15 +360,34 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
             for (size_t i : settings.arguments_with_disabled_lazy_execution)
             {
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(columns[i].column))
-                    columns[i] = arg->reduce();
+                {
+                    if constexpr (with_profile)
+                    {
+                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                        auto & arg_profile = profile->argument_profiles.back().second;
+                        columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
+                    }
+                    else
+                        columns[i] = arg->reduceImpl<false>(nullptr);
+                }
             }
         }
         else
         {
-            for (auto & col : columns)
+            for (size_t i = 0; i < columns.size(); ++i)
             {
+                auto & col = columns[i];
                 if (const ColumnFunction * arg = checkAndGetShortCircuitArgument(col.column))
-                    col = arg->reduce();
+                {
+                    if constexpr (with_profile)
+                    {
+                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                        auto & arg_profile = profile->argument_profiles.back().second;
+                        columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
+                    }
+                    else
+                        col = arg->reduceImpl<false>(nullptr);
+                }
             }
         }
     }
@@ -369,7 +398,20 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false, profile);
+
+    if constexpr (with_profile)
+    {
+        size_t total_elapsed = watch.elapsed();
+        size_t side_elapsed = 0;
+        for (const auto & arg_profile : profile->argument_profiles)
+        {
+            side_elapsed += arg_profile.second.short_circuit_side_elapsed;
+        }
+        profile->short_circuit_side_elapsed = side_elapsed;
+        profile->executed_elapsed = total_elapsed;
+    }
+
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

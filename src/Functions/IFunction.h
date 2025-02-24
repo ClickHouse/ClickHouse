@@ -31,6 +31,27 @@ class Field;
 struct FieldInterval;
 using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
 
+struct FunctionExecuteProfile
+{
+    /// executed_rows keeps track of the number of rows that have been processed by the function.
+    /// For a short-circuit function, the executed rows of its lazily executed arguments may be less than
+    /// the input rows if some rows are filtered out before the lazy execution of the argument.
+    size_t executed_rows = 0;
+
+    /// The total executed elapsed, including short_circuit_side_elapsed.
+    size_t executed_elapsed = 0;
+
+    /// For a lazily executed function, we need to filter out the rows that are not executed using a bitmap,
+    /// and then expand the result to the original size. `short_circuit_side_elapsed` contains the
+    /// execution time of these two steps. It also includes all `short_circuit_side_elapsed` times of its
+    /// lazily executed arguments.
+    size_t short_circuit_side_elapsed = 0;
+
+    /// If one argument is ColumnFunction, we need to profile its execution.
+    /// The first element of the pair is the index of the argument.
+    std::vector<std::pair<size_t, FunctionExecuteProfile>> argument_profiles;
+};
+
 /// The simplest executable object.
 /// Motivation:
 ///  * Prepare something heavy once before main execution loop instead of doing it for each columns.
@@ -46,11 +67,14 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+    // profile is optional. It helps to improve expression execution.
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run, FunctionExecuteProfile * profile = nullptr) const;
 
 protected:
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+
+    virtual ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const;
 
     virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -102,19 +126,35 @@ protected:
 private:
 
     ColumnPtr defaultImplementationForConstantArguments(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & args,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecuteProfile * profile) const;
 
     ColumnPtr defaultImplementationForNulls(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & args,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecuteProfile * profile) const;
 
     ColumnPtr defaultImplementationForNothing(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
 
     ColumnPtr executeWithoutLowCardinalityColumns(
-            const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & args,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecuteProfile * profile) const;
 
     ColumnPtr executeWithoutSparseColumns(
-            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+            const ColumnsWithTypeAndName & arguments,
+            const DataTypePtr & result_type,
+            size_t input_rows_count,
+            bool dry_run,
+            FunctionExecuteProfile * profile) const;
 
     bool short_circuit_function_evaluation_for_nulls = false;
     double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
@@ -137,6 +177,13 @@ public:
         size_t input_rows_count,
         bool dry_run) const;
 
+    virtual ColumnPtr execute( /// NOLINT
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        bool dry_run,
+        FunctionExecuteProfile * profile) const;
+
     /// Get the main function name.
     virtual String getName() const = 0;
 
@@ -145,6 +192,10 @@ public:
     /// Do preparations and return executable.
     /// sample_columns should contain data types of arguments and values of constants, if relevant.
     virtual ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const = 0;
+
+    // Whether `execute` throws exception on invalid input. For example, a%b throws exception when b is zero.
+    // But this doesn't include invalid argument types.
+    virtual bool isNoExcept() const { return false; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -432,6 +483,13 @@ public:
     virtual String getName() const = 0;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
+
+    virtual ColumnPtr executeImplWithProfile(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        FunctionExecuteProfile * profile) const;
+
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         return executeImpl(arguments, result_type, input_rows_count);
@@ -493,6 +551,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    virtual bool isNoExcept() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;
     virtual bool isShortCircuit(ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
