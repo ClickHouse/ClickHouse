@@ -260,7 +260,7 @@ TEST(ConcurrencyControl, FairRoundRobinNoOversubscription)
     for (int i = 0; i < 10; i++)
         allocations.emplace_back(t.cc.allocate(1, 2));
     std::vector<AcquiredSlotPtr> slots;
-    // Normal allocation using maximum amount of slots, not that min:1 is not considered as competing and does not count towards limit
+    // Normal allocation using maximum amount of slots, note that min:1 is not considered as competing and does not count towards limit
     for (int i = 0; i < 5; i++)
     {
         auto slot1 = allocations[i]->tryAcquire();
