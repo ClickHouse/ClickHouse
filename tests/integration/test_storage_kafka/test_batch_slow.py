@@ -1059,7 +1059,7 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
 )
 def test_block_based_formats_2(kafka_cluster, create_query_generator):
     admin_client = k.get_admin_client(kafka_cluster)
-        num_rows = 100
+    num_rows = 100
     message_count = 9
 
     for format_name in [
