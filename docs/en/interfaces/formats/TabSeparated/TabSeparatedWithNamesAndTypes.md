@@ -1,6 +1,6 @@
 ---
 title : TabSeparatedWithNamesAndTypes
-slug : /en/interfaces/formats/TabSeparatedWithNamesAndTypes
+slug: /interfaces/formats/TabSeparatedWithNamesAndTypes
 keywords : [TabSeparatedWithNamesAndTypes]
 ---
 

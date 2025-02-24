@@ -1,6 +1,6 @@
 ---
 title : XML
-slug : /en/interfaces/formats/XML
+slug: /interfaces/formats/XML
 keywords : [XML]
 input_format: false
 output_format: true

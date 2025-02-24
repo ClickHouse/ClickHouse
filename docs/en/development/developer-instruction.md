@@ -1,5 +1,5 @@
 ---
-slug: /en/development/developer-instruction
+slug: /development/developer-instruction
 sidebar_position: 5
 sidebar_label: Prerequisites
 ---
@@ -54,7 +54,7 @@ To check the status of the Git submodules, run `git submodule status`.
 
 If you get the following error message
 
-```
+```bash
 Permission denied (publickey).
 fatal: Could not read from remote repository.
 
@@ -83,14 +83,19 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
+:::tip
+Please do not use verbatim `git push`, you may push to the wrong remote and/or the wrong branch.
+It is better to specify the remote and branch names explicitly, e.g. `git push origin my_branch_name`.
+:::
+
 ## Writing Code
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
 
-- [ClickHouse Architecture](https://clickhouse.com/docs/en/development/architecture/).
-- [Code style guide](https://clickhouse.com/docs/en/development/style/).
-- [Third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
-- [Writing tests](https://clickhouse.com/docs/en/development/tests/)
+- [ClickHouse Architecture](/docs/development/architecture/).
+- [Code style guide](/docs/development/style/).
+- [Third-party libraries](/docs/development/contrib/#adding-third-party-libraries)
+- [Writing tests](/docs/development/tests/)
 - [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
 ### IDE
@@ -219,7 +224,7 @@ CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew
 
 Import the data:
 
-```
+```bash
 clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
 clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 ```

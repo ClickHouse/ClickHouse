@@ -1,10 +1,13 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
-
+#include <Columns/IColumn_fwd.h>
+#include <Core/Names.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
+
+class NamesAndTypesList;
 
 /// Adds default values to columns if they don't have a specified row yet.
 /// This class can be useful for implementing IRowInputFormat.

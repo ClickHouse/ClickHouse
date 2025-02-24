@@ -84,7 +84,7 @@ private:
 
     char fake_buffer_when_prefinalized[1] = {};
 
-    bool first_buffer=true;
+    bool first_buffer = true;
 
     size_t total_size = 0;
     size_t hidden_size = 0;

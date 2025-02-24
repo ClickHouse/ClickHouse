@@ -26,7 +26,7 @@ public:
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(
         const String & path_in_backup,
