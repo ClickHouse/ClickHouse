@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/cramersv
+slug: /sql-reference/aggregate-functions/reference/cramersv
 sidebar_position: 127
 ---
 

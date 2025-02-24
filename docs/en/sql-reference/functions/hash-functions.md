@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/hash-functions
+slug: /sql-reference/functions/hash-functions
 sidebar_position: 85
 sidebar_label: Hash
 ---
@@ -48,7 +48,7 @@ Calculates the MD4 from a string and returns the resulting set of bytes as Fixed
 ## MD5
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
-If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128’ function instead.
+If you do not need MD5 in particular, but you need a decent cryptographic 128-bit hash, use the 'sipHash128' function instead.
 If you want to get the same result as output by the md5sum utility, use lower(hex(MD5(s))).
 
 ## RIPEMD160
@@ -427,7 +427,7 @@ SHA512('s')
 ```
 
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
-We recommend using this function only in cases when you need a specific hash function and you can’t select it.
+We recommend using this function only in cases when you need a specific hash function and you can't select it.
 Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in `SELECT` queries.
 
 **Arguments**

@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/integrations/hive
+slug: /engines/table-engines/integrations/hive
 sidebar_position: 84
 sidebar_label: Hive
+title: "Hive"
+description: "The Hive engine allows you to perform `SELECT` queries on HDFS Hive table."
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -10,7 +12,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently it supports input formats as below:
+The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently, it supports input formats as below:
 
 - Text: only supports simple scalar column types except `binary`
 

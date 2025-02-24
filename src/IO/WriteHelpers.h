@@ -21,7 +21,6 @@
 #include <Core/Types.h>
 #include <base/IPv4andIPv6.h>
 
-#include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 
 #include <IO/WriteBuffer.h>
@@ -35,6 +34,8 @@
 
 namespace DB
 {
+
+class Exception;
 
 /// Helper functions for formatted and binary output.
 

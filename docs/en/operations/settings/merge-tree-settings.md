@@ -1,6 +1,7 @@
 ---
-slug: /en/operations/settings/merge-tree-settings
+slug: /operations/settings/merge-tree-settings
 title: "MergeTree tables settings"
+description: "Settings for MergeTree which are in `system.merge_tree_settings`"
 ---
 
 System table `system.merge_tree_settings` shows the globally set MergeTree settings.
@@ -125,14 +126,20 @@ You can set one, both or none of these settings.
 ## max_compress_block_size
 
 Maximum size of blocks of uncompressed data before compressing for writing to a table.
-You can also specify this setting in the global settings (see [max_compress_block_size](/docs/en/operations/settings/settings.md/#max-compress-block-size) setting).
+You can also specify this setting in the global settings (see [max_compress_block_size](/docs/operations/settings/settings.md/#max-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
 
 ## min_compress_block_size
 
 Minimum size of blocks of uncompressed data required for compression when writing the next mark.
-You can also specify this setting in the global settings (see [min_compress_block_size](/docs/en/operations/settings/settings.md/#min-compress-block-size) setting).
+You can also specify this setting in the global settings (see [min_compress_block_size](/docs/operations/settings/settings.md/#min-compress-block-size) setting).
 The value specified when table is created overrides the global value for this setting.
+
+## max_merge_selecting_sleep_ms
+
+Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting will trigger selecting tasks in `background_schedule_pool` frequently which results in a large amount of requests to zookeeper in large-scale clusters.
+
+Default value: `60000`
 
 ## max_suspicious_broken_parts
 
@@ -676,7 +683,7 @@ Default value: 20
 
 **Usage**
 
-The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
 ## max_part_loading_threads {#max-part-loading-threads}
 
@@ -748,7 +755,7 @@ Possible values:
 
 Default value: 25
 
-The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
@@ -1015,7 +1022,7 @@ Used to regulate how resources are utilized and shared between merges and other 
 Default value: an empty string
 
 **See Also**
-- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+- [Workload Scheduling](/docs/operations/workload-scheduling.md)
 
 ## mutation_workload
 
@@ -1024,7 +1031,7 @@ Used to regulate how resources are utilized and shared between mutations and oth
 Default value: an empty string
 
 **See Also**
-- [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+- [Workload Scheduling](/docs/operations/workload-scheduling.md)
 
 ### optimize_row_order
 

@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/asynchronous_metrics
+description: "System table containing metrics that are calculated periodically in the background. For example, the amount of RAM in use."
+slug: /operations/system-tables/asynchronous_metrics
+title: "asynchronous_metrics"
+keywords: ["system table", "asynchronous_metrics"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# asynchronous_metrics
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/log-family/
+slug: /engines/table-engines/log-family/
 sidebar_position: 20
 sidebar_label:  Log Family
 ---
@@ -10,11 +10,13 @@ These engines were developed for scenarios when you need to quickly write many s
 
 Engines of the family:
 
-- [StripeLog](/docs/en/engines/table-engines/log-family/stripelog.md)
-- [Log](/docs/en/engines/table-engines/log-family/log.md)
-- [TinyLog](/docs/en/engines/table-engines/log-family/tinylog.md)
+| Log Engines                                                         |
+|---------------------------------------------------------------------|
+| [StripeLog](/docs/en/engines/table-engines/log-family/stripelog.md) |
+| [Log](/docs/en/engines/table-engines/log-family/log.md)             |
+| [TinyLog](/docs/en/engines/table-engines/log-family/tinylog.md)     |
 
-`Log` family table engines can store data to [HDFS](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-hdfs) or [S3](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3) distributed file systems.
+`Log` family table engines can store data to [HDFS](/docs/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-hdfs) or [S3](/docs/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3) distributed file systems.
 
 :::warning This engine is not for log data.
 Despite the name, *Log table engines are not meant for the storage of log data.  They should only be used for small volumes which need to be written quickly.
@@ -32,7 +34,7 @@ Engines:
 
     During `INSERT` queries, the table is locked, and other queries for reading and writing data both wait for the table to unlock. If there are no data writing queries, any number of data reading queries can be performed concurrently.
 
-- Do not support [mutations](/docs/en/sql-reference/statements/alter/index.md#alter-mutations).
+- Do not support [mutations](/docs/sql-reference/statements/alter/index.md#alter-mutations).
 
 - Do not support indexes.
 
