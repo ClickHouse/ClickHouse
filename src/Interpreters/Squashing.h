@@ -41,7 +41,7 @@ public:
     explicit Squashing(Block header_, size_t min_block_size_rows_, size_t min_block_size_bytes_);
     Squashing(Squashing && other) = default;
 
-    Chunk add(Chunk && input_chunk);
+    Chunk add(Chunk && input_chunk, bool flush_if_enough_size = false);
     static Chunk squash(Chunk && input_chunk);
     Chunk flush();
 
