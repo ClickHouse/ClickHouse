@@ -48,6 +48,7 @@
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -58,6 +59,8 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <IO/Ask.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -79,10 +82,7 @@
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
-#include <base/ask.h>
 #include "config.h"
-#include <IO/ReadHelpers.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
@@ -698,12 +698,13 @@ try
             stopKeystrokeInterceptorIfExists();
             SCOPE_EXIT({ startKeystrokeInterceptorIfExists(); });
 
-            if (!ask(fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
+            const auto question = fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
 If you want to output it into a file, use the "INTO OUTFILE" modifier in the query or redirect the output of the shell command.
-Do you want to output it anyway? [y/N] )", current_format)))
-            {
+Do you want to output it anyway? [y/N] )", current_format);
+
+            if (!ask(question, *std_in, *std_out))
                 output_format = std::make_shared<NullOutputFormat>(block);
-            }
+
             *std_out << '\n';
         }
     }
@@ -720,6 +721,9 @@ catch (...)
 
 void ClientBase::initLogsOutputStream()
 {
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT && !server_logs_file.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
+
     if (!logs_out_stream)
     {
         WriteBuffer * wb = out_logs_buf.get();
@@ -3130,25 +3134,30 @@ void ClientBase::runInteractive()
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
-    if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+    const bool embedded_mode = global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT;
+    if (!embedded_mode)
         actual_history_file_path = history_file;
 
-    lr = std::make_unique<ReplxxLineReader>(
-        *suggest,
-        actual_history_file_path,
-        history_max_entries,
-        getClientConfiguration().has("multiline"),
-        getClientConfiguration().getBool("ignore_shell_suspend", true),
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        highlight_callback,
-        input_stream,
-        output_stream,
-        stdin_fd,
-        stdout_fd,
-        stderr_fd
-    );
+    auto options = ReplxxLineReader::Options
+    {
+        .suggest = *suggest,
+        .history_file_path = actual_history_file_path,
+        .history_max_entries = history_max_entries,
+        .multiline = getClientConfiguration().has("multiline"),
+        .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
+        .embedded_mode = embedded_mode,
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = highlight_callback,
+        .input_stream = input_stream,
+        .output_stream = output_stream,
+        .in_fd = stdin_fd,
+        .out_fd = stdout_fd,
+        .err_fd = stderr_fd,
+    };
+
+    lr = std::make_unique<ReplxxLineReader>(std::move(options));
 #else
     lr = LineReader(
         history_file,
@@ -3281,6 +3290,9 @@ void ClientBase::runInteractive()
 
 bool ClientBase::processMultiQueryFromFile(const String & file_name)
 {
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not supported for an embedded client");
+
     String queries_from_file;
 
     ReadBufferFromFile in(file_name);
