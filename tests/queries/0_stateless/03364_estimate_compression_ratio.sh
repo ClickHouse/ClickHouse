@@ -3,28 +3,20 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
-run_mode="${1:-CI}"
 column_names=("number_col" "str_col" "array_col" "nullable_col" "sparse_col" "tuple_col")
 table_name="table_for_estimate_compression_ratio"
 tolerance=0.30
 formatted_tolerance=$(awk "BEGIN {printf \"%.2f\", $tolerance * 100}")%
 
 # all combinations of the following should be tested
-codecs=("ZSTD" "LZ4")
+codecs=("ZSTD(1)" "LZ4")
 block_sizes=(65536 1048576)
 num_rows_list=(1_000 50_000)
-
-log_if_debug() {
-    if [ "$run_mode" != "CI" ]; then
-        echo "$@"
-    fi
-}
 
 create_table() {
     local num_rows=$1
 
     query="DROP TABLE IF EXISTS $table_name"
-    log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
 
     query="CREATE TABLE $table_name (
@@ -33,11 +25,10 @@ create_table() {
         array_col Array(String),
         nullable_col Nullable(Int64),
         sparse_col Int64,
-        tuple_col Tuple(Int64, String)
+        tuple_col Tuple(Int64, Int64)
     ) ENGINE = MergeTree ORDER BY number_col
     SETTINGS min_bytes_for_wide_part = 0"
 
-    log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
 
     query="INSERT INTO $table_name 
@@ -46,11 +37,10 @@ create_table() {
         toString(number+rand()) as str_col,
         [toString(number+rand()), toString(number+rand())] as array_col,
         if(number % 20 = 0, number+rand(), NULL) as nullable_col,
-        if(number % 10 = 0, number+rand(), 0) as sparse_col,
-        (number+rand(), toString(number+rand())) as tuple_col
+        if(number % 3 = 0, number+rand(), 0) as sparse_col,
+        (number+rand(), number*2) as tuple_col
     FROM system.numbers LIMIT $num_rows"
 
-    log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
 }
 
@@ -63,16 +53,14 @@ apply_codec() {
            MODIFY COLUMN array_col Array(String) CODEC($codec),
            MODIFY COLUMN nullable_col Nullable(Int64) CODEC($codec),
            MODIFY COLUMN sparse_col Int64 CODEC($codec),
-           MODIFY COLUMN tuple_col Tuple(Int64, String) CODEC($codec)
+           MODIFY COLUMN tuple_col Tuple(Int64, Int64) CODEC($codec)
            SETTINGS min_compress_block_size = $block_size,
                     max_compress_block_size = $block_size"
 
-    log_if_debug "Running: $query"
     $CLICKHOUSE_CLIENT -q "$query"
 
     query="OPTIMIZE TABLE $table_name FINAL"
-    log_if_debug "Running: $query"
-    $CLICKHOUSE_CLIENT --query="$query"
+    $CLICKHOUSE_CLIENT -q "$query"
 }
 
 test_compression_ratio() {
@@ -87,7 +75,6 @@ test_compression_ratio() {
     FROM $table_name
     FORMAT TSV"
 
-    log_if_debug "Running: $query"
     ratios=$($CLICKHOUSE_CLIENT -q "$query")
 
     declare -A estimated_ratios
@@ -109,7 +96,6 @@ test_compression_ratio() {
     ORDER BY name ASC
     FORMAT TSV"
 
-    log_if_debug "Running: $query"
     actual_ratios=$($CLICKHOUSE_CLIENT -q "$query")
 
     failures=0
@@ -120,8 +106,6 @@ test_compression_ratio() {
         max_ratio=$(awk "BEGIN {print $actual_ratio * (1 + $tolerance)}")
         estimated_ratio=${estimated_ratios[$col]}
         percentage_difference=$(awk "BEGIN {printf \"%.2f\", 100 * ($estimated_ratio - $actual_ratio) / $actual_ratio}")
-
-        log_if_debug "$col Actual compression ratio: $actual_ratio, estimated compression ratio: $estimated_ratio, tolerance range: $min_ratio - $max_ratio, percentage difference: $percentage_difference%"
 
         if (( $(awk "BEGIN {print ($estimated_ratio < $min_ratio || $estimated_ratio > $max_ratio) ? 1 : 0}") )); then
             echo "With codec=$codec block_size=$block_size num_rows=$num_rows:"
@@ -142,7 +126,6 @@ for num_rows in "${num_rows_list[@]}"; do
     for codec in "${codecs[@]}"; do
         for block_size in "${block_sizes[@]}"; do
             apply_codec "$codec" "$block_size"
-            log_if_debug "Testing with codec=$codec, block_size=$block_size, num_rows=$num_rows"
             test_compression_ratio
         done
     done
