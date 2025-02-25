@@ -136,7 +136,7 @@ which is equal to
 </clickhouse>
 ```
 
-#### Default Values
+#### Default Values {#default-values}
 
 An element with `from_env` or `from_zk` attribute may additionally have attribute `replace="1"` (the latter must appear before `from_env`/`from_zk`).
 In this case, the element may define a default value.
@@ -166,7 +166,7 @@ Result:
 </clickhouse>
 ```
 
-## Substitution with File Content
+## Substitution with File Content {#substitution-with-file-content}
 
 It is also possible to replace parts of the configuration by file contents. This can be done in two ways:
 
@@ -345,7 +345,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-## YAML examples {#example}
+## YAML examples {#example-1}
 
 Here you can see default config written in YAML: [config.yaml.example](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
