@@ -104,14 +104,14 @@ struct DeltaLakeMetadataImpl
     {
         NamesAndTypesList schema;
         Strings data_files;
-        DataLakePartitionColumns partition_columns;
+        DeltaLakePartitionColumns partition_columns;
     };
     DeltaLakeMetadata processMetadataFiles()
     {
         auto configuration_ptr = configuration.lock();
         std::set<String> result_files;
         NamesAndTypesList current_schema;
-        DataLakePartitionColumns current_partition_columns;
+        DeltaLakePartitionColumns current_partition_columns;
         const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
 
         if (checkpoint_version)
@@ -180,11 +180,11 @@ struct DeltaLakeMetadataImpl
     void processMetadataFile(
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
-        DataLakePartitionColumns & file_partition_columns,
+        DeltaLakePartitionColumns & file_partition_columns,
         std::set<String> & result)
     {
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+        ObjectInfo object_info(metadata_file_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
         char c;
@@ -496,7 +496,7 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(last_checkpoint_file);
+        ObjectInfo object_info(last_checkpoint_file);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -550,7 +550,7 @@ struct DeltaLakeMetadataImpl
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
-        DataLakePartitionColumns & file_partition_columns)
+        DeltaLakePartitionColumns & file_partition_columns)
     {
         const auto version = readLastCheckpointIfExists();
         if (!version)
@@ -566,7 +566,7 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        StorageObjectStorageSource::ObjectInfo object_info(checkpoint_path);
+        ObjectInfo object_info(checkpoint_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
