@@ -59,11 +59,11 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        commits.append(
-            GitCommit(
-                sha=sha, message=Shell.get_output(f"git show -s --format=%B {sha}")
-            )
-        )
+        if os.environ["DISABLE_CI_MERGE_COMMIT"] == "1":
+            commit_message = Shell.get_output(f"git log -1 --pretty=%s {sha}", verbose=True)
+        else:
+            commit_message = Shell.get_output(f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'", verbose=True)
+        commits.append(GitCommit(sha=sha, message=commit_message))
         commits = commits[
             -20:
         ]  # limit maximum number of commits from the past to show in the report
