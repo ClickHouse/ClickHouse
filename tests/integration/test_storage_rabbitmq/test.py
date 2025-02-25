@@ -2226,9 +2226,8 @@ def test_rabbitmq_no_connection_at_startup_2(rabbitmq_cluster):
     """
     )
     instance.query("DETACH TABLE test.cs")
-    rabbitmq_cluster.pause_container("rabbitmq1")
-    instance.query("ATTACH TABLE test.cs")
-    rabbitmq_cluster.unpause_container("rabbitmq1")
+    with rabbitmq_cluster.paused_container("rabbitmq1"):
+        instance.query("ATTACH TABLE test.cs")
 
     messages_num = 1000
     credentials = pika.PlainCredentials("root", "clickhouse")

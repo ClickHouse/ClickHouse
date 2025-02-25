@@ -208,31 +208,28 @@ def test_stuck_replica(started_cluster):
 
     update_configs()
 
-    cluster.pause_container("node_1")
+    with cluster.paused_container("node_1"):
+        check_query(expected_replica="node_2")
+        check_changing_replica_events(1)
 
-    check_query(expected_replica="node_2")
-    check_changing_replica_events(1)
+        result = NODES["node"].query(
+            "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
+        )
 
-    result = NODES["node"].query(
-        "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
-    )
+        assert TSV(result) == TSV("1")
 
-    assert TSV(result) == TSV("1")
+        result = NODES["node"].query(
+            "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1"
+        )
 
-    result = NODES["node"].query(
-        "SELECT hostName(), id FROM distributed ORDER BY id LIMIT 1"
-    )
+        assert TSV(result) == TSV("node_2\t0")
 
-    assert TSV(result) == TSV("node_2\t0")
+        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
+        result = NODES["node"].query(
+            "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
+        )
 
-    # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
-    result = NODES["node"].query(
-        "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
-    )
-
-    assert TSV(result) == TSV("1")
-
-    cluster.unpause_container("node_1")
+        assert TSV(result) == TSV("1")
 
 
 def test_long_query(started_cluster):
