@@ -180,20 +180,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 }
             }
 
-            if (!bind_host.empty())
-            {
-                Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                if (static_cast<bool>(secure))
-                {
-                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-                }
-                else
-                {
-                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
-                }
-            }
-
             try
             {
                 if (async_callback)
