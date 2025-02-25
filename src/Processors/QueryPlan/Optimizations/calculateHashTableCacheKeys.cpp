@@ -107,53 +107,84 @@ extern const int NOT_IMPLEMENTED;
 namespace QueryPlanOptimizations
 {
 
-void calculateHashTableCacheKeys(QueryPlan::Node & node, SipHash * hash)
+void calculateHashTableCacheKeys(QueryPlan::Node & root)
 {
-    if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
+    struct Frame
     {
-        // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
-        const bool calculate = hash
-            || allowParallelHashJoin(
-                                   join_step->getJoinSettings().join_algorithm,
-                                   join_step->getJoinInfo().kind,
-                                   join_step->getJoinInfo().strictness,
-                                   join_step->hasPreparedJoinStorage(),
-                                   join_step->getJoinInfo().expression.disjunctive_conditions.empty());
-        if (calculate)
+        QueryPlan::Node * node = nullptr;
+        size_t next_child = 0;
+        // Hash state which steps should update with their own hashes
+        SipHash * hash = nullptr;
+        // Hash state for left and right children of JoinStepLogical,
+        // kept in frame object since we cannot allocate them on the stack
+        SipHash left{};
+        SipHash right{};
+    };
+
+    // We use addresses of `left` and `right`, so they should be stable
+    std::list<Frame> stack;
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        auto & node = *frame.node;
+
+        if (auto * join_step = dynamic_cast<JoinStepLogical *>(node.step.get()))
         {
+            // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
+            const bool calculate = frame.hash
+                || allowParallelHashJoin(
+                                       join_step->getJoinSettings().join_algorithm,
+                                       join_step->getJoinInfo().kind,
+                                       join_step->getJoinInfo().strictness,
+                                       join_step->hasPreparedJoinStorage(),
+                                       join_step->getJoinInfo().expression.disjunctive_conditions.empty());
+
             chassert(node.children.size() == 2);
-            SipHash left;
-            calculateHashTableCacheKeys(*node.children.at(0), &left);
-            left.update(calculateHashFromStep(*join_step, JoinTableSide::Left));
-            SipHash right;
-            calculateHashTableCacheKeys(*node.children.at(1), &right);
-            right.update(calculateHashFromStep(*join_step, JoinTableSide::Right));
-            join_step->setHashTableCacheKeys(left.get64(), right.get64());
 
-            if (hash)
-                hash->update(left.get64() ^ right.get64());
+            if (calculate)
+            {
+                if (frame.next_child == 0)
+                {
+                    frame.next_child = node.children.size();
+                    stack.push_back({.node = node.children.at(0), .hash = &frame.left});
+                    stack.push_back({.node = node.children.at(1), .hash = &frame.right});
+                }
+                else
+                {
+                    frame.left.update(calculateHashFromStep(*join_step, JoinTableSide::Left));
+                    frame.right.update(calculateHashFromStep(*join_step, JoinTableSide::Right));
+                    join_step->setHashTableCacheKeys(frame.left.get64(), frame.right.get64());
+                    if (frame.hash)
+                        frame.hash->update(frame.left.get64() ^ frame.right.get64());
+
+                    stack.pop_back();
+                }
+
+                continue;
+            }
         }
-    }
-    else
-    {
-        for (auto & child : node.children)
-            calculateHashTableCacheKeys(*child, hash);
 
-        if (hash)
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child], .hash = frame.hash};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        if (frame.hash)
         {
             if (const auto * source = dynamic_cast<const ReadFromParallelRemoteReplicasStep *>(node.step.get()))
-            {
-                hash->update(calculateHashFromStep(*source));
-            }
+                frame.hash->update(calculateHashFromStep(*source));
             else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
-            {
-                hash->update(calculateHashFromStep(*read));
-            }
+                frame.hash->update(calculateHashFromStep(*read));
             else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
-            {
-                hash->update(calculateHashFromStep(*transform));
-            }
+                frame.hash->update(calculateHashFromStep(*transform));
         }
+
+        stack.pop_back();
     }
 }
 
