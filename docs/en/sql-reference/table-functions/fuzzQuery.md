@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/fuzzQuery
 sidebar_position: 75
 sidebar_label: fuzzQuery
+title: "fuzzQuery"
+description: "Perturbs the given query string with random variations."
 ---
 
-# fuzzQuery
+# fuzzQuery Table Function
 
 Perturbs the given query string with random variations.
 

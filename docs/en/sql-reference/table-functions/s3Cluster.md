@@ -2,11 +2,15 @@
 slug: /sql-reference/table-functions/s3Cluster
 sidebar_position: 181
 sidebar_label: s3Cluster
-title: "s3Cluster Table Function"
+title: "s3Cluster"
+description: "An extension to the s3 table function, which allows processing files from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified cluster."
 ---
+
+# s3Cluster Table Function
+
 This is an extension to the [s3](/docs/sql-reference/table-functions/s3.md) table function.
 
-Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in S3 file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
+Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) in parallel with many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in S3 file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
 **Syntax**
 
