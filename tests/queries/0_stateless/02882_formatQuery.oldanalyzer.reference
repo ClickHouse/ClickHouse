@@ -1,0 +1,44 @@
+-- formatQuery
+SELECT 1
+SELECT 1
+SELECT 1
+1
+1
+INSERT INTO tab FORMAT Values
+CREATE TABLE default.no_prop_table\n(\n    `some_column` UInt64\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
+EXPLAIN SYNTAX\nSELECT\n    CAST(1, \'INT\'),\n    CEIL(1),\n    CEILING(1),\n    CHAR(49),\n    CHAR_LENGTH(\'1\'),\n    CHARACTER_LENGTH(\'1\'),\n    COALESCE(1),\n    CONCAT(\'1\', \'1\'),\n    CORR(1, 1),\n    COS(1),\n    COUNT(1),\n    COVAR_POP(1, 1),\n    COVAR_SAMP(1, 1),\n    DATABASE(),\n    SCHEMA(),\n    dateDiff(\'DAY\', toDate(\'2020-10-24\'), toDate(\'2019-10-24\')),\n    EXP(1),\n    FLATTEN([[1]]),\n    FLOOR(1),\n    FQDN(),\n    GREATEST(1),\n    IF(1, 1, 1),\n    IFNULL(1, 1),\n    LCASE(\'A\'),\n    LEAST(1),\n    LENGTH(\'1\'),\n    LN(1),\n    LOCATE(\'1\', \'1\'),\n    LOG(1),\n    LOG10(1),\n    LOG2(1),\n    LOWER(\'A\'),\n    MAX(1),\n    MID(\'123\', 1, 1),\n    MIN(1),\n    MOD(1, 1),\n    NOT 1,\n    NOW(),\n    NOW64(),\n    NULLIF(1, 1),\n    PI(),\n    position(\'123\', \'2\'),\n    POW(1, 1),\n    POWER(1, 1),\n    RAND(),\n    REPLACE(\'1\', \'1\', \'2\'),\n    REVERSE(\'123\'),\n    ROUND(1),\n    SIN(1),\n    SQRT(1),\n    STDDEV_POP(1),\n    STDDEV_SAMP(1),\n    SUBSTR(\'123\', 2),\n    substring(\'123\', 2),\n    SUM(1),\n    TAN(1),\n    TANH(1),\n    TRUNC(1),\n    TRUNCATE(1),\n    UCASE(\'A\'),\n    UPPER(\'A\'),\n    USER(),\n    VAR_POP(1),\n    VAR_SAMP(1),\n    WEEK(toDate(\'2020-10-24\')),\n    YEARWEEK(toDate(\'2020-10-24\'))\nFORMAT TSVRaw
+1	SELECT 1	SELECT 1
+2	SeLeCt 22	SELECT 22
+3	InSerT into TAB values (\'\')	INSERT INTO TAB FORMAT Values
+1	SELECT 1	SELECT 1
+2	SeLeCt 22	SELECT 22
+3	InSerT into TAB values (\'\')	INSERT INTO TAB FORMAT Values
+1	SELECT 1	SELECT 1
+2	SeLeCt 2	SELECT 2
+3	bad 3	\N
+4	select 4	SELECT 4
+5	bad 5	\N
+6		\N
+7	SELECT 7	SELECT 7
+-- formatQuerySingleLine
+SELECT 1
+SELECT 1
+SELECT 1
+1
+1
+INSERT INTO tab FORMAT Values
+CREATE TABLE default.no_prop_table (`some_column` UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192
+EXPLAIN SYNTAX SELECT CAST(1, \'INT\'), CEIL(1), CEILING(1), CHAR(49), CHAR_LENGTH(\'1\'), CHARACTER_LENGTH(\'1\'), COALESCE(1), CONCAT(\'1\', \'1\'), CORR(1, 1), COS(1), COUNT(1), COVAR_POP(1, 1), COVAR_SAMP(1, 1), DATABASE(), SCHEMA(), dateDiff(\'DAY\', toDate(\'2020-10-24\'), toDate(\'2019-10-24\')), EXP(1), FLATTEN([[1]]), FLOOR(1), FQDN(), GREATEST(1), IF(1, 1, 1), IFNULL(1, 1), LCASE(\'A\'), LEAST(1), LENGTH(\'1\'), LN(1), LOCATE(\'1\', \'1\'), LOG(1), LOG10(1), LOG2(1), LOWER(\'A\'), MAX(1), MID(\'123\', 1, 1), MIN(1), MOD(1, 1), NOT 1, NOW(), NOW64(), NULLIF(1, 1), PI(), position(\'123\', \'2\'), POW(1, 1), POWER(1, 1), RAND(), REPLACE(\'1\', \'1\', \'2\'), REVERSE(\'123\'), ROUND(1), SIN(1), SQRT(1), STDDEV_POP(1), STDDEV_SAMP(1), SUBSTR(\'123\', 2), substring(\'123\', 2), SUM(1), TAN(1), TANH(1), TRUNC(1), TRUNCATE(1), UCASE(\'A\'), UPPER(\'A\'), USER(), VAR_POP(1), VAR_SAMP(1), WEEK(toDate(\'2020-10-24\')), YEARWEEK(toDate(\'2020-10-24\')) FORMAT TSVRaw
+1	SELECT 1	SELECT 1
+2	SeLeCt 22	SELECT 22
+3	InSerT into TAB values (\'\')	INSERT INTO TAB FORMAT Values
+1	SELECT 1	SELECT 1
+2	SeLeCt 22	SELECT 22
+3	InSerT into TAB values (\'\')	INSERT INTO TAB FORMAT Values
+1	SELECT 1	SELECT 1
+2	SeLeCt 2	SELECT 2
+3	bad 3	\N
+4	select 4	SELECT 4
+5	bad 5	\N
+6		\N
+7	SELECT 7	SELECT 7
