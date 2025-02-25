@@ -89,6 +89,7 @@ BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
 BetaBadge
+Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -2798,6 +2799,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
 stringToH

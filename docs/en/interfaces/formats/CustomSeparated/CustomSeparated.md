@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 Similar to [Template](../Template/Template.md), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../../../operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
 
@@ -28,9 +28,9 @@ It does not use escaping rules settings and delimiters from format strings.
 
 There is also the [`CustomSeparatedIgnoreSpaces`](../CustomSeparated/CustomSeparatedIgnoreSpaces.md) format, which is similar to [TemplateIgnoreSpaces](../Template//TemplateIgnoreSpaces.md).
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 Additional settings:
 
