@@ -19,7 +19,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_TABLE;
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
 }
 
@@ -42,8 +42,9 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 TableNode * resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
     auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
+    resolve_result.rethrow();
     if (!resolve_result)
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table {}, but resolve does not throw", identifier.getFullName());
 
     auto * table_node_ptr = resolve_result.resolved_identifier->as<TableNode>();
     chassert(table_node_ptr != nullptr);
