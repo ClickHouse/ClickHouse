@@ -261,14 +261,18 @@ wrapInNullable(ColumnPtr src, const ColumnsWithTypeAndName & args, const DataTyp
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-            const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
 
             if (!result_null_map_column)
-                result_null_map_column = IColumn::mutate(nullable->getNullMapColumnPtr());
-
-            NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
-            for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
-                result_null_map[i] |= src_null_map[i];
+            {
+                result_null_map_column = IColumn::mutate(null_map_column);
+            }
+            else
+            {
+                const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    result_null_map[i] |= src_null_map[i];
+            }
         }
     }
 
