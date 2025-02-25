@@ -5,7 +5,6 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
-#include <iostream>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -301,7 +300,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena [[maybe_unused]])
+void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_begin, size_t row_end, Arena * arena)
 {
     if (row_begin >= row_end)
         return;
@@ -458,6 +457,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
     if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
@@ -469,7 +469,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
+                if (!null_map[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -480,7 +480,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
+                if (if_map[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -492,7 +492,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return std::nullopt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (final_flags[i] && vec[i] == *opt)
+                if (final_flags[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -507,7 +507,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] < vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] < vec_data[index]))
                 index = i;
         return {index};
     }
@@ -521,6 +521,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
     if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
@@ -532,7 +533,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
+                if (!null_map[i] && vec_data[i] == *opt)
                     return {i};
             }
             return opt;
@@ -544,7 +545,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
+                if (if_map[i] && vec_data[i] == *opt)
                     return {i};
             }
             return opt;
@@ -556,7 +557,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
         for (size_t i = row_begin; i < row_end; i++)
         {
-            if (final_flags[i] && vec[i] == *opt)
+            if (final_flags[i] && vec_data[i] == *opt)
                 return {i};
         }
 
@@ -571,7 +572,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] > vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] > vec_data[index]))
                 index = i;
         return {index};
     }
