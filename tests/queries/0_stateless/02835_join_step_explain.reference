@@ -12,43 +12,53 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value_1 :: 3 -> rhs.value_1 String : 2
 Positions: 4 0 1 2
-  Join
+  Expression
   Header: __table1.id UInt64
           __table1.value_1 String
           __table2.id UInt64
           __table2.value_1 String
-  Type: INNER
-  Strictness: ALL
-  Algorithm: ConcurrentHashJoin
-  Clauses: [(__table1.id) = (__table2.id)]
-    Expression (Change column names to column identifiers)
+  Actions: INPUT :: 0 -> __table1.id UInt64 : 0
+           INPUT :: 1 -> __table1.value_1 String : 1
+           INPUT :: 2 -> __table2.id UInt64 : 2
+           INPUT :: 3 -> __table2.value_1 String : 3
+  Positions: 0 1 2 3
+    Join
     Header: __table1.id UInt64
             __table1.value_1 String
-    Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value_1 String : 1
-             ALIAS id :: 0 -> __table1.id UInt64 : 2
-             ALIAS value_1 :: 1 -> __table1.value_1 String : 0
-    Positions: 2 0
-      ReadFromMergeTree (default.test_table_1)
-      Header: id UInt64
-              value_1 String
-      ReadType: Default
-      Parts: 1
-      Granules: 1
-    Expression (Change column names to column identifiers)
-    Header: __table2.id UInt64
+            __table2.id UInt64
             __table2.value_1 String
-    Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value_1 String : 1
-             ALIAS id :: 0 -> __table2.id UInt64 : 2
-             ALIAS value_1 :: 1 -> __table2.value_1 String : 0
-    Positions: 2 0
-      ReadFromMergeTree (default.test_table_2)
-      Header: id UInt64
-              value_1 String
-      ReadType: Default
-      Parts: 1
-      Granules: 1
+    Type: INNER
+    Strictness: ALL
+    Algorithm: ConcurrentHashJoin
+    Clauses: [(__table1.id) = (__table2.id)]
+      Expression (Change column names to column identifiers)
+      Header: __table1.id UInt64
+              __table1.value_1 String
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value_1 String : 1
+               ALIAS id :: 0 -> __table1.id UInt64 : 2
+               ALIAS value_1 :: 1 -> __table1.value_1 String : 0
+      Positions: 2 0
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value_1 String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Expression (Change column names to column identifiers)
+      Header: __table2.id UInt64
+              __table2.value_1 String
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value_1 String : 1
+               ALIAS id :: 0 -> __table2.id UInt64 : 2
+               ALIAS value_1 :: 1 -> __table2.value_1 String : 0
+      Positions: 2 0
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value_1 String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
 --
 Expression ((Project names + Projection))
 Header: id UInt64
@@ -64,49 +74,59 @@ Actions: INPUT : 0 -> __table1.id UInt64 : 0
          ALIAS __table2.id :: 2 -> rhs.id UInt64 : 1
          ALIAS __table2.value_1 :: 3 -> rhs.value_1 String : 2
 Positions: 4 0 1 2
-  Join
+  Expression
   Header: __table1.id UInt64
           __table1.value_1 String
           __table2.id UInt64
           __table2.value_1 String
-  Type: INNER
-  Strictness: ASOF
-  Algorithm: HashJoin
-  ASOF inequality: LESS
-  Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
-    Expression (Change column names to column identifiers)
+  Actions: INPUT :: 0 -> __table1.id UInt64 : 0
+           INPUT :: 1 -> __table1.value_1 String : 1
+           INPUT :: 2 -> __table2.id UInt64 : 2
+           INPUT :: 3 -> __table2.value_1 String : 3
+  Positions: 0 1 2 3
+    Join
     Header: __table1.id UInt64
             __table1.value_1 String
-            __table1.value_2 UInt64
-    Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value_1 String : 1
-             INPUT : 2 -> value_2 UInt64 : 2
-             ALIAS id :: 0 -> __table1.id UInt64 : 3
-             ALIAS value_1 :: 1 -> __table1.value_1 String : 0
-             ALIAS value_2 :: 2 -> __table1.value_2 UInt64 : 1
-    Positions: 3 0 1
-      ReadFromMergeTree (default.test_table_1)
-      Header: id UInt64
-              value_1 String
-              value_2 UInt64
-      ReadType: Default
-      Parts: 1
-      Granules: 1
-    Expression (Change column names to column identifiers)
-    Header: __table2.id UInt64
+            __table2.id UInt64
             __table2.value_1 String
-            __table2.value_2 UInt64
-    Actions: INPUT : 0 -> id UInt64 : 0
-             INPUT : 1 -> value_1 String : 1
-             INPUT : 2 -> value_2 UInt64 : 2
-             ALIAS id :: 0 -> __table2.id UInt64 : 3
-             ALIAS value_1 :: 1 -> __table2.value_1 String : 0
-             ALIAS value_2 :: 2 -> __table2.value_2 UInt64 : 1
-    Positions: 3 0 1
-      ReadFromMergeTree (default.test_table_2)
-      Header: id UInt64
-              value_1 String
-              value_2 UInt64
-      ReadType: Default
-      Parts: 1
-      Granules: 1
+    Type: INNER
+    Strictness: ASOF
+    Algorithm: HashJoin
+    ASOF inequality: LESS
+    Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
+      Expression (Change column names to column identifiers)
+      Header: __table1.id UInt64
+              __table1.value_1 String
+              __table1.value_2 UInt64
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value_1 String : 1
+               INPUT : 2 -> value_2 UInt64 : 2
+               ALIAS id :: 0 -> __table1.id UInt64 : 3
+               ALIAS value_1 :: 1 -> __table1.value_1 String : 0
+               ALIAS value_2 :: 2 -> __table1.value_2 UInt64 : 1
+      Positions: 3 0 1
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value_1 String
+                value_2 UInt64
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Expression (Change column names to column identifiers)
+      Header: __table2.id UInt64
+              __table2.value_1 String
+              __table2.value_2 UInt64
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value_1 String : 1
+               INPUT : 2 -> value_2 UInt64 : 2
+               ALIAS id :: 0 -> __table2.id UInt64 : 3
+               ALIAS value_1 :: 1 -> __table2.value_1 String : 0
+               ALIAS value_2 :: 2 -> __table2.value_2 UInt64 : 1
+      Positions: 3 0 1
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value_1 String
+                value_2 UInt64
+        ReadType: Default
+        Parts: 1
+        Granules: 1
