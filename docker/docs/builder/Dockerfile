@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go install github.com/wjdp/htmltest@v${HTMLTEST_VERSION} \
 FROM node:20-bookworm-slim
 
 RUN apt-get update && \
-    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 rsync && \
+    apt install -y --no-install-recommends git openssh-server bash ca-certificates curl python3 python3-venv rsync && \
     rm -rf /var/lib/apt/lists/*:
 
 # At this point we want to really update /opt/clickhouse-docs directory
@@ -35,3 +35,4 @@ COPY run.sh /run.sh
 COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
 
 ENTRYPOINT ["/run.sh"]
+# Rebuilt in PR #76699
