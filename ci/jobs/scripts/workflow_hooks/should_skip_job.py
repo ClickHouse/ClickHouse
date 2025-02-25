@@ -1,6 +1,6 @@
 from praktika.info import Info
 
-from ci.workflows.defs import JobNames
+from ci.defs.defs import JobNames
 
 
 def only_docs(changed_files):
