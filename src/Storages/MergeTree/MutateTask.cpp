@@ -4,6 +4,8 @@
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
+#include "Common/Logger.h"
+#include "Common/StackTrace.h"
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
@@ -40,6 +42,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
+#include "Core/Names.h"
 #include <Core/ColumnsWithTypeAndName.h>
 
 #include <algorithm>
@@ -97,54 +100,6 @@ enum class ExecuteTTLType : uint8_t
     NORMAL = 1,
     RECALCULATE= 2,
 };
-
-
-String getDebugString(const Strings & arg)
-{
-    WriteBufferFromOwnString out;
-    {
-        auto it = arg.begin();
-        if (it != arg.end())
-            out << *it;
-        ++it;
-        for (; it != arg.end(); ++it)
-            out << ", " << *it;
-    }
-    return out.str();
-}
-
-
-Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part, bool with_projection_files = false)
-{
-    constexpr std::string proj_suffix = ".proj";
-
-    Strings files_in_part;
-
-    auto & storage = part->getDataPartStorage();
-    for (auto it = storage.iterate(); it->isValid(); it->next())
-    {
-        if (!it->isFile() && with_projection_files)
-        {
-            auto prj_name = it->name();
-            chassert(prj_name.ends_with(proj_suffix), "not a projection name");
-
-            auto prj_storage = storage.getProjection(prj_name);
-            for (auto prj_it = prj_storage->iterate(); prj_it->isValid(); prj_it->next())
-            {
-                chassert(prj_it->isFile(), "supposed to be a file");
-                auto fname = fs::path(prj_name) / prj_it->name();
-                files_in_part.push_back(fname);
-            }
-
-            continue;
-        }
-
-        files_in_part.push_back(it->name());
-    }
-
-    std::sort(files_in_part.begin(), files_in_part.end());
-    return files_in_part;
-}
 
 
 namespace MutationHelpers
@@ -1424,7 +1379,10 @@ class MutateAllPartColumnsTask : public IExecutableTask
 {
 public:
 
-    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_)
+    {
+        LOG_DEBUG(getLogger("MutateAllPartColumnsTask"), "ctor");
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1772,7 +1730,10 @@ private:
 class MutateSomePartColumnsTask : public IExecutableTask
 {
 public:
-    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
+    explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_)
+    {
+        LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "ctor");
+    }
 
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
@@ -1953,6 +1914,8 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            LOG_DEBUG(getLogger("prepare"), "ctor, columns: {}", ctx->updated_header.getNamesAndTypesList().toNamesAndTypesDescription());
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->metadata_snapshot,
@@ -1977,18 +1940,26 @@ private:
 
     void finalize()
     {
+        NameSet files_to_remove_after_finish;
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
             ctx->mutating_pipeline.reset();
 
-            auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums);
+            {
+                auto only_outputstream = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
 
-            ctx->new_data_part->checksums.add(std::move(changed_checksums));
+                auto [changed_checksums, removed_files] = only_outputstream->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
 
-            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
+                // We have to remove files after `ctx->out.finish()` called.
+                // Otherwise new files are not visible because they have not been written yet
+                files_to_remove_after_finish = std::move(removed_files);
+
+                only_outputstream->finish(ctx->need_sync);
+
+                ctx->new_data_part->checksums.add(std::move(changed_checksums));
+            }
 
             ctx->out.reset();
         }
@@ -2021,33 +1992,36 @@ private:
         for (const auto & name : ctx->files_to_skip)
         {
             if (name.ends_with(proj_suffix) && !active_projections.contains(name) && ctx->new_data_part->checksums.has(name))
+            {
+                LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "files_to_skip: remove file from checksums {}", name);
                 ctx->new_data_part->checksums.remove(name);
+            }
         }
 
         MutationHelpers::finalizeMutatedPart(ctx->source_part, ctx->new_data_part, ctx->execute_ttl_type, ctx->compression_codec, ctx->context, ctx->metadata_snapshot, ctx->need_sync);
 
-        Strings files_in_part = getPartFiles(ctx->new_data_part);
+        /// TODO: this code looks really stupid. It's because DiskTransaction is
+        /// unable to see own write operations. When we merge part with column TTL
+        /// and column completely outdated we first write empty column and after
+        /// remove it. In case of single DiskTransaction it's impossible because
+        /// remove operation will not see just written files. That is why we finish
+        /// one transaction and start new...
+        ///
+        /// FIXME: DiskTransaction should see own writes. Column TTL implementation shouldn't be so stupid...
+        if (!files_to_remove_after_finish.empty() && ctx->new_data_part->getDataPartStorage().hasActiveTransaction())
+        {
+            ctx->new_data_part->getDataPartStorage().commitTransaction();
+            ctx->new_data_part->getDataPartStorage().beginTransaction();
+        }
 
-        // This is a pedantic check that the checksums file contains exactly the records with actual files
-        // There are some suspicion that some time it could contain excess files
-        files_in_part.erase(
-            std::remove_if(files_in_part.begin(), files_in_part.end(), [] (auto & item)
-                {
-                    // this files are not listed in "checksums.txt"
-                    return item == "checksums.txt"
-                    || item == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME
-                    || item == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME
-                    || item == "columns.txt"
-                    || item == "txn_version.txt";
-                }),
-            files_in_part.end());
-
-        if (files_in_part.size() != ctx->new_data_part->checksums.files.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid files count in checksums, checksums has {} files, new part has {} files, files in checksums: {}, files in part: {}",
-                ctx->new_data_part->checksums.files.size(),
-                files_in_part.size(),
-                getDebugString(ctx->new_data_part->checksums.getFileNames()),
-                getDebugString(files_in_part));
+        // We have to remove files after `ctx->out.finish()` called.
+        // Otherwise new files are not visible because they have not been written yet
+        for (const String & removed_file : files_to_remove_after_finish)
+        {
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "remove file from fs {}, existsFile {}",
+                removed_file, ctx->new_data_part->getDataPartStorage().existsFile(removed_file));
+            ctx->new_data_part->getDataPartStorage().removeFile(removed_file);
+        }
     }
 
     enum class State : uint8_t
@@ -2493,6 +2467,8 @@ bool MutateTask::prepare()
         ctx->new_data_part->existing_rows_count = ctx->source_part->existing_rows_count.value_or(ctx->source_part->rows_count);
     }
 
+
+    LOG_DEBUG(getLogger("MutateTask"), "dynColmns {} is wide {} is full {} affect all {}", MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part), isWidePart(ctx->source_part), isFullPartStorage(ctx->source_part->getDataPartStorage()), (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()));
     /// All columns from part are changed and may be some more that were missing before in part
     /// TODO We can materialize compact part without copying data
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by

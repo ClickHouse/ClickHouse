@@ -4353,6 +4353,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
+    checkChecksumsFileIsConsistentWithFileSystem(part);
+
     if (&out_transaction.data != this)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeData::Transaction for one table cannot be used with another. It is a bug.");
 
@@ -4581,6 +4583,89 @@ DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
     }
     return parts_to_remove;
 }
+
+
+Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part, bool with_projection_files = false)
+{
+    constexpr std::string proj_suffix = ".proj";
+
+    Strings files_in_part;
+
+    auto & storage = part->getDataPartStorage();
+    for (auto it = storage.iterate(); it->isValid(); it->next())
+    {
+        if (!it->isFile() && with_projection_files)
+        {
+            auto prj_name = it->name();
+            chassert(prj_name.ends_with(proj_suffix), "not a projection name");
+
+            auto prj_storage = storage.getProjection(prj_name);
+            for (auto prj_it = prj_storage->iterate(); prj_it->isValid(); prj_it->next())
+            {
+                chassert(prj_it->isFile(), "supposed to be a file");
+                auto fname = fs::path(prj_name) / prj_it->name();
+                files_in_part.push_back(fname);
+            }
+
+            continue;
+        }
+
+        files_in_part.push_back(it->name());
+    }
+
+    std::sort(files_in_part.begin(), files_in_part.end());
+    return files_in_part;
+}
+
+
+String getDebugString(const Strings & arg)
+{
+    WriteBufferFromOwnString out;
+    {
+        auto it = arg.begin();
+        if (it != arg.end())
+            out << *it;
+        ++it;
+        for (; it != arg.end(); ++it)
+            out << ", " << *it;
+    }
+    return out.str();
+}
+
+
+void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPartPtr & part)
+{
+    Strings files_in_part = getPartFiles(part);
+
+    // This is a pedantic check that the checksums file contains exactly the records with actual files
+    // There are some suspicion that some time it could contain excess files
+    files_in_part.erase(
+        std::remove_if(files_in_part.begin(), files_in_part.end(), [] (auto & item)
+            {
+                // this files are not listed in "checksums.txt"
+                return item == "checksums.txt"
+                || item == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME
+                || item == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME
+                || item == "columns.txt"
+                || item == "txn_version.txt";
+            }),
+        files_in_part.end());
+
+    LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"), "checksums has {} files, new part has {} files, files in checksums: {}, files in part: {}",
+        part->checksums.files.size(),
+        files_in_part.size(),
+        getDebugString(part->checksums.getFileNames()),
+        getDebugString(files_in_part));
+
+    if (files_in_part.size() != part->checksums.files.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "checksums.txt file is not consistent with the files on file system, checksums.txt file has {} files, part '{}' has {} files, files in checksums: {}, files in part: {}",
+            part->checksums.files.size(),
+            part->name,
+            files_in_part.size(),
+            getDebugString(part->checksums.getFileNames()),
+            getDebugString(files_in_part));
+}
+
 
 MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part)

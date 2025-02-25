@@ -1205,8 +1205,10 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     global_ctx->checkOperationIsNotCanceled();
 
     ctx->executor.reset();
-    auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
+    auto [changed_checksums, removed_files] = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->checksums_gathered_columns);
     global_ctx->checksums_gathered_columns.add(std::move(changed_checksums));
+    ctx->removed_files.merge(removed_files);
+
     const auto & columns_sample = ctx->column_to->getColumnsSample().getColumnsWithTypeAndName();
     global_ctx->gathered_columns_samples.insert(global_ctx->gathered_columns_samples.end(), columns_sample.begin(), columns_sample.end());
 
@@ -1247,6 +1249,15 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 {
     for (auto & stream : ctx->delayed_streams)
         stream->finish(ctx->need_sync);
+
+    // We have to remove files after `stream.finish()` called.
+    // Otherwise new files are not visible because they have not been written yet
+    for (const String & removed_file : ctx->removed_files)
+    {
+        LOG_DEBUG(getLogger("VerticalMergeStage"), "remove file from fs {}, existsFile {}",
+            removed_file, global_ctx->new_data_part->getDataPartStorage().existsFile(removed_file));
+        global_ctx->new_data_part->getDataPartStorage().removeFileIfExists(removed_file);
+    }
 
     return false;
 }
