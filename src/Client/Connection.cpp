@@ -157,12 +157,6 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
                 /// we want to postpone SSL handshake until first read or write operation
                 /// so any errors during negotiation would be properly processed
                 static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->setLazyHandshake(true);
-                if (!bind_host.empty())
-                {
-                    Poco::Net::SocketAddress socket_address(bind_host, 0);
-
-                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
-                }
 #else
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "tcp_secure protocol is disabled because poco library was built without NetSSL support.");
 #endif
@@ -170,6 +164,20 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
             else
             {
                 socket = std::make_unique<Poco::Net::StreamSocket>();
+            }
+
+            if (!bind_host.empty())
+            {
+                Poco::Net::SocketAddress socket_address(bind_host, 0);
+
+                if (static_cast<bool>(secure))
+                {
+                    static_cast<Poco::Net::SecureStreamSocket*>(socket.get())->bind(socket_address, true);
+                }
+                else
+                {
+                    static_cast<Poco::Net::StreamSocket*>(socket.get())->bind(socket_address, true);
+                }
             }
 
             try
