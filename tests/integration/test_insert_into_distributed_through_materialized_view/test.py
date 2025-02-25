@@ -101,13 +101,12 @@ def test_reconnect(started_cluster):
         # Heal the partition and insert more data.
         # The connection must be reestablished and after some time all data must be inserted.
         pm.heal_all()
-        time.sleep(1)
+        instance.wait_for_log_line("to remote:9000")
 
         instance.query("INSERT INTO local1_source VALUES (3)")
         time.sleep(1)
 
         assert remote.query("SELECT count(*) FROM local1").strip() == "3"
-        remote.query("TRUNCATE local1 SYNC")
 
 
 def test_inserts_local(started_cluster):
@@ -115,4 +114,3 @@ def test_inserts_local(started_cluster):
     instance.query("INSERT INTO local_source VALUES ('2000-01-01', 1)")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM local").strip() == "1"
-    instance.query("TRUNCATE local SYNC")
