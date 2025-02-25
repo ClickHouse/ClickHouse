@@ -7,6 +7,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/KeysNullMap.h>
 
+#include <Columns/ColumnConst.h>
+
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 #include <tmmintrin.h>
 #endif
@@ -65,9 +67,14 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             size_t num_rows = column->size();
             out.resize_fill(num_rows);
 
+            if (column->isConst())
+            {
+                column = &static_cast<const ColumnConst *>(column)->getDataColumn();
+            }
+
             /// Note: here we violate strict aliasing.
             /// It should be ok as long as we do not refer to any value from `out` before filling.
-            const char * source = assert_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
+            const char * source = dynamic_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
