@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/
+slug: /sql-reference/statements/select/
 sidebar_position: 32
 sidebar_label: SELECT
 ---
@@ -181,19 +181,19 @@ Allows you to invoke some function for each row returned by an outer table expre
 
 **Syntax:**
 
-``` sql
+```sql
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
 **Example:**
 
-``` sql
+```sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
 INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
 SELECT * APPLY(sum) FROM columns_transformers;
 ```
 
-```text
+```response
 ┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
 │    220 │     18 │    347 │
 └────────┴────────┴────────┘
@@ -211,11 +211,11 @@ SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table
 
 **Example:**
 
-``` sql
+```sql
 SELECT * EXCEPT (i) from columns_transformers;
 ```
 
-```text
+```response
 ┌──j─┬───k─┐
 │ 10 │ 324 │
 │  8 │  23 │
@@ -236,11 +236,11 @@ SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 
 **Example:**
 
-``` sql
+```sql
 SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 ```
 
-```text
+```response
 ┌───i─┬──j─┬───k─┐
 │ 101 │ 10 │ 324 │
 │ 121 │  8 │  23 │
@@ -255,11 +255,11 @@ You can use each modifier separately or combine them.
 
 Using the same modifier multiple times.
 
-``` sql
+```sql
 SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_transformers;
 ```
 
-```text
+```response
 ┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
 │                        2 │                        3 │
 └──────────────────────────┴──────────────────────────┘
@@ -267,11 +267,11 @@ SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) from columns_tra
 
 Using multiple modifiers in a single query.
 
-``` sql
+```sql
 SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 ```
 
-```text
+```response
 ┌─sum(plus(i, 1))─┬─sum(k)─┐
 │             222 │    347 │
 └─────────────────┴────────┘
@@ -281,10 +281,10 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
-Other ways to make settings see [here](../../../operations/settings/index.md).
+Other ways to make settings see [here](../../../operations/settings/overview).
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```

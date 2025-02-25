@@ -1,6 +1,6 @@
 ---
 description: "System table similar to `system.numbers` but reads are parallelized and numbers can be returned in any order."
-slug: /en/operations/system-tables/numbers_mt
+slug: /operations/system-tables/numbers_mt
 title: "numbers_mt"
 keywords: ["system table", "numbers_mt"]
 ---

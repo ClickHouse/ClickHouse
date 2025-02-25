@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/exchange
+slug: /sql-reference/statements/exchange
 sidebar_position: 49
 sidebar_label: EXCHANGE
 ---

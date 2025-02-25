@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(ClickHouse LANGUAGES C CXX ASM)
 
@@ -102,7 +102,6 @@ if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
-    set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
     set (ENABLE_LIBRARIES 0)
     set (ENABLE_SSL 1)
     set (ENABLE_EXAMPLES 0)
@@ -177,8 +176,6 @@ if (OS_LINUX)
     # We should not export dynamic symbols, because:
     # - The main clickhouse binary does not use dlopen,
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
-    # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
-    #   should not expose their symbols to ODBC drivers and libraries.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 endif ()
 

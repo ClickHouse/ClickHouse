@@ -1,4 +1,6 @@
 #include <Common/ThreadPool.h>
+
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -772,6 +774,11 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         {
             CurrentMetrics::Increment metric_active_pool_threads(parent_pool.metric_active_threads);
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            DB::ThreadStatus * initial_thread = DB::current_thread;
+            DB::ThreadGroupPtr initial_thread_group = DB::CurrentThread::getGroup();
+#endif
+
             if constexpr (!std::is_same_v<Thread, std::thread>)
             {
                 Stopwatch watch;
@@ -788,6 +795,12 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
                 job_data->job();
             }
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+            DB::ThreadStatus * final_thread = DB::current_thread;
+            DB::ThreadGroupPtr final_thread_group = DB::CurrentThread::getGroup();
+            if (final_thread != initial_thread || final_thread_group != initial_thread_group)
+                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread pool job changed current ThreadStatus pointer ({} -> {}) or ThreadGroup ({} -> {}).", initial_thread ? "non-nullptr" : "nullptr", final_thread ? "non-nullptr" : "nullptr", initial_thread_group ? "master_thread_id " + std::to_string(initial_thread_group->master_thread_id) : "nullptr", final_thread_group ? "master_thread_id " + std::to_string(final_thread_group->master_thread_id) : "nullptr");
+#endif
 
             if (thread_trace_context.root_span.isTraceEnabled())
             {
