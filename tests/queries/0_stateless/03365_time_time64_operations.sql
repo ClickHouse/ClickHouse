@@ -1,3 +1,4 @@
+SET session_timezone = 'UTC';
 SELECT toTime(12) + 1; -- bug
 SELECT toTime(12) + 25; -- bug
 SELECT toTime(12) - 1; -- bug
