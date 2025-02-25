@@ -455,6 +455,8 @@ if __name__ == "__main__":
         f"docker run {net} {tty} --rm --name {CONTAINER_NAME} "
         "--privileged --dns-search='.' "  # since recent dns search leaks from host
         f"--memory={args.memory} "
+        f"--security-opt seccomp=unconfined "
+        f"--cap-add=SYS_PTRACE "
         f"--volume={args.binary}:/clickhouse "
         f"--volume={args.base_configs_dir}:/clickhouse-config "
         f"--volume={args.cases_dir}:/ClickHouse/tests/integration "
@@ -462,7 +464,7 @@ if __name__ == "__main__":
         f"--volume={args.utils_dir}/grpc-client/pb2:/ClickHouse/utils/grpc-client/pb2 "
         f"--volume=/run:/run/host:ro {dockerd_internal_volume} {env_tags} {env_cleanup} "
         f"-e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 {use_old_analyzer} -e PYTHONUNBUFFERED=1 "
-        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv"'
+        f'-e PYTEST_ADDOPTS="{parallel_args} {repeat_args} {pytest_opts} {tests_list} {rand_args} -vvv -ss"'
         f" {DIND_INTEGRATION_TESTS_IMAGE_NAME}:{args.docker_image_version}"
     )
 
