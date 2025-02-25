@@ -161,40 +161,39 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
     k.kafka_produce(kafka_cluster, topic_name, messages)
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        kafka_cluster.pause_container("kafka1")
 
-        create_query = create_query_generator(
-            "test_bad_reschedule",
-            "key UInt64, value UInt64",
-            topic_list=topic_name,
-            consumer_group=topic_name,
-            settings={"kafka_max_block_size": 1000},
-        )
-        instance.query(
-            f"""
-            {create_query};
+        with kafka_cluster.pause_container("kafka1"):
+            create_query = create_query_generator(
+                "test_bad_reschedule",
+                "key UInt64, value UInt64",
+                topic_list=topic_name,
+                consumer_group=topic_name,
+                settings={"kafka_max_block_size": 1000},
+            )
+            instance.query(
+                f"""
+                {create_query};
 
-            CREATE MATERIALIZED VIEW test.destination_unavailable ENGINE=MergeTree ORDER BY tuple() AS
-            SELECT
-                key,
-                now() as consume_ts,
-                value,
-                _topic,
-                _key,
-                _offset,
-                _partition,
-                _timestamp
-            FROM test.test_bad_reschedule;
-        """
-        )
+                CREATE MATERIALIZED VIEW test.destination_unavailable ENGINE=MergeTree ORDER BY tuple() AS
+                SELECT
+                    key,
+                    now() as consume_ts,
+                    value,
+                    _topic,
+                    _key,
+                    _offset,
+                    _partition,
+                    _timestamp
+                FROM test.test_bad_reschedule;
+            """
+            )
 
-        if do_direct_read:
-            instance.query("SELECT * FROM test.test_bad_reschedule")
-        instance.query("SELECT count() FROM test.destination_unavailable")
+            if do_direct_read:
+                instance.query("SELECT * FROM test.test_bad_reschedule")
+            instance.query("SELECT count() FROM test.destination_unavailable")
 
-        # enough to trigger issue
-        time.sleep(30)
-        kafka_cluster.unpause_container("kafka1")
+            # enough to trigger issue
+            time.sleep(30)
 
         result = instance.query_with_retry(
             "SELECT count() FROM test.destination_unavailable",
@@ -1023,19 +1022,17 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     # the tricky part here is that disconnect should happen after write prefix, but before we do commit
     # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
     # while materialized view is working to inject zookeeper failure
-    kafka_cluster.pause_container("kafka1")
 
-    # if we restore the connection too fast (<30sec) librdkafka will not report any timeout
-    # (alternative is to decrease the default session timeouts for librdkafka)
-    #
-    # when the delay is too long (>50sec) broker will decide to remove us from the consumer group,
-    # and will start answering "Broker: Unknown member"
-    instance.wait_for_log_line(
-        "Exception during commit attempt: Local: Waiting for coordinator", timeout=45
-    )
-    instance.wait_for_log_line("All commit attempts failed", look_behind_lines=500)
-
-    kafka_cluster.unpause_container("kafka1")
+    with kafka_cluster.pause_container("kafka1"):
+        # if we restore the connection too fast (<30sec) librdkafka will not report any timeout
+        # (alternative is to decrease the default session timeouts for librdkafka)
+        #
+        # when the delay is too long (>50sec) broker will decide to remove us from the consumer group,
+        # and will start answering "Broker: Unknown member"
+        instance.wait_for_log_line(
+            "Exception during commit attempt: Local: Waiting for coordinator", timeout=45
+        )
+        instance.wait_for_log_line("All commit attempts failed", look_behind_lines=500)
 
     # kafka_cluster.open_bash_shell('instance')
     instance.wait_for_log_line("Committed offset 22")
