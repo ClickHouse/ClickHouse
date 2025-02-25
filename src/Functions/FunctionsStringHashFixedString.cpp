@@ -6,7 +6,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <base/IPv4andIPv6.h>
-#include <ethash/keccak.hpp>
 
 #include "config.h"
 
@@ -21,6 +20,11 @@
 #    include <openssl/ripemd.h>
 #    include <openssl/sha.h>
 #endif
+
+#if defined USE_ETHASH && USE_ETHASH
+#    include <ethash/keccak.hpp>
+#endif
+
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
 /// to better parallelize the build procedure and avoid MSan build failure
@@ -219,6 +223,7 @@ struct ImplBLAKE3
 
 #endif
 
+#if defined USE_ETHASH && USE_ETHASH
 struct Keccak256Impl
 {
     static constexpr auto name = "keccak256";
@@ -236,6 +241,7 @@ struct Keccak256Impl
         memcpy(out_char_data, h.bytes, Keccak256Impl::length);
     }
 };
+#endif
 
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
@@ -330,7 +336,6 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
     using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
     using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
-    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
 
     factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
         .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
@@ -474,7 +479,9 @@ REGISTER_FUNCTION(HashFixedStrings)
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
         .category{"Hash"}});
 #    endif
+}
 
+#   if defined USE_ETHASH && USE_ETHASH
     using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
         .description = R"(Calculates the keccak-256 hash of the given string.)",
@@ -490,6 +497,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
     └──────────────────────────────────────────────────────────────────┘
         )"}}});
-}
+#    endif
+
 #endif
 }
