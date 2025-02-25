@@ -18,7 +18,7 @@ For optimal compatibility, we suggest using the Iceberg Table Function while we 
 
 This engine provides a read-only integration with existing Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS and locally stored tables.
 
-## Create Table
+## Create Table {#create-table}
 
 Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
 
@@ -91,6 +91,6 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
-## See also
+## See also {#see-also}
 
 - [iceberg table function](/docs/sql-reference/table-functions/iceberg.md)

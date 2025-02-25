@@ -15,7 +15,7 @@ The `Executable` and `ExecutablePool` table engines allow you to define a table 
 
 You can optionally include one or more input queries that stream their results to **stdin** for the script to read.
 
-## Creating an Executable Table
+## Creating an Executable Table {#creating-an-executable-table}
 
 The `Executable` table engine requires two parameters: the name of the script and the format of the incoming data. You can optionally pass in one or more input queries:
 
@@ -98,7 +98,7 @@ SELECT * FROM my_executable_table
 └───┴────────────┘
 ```
 
-## Passing Query Results to a Script
+## Passing Query Results to a Script {#passing-query-results-to-a-script}
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
@@ -198,7 +198,7 @@ The response looks like:
 ```
 
 
-## Creating an ExecutablePool Table
+## Creating an ExecutablePool Table {#creating-an-executablepool-table}
 
 The syntax for `ExecutablePool` is similar to `Executable`, but there are a couple of relevant settings unique to an `ExecutablePool` table:
 

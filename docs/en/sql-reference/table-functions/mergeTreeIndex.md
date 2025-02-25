@@ -28,7 +28,7 @@ A table object with columns with values of primary index of source table, column
 
 Marks column may contain `(NULL, NULL)` value in case when column is absent in data part or marks for one of its substreams are not written (e.g. in compact parts).
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ```sql
 CREATE TABLE test_table

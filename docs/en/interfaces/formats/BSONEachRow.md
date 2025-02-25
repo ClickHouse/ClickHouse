@@ -11,12 +11,12 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `BSONEachRow` format parses data as a sequence of Binary JSON (BSON) documents without any separator between them.
 Each row is formatted as a single document and each column is formatted as a single BSON document field with the column name as a key.
 
-## Data Types Matching
+## Data Types Matching {#data-types-matching}
 
 For output it uses the following correspondence between ClickHouse types and BSON types:
 
@@ -78,9 +78,9 @@ In this case, the format will validate that the size of the binary data equals t
 This format does not work properly on Big-Endian platforms.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                                                               | Description                                                                                  | Default  |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|----------|
