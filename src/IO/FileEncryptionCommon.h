@@ -76,6 +76,8 @@ public:
     /// The `key` should have size 16 or 24 or 32 bytes depending on which `algorithm` is specified.
     Encryptor(Algorithm algorithm_, const String & key_, const InitVector & iv_);
 
+    Algorithm getAlgorithm() const { return algorithm; }
+
     /// Sets the current position in the data stream from the very beginning of data.
     /// It affects how the data will be encrypted or decrypted because
     /// the initialization vector is increased by an index of the current block
@@ -94,6 +96,7 @@ public:
     void decrypt(const char * data, size_t size, char * out);
 
 private:
+    const Algorithm algorithm;
     const String key;
     const InitVector init_vector;
     const EVP_CIPHER * const evp_cipher;

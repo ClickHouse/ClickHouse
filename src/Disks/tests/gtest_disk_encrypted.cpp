@@ -98,7 +98,7 @@ protected:
         return contents;
     }
 
-    void testSeekAndReadUntilPosition(DiskPtr disk, const ReadSettings & read_settings);
+    void testSeekAndReadUntilPosition(DiskPtr disk, const String & filename, const ReadSettings & read_settings);
 
     std::unique_ptr<Poco::TemporaryFile> temp_dir;
     std::shared_ptr<DiskLocal> local_disk;
@@ -324,23 +324,23 @@ TEST_F(DiskEncryptedTest, RemoveFileDuringWriting)
 }
 #endif
 
-void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSettings & read_settings)
+void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String & filename, const ReadSettings & read_settings)
 {
     /// Write a file.
     {
-        auto buf = disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
+        auto buf = disk->writeFile(filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
         writeString(getAlphabetWithDigits(), *buf);
         buf->finalize();
     }
 
     {
         /// Read the whole file.
-        EXPECT_EQ(getFileContents("a.txt"), getAlphabetWithDigits());
+        EXPECT_EQ(getFileContents(filename), getAlphabetWithDigits());
     }
 
     {
         /// Read the whole file in two portions.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
 
         String str;
         readString(str, *buf, 5);
@@ -351,9 +351,16 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
     }
 
     {
+        std::cout << "R0-10: init" << std::endl;
+
         /// Read until specified position (setReadUntilPosition).
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
+
+        std::cout << "R0-10: opened" << std::endl;
+
         buf->setReadUntilPosition(10);
+
+        std::cout << "R0-10" << std::endl;
 
         String str;
         readStringUntilEOF(str, *buf);
@@ -362,7 +369,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position forward.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -387,7 +394,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -416,7 +423,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
 
     {
         /// Seek and then read until a specified position.
-        auto buf = disk->readFile("a.txt", read_settings, {}, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
 
         String str;
         buf->seek(0, SEEK_SET);
@@ -424,25 +431,28 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const ReadSet
         readStringUntilEOF(str, *buf);
         EXPECT_EQ(str, "abcdef");
 
-        /*buf->seek(3, SEEK_SET);
+        buf->seek(3, SEEK_SET);
         buf->setReadUntilPosition(5);
         readStringUntilEOF(str, *buf);
-        EXPECT_EQ(str, "");*/
+        EXPECT_EQ(str, "de");
 
-        buf->seek(10, SEEK_SET);
+        std::cout << "R10-15" << std::endl;
+
         buf->setReadUntilPosition(15);
+        std::cout << "seek10" << std::endl;
+        buf->seek(10, SEEK_SET);
         readStringUntilEOF(str, *buf);
         EXPECT_EQ(str, "klmno");
 
-        /* buf->seek(0, SEEK_SET);
+        buf->seek(0, SEEK_SET);
         buf->setReadUntilPosition(5);
         readStringUntilEOF(str, *buf);
-        EXPECT_EQ(str, ""); */
+        EXPECT_EQ(str, "abcde");
 
         buf->seek(-1, SEEK_CUR);
         buf->setReadUntilEnd();
         readStringUntilEOF(str, *buf);
-        EXPECT_EQ(str, "opqrstuvwxyz0123456789");
+        EXPECT_EQ(str, "efghijklmnopqrstuvwxyz0123456789");
     }
 }
 
@@ -459,8 +469,20 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 
-    ReadSettings read_settings;
-    read_settings.local_fs_buffer_size = 1;
+    testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
+    
+    {
+        ReadSettings read_settings;
+        read_settings.local_fs_buffer_size = 1;
+        testSeekAndReadUntilPosition(encrypted_disk, "b.txt", read_settings);
+    }
+}
 
-    testSeekAndReadUntilPosition(encrypted_disk, read_settings);
+TEST_F(DiskEncryptedTest, DoubleEncrypted)
+{
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_disk);
+    DiskPtr single_encrypted_disk = std::move(encrypted_disk);
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", single_encrypted_disk);
+
+    testSeekAndReadUntilPosition(encrypted_disk, "a.txt", {});
 }
