@@ -101,7 +101,6 @@
         .json-value {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
         }
         .external-link {
             color: var(--file-link-color);
@@ -109,7 +108,6 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             cursor: pointer;
             display: inline-block;
-            margin-top: 5px;
             text-decoration: none;
         }
 
@@ -120,7 +118,6 @@
         .json-value-small {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
             font-size: 0.75rem;
         }
         .dropdown-value {
@@ -1095,7 +1092,6 @@
             }
         }
         setInterval(checkForUpdates, 30000);
-        checkForUpdates();
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1133,8 +1129,13 @@
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
 
-        if (runtimeCache.json0?.status === "running" || runtimeCache.json0?.status === "pending") {
-            console.log("autoreload started")
+        if (
+            (nameParams?.length === 1 &&
+                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
+            (nameParams?.length === 2 &&
+                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
+        ) {
+            console.log("Auto-reload started");
             startAutoRefresh(PR, REF, sha, nameParams);
         }
     }

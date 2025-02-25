@@ -10,13 +10,13 @@ description: "Provides a read-only table-like interface to Apache Hudi tables in
 
 Provides a read-only table-like interface to Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3.
 
-## Syntax
+## Syntax {#syntax}
 
 ``` sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `url` — Bucket url with the path to an existing Hudi table in S3.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/docs/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).

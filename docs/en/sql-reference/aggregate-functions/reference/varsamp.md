@@ -5,7 +5,7 @@ sidebar_position: 212
 description: "Calculate the sample variance of a data set."
 ---
 
-## varSamp
+## varSamp {#varsamp}
 
 Calculate the sample variance of a data set.
 

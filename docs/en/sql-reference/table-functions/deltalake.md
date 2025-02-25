@@ -10,13 +10,13 @@ description: "Provides a read-only table-like interface to the Delta Lake tables
 
 Provides a read-only table-like interface to the [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
-## Syntax
+## Syntax {#syntax}
 
 ``` sql
 deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 - `url` — Bucket url with path to existing Delta Lake table in S3.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](/docs/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).

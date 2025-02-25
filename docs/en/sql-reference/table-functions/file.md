@@ -34,9 +34,9 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 A table for reading or writing data in a file.
 
-## Examples for Writing to a File
+## Examples for Writing to a File {#examples-for-writing-to-a-file}
 
-### Write to a TSV file
+### Write to a TSV file {#write-to-a-tsv-file}
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -53,7 +53,7 @@ As a result, the data is written into the file `test.tsv`:
 1	3	2
 ```
 
-### Partitioned write to multiple TSV files
+### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
 
 If you specify a `PARTITION BY` expression when inserting data into a table function of type `file()`, then a separate file is created for each partition. Splitting the data into separate files helps to improve performance of read operations.
 
@@ -77,9 +77,9 @@ As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, a
 1	2	3
 ```
 
-## Examples for Reading from a File
+## Examples for Reading from a File {#examples-for-reading-from-a-file}
 
-### SELECT from a CSV file
+### SELECT from a CSV file {#select-from-a-csv-file}
 
 First, set `user_files_path` in the server configuration and prepare a file `test.csv`:
 
@@ -108,7 +108,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### Inserting data from a file into a table
+### Inserting data from a file into a table {#inserting-data-from-a-file-into-a-table}
 
 ``` sql
 INSERT INTO FUNCTION
@@ -133,7 +133,7 @@ Reading data from `table.csv`, located in `archive1.zip` or/and `archive2.zip`:
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Globs in path
+## Globs in path {#globs-in-path}
 
 Paths may use globbing. Files must match the whole path pattern, not only the suffix or prefix. There is one exception that if the path refers to an existing
 directory and does not use globs, a `*` will be implicitly added to the path so

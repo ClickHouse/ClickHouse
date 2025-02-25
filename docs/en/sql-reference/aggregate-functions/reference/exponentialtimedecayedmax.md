@@ -5,7 +5,7 @@ title: "exponentialTimeDecayedMax"
 description: "Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`. "
 ---
 
-## exponentialTimeDecayedMax
+## exponentialTimeDecayedMax {#exponentialtimedecayedmax}
 
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`. 
 

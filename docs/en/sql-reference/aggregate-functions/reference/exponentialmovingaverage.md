@@ -5,7 +5,7 @@ title: "exponentialMovingAverage"
 description: "Calculates the exponential moving average of values for the determined time."
 ---
 
-## exponentialMovingAverage
+## exponentialMovingAverage {#exponentialmovingaverage}
 
 Calculates the exponential moving average of values for the determined time.
 
