@@ -59,6 +59,7 @@ private:
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
+    void checkObjectStorageAfterUpload();
 
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
@@ -93,7 +94,9 @@ private:
     size_t hidden_size = 0;
 
     std::unique_ptr<TaskTracker> task_tracker;
-    bool check_objects_after_upload = false;
+    const bool check_objects_after_upload = false;
+    const size_t check_objects_after_upload_max_attempts;
+    const size_t check_objects_after_upload_initial_backoff_ms;
 
     std::deque<PartData> detached_part_data;
 };
