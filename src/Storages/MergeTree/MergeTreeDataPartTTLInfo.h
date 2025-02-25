@@ -5,6 +5,7 @@
 #include <map>
 #include <optional>
 #include <vector>
+#include <time.h>
 
 namespace DB
 {
