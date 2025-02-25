@@ -19,6 +19,10 @@ workflow = Workflow.Config(
             job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
             for job in JobConfigs.build_jobs
         ],
+        *[
+            job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
+            for job in JobConfigs.special_build_jobs
+        ],
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,

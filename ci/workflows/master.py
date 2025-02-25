@@ -10,6 +10,7 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     jobs=[
         *JobConfigs.build_jobs,
+        *JobConfigs.special_build_jobs,
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
