@@ -1123,15 +1123,30 @@ inline void writeTimeText(time_t time, WriteBuffer & buf, const DateLUTImpl & ti
 
 inline void writeTimeTextISO(time_t time, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
 {
-    writeTimeText<':'>(time, buf, utc_time_zone);
+    writeTimeText(time, buf, utc_time_zone);
     buf.write('Z');
 }
 
-// inline void writeTimeTextISO(Time64 time64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
-// {
-//     writeTimeText<':'>(time64, scale, buf, utc_time_zone);
-//     buf.write('Z');
-// }
+inline void writeTimeUnixTimestamp(Time64 time64, UInt32 scale, WriteBuffer & buf)
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::max_precision<Time64>;
+    scale = scale > MaxScale ? MaxScale : scale;
+
+    auto components = DecimalUtils::split(time64, scale);
+    writeIntText(components.whole, buf);
+
+    if (scale > 0)
+    {
+        buf.write('.');
+        writeTime64FractionalText<Time64>(components.fractional, scale, buf);
+    }
+}
+
+inline void writeTimeTextISO(Time64 time64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl &)
+{
+    writeTime64Text(time64, scale, buf);
+    buf.write('Z');
+}
 
 inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, UInt32 scale, WriteBuffer & buf, [[maybe_unused]]const DateLUTImpl & time_zone = DateLUT::instance())
 {

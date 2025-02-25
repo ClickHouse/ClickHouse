@@ -32,10 +32,10 @@ void SerializationTime64::serializeText(const IColumn & column, size_t row_num, 
                 writeTime64Text(value, scale, ostr);
             return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
-            writeDateTimeUnixTimestamp(value, scale, ostr);
+            writeTimeUnixTimestamp(value, scale, ostr);
             return;
         case FormatSettings::DateTimeOutputFormat::ISO:
-            writeDateTimeTextISO(value, scale, ostr, utc_time_zone); // TODO
+            writeTimeTextISO(value, scale, ostr, utc_time_zone);
             return;
     }
 }
