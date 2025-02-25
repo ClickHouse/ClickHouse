@@ -2476,7 +2476,7 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occured when deleting object {error}")
+                            logging.error(f"Error occurred when deleting object {error}")
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
