@@ -112,7 +112,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     aj->set_left(rg.nextBool());
     const uint32_t nccols = std::min<uint32_t>(
         UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1);
-    const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
+    const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols) + UINT32_C(1);
 
     for (uint32_t i = 0; i < nclauses; i++)
     {
