@@ -53,6 +53,11 @@ fs::path getShardsListPath(const String & zk_root)
 
 }
 
+/*
+ * Holds boolean flags for set of keys.
+ * Keys can be added and removed.
+ * Flags can be set from different threads, and consumer can wait for it.
+ */
 template <typename T>
 class ClusterDiscovery::Flags
 {
@@ -237,7 +242,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                 my_discovery_paths = multicluster_discovery_paths
                 ](auto)
                 {
-                    (*my_discovery_paths)[zk_root_index - 1]->need_update = true;
+                    my_discovery_paths->at(zk_root_index - 1)->need_update = true;
                     my_clusters_to_update->set(cluster_name);
                 });
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
@@ -356,6 +361,7 @@ static bool contains(const Strings & list, const String & value)
 
 /// Reads data from zookeeper and tries to update cluster.
 /// Returns true on success (or no update required).
+/// Is the record about cluster did not existed before, creates it.
 bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 {
     LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
