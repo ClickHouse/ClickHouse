@@ -2,6 +2,8 @@
 slug: /operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
+title: "Restrictions on Query Complexity"
+description: "Settings which restrict query complexity."
 ---
 
 # Restrictions on Query Complexity

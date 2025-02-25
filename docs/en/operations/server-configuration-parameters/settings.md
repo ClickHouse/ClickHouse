@@ -14,7 +14,7 @@ import SystemLogParameters from '@site/docs/operations/server-configuration-para
 
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/operations/configuration-files).
 
-Other settings are described in the "[Settings](../../operations/settings/index.md#session-settings-intro)" section.
+Other settings are described in the "[Settings](../../operations/settings/overview#session-settings-intro)" section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory
@@ -1334,7 +1334,7 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes
 
-List of prefixes for [custom settings](../../operations/settings/index.md#custom_settings). The prefixes must be separated with commas.
+List of prefixes for [custom settings](../../operations/settings/overview#custom_settings). The prefixes must be separated with commas.
 
 **Example**
 
@@ -1344,7 +1344,7 @@ List of prefixes for [custom settings](../../operations/settings/index.md#custom
 
 **See Also**
 
-- [Custom settings](../../operations/settings/index.md#custom_settings)
+- [Custom settings](../../operations/settings/overview#custom_settings)
 
 ## core_dump {#core_dump}
 
@@ -1486,7 +1486,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).".
+- "[Executable User Defined Functions](../../sql-reference/functions/overview#executable-user-defined-functions).".
 
 **Example**
 
@@ -3291,7 +3291,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 ## user_scripts_path
 
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/index.md#executable-user-defined-functions).
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/overview#executable-user-defined-functions).
 
 **Example**
 
@@ -3305,7 +3305,7 @@ Default:
 
 ## user_defined_path
 
-The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/index.md#user-defined-functions).
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/overview#user-defined-functions).
 
 **Example**
 
