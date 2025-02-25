@@ -195,9 +195,13 @@ private:
         auto & result_data = col_res->getData();
 
         ColumnArray::Offset prev = 0;
+        ColumnArray::Offset curr = 0;
         size_t row = 0;
         int numbits = static_cast<int>(sizeof(ResultType)) * 8;
         using BitType = std::conditional_t<std::is_same_v<ResultType, Float32>, uint32_t, uint64_t>;
+        BitType x = 0;
+        BitType y = 0;
+        BitType bits = 0;
 
         for (auto off : offsets_x)
         {
@@ -205,14 +209,12 @@ private:
             static constexpr size_t VEC_SIZE = 4;
             size_t array_size = off - prev;
             typename Kernel::template State<ResultType> states[VEC_SIZE];
-            for (; prev + VEC_SIZE < off; prev += VEC_SIZE)
+            for (; curr + VEC_SIZE < off; curr += VEC_SIZE)
             {
                 for (size_t s = 0; s < VEC_SIZE; ++s)
                 {
-                    BitType x = 0;
-                    BitType y = 0;
-                    BitType bits = 0;
-                    size_t ind = prev + s;
+                    x=0; y=0; bits = 0;
+                    size_t ind = curr + s - prev;
                     for(int j=0; j < numbits; j++){
                         size_t idx = (array_size * j + ind) / numbits;
                         int bitpos = (array_size * j + ind) % numbits;
@@ -224,7 +226,7 @@ private:
                         y |= (static_cast<BitType>(by) << j);
                     }
                     Kernel::template accumulate<ResultType>(
-                        states[s], static_cast<ResultType>(x), static_cast<ResultType>(y), kernel_params);
+                        states[s], std::bit_cast<ResultType>(x), std::bit_cast<ResultType>(y), kernel_params);
                 }
             }
 
@@ -233,10 +235,22 @@ private:
                 Kernel::template combine<ResultType>(state, other_state, kernel_params);
 
             /// Process the tail
-            for (; prev < off; ++prev)
+            for (; curr < off; ++curr)
             {
+                x=0; y=0; bits = 0;
+                size_t ind = curr - prev;
+                for(int j=0; j < numbits; j++){
+                    size_t idx = (array_size * j + ind) / numbits;
+                    int bitpos = (array_size * j + ind) % numbits;
+                    memcpy(&bits, &data_x[idx], sizeof(bits));
+                    bool bx = (bits & (static_cast<BitType>(1) << (numbits - 1 - bitpos)));
+                    memcpy(&bits, &data_y[idx], sizeof(bits));
+                    bool by = (bits & (static_cast<BitType>(1) << (numbits - 1 - bitpos)));
+                    x |= (static_cast<BitType>(bx) << j);
+                    y |= (static_cast<BitType>(by) << j);
+                }
                 Kernel::template accumulate<ResultType>(
-                    state, static_cast<ResultType>(data_x[prev]), static_cast<ResultType>(data_y[prev]), kernel_params);
+                    state, std::bit_cast<ResultType>(x), std::bit_cast<ResultType>(y), kernel_params);
             }
             result_data[row] = Kernel::finalize(state, kernel_params);
             ++row;
