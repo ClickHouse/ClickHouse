@@ -1066,7 +1066,13 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         return 0;
     };
 
-    StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
+
+    StreamingFormatExecutor executor(
+        header,
+        format,
+        std::move(on_error),
+        data->size_in_bytes,
+        std::move(adding_defaults_transform));
     auto chunk_info = std::make_shared<AsyncInsertInfo>();
 
     for (const auto & entry : data->entries)
@@ -1082,7 +1088,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         size_t num_bytes = bytes->size();
-        size_t num_rows = executor.execute(*buffer);
+        size_t num_rows = executor.execute(*buffer, num_bytes);
 
         total_rows += num_rows;
 

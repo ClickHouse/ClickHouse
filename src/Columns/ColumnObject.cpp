@@ -1412,7 +1412,7 @@ void ColumnObject::getExtremes(DB::Field & min, DB::Field & max) const
     }
 }
 
-void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns)
+void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_columns, size_t factor)
 {
     if (source_columns.empty())
         return;
@@ -1511,10 +1511,10 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         }
     }
 
-    shared_data->prepareForSquashing(shared_data_source_columns);
+    shared_data->prepareForSquashing(shared_data_source_columns, factor);
 
     for (const auto & [path, source_typed_columns] : typed_paths_source_columns)
-        typed_paths[path]->prepareForSquashing(source_typed_columns);
+        typed_paths[path]->prepareForSquashing(source_typed_columns, factor);
 
     for (const auto & [path, source_dynamic_columns] : dynamic_paths_source_columns)
     {
@@ -1524,7 +1524,7 @@ void ColumnObject::prepareForSquashing(const std::vector<ColumnPtr> & source_col
         /// discriminators and offsets and ColumnDynamic::prepareVariantsForSquashing to preallocate memory
         /// for all variants inside Dynamic.
         dynamic_paths_ptrs[path]->reserve(total_size);
-        dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns);
+        dynamic_paths_ptrs[path]->prepareVariantsForSquashing(source_dynamic_columns, factor);
     }
 }
 
