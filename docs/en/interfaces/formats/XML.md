@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `XML` format is suitable only for output, and not for parsing. 
 
@@ -22,7 +22,7 @@ In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Example:
 
@@ -88,6 +88,6 @@ Example:
 </result>
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 ## XML {#xml}

@@ -83,7 +83,7 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `.conf` file in `/etc/sysctl.d/` with `kernel.task_delayacct = 1`
 :::
 
-## System tables in ClickHouse Cloud
+## System tables in ClickHouse Cloud {#system-tables-in-clickhouse-cloud}
 
 In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/docs/en/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
 
@@ -160,7 +160,7 @@ In general, the following rules can be applied when determining if a system tabl
 - System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
 - System tables that expose ongoing processes e.g. `processes`, `merges`.
 
-## Related content
+## Related content {#related-content}
 
 - Blog: [System Tables and a window into the internals of ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
 - Blog: [Essential monitoring queries - part 1 - INSERT queries](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)

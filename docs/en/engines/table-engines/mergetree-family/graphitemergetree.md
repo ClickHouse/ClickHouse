@@ -90,17 +90,17 @@ Rollup configuration structure:
 
 ### Required Columns {#required-columns}
 
-#### path_column_name
+#### path_column_name {#path_column_name}
 
 `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 
-#### time_column_name
+#### time_column_name {#time_column_name}
 `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 
-#### value_column_name
+#### value_column_name {#value_column_name}
 `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
 
-#### version_column_name
+#### version_column_name {#version_column_name}
 `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}

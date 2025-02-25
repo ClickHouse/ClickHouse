@@ -4,7 +4,7 @@ slug: /sql-reference/aggregate-functions/reference/varsampstable
 sidebar_position: 213
 ---
 
-## varSampStable
+## varSampStable {#varsampstable}
 
 Calculate the sample variance of a data set. Unlike [`varSamp`](../reference/varsamp.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
 
