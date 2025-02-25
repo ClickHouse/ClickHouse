@@ -911,7 +911,7 @@ void StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint3
 
         this->depth++;
         this->width++;
-        if (rg.nextSmallNumber() < 3)
+        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 3)
         {
             generateArrayJoin(rg, jcc->mutable_arr());
         }

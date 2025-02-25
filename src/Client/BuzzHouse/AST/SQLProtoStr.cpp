@@ -752,6 +752,18 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
             }
         }
         break;
+        case BottomTypeNameType::kBoolean:
+            ret += "Bool";
+            break;
+        case BottomTypeNameType::kUuid:
+            ret += "UUID";
+            break;
+        case BottomTypeNameType::kIPv4:
+            ret += "IPv4";
+            break;
+        case BottomTypeNameType::kIPv6:
+            ret += "IPv6";
+            break;
         default: {
             if (lcard)
             {
@@ -810,12 +822,6 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                         }
                     }
                     break;
-                    case BottomTypeNameType::kBoolean:
-                        ret += "Bool";
-                        break;
-                    case BottomTypeNameType::kUuid:
-                        ret += "UUID";
-                        break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
@@ -890,12 +896,6 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                         ret += ")";
                     }
                     break;
-                    case BottomTypeNameType::kIPv4:
-                        ret += "IPv4";
-                        break;
-                    case BottomTypeNameType::kIPv6:
-                        ret += "IPv6";
-                        break;
                     default:
                         ret += "Int";
                 }
