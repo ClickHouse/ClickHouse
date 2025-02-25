@@ -221,13 +221,17 @@ void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(c
         return;
 
     addOperation(
-        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap(), object_storage));
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, 0, *metadata_storage.getPathMap(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(
-    const std::string & path, ObjectStorageKey /*object_key*/, uint64_t /* size_in_bytes */)
+    const std::string & path, ObjectStorageKey /*object_key*/, uint64_t size)
 {
-    createEmptyMetadataFile(path);
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    addOperation(
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, size, *metadata_storage.getPathMap(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
