@@ -2,6 +2,8 @@
 slug: /engines/table-engines/mergetree-family/replacingmergetree
 sidebar_position: 40
 sidebar_label:  ReplacingMergeTree
+title: "ReplacingMergeTree"
+description: "differs from MergeTree in that it removes duplicate entries with the same sorting key value (`ORDER BY` table section, not `PRIMARY KEY`)."
 ---
 
 # ReplacingMergeTree

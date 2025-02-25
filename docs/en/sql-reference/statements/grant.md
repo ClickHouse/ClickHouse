@@ -124,149 +124,209 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
 
 ## Privileges
 
-Privilege is a permission to execute specific kind of queries.
+A Privilege is a permission given to a user to execute specific kinds of queries.
 
-Privileges have a hierarchical structure. A set of permitted queries depends on the privilege scope.
+Privileges have a hierarchical structure and a set of permitted queries depends on the privilege scope.
 
-Hierarchy of privileges:
+The hierarchy of privileges in ClickHouse is shown below:
 
-- [SELECT](#select)
-- [INSERT](#insert)
-- [ALTER](#alter)
-    - `ALTER TABLE`
-        - `ALTER UPDATE`
-        - `ALTER DELETE`
-        - `ALTER COLUMN`
-            - `ALTER ADD COLUMN`
-            - `ALTER DROP COLUMN`
-            - `ALTER MODIFY COLUMN`
-            - `ALTER COMMENT COLUMN`
-            - `ALTER CLEAR COLUMN`
-            - `ALTER RENAME COLUMN`
-        - `ALTER INDEX`
-            - `ALTER ORDER BY`
-            - `ALTER SAMPLE BY`
-            - `ALTER ADD INDEX`
-            - `ALTER DROP INDEX`
-            - `ALTER MATERIALIZE INDEX`
-            - `ALTER CLEAR INDEX`
-        - `ALTER CONSTRAINT`
-            - `ALTER ADD CONSTRAINT`
-            - `ALTER DROP CONSTRAINT`
-        - `ALTER TTL`
-            - `ALTER MATERIALIZE TTL`
-        - `ALTER SETTINGS`
-        - `ALTER MOVE PARTITION`
-        - `ALTER FETCH PARTITION`
-        - `ALTER FREEZE PARTITION`
-    - `ALTER VIEW`
-        - `ALTER VIEW REFRESH`
-        - `ALTER VIEW MODIFY QUERY`
-        - `ALTER VIEW MODIFY SQL SECURITY`
-- [CREATE](#create)
-    - `CREATE DATABASE`
-    - `CREATE TABLE`
+- [`ALL`](#all)
+    - [`ACCESS MANAGEMENT`](#access-management)
+          - `ALLOW SQL SECURITY NONE`
+          - `ALTER QUOTA`
+          - `ALTER ROLE`
+          - `ALTER ROW POLICY` 
+          - `ALTER SETTINGS PROFILE`
+          - `ALTER USER`
+          - `CREATE QUOTA`
+          - `CREATE ROLE`
+          - `CREATE ROW POLICY`
+          - `CREATE SETTINGS PROFILE`
+          - `CREATE USER`
+          - `DROP QUOTA`
+          - `DROP ROLE`
+          - `DROP ROW POLICY`
+          - `DROP SETTINGS PROFILE`
+          - `DROP USER`
+          - `ROLE ADMIN`
+          - `SHOW ACCESS`
+              - `SHOW QUOTAS`
+              - `SHOW ROLES`
+              - `SHOW ROW POLICIES`
+              - `SHOW SETTINGS PROFILES`
+              - `SHOW USERS`
+    - [`ALTER`](#alter)
+          - `ALTER DATABASE`
+              - `ALTER DATABASE SETTINGS`
+          - `ALTER TABLE`
+                - `ALTER COLUMN`
+                    - `ALTER ADD COLUMN`
+                    - `ALTER CLEAR COLUMN`
+                    - `ALTER COMMENT COLUMN`
+                    - `ALTER DROP COLUMN`
+                    - `ALTER MATERIALIZE COLUMN`
+                    - `ALTER MODIFY COLUMN`
+                    - `ALTER RENAME COLUMN` 
+                - `ALTER CONSTRAINT`
+                    - `ALTER ADD CONSTRAINT`
+                    - `ALTER DROP CONSTRAINT` 
+                - `ALTER DELETE`
+                - `ALTER FETCH PARTITION`
+                - `ALTER FREEZE PARTITION`
+                - `ALTER INDEX`
+                    - `ALTER ADD INDEX`
+                    - `ALTER CLEAR INDEX`
+                    - `ALTER DROP INDEX`
+                    - `ALTER MATERIALIZE INDEX`
+                    - `ALTER ORDER BY`
+                    - `ALTER SAMPLE BY` 
+                - `ALTER MATERIALIZE TTL`
+                - `ALTER MODIFY COMMENT`
+                - `ALTER MOVE PARTITION`
+                - `ALTER PROJECTION`
+                - `ALTER SETTINGS`
+                - `ALTER STATISTICS`
+                    - `ALTER ADD STATISTICS`
+                    - `ALTER DROP STATISTICS`
+                    - `ALTER MATERIALIZE STATISTICS`
+                    - `ALTER MODIFY STATISTICS` 
+                - `ALTER TTL`
+                - `ALTER UPDATE` 
+          - `ALTER VIEW`
+              - `ALTER VIEW MODIFY QUERY`
+              - `ALTER VIEW REFRESH`
+              - `ALTER VIEW MODIFY SQL SECURITY`
+    - [`BACKUP`](#backup)
+    - [`CLUSTER`](#cluster)
+    - [`CREATE`](#create)
         - `CREATE ARBITRARY TEMPORARY TABLE`
             - `CREATE TEMPORARY TABLE`
-    - `CREATE VIEW`
-    - `CREATE DICTIONARY`
-    - `CREATE FUNCTION`
-- [DROP](#drop)
-    - `DROP DATABASE`
-    - `DROP TABLE`
-    - `DROP VIEW`
-    - `DROP DICTIONARY`
-    - `DROP FUNCTION`
-- [TRUNCATE](#truncate)
-- [OPTIMIZE](#optimize)
-- [SHOW](#show)
-    - `SHOW DATABASES`
-    - `SHOW TABLES`
-    - `SHOW COLUMNS`
-    - `SHOW DICTIONARIES`
-- [KILL QUERY](#kill-query)
-- [ACCESS MANAGEMENT](#access-management)
-    - `CREATE USER`
-    - `ALTER USER`
-    - `DROP USER`
-    - `CREATE ROLE`
-    - `ALTER ROLE`
-    - `DROP ROLE`
-    - `CREATE ROW POLICY`
-    - `ALTER ROW POLICY`
-    - `DROP ROW POLICY`
-    - `CREATE QUOTA`
-    - `ALTER QUOTA`
-    - `DROP QUOTA`
-    - `CREATE SETTINGS PROFILE`
-    - `ALTER SETTINGS PROFILE`
-    - `DROP SETTINGS PROFILE`
-    - `SHOW ACCESS`
-        - `SHOW_USERS`
-        - `SHOW_ROLES`
-        - `SHOW_ROW_POLICIES`
-        - `SHOW_QUOTAS`
-        - `SHOW_SETTINGS_PROFILES`
-    - `ROLE ADMIN`
-- [SYSTEM](#system)
-    - `SYSTEM SHUTDOWN`
-    - `SYSTEM DROP CACHE`
-        - `SYSTEM DROP DNS CACHE`
-        - `SYSTEM DROP MARK CACHE`
-        - `SYSTEM DROP UNCOMPRESSED CACHE`
-    - `SYSTEM RELOAD`
-        - `SYSTEM RELOAD CONFIG`
-        - `SYSTEM RELOAD DICTIONARY`
-            - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
-        - `SYSTEM RELOAD FUNCTION`
-        - `SYSTEM RELOAD FUNCTIONS`
-    - `SYSTEM MERGES`
-    - `SYSTEM TTL MERGES`
-    - `SYSTEM FETCHES`
-    - `SYSTEM MOVES`
-    - `SYSTEM SENDS`
-        - `SYSTEM DISTRIBUTED SENDS`
-        - `SYSTEM REPLICATED SENDS`
-    - `SYSTEM REPLICATION QUEUES`
-    - `SYSTEM SYNC REPLICA`
-    - `SYSTEM RESTART REPLICA`
-    - `SYSTEM FLUSH`
-        - `SYSTEM FLUSH DISTRIBUTED`
-        - `SYSTEM FLUSH LOGS`
-- [CLUSTER](#cluster)
-- [INTROSPECTION](#introspection)
-    - `addressToLine`
-    - `addressToLineWithInlines`
-    - `addressToSymbol`
-    - `demangle`
-- [SOURCES](#sources)
-    - `AZURE`
-    - `FILE`
-    - `HDFS`
-    - `HIVE`
-    - `JDBC`
-    - `KAFKA`
-    - `MONGO`
-    - `MYSQL`
-    - `NATS`
-    - `ODBC`
-    - `POSTGRES`
-    - `RABBITMQ`
-    - `REDIS`
-    - `REMOTE`
-    - `S3`
-    - `SQLITE`
-    - `URL`
-- [dictGet](#dictget)
-- [displaySecretsInShowAndSelect](#displaysecretsinshowandselect)
-- [NAMED COLLECTION ADMIN](#named-collection-admin)
-    - `CREATE NAMED COLLECTION`
-    - `DROP NAMED COLLECTION`
-    - `ALTER NAMED COLLECTION`
-    - `SHOW NAMED COLLECTIONS`
-    - `SHOW NAMED COLLECTIONS SECRETS`
-    - `NAMED COLLECTION`
-- [TABLE ENGINE](#table-engine)
+        - `CREATE DATABASE`
+        - `CREATE DICTIONARY`
+        - `CREATE FUNCTION`
+        - `CREATE RESOURCE`
+        - `CREATE TABLE`
+        - `CREATE VIEW`
+        - `CREATE WORKLOAD`
+    - [`dictGet`](#dictget)
+    - [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+    - [`DROP`](#drop)
+        - `DROP DATABASE`
+        - `DROP DICTIONARY`
+        - `DROP FUNCTION`
+        - `DROP RESOURCE`
+        - `DROP TABLE`
+        - `DROP VIEW` 
+        - `DROP WORKLOAD`
+    - [`INSERT`](#insert)
+    - [`INTROSPECTION`](#introspection)
+        - `addressToLine`
+        - `addressToLineWithInlines`
+        - `addressToSymbol`
+        - `demangle`
+    - `KILL QUERY`
+    - `KILL TRANSACTION`
+    - `MOVE PARTITION BETWEEN SHARDS`
+    - [`NAMED COLLECTION ADMIN`](#named-collection-admin)
+        - `ALTER NAMED COLLECTION`
+        - `CREATE NAMED COLLECTION`
+        - `DROP NAMED COLLECTION`
+        - `NAMED COLLECTION`
+        - `SHOW NAMED COLLECTIONS`
+        - `SHOW NAMED COLLECTIONS SECRETS`
+    - [`OPTIMIZE`](#optimize)
+    - [`SELECT`](#select)
+    - [`SET DEFINER`](/docs/en/sql-reference/statements/create/view#sql_security)
+    - [`SHOW`](#show)
+        - `SHOW COLUMNS` 
+        - `SHOW DATABASES`
+        - `SHOW DICTIONARIES`
+        - `SHOW TABLES`
+    - `SHOW FILESYSTEM CACHES`
+    - [`SOURCES`](#sources)
+        - `AZURE`
+        - `FILE`
+        - `HDFS`
+        - `HIVE`
+        - `JDBC`
+        - `KAFKA`
+        - `MONGO`
+        - `MYSQL`
+        - `NATS`
+        - `ODBC`
+        - `POSTGRES`
+        - `RABBITMQ`
+        - `REDIS`
+        - `REMOTE`
+        - `S3`
+        - `SQLITE`
+        - `URL`
+    - [`SYSTEM`](#system)
+        - `SYSTEM CLEANUP`
+        - `SYSTEM DROP CACHE`
+            - `SYSTEM DROP COMPILED EXPRESSION CACHE`
+            - `SYSTEM DROP CONNECTIONS CACHE`
+            - `SYSTEM DROP DISTRIBUTED CACHE`
+            - `SYSTEM DROP DNS CACHE`
+            - `SYSTEM DROP FILESYSTEM CACHE`
+            - `SYSTEM DROP FORMAT SCHEMA CACHE`
+            - `SYSTEM DROP MARK CACHE`
+            - `SYSTEM DROP MMAP CACHE`
+            - `SYSTEM DROP PAGE CACHE`
+            - `SYSTEM DROP PRIMARY INDEX CACHE`
+            - `SYSTEM DROP QUERY CACHE`
+            - `SYSTEM DROP S3 CLIENT CACHE`
+            - `SYSTEM DROP SCHEMA CACHE`
+            - `SYSTEM DROP UNCOMPRESSED CACHE`
+        - `SYSTEM DROP PRIMARY INDEX CACHE`
+        - `SYSTEM DROP REPLICA`
+        - `SYSTEM FAILPOINT`
+        - `SYSTEM FETCHES`
+        - `SYSTEM FLUSH`
+            - `SYSTEM FLUSH ASYNC INSERT QUEUE`
+            - `SYSTEM FLUSH LOGS`
+        - `SYSTEM JEMALLOC`
+        - `SYSTEM KILL QUERY`
+        - `SYSTEM KILL TRANSACTION`
+        - `SYSTEM LISTEN`
+        - `SYSTEM LOAD PRIMARY KEY`
+        - `SYSTEM MERGES`
+        - `SYSTEM MOVES`
+        - `SYSTEM PULLING REPLICATION LOG`
+        - `SYSTEM REDUCE BLOCKING PARTS`
+        - `SYSTEM REPLICATION QUEUES`
+        - `SYSTEM REPLICA READINESS`
+        - `SYSTEM RESTART DISK`
+        - `SYSTEM RESTART REPLICA`
+        - `SYSTEM RESTORE REPLICA`
+        - `SYSTEM RELOAD`
+            - `SYSTEM RELOAD ASYNCHRONOUS METRICS`
+            - `SYSTEM RELOAD CONFIG`
+                - `SYSTEM RELOAD DICTIONARY`
+                - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+                - `SYSTEM RELOAD FUNCTION`
+                - `SYSTEM RELOAD MODEL`
+                - `SYSTEM RELOAD USERS`
+        - `SYSTEM SENDS`
+            - `SYSTEM DISTRIBUTED SENDS`
+            - `SYSTEM REPLICATED SENDS`
+        - `SYSTEM SHUTDOWN`
+        - `SYSTEM SYNC DATABASE REPLICA`
+        - `SYSTEM SYNC FILE CACHE`
+        - `SYSTEM SYNC FILESYSTEM CACHE`
+        - `SYSTEM SYNC REPLICA`
+        - `SYSTEM SYNC TRANSACTION LOG`
+        - `SYSTEM THREAD FUZZER`
+        - `SYSTEM TTL MERGES`
+        - `SYSTEM UNFREEZE`
+        - `SYSTEM UNLOAD PRIMARY KEY`
+        - `SYSTEM VIEWS`
+        - `SYSTEM VIRTUAL PARTS UPDATE`
+        - `SYSTEM WAIT LOADING PARTS`
+    - [`TABLE ENGINE`](#table-engine)
+    - [`TRUNCATE`](#truncate)
+    - `UNDROP TABLE` 
+- [`NONE`](#none)
 
 Examples of how this hierarchy is treated:
 
@@ -386,6 +446,10 @@ Examples of how this hierarchy is treated:
 - The `ATTACH` operation needs the [CREATE](#create) privilege.
 - The `DETACH` operation needs the [DROP](#drop) privilege.
 - To stop mutation by the [KILL MUTATION](../../sql-reference/statements/kill.md#kill-mutation) query, you need to have a privilege to start this mutation. For example, if you want to stop the `ALTER UPDATE` query, you need the `ALTER UPDATE`, `ALTER TABLE`, or `ALTER` privilege.
+
+### BACKUP
+
+Allows execution of [`BACKUP`] in queries. For more information on backups see ["Backup and Restore"](../../operations/backup.md).
 
 ### CREATE
 

@@ -777,13 +777,16 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             "r" + revisionToString(revision) + "-file-" + object_key.getSuffix());
     }
 
+    /// Does metadata_storage support empty files without actual blobs in the object_storage?
+    const bool do_not_write_empty_blob = metadata_storage.supportsEmptyFilesWithoutBlobs();
+
     /// seems ok
     auto object = StoredObject(object_key.serialize(), path);
     std::function<void(size_t count)> create_metadata_callback;
 
     if (autocommit)
     {
-        create_metadata_callback = [tx = shared_from_this(), mode, path, key_ = std::move(object_key)](size_t count)
+        create_metadata_callback = [tx = shared_from_this(), mode, path, key_ = std::move(object_key), do_not_write_empty_blob](size_t count)
         {
             if (mode == WriteMode::Rewrite)
             {
@@ -792,10 +795,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                 if (!tx->object_storage.isPlain() && tx->metadata_storage.existsFile(path))
                     tx->object_storage.removeObjectsIfExist(tx->metadata_storage.getStorageObjects(path));
 
-                tx->metadata_transaction->createMetadataFile(path, key_, count);
+                if (do_not_write_empty_blob && count == 0)
+                {
+                    LoggerPtr logger = getLogger("DiskObjectStorageTransaction");
+                    LOG_TRACE(logger, "Skipping writing empty blob for path {}, key {}", path, key_.serialize());
+                    tx->metadata_transaction->createEmptyMetadataFile(path);
+                }
+                else
+                    tx->metadata_transaction->createMetadataFile(path, key_, count);
             }
             else
+            {
+                /// Even if do_not_write_empty_blob and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
                 tx->metadata_transaction->addBlobToMetadata(path, key_, count);
+            }
 
             tx->metadata_transaction->commit();
         };
@@ -804,7 +817,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     {
         auto write_operation = std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object);
 
-        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation, mode, path, key_ = std::move(object_key)](size_t count)
+        create_metadata_callback = [object_storage_tx = shared_from_this(), write_op = write_operation, mode, path, key_ = std::move(object_key), do_not_write_empty_blob](size_t count)
         {
             /// This callback called in WriteBuffer finalize method -- only there we actually know
             /// how many bytes were written. We don't control when this finalize method will be called
@@ -816,7 +829,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
             /// ...
             /// buf1->finalize() // shouldn't do anything with metadata operations, just memoize what to do
             /// tx->commit()
-            write_op->setOnExecute([object_storage_tx, mode, path, key_, count](MetadataTransactionPtr tx)
+            write_op->setOnExecute([object_storage_tx, mode, path, key_, count, do_not_write_empty_blob](MetadataTransactionPtr tx)
             {
                 if (mode == WriteMode::Rewrite)
                 {
@@ -827,10 +840,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
                         object_storage_tx->object_storage.removeObjectsIfExist(object_storage_tx->metadata_storage.getStorageObjects(path));
                     }
 
-                    tx->createMetadataFile(path, key_, count);
+                    if (do_not_write_empty_blob && count == 0)
+                    {
+                        LoggerPtr logger = getLogger("DiskObjectStorageTransaction");
+                        LOG_TRACE(logger, "Skipping writing empty blob for path {}, key {}", path, key_.serialize());
+                        tx->createEmptyMetadataFile(path);
+                    }
+                    else
+                        tx->createMetadataFile(path, key_, count);
                 }
                 else
+                {
+                    /// Even if do_not_write_empty_blob and size is 0, we still need to add metadata just to make sure that a file gets created if this is the 1st append
                     tx->addBlobToMetadata(path, key_, count);
+                }
             });
         };
 
@@ -847,7 +870,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
         settings);
 
     return std::make_unique<WriteBufferWithFinalizeCallback>(
-        std::move(impl), std::move(create_metadata_callback), object.remote_path);
+        std::move(impl), std::move(create_metadata_callback), object.remote_path, do_not_write_empty_blob);
 }
 
 

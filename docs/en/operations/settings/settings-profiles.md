@@ -2,6 +2,8 @@
 slug: /operations/settings/settings-profiles
 sidebar_position: 61
 sidebar_label: Settings Profiles
+description: "A collection of settings grouped under the same name."
+title: "Settings Profiles"
 ---
 
 # Settings Profiles

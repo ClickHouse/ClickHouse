@@ -265,7 +265,11 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
+#if USE_SSL
+    , true // skip loading encryption keys from ZK
+#endif
+    );
 
     /// Write core dump on crash.
     {

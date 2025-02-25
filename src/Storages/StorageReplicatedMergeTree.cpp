@@ -472,7 +472,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
-
     std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
     /// It does not make sense for CREATE query

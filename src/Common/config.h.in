@@ -23,7 +23,6 @@
 #cmakedefine01 USE_MINIZIP
 #cmakedefine01 USE_SNAPPY
 #cmakedefine01 USE_HIVE
-#cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX
 #cmakedefine01 USE_JEMALLOC
 #cmakedefine01 USE_GWP_ASAN
@@ -58,7 +57,6 @@
 #cmakedefine01 USE_NURAFT
 #cmakedefine01 USE_KRB5
 #cmakedefine01 USE_FILELOG
-#cmakedefine01 USE_ODBC
 #cmakedefine01 USE_BLAKE3
 #cmakedefine01 USE_USEARCH
 #cmakedefine01 USE_SKIM

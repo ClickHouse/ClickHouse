@@ -2,6 +2,8 @@
 slug: /engines/table-engines/integrations/jdbc
 sidebar_position: 100
 sidebar_label: JDBC
+title: "JDBC"
+description: "Allows ClickHouse to connect to external databases via JDBC."
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
