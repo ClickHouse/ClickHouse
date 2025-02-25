@@ -497,7 +497,6 @@ REGISTER_FUNCTION(HashFixedStrings)
     └──────────────────────────────────────────────────────────────────┘
         )"}}});
 #    endif
-
-#endif
 }
+#endif
 }
