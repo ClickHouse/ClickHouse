@@ -50,6 +50,7 @@ public:
         char * buf = nullptr;
         Priority priority;
         size_t ignore = 0;
+        bool supports_read_at = false;
     };
 
     struct Result
