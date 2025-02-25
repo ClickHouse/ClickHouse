@@ -210,12 +210,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         }
         const auto status = ManifestEntryStatus(status_int_column->getInt(i));
 
-        const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-        const auto pos = data_path.find(common_path);
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
+        const auto file_path = getFilePath(file_path_string_column->getDataAt(i).toView(), common_path);
 
-        const auto file_path = data_path.substr(pos);
         std::unordered_map<Int32, Range> partition_ranges;
         for (size_t j = 0; j < partition_columns.size(); ++j)
         {

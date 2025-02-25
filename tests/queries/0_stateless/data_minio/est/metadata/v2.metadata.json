@@ -1,0 +1,88 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "b00d4b67-6eba-4209-96ce-3228ccdece8a",
+  "location" : "s3a://test/est",
+  "last-sequence-number" : 1,
+  "last-updated-ms" : 1740151618006,
+  "last-column-id" : 4,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "order_number",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 2,
+      "name" : "product_code",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 3,
+      "name" : "year_id",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 4,
+      "name" : "month_id",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "divanik",
+    "option.format-version" : "2",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : 8658107102804870367,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 8658107102804870367,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "sequence-number" : 1,
+    "snapshot-id" : 8658107102804870367,
+    "timestamp-ms" : 1740151618006,
+    "summary" : {
+      "operation" : "append",
+      "spark.app.id" : "local-1740151439188",
+      "added-data-files" : "3",
+      "added-records" : "3",
+      "added-files-size" : "3541",
+      "changed-partition-count" : "1",
+      "total-records" : "3",
+      "total-files-size" : "3541",
+      "total-data-files" : "3",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "s3a://test/est/metadata/snap-8658107102804870367-1-22b5bcb9-141d-4f06-9c5f-908900f1397f.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1740151618006,
+    "snapshot-id" : 8658107102804870367
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1740151604189,
+    "metadata-file" : "s3a://test/est/metadata/v1.metadata.json"
+  } ]
+}
