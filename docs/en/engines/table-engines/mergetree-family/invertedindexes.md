@@ -38,7 +38,7 @@ Full-text indexes are experimental and should not be used in production environm
 ways, for example with respect to their DDL/DQL syntax or performance/compression characteristics.
 :::
 
-## Usage
+## Usage {#usage}
 
 To use full-text indexes, first enable them in the configuration:
 
@@ -102,7 +102,7 @@ controls the amount of data read consumed from the underlying column before a ne
 intermediate memory consumption for index construction but also improves lookup performance since fewer segments need to be checked on
 average to evaluate a query.
 
-## Full-text search of the Hacker News dataset
+## Full-text search of the Hacker News dataset {#full-text-search-of-the-hacker-news-dataset}
 
 Let's look at the performance improvements of full-text indexes on a large dataset with lots of text. We will use 28.7M rows of comments on the popular Hacker News website. Here is the table without an full-text index:
 
@@ -220,6 +220,6 @@ is performance. In practice, users often search for multiple terms at once. For 
 means that the parameter `GRANULARITY` supplied to index creation has no meaning (it may be removed from the syntax in the future).
 :::
 
-## Related Content
+## Related Content {#related-content}
 
 - Blog: [Introducing Inverted Indices in ClickHouse](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
