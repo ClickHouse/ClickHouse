@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/IDataType.h>
@@ -221,9 +221,9 @@ void MergeTreeIndexAggregatorSet::update(const Block & block, size_t * pos, size
             else
             {
                 set_hyperrectangle[i].left
-                    = applyVisitor(FieldVisitorAccurateLess(), set_hyperrectangle[i].left, field_min) ? set_hyperrectangle[i].left : field_min;
+                    = accurateLess(set_hyperrectangle[i].left, field_min) ? set_hyperrectangle[i].left : field_min;
                 set_hyperrectangle[i].right
-                    = applyVisitor(FieldVisitorAccurateLess(), set_hyperrectangle[i].right, field_max) ? field_max : set_hyperrectangle[i].right;
+                    = accurateLess(set_hyperrectangle[i].right, field_max) ? field_max : set_hyperrectangle[i].right;
             }
         }
     }

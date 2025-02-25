@@ -25,7 +25,7 @@
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -113,10 +113,10 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (applyVisitor(FieldVisitorAccurateLess(), rhs[i], lhs[i]))
+            if (accurateLess(rhs[i], lhs[i]))
                 return -1;
 
-            if (!applyVisitor(FieldVisitorAccurateEquals(), rhs[i], lhs[i]))
+            if (!accurateEquals(rhs[i], lhs[i]))
                 return 1;
         }
     }
@@ -124,10 +124,10 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
+            if (accurateLess( lhs[i], rhs[i]))
                 return -1;
 
-            if (!applyVisitor(FieldVisitorAccurateEquals(), lhs[i], rhs[i]))
+            if (!accurateEquals(lhs[i], rhs[i]))
                 return 1;
         }
     }
@@ -308,7 +308,7 @@ struct PartsRangesIterator
             return false;
 
         for (size_t i = 0; i < value.size(); ++i)
-            if (!applyVisitor(FieldVisitorAccurateEquals(), value[i], other.value[i]))
+            if (!accurateEquals(value[i], other.value[i]))
                 return false;
 
         return range == other.range && part_index == other.part_index && event == other.event;

@@ -5,7 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -144,9 +144,9 @@ const auto & getArguments(const FunctionNode * function)
     return function->getArguments().getNodes();
 }
 
-bool less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess{}, lhs, rhs); }
-bool greater(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess{}, rhs, lhs); }
-bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals{}, lhs, rhs); }
+bool less(const Field & lhs, const Field & rhs) { return accurateLess(lhs, rhs); }
+bool greater(const Field & lhs, const Field & rhs) { return accurateLess(rhs, lhs); }
+bool equals(const Field & lhs, const Field & rhs) { return accurateEquals(lhs, rhs); }
 
 ComparisonGraphCompareResult functionNameToCompareResult(const std::string & name)
 {
