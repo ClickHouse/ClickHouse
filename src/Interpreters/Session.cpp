@@ -126,7 +126,7 @@ public:
             if (!thread.joinable())
                 thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
 
-            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, toString(key.first));
 
             return {session, true};
         }
@@ -134,7 +134,7 @@ public:
         /// Use existing session.
         const auto & session = it->second;
 
-        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, toString(key.first));
 
         if (!isSharedPtrUnique(session))
             throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -169,7 +169,7 @@ public:
         auto it = sessions.find(key);
         if (it == sessions.end())
         {
-            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, user_id);
+            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, toString(user_id));
             return;
         }
 
@@ -216,7 +216,7 @@ private:
         bucket_sessions.insert(session.key);
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
-            session.key.second, session.key.first);
+            session.key.second, toString(session.key.first));
     }
 
     void cleanThread()
@@ -253,14 +253,14 @@ private:
                 if (session.use_count() != 1)
                 {
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
-                        key.second, key.first, session.use_count());
+                        key.second, toString(key.first), session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
                     scheduleCloseSession(*session, lock);
                     continue;
                 }
 
-                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
+                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
 
                 sessions.erase(session_it);
             }

@@ -5,6 +5,8 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/GinIndexStore.h>
+
 #include <roaring.hh>
 #include <array>
 #include <mutex>

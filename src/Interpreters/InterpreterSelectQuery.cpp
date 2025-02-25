@@ -95,7 +95,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
@@ -1317,16 +1317,16 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     else
         descr.fill_step = order_by_elem.direction;
 
-    if (applyVisitor(FieldVisitorAccurateEquals(), descr.fill_step, Field{0}))
+    if (accurateEquals(descr.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be zero");
 
     if (order_by_elem.direction == 1)
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), descr.fill_step, Field{0}))
+        if (accurateLess(descr.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_to, descr.fill_from))
+            accurateLess(descr.fill_to, descr.fill_from))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
@@ -1334,11 +1334,11 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
     }
     else
     {
-        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, descr.fill_step))
+        if (accurateLess(Field{0}, descr.fill_step))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
         if (!descr.fill_from.isNull() && !descr.fill_to.isNull() &&
-            applyVisitor(FieldVisitorAccurateLess(), descr.fill_from, descr.fill_to))
+            accurateLess(descr.fill_from, descr.fill_to))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                             "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");

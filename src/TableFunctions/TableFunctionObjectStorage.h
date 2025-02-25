@@ -4,6 +4,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/ITableFunction.h>
 #include "config.h"

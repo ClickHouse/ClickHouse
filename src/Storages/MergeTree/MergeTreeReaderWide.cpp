@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNested.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>

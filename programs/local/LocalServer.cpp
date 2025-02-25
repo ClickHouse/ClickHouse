@@ -39,6 +39,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>

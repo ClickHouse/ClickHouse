@@ -1,4 +1,4 @@
-#pragma once
+#include <Common/FieldAccurateComparison.h>
 
 #include <Core/Field.h>
 #include <Core/AccurateComparison.h>
@@ -158,5 +158,20 @@ public:
         return !less_cmp(r, l);
     }
 };
+
+bool accurateEquals(const Field & left, const Field & right)
+{
+    return applyVisitor(FieldVisitorAccurateEquals(), left, right);
+}
+
+bool accurateLess(const Field & left, const Field & right)
+{
+    return applyVisitor(FieldVisitorAccurateLess(), left, right);
+}
+
+bool accurateLessOrEqual(const Field & left, const Field & right)
+{
+    return applyVisitor(FieldVisitorAccurateLessOrEqual(), left, right);
+}
 
 }

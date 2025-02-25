@@ -7,6 +7,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
@@ -108,6 +109,9 @@
 #include <memory>
 #include <filesystem>
 #include <cassert>
+
+#include <boost/algorithm/string/find_iterator.hpp>
+#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
