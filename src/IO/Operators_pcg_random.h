@@ -1,9 +1,16 @@
+#pragma once
+
 #include <IO/Operators.h>
 
 #include <pcg_random.hpp>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int INCORRECT_DATA;
+}
 
 struct PcgSerializer
 {

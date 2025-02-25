@@ -124,7 +124,7 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (accurateLess( lhs[i], rhs[i]))
+            if (accurateLess(lhs[i], rhs[i]))
                 return -1;
 
             if (!accurateEquals(lhs[i], rhs[i]))
