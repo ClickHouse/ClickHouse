@@ -1976,12 +1976,12 @@ Use function [hex](../functions/encoding-functions.md/#hex) to represent the res
 
 Query:
 ```sql
-select hex(keccak256_go('hello'))
+select hex(keccak256('hello'))
 ```
 
 Result:
 ```sql
-┌─hex(keccak256_go('hello'))───────────────────────────────────────┐
+┌─hex(keccak256('hello'))───────────────────────────────────────┐
 │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
 └──────────────────────────────────────────────────────────────────┘
 ```

@@ -223,7 +223,7 @@ struct ImplBLAKE3
 
 #endif
 
-#if defined USE_ETHASH && USE_ETHASH
+#if USE_ETHASH
 struct Keccak256Impl
 {
     static constexpr auto name = "keccak256";
@@ -323,7 +323,7 @@ public:
     }
 };
 
-#if USE_SSL || USE_BLAKE3
+#if USE_SSL || USE_BLAKE3 || USE_ETHASH
 REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
@@ -479,9 +479,8 @@ REGISTER_FUNCTION(HashFixedStrings)
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
         .category{"Hash"}});
 #    endif
-}
 
-#   if defined USE_ETHASH && USE_ETHASH
+#   if USE_ETHASH
     using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
         .description = R"(Calculates the keccak-256 hash of the given string.)",
@@ -500,4 +499,5 @@ REGISTER_FUNCTION(HashFixedStrings)
 #    endif
 
 #endif
+}
 }
