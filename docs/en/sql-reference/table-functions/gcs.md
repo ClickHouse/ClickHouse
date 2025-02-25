@@ -87,7 +87,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-## Usage
+## Usage {#usage}
 
 Suppose that we have several files with following URIs on GCS:
 
@@ -179,7 +179,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## Partitioned Write
+## Partitioned Write {#partitioned-write}
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 

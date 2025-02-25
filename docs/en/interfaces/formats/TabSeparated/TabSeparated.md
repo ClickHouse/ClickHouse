@@ -11,7 +11,7 @@ alias: ['TSV']
 |-------|--------|--------|
 | ✔     | ✔      | `TSV`  |
 
-## Description
+## Description {#description}
 
 In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is followed by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
@@ -101,9 +101,9 @@ SELECT * FROM nestedt FORMAT TSV
 1  [1]    ['a']
 ```
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                          | Description                                                                                                                                                                                                                                    | Default |
 |------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
