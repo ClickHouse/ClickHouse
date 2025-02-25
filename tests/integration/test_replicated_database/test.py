@@ -975,8 +975,6 @@ def test_recover_staled_replica(started_cluster):
     )
     main_node.query("DROP DATABASE recover SYNC")
     dummy_node.query("DROP DATABASE recover SYNC")
-    dummy_node.query("DROP DATABASE recover_broken_tables SYNC")
-    dummy_node.query("DROP DATABASE recover_broken_replicated_tables SYNC")
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
@@ -1306,12 +1304,6 @@ def test_force_synchronous_settings(started_cluster):
         "CREATE TABLE test_force_synchronous_settings.t (n String) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
     )
     select_thread.join()
-
-    main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
-    dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
-    snapshotting_node.query(
-        "DROP DATABASE test_force_synchronous_settings SYNC"
-    )
 
 
 def test_recover_digest_mismatch(started_cluster):
