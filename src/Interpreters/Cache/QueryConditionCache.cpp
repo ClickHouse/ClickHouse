@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include "Interpreters/Cache/FileSegmentInfo.h"
 
 namespace ProfileEvents
 {
@@ -49,6 +50,16 @@ void QueryConditionCache::write(const UUID & table_id, const String & part_name,
 
         if (has_final_mark)
             entry->matching_marks[marks_count - 1] = false;
+
+        LOG_DEBUG(
+            logger,
+            "table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
+            table_id,
+            part_name,
+            condition_hash,
+            marks_count,
+            has_final_mark,
+            toString(mark_ranges));
     }
 }
 

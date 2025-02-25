@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 
 SET allow_experimental_analyzer = 1;
 

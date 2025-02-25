@@ -52,6 +52,8 @@ private:
 
     using Cache = CacheBase<Key, Entry, KeyHasher>;
     Cache cache;
+
+    LoggerPtr logger = getLogger("QueryConditionCache");
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;
