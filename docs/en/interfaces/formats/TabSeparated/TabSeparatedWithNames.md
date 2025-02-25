@@ -11,7 +11,7 @@ alias: ['TSVWithNames']
 |-------|--------|--------------------------------|
 | 	✔    | 	✔     | `TSVWithNames`, `RawWithNames` |
 
-## Description
+## Description {#description}
 
 Differs from the [`TabSeparated`](./TabSeparated.md) format in that the column names are written in the first row.
 
@@ -23,6 +23,6 @@ the columns from the input data will be mapped to the columns of the table by th
 Otherwise, the first row will be skipped.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

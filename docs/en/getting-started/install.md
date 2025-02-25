@@ -18,11 +18,11 @@ You have four options for getting up and running with ClickHouse:
 - **[Production Deployments](#available-installation-options):** ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, modern ARM (ARMv8.2-A up), or PowerPC64LE CPU architecture
 - **[Docker Image](https://hub.docker.com/_/clickhouse):** use the official Docker image in Docker Hub
 
-## ClickHouse Cloud
+## ClickHouse Cloud {#clickhouse-cloud}
 
 The quickest and easiest way to get up and running with ClickHouse is to create a new service in [ClickHouse Cloud](https://clickhouse.cloud/).
 
-## Quick Install
+## Quick Install {#quick-install}
 
 :::tip
 For production installs of a specific release version see the [installation options](#available-installation-options) down below.
@@ -92,7 +92,7 @@ For production deployments of ClickHouse, choose from one of the following insta
 
 It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu. Run these commands to install packages:
 
-#### Setup the Debian repository
+#### Setup the Debian repository {#setup-the-debian-repository}
 ``` bash
 sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
 curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
@@ -102,12 +102,12 @@ echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] ht
 sudo apt-get update
 ```
 
-#### Install ClickHouse server and client
+#### Install ClickHouse server and client {#install-clickhouse-server-and-client}
 ```bash
 sudo apt-get install -y clickhouse-server clickhouse-client
 ```
 
-#### Start ClickHouse server
+#### Start ClickHouse server {#start-clickhouse-server}
 
 ```bash
 sudo service clickhouse-server start
@@ -136,7 +136,7 @@ You can replace `stable` with `lts` to use different [release kinds](/knowledgeb
 
 You can also download and install packages manually from [here](https://packages.clickhouse.com/deb/pool/main/c/).
 
-#### Install standalone ClickHouse Keeper
+#### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper}
 
 :::tip
 In production environment we [strongly recommend](/docs/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
@@ -148,7 +148,7 @@ This command is only needed on standalone ClickHouse Keeper servers.
 sudo apt-get install -y clickhouse-keeper
 ```
 
-#### Enable and start ClickHouse Keeper
+#### Enable and start ClickHouse Keeper {#enable-and-start-clickhouse-keeper}
 
 ```bash
 sudo systemctl enable clickhouse-keeper
@@ -173,7 +173,7 @@ If you need to install specific version of ClickHouse you have to install all pa
 
 It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.
 
-#### Setup the RPM repository
+#### Setup the RPM repository {#setup-the-rpm-repository}
 First, you need to add the official repository:
 
 ``` bash
@@ -190,13 +190,13 @@ sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
 
 Later any `yum install` can be replaced by `zypper install`. To specify a particular version, add `-$VERSION` to the end of the package name, e.g. `clickhouse-client-22.2.2.22`.
 
-#### Install ClickHouse server and client
+#### Install ClickHouse server and client {#install-clickhouse-server-and-client-1}
 
 ```bash
 sudo yum install -y clickhouse-server clickhouse-client
 ```
 
-#### Start ClickHouse server
+#### Start ClickHouse server {#start-clickhouse-server-1}
 
 ```bash
 sudo systemctl enable clickhouse-server
@@ -205,7 +205,7 @@ sudo systemctl status clickhouse-server
 clickhouse-client # or "clickhouse-client --password" if you set up a password.
 ```
 
-#### Install standalone ClickHouse Keeper
+#### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper-1}
 
 :::tip
 In production environment we [strongly recommend](/docs/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
@@ -217,7 +217,7 @@ This command is only needed on standalone ClickHouse Keeper servers.
 sudo yum install -y clickhouse-keeper
 ```
 
-#### Enable and start ClickHouse Keeper
+#### Enable and start ClickHouse Keeper {#enable-and-start-clickhouse-keeper-1}
 
 ```bash
 sudo systemctl enable clickhouse-keeper
@@ -283,7 +283,7 @@ For production environments, it's recommended to use the latest `stable`-version
 
 To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/). Those images use official `deb` packages inside.
 
-## Non-Production Deployments (Advanced)
+## Non-Production Deployments (Advanced) {#non-production-deployments-advanced}
 
 ### Compile From Source {#from-sources}
 
@@ -305,7 +305,7 @@ You'll need to create data and metadata folders manually and `chown` them for th
 
 On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
 
-### Install a CI-generated Binary
+### Install a CI-generated Binary {#install-a-ci-generated-binary}
 
 ClickHouse's continuous integration (CI) infrastructure produces specialized builds for each commit in the [ClickHouse
 repository](https://github.com/clickhouse/clickhouse/), e.g. [sanitized](https://github.com/google/sanitizers) builds, unoptimized (Debug)
@@ -326,7 +326,7 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 - Find the rows with compiler = "clang-*-aarch64" - there are multiple rows.
 - Download the artifacts for these builds.
 
-### macOS-only: Install with Homebrew
+### macOS-only: Install with Homebrew {#macos-only-install-with-homebrew}
 
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
@@ -413,7 +413,7 @@ SELECT 1
 
 To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/tutorial.md).
 
-## Recommendations for Self-Managed ClickHouse
+## Recommendations for Self-Managed ClickHouse {#recommendations-for-self-managed-clickhouse}
 
 ClickHouse can run on any Linux, FreeBSD, or macOS with x86-64, ARM, or PowerPC64LE CPU architecture.
 

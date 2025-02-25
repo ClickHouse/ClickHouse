@@ -218,7 +218,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
 
-## max_execution_time_leaf
+## max_execution_time_leaf {#max_execution_time_leaf}
 
 Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
 
@@ -234,7 +234,7 @@ We can use `max_execution_time_leaf` as the query settings:
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
 ```
 
-## timeout_overflow_mode_leaf
+## timeout_overflow_mode_leaf {#timeout_overflow_mode_leaf}
 
 What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
 
