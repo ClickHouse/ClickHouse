@@ -140,7 +140,8 @@ public:
         createBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
-        SerializationPtr type_serialization_ptr = type_ptr->getDefaultSerialization();
+        ISerialization::Kind serialization_kind = column->isSparse() ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
+        SerializationPtr type_serialization_ptr = type_ptr->getSerialization(serialization_kind);
 
         type_serialization_ptr->serializeBinary(*column, row_num, *data(place).compressed_buf, {});
     }
@@ -166,12 +167,13 @@ public:
     void addBatchSinglePlace(
         size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t) const override
     {
-        ISerialization::Kind serialization_kind = columns[0]->isSparse() ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
-        const auto & column = columns[0]->convertToFullIfNeeded();
+        const auto & column = columns[0];
+
 
         createBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
+        ISerialization::Kind serialization_kind = column->isSparse() ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(serialization_kind);
 
         WriteBufferPtr compressed_buffer = data(place).compressed_buf;
