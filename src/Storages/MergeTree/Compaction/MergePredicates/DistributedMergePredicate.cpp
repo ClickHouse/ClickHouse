@@ -4,6 +4,10 @@
 #include <IO/ReadHelpers.h>
 #include <base/defines.h>
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 namespace DB
 {
 
