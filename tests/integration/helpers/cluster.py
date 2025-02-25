@@ -3208,6 +3208,10 @@ class ClickHouseCluster:
 
     @contextmanager
     def pause_container(self, instance_name):
+        '''Use it as following:
+        with cluster.pause_container(name):
+            useful_stuff()
+        '''
         self._pause_container(instance_name)
         try:
             yield
