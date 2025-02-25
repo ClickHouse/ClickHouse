@@ -1,10 +1,9 @@
 #include <DataTypes/IDataType.h>
+#include <base/Decimal.h>
 #include <Common/TargetSpecific.h>
 #include <Common/findExtreme.h>
-#include <base/Decimal.h>
 
 #include <limits>
-#include <type_traits>
 
 namespace DB
 {
