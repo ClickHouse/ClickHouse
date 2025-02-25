@@ -493,19 +493,19 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
 
         /// Normally heavy metrics don't delay the rest of the metrics calculation
         /// otherwise log the warning message
-        auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
-        if (watch.elapsedSeconds() > (update_period.count() / 2.))
-            log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
-        else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
-            log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
-        LOG_IMPL(log, log_level.first, log_level.second,
-                 "Update heavy metrics. "
-                 "Update period {} sec. "
-                 "Update heavy metrics period {} sec. "
-                 "Heavy metrics calculation elapsed: {} sec.",
-                 update_period.count(),
-                 heavy_metric_update_period.count(),
-                 watch.elapsedSeconds());
+        //auto log_level = std::make_pair(DB::LogsLevel::trace, Poco::Message::PRIO_TRACE);
+        //if (watch.elapsedSeconds() > (update_period.count() / 2.))
+        //    log_level = std::make_pair(DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG);
+        //else if (watch.elapsedSeconds() > (update_period.count() / 4. * 3))
+        //    log_level = std::make_pair(DB::LogsLevel::warning, Poco::Message::PRIO_WARNING);
+        //LOG_IMPL(log, log_level.first, log_level.second,
+        //         "Update heavy metrics. "
+        //         "Update period {} sec. "
+        //         "Update heavy metrics period {} sec. "
+        //         "Heavy metrics calculation elapsed: {} sec.",
+        //         update_period.count(),
+        //         heavy_metric_update_period.count(),
+        //         watch.elapsedSeconds());
 
     }
     new_values["AsynchronousHeavyMetricsCalculationTimeSpent"] = { watch.elapsedSeconds(), "Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics)." };

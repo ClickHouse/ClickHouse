@@ -23,7 +23,7 @@ namespace
 
 void libssh_logger_callback(int priority, const char *, const char * buffer, void *)
 {
-    Poco::Logger * logger = &Poco::Logger::get("LibSSH");
+    auto * logger = getLogger("LibSSH");
 
     switch (priority)
     {

@@ -8,6 +8,7 @@
 #include <Common/Logger.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
+#include <quill/Frontend.h>
 
 namespace DB
 {
@@ -24,7 +25,7 @@ public:
     {}
 
     explicit AtomicLogger(const std::string & log_name)
-        : AtomicLogger(::getLogger(log_name))
+        : AtomicLogger(getLogger(log_name))
     {}
 
     void store(LoggerPtr new_logger)
@@ -35,7 +36,7 @@ public:
 
     void store(const std::string & new_log_name)
     {
-        auto new_logger = ::getLogger(new_log_name);
+        auto * new_logger = getLogger(new_log_name);
         store(std::move(new_logger));
     }
 
@@ -48,7 +49,7 @@ public:
     String loadName() const
     {
         DB::SharedLockGuard lock(log_mutex);
-        return logger->name();
+        return logger->get_logger_name();
     }
 private:
     mutable DB::SharedMutex log_mutex;

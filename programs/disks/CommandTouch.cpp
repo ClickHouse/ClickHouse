@@ -28,15 +28,15 @@ public:
         const auto & relative_path = disk.getRelativeFromRoot(path);
         if (disk_impl->existsFile(relative_path))
         {
-            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "File already exists at path: {}", relative_path);
+            LOG_WARNING(getLogger("CommandTouch"), "File already exists at path: {}", relative_path);
         }
         else if (disk_impl->existsDirectory(relative_path))
         {
-            LOG_WARNING(&Poco::Logger::get("CommandTouch"), "Directory already exists at path: {}", relative_path);
+            LOG_WARNING(getLogger("CommandTouch"), "Directory already exists at path: {}", relative_path);
         }
         else
         {
-            LOG_INFO(&Poco::Logger::get("CommandTouch"), "Creating file at path: {}", relative_path);
+            LOG_INFO(getLogger("CommandTouch"), "Creating file at path: {}", relative_path);
             disk_impl->createFile(relative_path);
         }
     }

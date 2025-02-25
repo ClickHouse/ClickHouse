@@ -386,7 +386,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.left_stream_filter_removes_filter,
             0 /*child_idx*/,
             false /*update_parent_filter*/);
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+        LOG_DEBUG(getLogger("QueryPlanOptimizations"),
             "Pushed down filter {} to the {} side of join",
             result_name,
             JoinKind::Left);
@@ -401,7 +401,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.right_stream_filter_removes_filter,
             1 /*child_idx*/,
             false /*update_parent_filter*/);
-        LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
+        LOG_DEBUG(getLogger("QueryPlanOptimizations"),
             "Pushed down filter {} to the {} side of join",
             result_name,
             JoinKind::Right);

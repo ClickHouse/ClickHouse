@@ -4,8 +4,11 @@
 
 #include <memory>
 
+#include <Common/Logger_fwd.h>
+
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
+
 
 namespace Poco
 {
@@ -14,7 +17,7 @@ class Logger;
 using LoggerPtr = std::shared_ptr<Logger>;
 }
 
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
+using PocoLoggerPtr = std::shared_ptr<Poco::Logger>;
 using LoggerRawPtr = Poco::Logger *;
 
 /** RAII wrappers around Poco/Logger.h.
@@ -31,21 +34,13 @@ using LoggerRawPtr = Poco::Logger *;
   */
 LoggerPtr getLogger(const std::string & name);
 
-/** Get Logger with specified name. If the Logger does not exist, it is created.
-  * This overload was added for specific purpose, when logger is constructed from constexpr string.
-  * Logger is destroyed only during program shutdown.
-  */
-template <size_t n>
-ALWAYS_INLINE LoggerPtr getLogger(const char (&name)[n])
-{
-    return Poco::Logger::getShared(name, false /*should_be_owned_by_shared_ptr_if_created*/);
-}
+PocoLoggerPtr getPocoLogger(const std::string & name);
 
 /** Create Logger with specified name, channel and logging level.
   * If Logger already exists, throws exception.
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
   */
-LoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
+PocoLoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
 
 /** Create raw Poco::Logger that will not be destroyed before program termination.
   * This can be used in cases when specific Logger instance can be singletone.

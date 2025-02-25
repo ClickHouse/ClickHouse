@@ -1433,7 +1433,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());
             else
-                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: {}", merge_select_result.error().explanation.text);
+                LOG_TRACE(log, "Didn't start merge: {}", merge_select_result.error().explanation.text);
         }
 
         if (!merge_entry && !current_mutations_by_version.empty())
@@ -1442,7 +1442,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
 
             if (!mutate_entry)
-                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start mutation: {}", out_reason.text);
+                LOG_TRACE(log, "Didn't start mutation: {}", out_reason.text);
         }
 
         has_mutations = !current_mutations_by_version.empty();

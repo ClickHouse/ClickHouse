@@ -274,14 +274,14 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 1)
         {
             LOG_WARNING(
-                &Poco::Logger::get("registerStorageMergeTree"),
+                getLogger("registerStorageMergeTree"),
                 "It's not recommended to explicitly specify "
                 "zookeeper_path and replica_name in ReplicatedMergeTree arguments");
         }
 
         if (!query.attach && is_replicated_database && local_context->getSettingsRef()[Setting::database_replicated_allow_replicated_engine_arguments] == 2)
         {
-            LOG_WARNING(&Poco::Logger::get("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
+            LOG_WARNING(getLogger("registerStorageMergeTree"), "Replacing user-provided ZooKeeper path and replica name ({}, {}) "
                                                                      "with default arguments", ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
             ast_zk_path->value = server_settings[ServerSetting::default_replica_path];
             ast_replica_name->value = server_settings[ServerSetting::default_replica_name];

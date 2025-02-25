@@ -4,6 +4,7 @@
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/Logger_fwd.h>
 
 namespace Poco
 {
@@ -22,7 +23,6 @@ class RabbitMQHandler;
 class RabbitMQConnection;
 using ChannelPtr = std::unique_ptr<AMQP::TcpChannel>;
 static constexpr auto SANITY_TIMEOUT = 1000 * 60 * 10; /// 10min.
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class RabbitMQConsumer
 {

@@ -119,7 +119,7 @@ static UInt64 getExistingRowsCount(const Block & block)
 
     if (!row_exists_col)
     {
-        LOG_WARNING(&Poco::Logger::get("MutationHelpers::getExistingRowsCount"), "_row_exists column type is not UInt8");
+        LOG_WARNING(getLogger("MutationHelpers::getExistingRowsCount"), "_row_exists column type is not UInt8");
         return block.rows();
     }
 

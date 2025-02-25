@@ -1,6 +1,5 @@
 #pragma once
 
-/// Macros for convenient usage of Poco logger.
 #include <unistd.h>
 #include <fmt/args.h>
 #include <fmt/format.h>
@@ -12,22 +11,24 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
 
+#define QUILL_DISABLE_NON_PREFIXED_MACROS 1
 
-#define LogToStr(x, y) LogToStrImpl(x, y)
-#define LogFrequencyLimiter(x, y) LogFrequencyLimiterImpl(x, y)
-
-using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
+#include <quill/Logger.h>
+#include <quill/Backend.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/ConsoleSink.h>
+#include <quill/LogMacros.h>
 
 namespace impl
 {
-    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
-    [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
+    [[maybe_unused]] inline LoggerPtr getLoggerHelper(LoggerPtr logger) { return logger; }
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
-    [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
-    [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
+    //[[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
+    //[[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
+    //[[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    //[[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -58,27 +59,33 @@ namespace impl
 #define LINE_NUM_AS_STRING LINE_NUM_AS_STRING_IMPL(__LINE__)
 #define MESSAGE_FOR_EXCEPTION_ON_LOGGING "Failed to write a log message: " __FILE__ ":" LINE_NUM_AS_STRING "\n"
 
+constexpr std::string_view levelToString(quill::LogLevel level)
+{
+    switch (level)
+    {
+        case quill::LogLevel::Info: return "Information";
+        case quill::LogLevel::TraceL1: return "Trace";
+        case quill::LogLevel::TraceL2: return "Test";
+        case quill::LogLevel::Debug: return "Debug";
+        default: return "None";
+    }
+}
+
 /// Logs a message to a specified logger with that level.
 /// If more than one argument is provided,
 ///  the first argument is interpreted as a template with {}-substitutions
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
-
-#define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
-{                                                                                                                   \
-    auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
-    const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
-    if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
-        break;                                                                                                      \
+#define LOG_IMPL(logger, quill_log_macro, priority, ...) do  \
+{  \
+    auto _logger = ::impl::getLoggerHelper(logger);\
+    if (!_logger) \
+        break; \
+    \
                                                                                                                     \
     Stopwatch _logger_watch;                                                                                        \
     try                                                                                                             \
     {                                                                                                               \
-        ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
-        auto _channel = _logger->getChannel();                                                                      \
-        if (!_channel)                                                                                              \
-            break;                                                                                                  \
-                                                                                                                    \
         constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__);                                                    \
         using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>;          \
                                                                                                                     \
@@ -102,12 +109,15 @@ namespace impl
         {                                                                                                           \
              _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
-                                                                                                                    \
-        std::string _file_function = __FILE__ "; ";                                                                 \
-        _file_function += __PRETTY_FUNCTION__;                                                                      \
-        Poco::Message _poco_message(_logger->name(), std::move(_formatted_message),                                 \
-            (PRIORITY), _file_function.c_str(), __LINE__, _format_string, _format_string_args);                     \
-        _channel->log(_poco_message);                                                                               \
+                       \
+        std::string _query_id; \
+        if (DB::current_thread) \
+        {\
+            auto _query_id_ref = DB::CurrentThread::getQueryId(); \
+            if (!_query_id_ref.empty()) \
+                _query_id = fmt::format(" {} ", _query_id_ref); \
+        }\
+        quill_log_macro(_logger, "{{{}}} <{}> {}: {}", _query_id, levelToString(priority), _logger->get_logger_name(), _formatted_message);   \
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
     {                                                                                                               \
@@ -129,10 +139,10 @@ namespace impl
 } while (false)
 
 
-#define LOG_TEST(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::test, Poco::Message::PRIO_TEST, __VA_ARGS__)
-#define LOG_TRACE(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::trace, Poco::Message::PRIO_TRACE, __VA_ARGS__)
-#define LOG_DEBUG(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG, __VA_ARGS__)
-#define LOG_INFO(logger, ...)    LOG_IMPL(logger, DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION, __VA_ARGS__)
-#define LOG_WARNING(logger, ...) LOG_IMPL(logger, DB::LogsLevel::warning, Poco::Message::PRIO_WARNING, __VA_ARGS__)
-#define LOG_ERROR(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_ERROR, __VA_ARGS__)
-#define LOG_FATAL(logger, ...)   LOG_IMPL(logger, DB::LogsLevel::error, Poco::Message::PRIO_FATAL, __VA_ARGS__)
+#define LOG_TEST(logger, ...) LOG_IMPL(logger, QUILL_LOG_TRACE_L2, quill::LogLevel::TraceL2, __VA_ARGS__)
+#define LOG_TRACE(logger, ...) LOG_IMPL(logger, QUILL_LOG_TRACE_L1, quill::LogLevel::TraceL1, __VA_ARGS__)
+#define LOG_DEBUG(logger, ...) LOG_IMPL(logger, QUILL_LOG_DEBUG, quill::LogLevel::Debug, __VA_ARGS__)
+#define LOG_INFO(logger, ...) LOG_IMPL(logger, QUILL_LOG_INFO, quill::LogLevel::Info, __VA_ARGS__)
+#define LOG_WARNING(logger, ...) LOG_IMPL(logger, QUILL_LOG_WARNING, quill::LogLevel::Warning, __VA_ARGS__)
+#define LOG_ERROR(logger, ...) LOG_IMPL(logger, QUILL_LOG_ERROR, quill::LogLevel::Error, __VA_ARGS__)
+#define LOG_FATAL(logger, ...) LOG_IMPL(logger, QUILL_LOG_CRITICAL, quill::LogLevel::Critical, __VA_ARGS__)

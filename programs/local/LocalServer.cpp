@@ -305,7 +305,7 @@ void LocalServer::tryInitPath()
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
         // (or in the current dir if a temporary doesn't exist)
-        LoggerRawPtr log = &logger();
+        LoggerPtr log = getLogger("Local");
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
@@ -390,7 +390,7 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            LOG_DEBUG(&logger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
+            LOG_DEBUG(getLogger("Local"), "Removing temporary directory: {}", temporary_directory_to_delete->string());
             fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
         }
@@ -595,7 +595,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(&logger(), "Caught exception while loading user defined executable functions.");
+        tryLogCurrentException(getLogger("Local"), "Caught exception while loading user defined executable functions.");
         throw;
     }
 
@@ -707,7 +707,7 @@ void LocalServer::processConfig()
 
     tryInitPath();
 
-    LoggerRawPtr log = &logger();
+    LoggerPtr log = getLogger("Local");
 
     /// Maybe useless
     if (getClientConfiguration().has("macros"))

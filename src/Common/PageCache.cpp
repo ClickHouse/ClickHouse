@@ -158,7 +158,7 @@ PageCache::PageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes
             }
             else
             {
-                LOG_WARNING(&Poco::Logger::get("PageCache"), "The OS huge page size is too large for our purposes: {} KiB. Using regular pages. Userspace page cache will be relatively slow.", huge_page_size);
+                LOG_WARNING(getLogger("PageCache"), "The OS huge page size is too large for our purposes: {} KiB. Using regular pages. Userspace page cache will be relatively slow.", huge_page_size);
             }
         }
         catch (Exception & e)
@@ -171,7 +171,7 @@ PageCache::PageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes
         print_warning = true;
 #endif
         if (print_warning)
-            LOG_WARNING(&Poco::Logger::get("PageCache"), "The OS doesn't support transparent huge pages. Userspace page cache will be relatively slow.");
+            LOG_WARNING(getLogger("PageCache"), "The OS doesn't support transparent huge pages. Userspace page cache will be relatively slow.");
     }
 
     pages_per_chunk = ((bytes_per_chunk - 1) / (bytes_per_page * pages_per_big_page) + 1) * pages_per_big_page;
@@ -422,7 +422,7 @@ void PageCache::removeRef(PageChunk * chunk) noexcept
 static void logUnexpectedSyscallError(std::string name)
 {
     std::string message = fmt::format("{} failed: {}", name, errnoToString());
-    LOG_WARNING(&Poco::Logger::get("PageCache"), "{}", message);
+    LOG_WARNING(getLogger("PageCache"), "{}", message);
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     volatile bool true_ = true;
     if (true_) // suppress warning about missing [[noreturn]]
@@ -638,14 +638,14 @@ PageCache::Mmap::Mmap(size_t bytes_per_page_, size_t pages_per_chunk_, size_t pa
     {
         if (reinterpret_cast<UInt64>(ptr) % alignment != 0)
         {
-            LOG_DEBUG(&Poco::Logger::get("PageCache"), "mmap() returned address not aligned on huge page boundary.");
+            LOG_DEBUG(getLogger("PageCache"), "mmap() returned address not aligned on huge page boundary.");
             chunks_start = reinterpret_cast<void*>((reinterpret_cast<UInt64>(ptr) / alignment + 1) * alignment);
             chassert(reinterpret_cast<UInt64>(chunks_start) % alignment == 0);
             num_chunks -= 1;
         }
 
         if (madvise(ptr, size, MADV_HUGEPAGE) != 0)
-            LOG_WARNING(&Poco::Logger::get("PageCache"),
+            LOG_WARNING(getLogger("PageCache"),
                 "madvise(MADV_HUGEPAGE) failed: {}. Userspace page cache will be relatively slow.", errnoToString());
     }
 #else

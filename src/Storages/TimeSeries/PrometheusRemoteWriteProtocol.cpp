@@ -519,7 +519,7 @@ namespace
     }
 
     /// Inserts blocks to target tables.
-    void insertToTargetTables(BlocksToInsert && blocks, StorageTimeSeries & time_series_storage, ContextPtr context, Poco::Logger * log)
+    void insertToTargetTables(BlocksToInsert && blocks, StorageTimeSeries & time_series_storage, ContextPtr context, LoggerPtr log)
     {
         auto time_series_storage_id = time_series_storage.getStorageID();
 
@@ -586,7 +586,7 @@ void PrometheusRemoteWriteProtocol::writeTimeSeries(const google::protobuf::Repe
     const auto & time_series_settings = time_series_storage->getStorageSettings();
 
     auto blocks = toBlocks(time_series, getContext(), time_series_storage_id, *time_series_storage_metadata, time_series_settings);
-    insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());
+    insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log);
 
     LOG_TRACE(log, "{}: {} time series written",
               time_series_storage_id.getNameForLogs(), time_series.size());
@@ -603,7 +603,7 @@ void PrometheusRemoteWriteProtocol::writeMetricsMetadata(const google::protobuf:
     const auto & time_series_settings = time_series_storage->getStorageSettings();
 
     auto blocks = toBlocks(metrics_metadata, time_series_storage_id, *time_series_storage_metadata, time_series_settings);
-    insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());
+    insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log);
 
     LOG_TRACE(log, "{}: {} metrics metadata written",
               time_series_storage_id.getNameForLogs(), metrics_metadata.size());

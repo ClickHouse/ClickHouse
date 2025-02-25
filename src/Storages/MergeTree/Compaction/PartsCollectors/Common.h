@@ -12,7 +12,7 @@ namespace DB
 {
 
 template <class Part, class Predicate>
-std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts, Predicate predicate, LogSeriesLimiter & series_log)
+std::vector<std::vector<Part>> splitRangeByPredicate(std::vector<Part> && parts, Predicate predicate, LoggerPtr series_log)
 {
     auto build_next_range = [&](auto & parts_it)
     {

@@ -270,7 +270,7 @@ public:
             storage_snapshot_,
             context_)
         , storage(std::move(storage_))
-        , log(&Poco::Logger::get("StorageMergeTreeIndex"))
+        , log(getLogger("StorageMergeTreeIndex"))
     {
     }
 
@@ -278,7 +278,7 @@ public:
 
 private:
     std::shared_ptr<StorageMergeTreeIndex> storage;
-    Poco::Logger * log;
+    LoggerPtr log;
     ExpressionActionsPtr virtual_columns_filter;
 };
 

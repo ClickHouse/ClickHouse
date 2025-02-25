@@ -5,6 +5,7 @@
 #include <Core/Names.h>
 #include <base/types.h>
 #include <IO/ReadBuffer.h>
+#include <Common/Logger_fwd.h>
 
 #include <cppkafka/cppkafka.h>
 #include <Common/DateLUT.h>
@@ -15,18 +16,12 @@ namespace CurrentMetrics
     extern const Metric KafkaConsumers;
 }
 
-namespace Poco
-{
-    class Logger;
-}
-
 namespace DB
 {
 
 class StorageSystemKafkaConsumers;
 
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer
 {

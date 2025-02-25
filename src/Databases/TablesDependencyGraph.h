@@ -1,20 +1,15 @@
 #pragma once
 
 #include <Interpreters/StorageID.h>
+#include <Common/Logger_fwd.h>
+
 
 #include <unordered_map>
 #include <unordered_set>
 
-namespace Poco
-{
-class Logger;
-}
-
-
 namespace DB
 {
 using TableNamesSet = std::unordered_set<QualifiedTableName>;
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 /// Represents dependencies of some tables on other tables or dictionaries.
 ///

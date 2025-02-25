@@ -56,12 +56,73 @@
 
 #include <Common/config_version.h>
 
+#include <quill/Backend.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/ConsoleSink.h>
+#include <quill/sinks/RotatingFileSink.h>
+
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
+
+template<typename TBase>
+class CompressedRotatingSink : public quill::RotatingSink<TBase>
+{
+    using Base = quill::RotatingSink<TBase>;
+public:
+    
+    using Base::Base;
+
+    QUILL_ATTRIBUTE_HOT void write_log(
+        quill::MacroMetadata const * log_metadata,
+        uint64_t log_timestamp,
+        std::string_view thread_id,
+        std::string_view thread_name,
+        std::string const & process_id,
+        std::string_view logger_name,
+        quill::LogLevel log_level,
+        std::string_view log_level_description,
+        std::string_view log_level_short_code,
+        std::vector<std::pair<std::string, std::string>> const * named_args,
+        std::string_view log_message,
+        std::string_view log_statement) override
+    {
+        Base::write_log(
+            log_metadata,
+            log_timestamp,
+            thread_id,
+            thread_name,
+            process_id,
+            logger_name,
+            log_level,
+            log_level_description,
+            log_level_short_code,
+            named_args,
+            log_message,
+            log_statement);
+
+        for (auto & file_info : Base::_created_files)
+        {
+            if (file_info.index > 0)
+            {
+                if (file_info.base_filename.extension() == ".log")
+                {
+                    auto const [stem, ext] = Base::extract_stem_and_extension(file_info.base_filename);
+                    auto path_with_index = stem + "." + std::to_string(file_info.index) + ext;
+                    auto new_path_with_index = std::string{file_info.base_filename} + "." + std::to_string(file_info.index) + ".gz";
+                    std::error_code ec;
+
+                    std::filesystem::rename(path_with_index, new_path_with_index, ec);
+                    if (!ec)
+                        file_info.base_filename = std::string{file_info.base_filename} + ".gz";
+                }
+            }
+        }
+    }
+};
 
 namespace fs = std::filesystem;
 
@@ -97,7 +158,7 @@ static std::string createDirectory(const std::string & file)
 }
 
 
-static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
+static bool tryCreateDirectories(LoggerPtr logger, const std::string & path)
 {
     try
     {
@@ -146,7 +207,7 @@ BaseDaemon::~BaseDaemon()
     }
     catch (...)
     {
-        tryLogCurrentException(&logger());
+        tryLogCurrentException(getLogger("Application"));
     }
 
     disableLogging();
@@ -369,6 +430,28 @@ void BaseDaemon::initialize(Application & self)
             && chdir("/tmp") != 0)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
+    quill::Backend::start();
+
+    auto rotating_file_sink = quill::Frontend::create_or_get_sink<CompressedRotatingSink<quill::FileSink>>(
+        "rotating_file.log",
+        []()
+        {
+            // See RotatingFileSinkConfig for more options
+            quill::RotatingFileSinkConfig cfg;
+            cfg.set_open_mode('a');
+            cfg.set_rotation_naming_scheme(quill::RotatingFileSinkConfig::RotationNamingScheme::Index);
+            cfg.set_rotation_max_file_size(1024); // small value to demonstrate the example
+            cfg.set_max_backup_files(10);
+            return cfg;
+        }());
+
+    [[maybe_unused]] quill::Logger * quill_logger = quill::Frontend::create_or_get_logger(
+        "root",
+        {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("sink_id_1", quill::ConsoleSink::ColourMode::Never), rotating_file_sink},
+        quill::PatternFormatterOptions{
+            "%(time) [ %(thread_id) ] %(message)",
+            "%Y.%m.%d %H:%M:%S.%Qus",
+            quill::Timezone::LocalTime});
 
     /// sensitive data masking rules are not used here
     buildLoggers(config(), logger(), self.commandName());
@@ -391,12 +474,12 @@ void BaseDaemon::initialize(Application & self)
         if (core_path.empty())
             core_path = getDefaultCorePath();
 
-        tryCreateDirectories(&logger(), core_path);
+        tryCreateDirectories(getLogger("Application"), core_path);
 
         if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
-            tryCreateDirectories(&logger(), core_path);
+            tryCreateDirectories(getLogger("Application"), core_path);
         }
 
         if (0 != chdir(core_path.c_str()))
@@ -423,7 +506,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            LOG_DEBUG(getLogger("Application"), "Enable sending LOGICAL_ERRORs to sentry");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)
@@ -469,11 +552,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    logger().information("Starting " + std::string{VERSION_FULL}
+    LOG_INFO(getLogger("Application"), fmt::runtime("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + std::string(GIT_HASH)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid()));
+        + ", PID " + std::to_string(getpid())));
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
@@ -530,11 +613,11 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+    LOG_INFO(getLogger("Application"), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
     if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
+        LOG_INFO(getLogger("Application"), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);

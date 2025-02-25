@@ -237,16 +237,17 @@ void ClientApplicationBase::init(int argc, char ** argv)
     /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
     /// have an option for client to shutdown gracefully.
 
-    fatal_channel_ptr = new Poco::SplitterChannel;
-    fatal_console_channel_ptr = new Poco::ConsoleChannel;
-    fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
-    if (options.count("client_logs_file"))
-    {
-        fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
-        fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
-    }
-
-    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    //fatal_channel_ptr = new Poco::SplitterChannel;
+    //fatal_console_channel_ptr = new Poco::ConsoleChannel;
+    //fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
+    //if (options.count("client_logs_file"))
+    //{
+    //    fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
+    //    fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
+    //}
+//
+    //fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    fatal_log = getLogger("ClientBase");
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
 

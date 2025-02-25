@@ -88,7 +88,7 @@ private:
     const std::shared_ptr<const S3::Client> client_ptr;
     const std::optional<std::map<String, String>> object_metadata;
     LoggerPtr log = getLogger("WriteBufferFromS3");
-    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LoggerPtr limited_log = log;
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 

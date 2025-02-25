@@ -246,7 +246,7 @@ bool DisksApp::processQueryText(const String & text)
         if (error_string.has_value())
         {
             std::cerr << "Error: " << error_string.value() << "\n";
-            LOG_ERROR(&Poco::Logger::root(), "{}", error_string.value());
+            LOG_ERROR(getLogger("DiskApp"), "{}", error_string.value());
         }
         command = nullptr;
     }

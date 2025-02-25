@@ -250,7 +250,7 @@ ParquetLeafColReader<TColumn, ParquetType>::ParquetLeafColReader(
     , base_data_type(base_type_)
     , col_chunk_meta(std::move(meta_))
     , parquet_page_reader(std::move(reader_))
-    , log(&Poco::Logger::get("ParquetLeafColReader"))
+    , log(getLogger("ParquetLeafColReader"))
 {
 }
 

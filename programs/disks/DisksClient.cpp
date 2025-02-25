@@ -108,7 +108,7 @@ void DiskWithPath::setPath(const String & any_path)
 {
     if (isDirectory(any_path))
     {
-        LOG_INFO(&Poco::Logger::get("DisksClient"), "Setting path to '{}' at disk '{}'", any_path, disk->getName());
+        LOG_INFO(getLogger("DisksClient"), "Setting path to '{}' at disk '{}'", any_path, disk->getName());
         path = getAbsolutePath(any_path);
     }
     else

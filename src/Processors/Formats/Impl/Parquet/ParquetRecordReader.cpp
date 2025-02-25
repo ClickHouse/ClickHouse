@@ -326,7 +326,7 @@ ParquetRecordReader::ParquetRecordReader(
     , row_groups_indices(std::move(row_groups_indices_))
     , left_rows(getTotalRows(*file_reader->metadata()))
 {
-    log = &Poco::Logger::get("ParquetRecordReader");
+    log = getLogger("ParquetRecordReader");
 
     std::unordered_map<String, parquet::schema::NodePtr> parquet_columns;
     const auto * root = file_reader->metadata()->schema()->group_node();

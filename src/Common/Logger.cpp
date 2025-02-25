@@ -1,12 +1,25 @@
 #include <Poco/Logger.h>
 #include <Common/Logger.h>
 
+#include <quill/Frontend.h>
+
+
 LoggerPtr getLogger(const std::string & name)
+{
+    auto * root = quill::Frontend::get_logger("root");
+
+    if (!root)
+        return nullptr;
+
+    return quill::Frontend::create_or_get_logger(name, root);
+}
+
+PocoLoggerPtr getPocoLogger(const std::string & name)
 {
     return Poco::Logger::getShared(name);
 }
 
-LoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
+PocoLoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
 {
     return Poco::Logger::createShared(name, channel, level);
 }

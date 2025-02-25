@@ -53,7 +53,7 @@ void ReplicatedMergeTreeCleanupThread::run()
 {
     if (cleanup_blocker.isCancelled())
     {
-        LOG_TRACE(LogFrequencyLimiter(log, 30), "Cleanup is cancelled, exiting");
+        LOG_TRACE(log, "Cleanup is cancelled, exiting");
         return;
     }
 

@@ -34,7 +34,7 @@ class SSHPtyHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     ::ssh::SSHBind ssh_bind;
 
     /// These defaults are reasonable enough. It doesn't make sense to allow
@@ -47,7 +47,7 @@ private:
 public:
     explicit SSHPtyHandlerFactory(
         IServer & server_, const Poco::Util::AbstractConfiguration & config)
-        : server(server_), log(&Poco::Logger::get("SSHHandlerFactory"))
+        : server(server_), log(getLogger("SSHHandlerFactory"))
     {
         LOG_INFO(log, "Initializing sshbind");
         ssh_bind.disableDefaultConfig();

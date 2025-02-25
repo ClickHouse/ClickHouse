@@ -1,15 +1,7 @@
 #pragma once
 
 #include <Coordination/KeeperConstants.h>
-
-#include <memory>
-
-namespace Poco
-{
-class Logger;
-}
-
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
+#include <Common/Logger_fwd.h>
 
 namespace DB
 {

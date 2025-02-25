@@ -82,13 +82,13 @@ namespace
 
 struct ScopedEndOfReportDecorator
 {
-    explicit ScopedEndOfReportDecorator(Poco::LoggerPtr log_) : log(std::move(log_)) { }
+    explicit ScopedEndOfReportDecorator(LoggerPtr log_) : log(std::move(log_)) { }
     ~ScopedEndOfReportDecorator() { LOG_FATAL(log, "*** End GWP-ASan report ***"); }
-    Poco::LoggerPtr log;
+    LoggerPtr log;
 };
 
 // Prints the provided error and metadata information.
-void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan::AllocationMetadata * allocation_meta, Poco::LoggerPtr log)
+void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan::AllocationMetadata * allocation_meta, LoggerPtr log)
 {
     bool access_was_in_bounds = false;
     std::string description;
@@ -157,7 +157,7 @@ void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan:
 
 void printReport([[maybe_unused]] uintptr_t fault_address)
 {
-    const auto logger = getLogger("GWPAsan");
+    auto * logger = getLogger("GWPAsan");
     const auto * state = GuardedAlloc.getAllocatorState();
     /// Previously the function `__gwp_asan_get_internal_crash_address`
     /// was used to identify the failure address, but its interface was changed in this commit:

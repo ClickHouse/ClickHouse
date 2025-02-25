@@ -29,25 +29,25 @@ public:
         : log(getLogger(name))
         , level(level_)
     {
-        log->setLevel(static_cast<int>(LEVELS.at(level)));
+        //log->setLevel(static_cast<int>(LEVELS.at(level)));
     }
 
     void put_details(
-        int level_,
+        [[maybe_unused]] int level_,
         const char * /* source_file */,
         const char * /* func_name */,
         size_t /* line_number */,
-        const std::string & msg) override
+        const std::string & /* msg */) override
     {
-        LogsLevel db_level = static_cast<LogsLevel>(level_);
-        LOG_IMPL(log, db_level, LEVELS.at(db_level), fmt::runtime(msg));
+        //LogsLevel db_level = static_cast<LogsLevel>(level_);
+        //LOG_IMPL(log, db_level, LEVELS.at(db_level), fmt::runtime(msg));
     }
 
     void set_level(int level_) override
     {
         level_ = std::min(LEVEL_MAX, std::max(LEVEL_MIN, level_));
         level = static_cast<LogsLevel>(level_);
-        log->setLevel(static_cast<int>(LEVELS.at(level)));
+        //log->setLevel(static_cast<int>(LEVELS.at(level)));
     }
 
     int get_level() override

@@ -19,7 +19,7 @@ class TaskTracker
 public:
     using Callback = std::function<void()>;
 
-    TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limited_log_);
+    TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LoggerPtr limited_log_);
     ~TaskTracker();
 
     static ThreadPoolCallbackRunnerUnsafe<void> syncRunner();
@@ -51,7 +51,7 @@ private:
 
     using FutureList = std::list<std::future<void>>;
     FutureList futures;
-    LogSeriesLimiterPtr limited_log;
+    LoggerPtr limited_log;
 
     std::mutex mutex;
     std::condition_variable has_finished TSA_GUARDED_BY(mutex);

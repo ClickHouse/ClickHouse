@@ -19,7 +19,7 @@ class ClientEmbeddedRunner
 {
 public:
     explicit ClientEmbeddedRunner(std::unique_ptr<IClientDescriptorSet> && client_descriptor_, std::unique_ptr<Session> && dbSession_)
-        : client_descriptors(std::move(client_descriptor_)), db_session(std::move(dbSession_)), log(&Poco::Logger::get("ClientEmbeddedRunner"))
+        : client_descriptors(std::move(client_descriptor_)), db_session(std::move(dbSession_)), log(getLogger("ClientEmbeddedRunner"))
     {
     }
     ~ClientEmbeddedRunner();
@@ -42,7 +42,7 @@ private:
 
     ThreadFromGlobalPool client_thread;
     std::unique_ptr<Session> db_session;
-    Poco::Logger * log;
+    LoggerPtr log;
 };
 
 }

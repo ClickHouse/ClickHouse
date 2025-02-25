@@ -21,6 +21,7 @@
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
+#include "Common/Exception.h"
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
@@ -279,7 +280,7 @@ void MySQLHandler::run()
         }
         catch (const Exception & exc)
         {
-            log->log(exc);
+            tryLogCurrentException(log);
             packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         }
 
@@ -336,9 +337,9 @@ void MySQLHandler::run()
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Command {} is not implemented.", command);
                 }
             }
-            catch (const NetException & exc)
+            catch (const NetException &)
             {
-                log->log(exc);
+                tryLogCurrentException(log);
                 throw;
             }
             catch (...)
@@ -348,9 +349,9 @@ void MySQLHandler::run()
             }
         }
     }
-    catch (const Poco::Exception & exc)
+    catch (const Poco::Exception &)
     {
-        log->log(exc);
+        tryLogCurrentException(log);
     }
 }
 

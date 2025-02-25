@@ -51,8 +51,8 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 {
     queue.reserve(settings.reserved_size_rows);
 
-    if (settings.turn_off_logger)
-        log->setLevel(0);
+    //if (settings.turn_off_logger)
+    //    log->setLevel(0);
 }
 
 static thread_local bool recursive_push_call = false;

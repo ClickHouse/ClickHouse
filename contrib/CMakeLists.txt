@@ -246,6 +246,8 @@ add_contrib (prometheus-protobufs-cmake prometheus-protobufs prometheus-protobuf
 
 add_contrib (numactl-cmake numactl)
 
+add_contrib (quill-cmake quill)
+
 add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl
 
 add_contrib (jwt-cpp-cmake jwt-cpp)

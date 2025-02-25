@@ -41,10 +41,10 @@ namespace ErrorCodes
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
 {
-    auto & logger = Poco::Logger::root();
-    LOG_FATAL(&logger, "Logical error: '{}'.", description);
+    auto * logger = getLogger("root");
+    LOG_FATAL(logger, "Logical error: '{}'.", description);
     if (trace)
-        LOG_FATAL(&logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));
+        LOG_FATAL(logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));
     abort();
 }
 
@@ -263,7 +263,7 @@ void Exception::clearThreadFramePointers()
         thread_frame_pointers.frame_pointers.clear();
 }
 
-static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
+static void tryLogCurrentExceptionImpl(LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
 {
     if (!isLoggingEnabled())
         return;
@@ -306,10 +306,10 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 
     /// getLogger can allocate memory too
     auto logger = getLogger(String{log_name});
-    tryLogCurrentExceptionImpl(logger.get(), start_of_message, level);
+    tryLogCurrentExceptionImpl(logger, start_of_message, level);
 }
 
-void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)
+void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
 {
     /// Under high memory pressure, new allocations throw a
     /// MEMORY_LIMIT_EXCEEDED exception.
@@ -319,11 +319,6 @@ void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
     tryLogCurrentExceptionImpl(logger, start_of_message, level);
-}
-
-void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message, LogsLevel level)
-{
-    tryLogCurrentException(logger.get(), start_of_message, level);
 }
 
 void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message, LogsLevel level)

@@ -15,22 +15,22 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
     {"AWSAuthV4Signer", "AWSClient (AWSAuthV4Signer)"},
 };
 
-const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
-{
-    /// We map levels to our own logger 1 to 1 except INFO+ levels. In most cases we fail over such errors with retries
-    /// and don't want to see them as Errors in our logs.
-    static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
-    {
-        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
-        {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
-        {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
-    };
-    return mapping.at(log_level);
-}
+//const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
+//{
+//    /// We map levels to our own logger 1 to 1 except INFO+ levels. In most cases we fail over such errors with retries
+//    /// and don't want to see them as Errors in our logs.
+//    static const std::unordered_map<Aws::Utils::Logging::LogLevel, std::pair<DB::LogsLevel, Poco::Message::Priority>> mapping =
+//    {
+//        {Aws::Utils::Logging::LogLevel::Off, {DB::LogsLevel::none, Poco::Message::PRIO_INFORMATION}},
+//        {Aws::Utils::Logging::LogLevel::Fatal, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+//        {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+//        {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
+//        {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::debug, Poco::Message::PRIO_DEBUG}},
+//        {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
+//        {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
+//    };
+//    return mapping.at(log_level);
+//}
 
 }
 
@@ -63,13 +63,13 @@ void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * 
     callLogImpl(log_level, tag, message_stream.str().c_str());
 }
 
-void AWSLogger::callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
+void AWSLogger::callLogImpl([[maybe_unused]] Aws::Utils::Logging::LogLevel log_level, [[maybe_unused]] const char * tag, [[maybe_unused]] const char * message)
 {
-    const auto & [level, prio] = convertLogLevel(log_level);
-    if (tag_loggers.contains(tag))
-        LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
-    else
-        LOG_IMPL(default_logger, level, prio, "{}: {}", tag, message);
+    //const auto & [level, prio] = convertLogLevel(log_level);
+    //if (tag_loggers.contains(tag))
+    //    LOG_IMPL(tag_loggers[tag], level, prio, fmt::runtime(message));
+    //else
+    //    LOG_IMPL(default_logger, level, prio, "{}: {}", tag, message);
 }
 
 }

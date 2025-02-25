@@ -68,6 +68,7 @@ target_link_libraries (common
         ch_contrib::cctz
         ch_contrib::fmt
         ch_contrib::magic_enum
+        ch_contrib::quill
 )
 
 if (ENABLE_TESTS)
