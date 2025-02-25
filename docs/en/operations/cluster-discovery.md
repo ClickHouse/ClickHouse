@@ -119,7 +119,7 @@ To enable observer mode, include the `<observer/>` tag within the `<discovery>` 
 ```
 
 
-### Discovery of clusters
+### Discovery of clusters {#discovery-of-clusters}
 
 Sometimes you may need to add and remove not only hosts in clusters, but clusters themselfs. You can use the `<multicluster_root_path>` node with root path for several clusters:
 
