@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/flame_graph
 sidebar_position: 138
+title: "flameGraph"
+description: "Aggregate function which builds a flamegraph using the list of stacktraces."
 ---
 
 # flameGraph
