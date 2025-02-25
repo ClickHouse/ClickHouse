@@ -36,8 +36,8 @@ String CachedInMemoryReadBufferFromFile::getInfoForLog()
 
 bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
-    /// This is a weird method. Seek to what offset? If the target offset is in cache or within the
-    /// working_buffer then the seek is cheap.
+    /// If working buffer is empty then the next nextImpl() call will have to send a new read
+    /// request anyway, seeking doesn't make it more expensive.
     return available() == 0 || last_read_hit_cache;
 }
 

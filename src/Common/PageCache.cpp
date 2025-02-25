@@ -37,11 +37,8 @@ UInt128 PageCacheKey::hash() const
     SipHash hash(offset);
     hash.update(size);
     hash.update(path.data(), path.size());
-    if (!file_version.empty())
-    {
-        hash.update("\0", 1); // indicate presence of `file_version` and unambiguously separate it from `path`
-        hash.update(file_version.data(), file_version.size());
-    }
+    hash.update("\0", 1);
+    hash.update(file_version.data(), file_version.size());
     return hash.get128();
 }
 
