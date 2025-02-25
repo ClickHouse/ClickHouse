@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/settings/query-complexity
+slug: /operations/settings/query-complexity
 sidebar_position: 59
 sidebar_label: Restrictions on Query Complexity
+title: "Restrictions on Query Complexity"
+description: "Settings which restrict query complexity."
 ---
 
 # Restrictions on Query Complexity
@@ -216,7 +218,7 @@ If you set `timeout_before_checking_execution_speed `to 0, ClickHouse will use c
 
 What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
 
-## max_execution_time_leaf
+## max_execution_time_leaf {#max_execution_time_leaf}
 
 Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
 
@@ -232,7 +234,7 @@ We can use `max_execution_time_leaf` as the query settings:
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
 ```
 
-## timeout_overflow_mode_leaf
+## timeout_overflow_mode_leaf {#timeout_overflow_mode_leaf}
 
 What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
 
@@ -393,7 +395,7 @@ Default value: 100.
 
 When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have the following text:
 
-> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is ” + toString(max_partitions) + "). The limit is controlled by the 'max_partitions_per_insert_block' setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
+> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is " + toString(max_partitions) + "). The limit is controlled by the 'max_partitions_per_insert_block' setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc)."
 
 ## throw_on_max_partitions_per_insert_block {#settings-throw_on_max_partition_per_insert_block}
 

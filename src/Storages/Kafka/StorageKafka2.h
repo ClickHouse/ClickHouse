@@ -145,7 +145,8 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    String keeper_path;
+    const String keeper_path;
+    const std::filesystem::path fs_keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;

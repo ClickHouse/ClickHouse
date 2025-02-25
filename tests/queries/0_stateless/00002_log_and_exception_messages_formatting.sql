@@ -5,7 +5,7 @@
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
-system flush logs;
+system flush logs text_log;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
 

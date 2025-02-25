@@ -61,11 +61,12 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
 #include <Analyzer/RecursiveCTE.h>
 
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
-#include <Analyzer/Resolve/IdentifierResolveScope.h>
-#include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
+#include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
+#include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -3755,14 +3756,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::TABLE_EXPRESSION);
 
                 std::unordered_set<Identifier> valid_identifiers;
-                IdentifierResolver::collectScopeWithParentScopesValidIdentifiersForTypoCorrection(unresolved_identifier,
+                TypoCorrection::collectScopeWithParentScopesValidIdentifiers(
+                    unresolved_identifier,
                     scope,
                     true,
                     allow_lambda_expression,
                     allow_table_expression,
                     valid_identifiers);
 
-                auto hints = IdentifierResolver::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
+                auto hints = TypoCorrection::collectIdentifierTypoHints(unresolved_identifier, valid_identifiers);
 
                 throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
@@ -4303,7 +4305,7 @@ NamesAndTypes QueryAnalyzer::resolveProjectionExpressionNodeList(QueryTreeNodePt
     {
         const auto & projection_node = projection_nodes[i];
 
-        if (!IdentifierResolver::isExpressionNodeType(projection_node->getNodeType()))
+        if (!isExpressionNodeType(projection_node->getNodeType()))
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Projection node must be constant, function, column, query or union");
 
@@ -5351,7 +5353,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     }
 
     auto join_tree_node_type = join_tree_node->getNodeType();
-    if (IdentifierResolver::isTableExpressionNodeType(join_tree_node_type))
+    if (isTableExpressionNodeType(join_tree_node_type))
     {
         validateTableExpressionModifiers(join_tree_node, scope);
         initializeTableExpressionData(join_tree_node, scope);

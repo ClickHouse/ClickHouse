@@ -23,6 +23,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
+#include <Poco/AutoPtr.h>
+
 #include "config.h"
 
 #include <functional>
@@ -60,6 +62,7 @@ class SystemLogs;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
+class Field;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
@@ -693,6 +696,8 @@ public:
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
+    bool getThrowOnUnknownWorkload() const;
+    void setThrowOnUnknownWorkload(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     UInt64 setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores);
@@ -1255,6 +1260,9 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
+
+    using StoragePolicyCreator = std::function<StoragePolicyPtr(const StoragePoliciesMap & storage_policies_map)>;
+    StoragePolicyPtr getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;

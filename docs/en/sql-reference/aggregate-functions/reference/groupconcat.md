@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupconcat
+slug: /sql-reference/aggregate-functions/reference/groupconcat
 sidebar_position: 363
 sidebar_label: groupConcat
 title: groupConcat

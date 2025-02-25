@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/deltasum
+slug: /sql-reference/aggregate-functions/reference/deltasum
 sidebar_position: 129
 ---
 
@@ -69,6 +69,6 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [runningDifference](../../functions/other-functions.md#other_functions-runningdifference)

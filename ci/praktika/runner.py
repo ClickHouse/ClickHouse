@@ -65,6 +65,7 @@ class Runner:
             cache_success_base64=[],
             cache_artifacts={},
             cache_jobs={},
+            filtered_jobs={},
             custom_data={},
         )
         for docker in workflow.dockers:

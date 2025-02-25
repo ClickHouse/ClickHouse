@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/table-functions/fuzzJSON
+slug: /sql-reference/table-functions/fuzzJSON
 sidebar_position: 75
 sidebar_label: fuzzJSON
 ---
@@ -14,7 +14,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 **Arguments**
 
-- `named_collection`- A [NAMED COLLECTION](/docs/en/sql-reference/statements/create/named-collection.md).
+- `named_collection`- A [NAMED COLLECTION](/docs/sql-reference/statements/create/named-collection.md).
 - `option=value` - Named collection optional parameters and their values.
  - `json_str` (String) - The source string representing structured data in JSON format.
  - `random_seed` (UInt64) - Manual random seed for producing stable results.
@@ -33,7 +33,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 A table object with a a single column containing perturbed JSON strings.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ``` sql
 CREATE NAMED COLLECTION json_fuzzer AS json_str='{}';

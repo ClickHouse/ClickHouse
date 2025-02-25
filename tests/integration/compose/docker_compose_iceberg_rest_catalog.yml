@@ -4,8 +4,10 @@ services:
     container_name: spark-iceberg
     build: spark/
     depends_on:
-      - rest
-      - minio
+      rest:
+        condition: service_healthy
+      minio:
+        condition: service_started
     environment:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
@@ -25,6 +27,12 @@ services:
       - CATALOG_WAREHOUSE=s3://iceberg_data/
       - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
       - CATALOG_S3_ENDPOINT=http://minio:9000
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8181"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
   minio:
     image: minio/minio
     container_name: minio

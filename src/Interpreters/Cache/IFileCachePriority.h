@@ -1,12 +1,13 @@
 #pragma once
 
-#include <memory>
 #include <Core/Types.h>
-#include <Common/Exception.h>
 #include <Interpreters/Cache/FileSegmentInfo.h>
 #include <Interpreters/Cache/Guards.h>
 #include <Interpreters/Cache/FileCache_fwd_internal.h>
 #include <Interpreters/Cache/UserInfo.h>
+
+#include <atomic>
+#include <memory>
 
 namespace DB
 {

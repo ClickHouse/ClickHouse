@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarpopstable
+slug: /sql-reference/aggregate-functions/reference/covarpopstable
 sidebar_position: 123
 ---
 

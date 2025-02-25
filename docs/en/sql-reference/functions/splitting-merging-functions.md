@@ -1,12 +1,12 @@
 ---
-slug: /en/sql-reference/functions/splitting-merging-functions
+slug: /sql-reference/functions/splitting-merging-functions
 sidebar_position: 165
 sidebar_label: Splitting Strings
 ---
 
 # Functions for Splitting Strings
 
-## splitByChar
+## splitByChar {#splitbychar}
 
 Splits a string into substrings separated by a specified character. Uses a constant string `separator` which consists of exactly one character.
 Returns an array of selected substrings. Empty substrings may be selected if the separator occurs at the beginning or end of the string, or if there are multiple consecutive separators.
@@ -58,7 +58,7 @@ Result:
 └─────────────────────────────────┘
 ```
 
-## splitByString
+## splitByString {#splitbystring}
 
 Splits a string into substrings separated by a string. It uses a constant string `separator` of multiple characters as the separator. If the string `separator` is empty, it will split the string `s` into an array of single characters.
 
@@ -114,7 +114,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## splitByRegexp
+## splitByRegexp {#splitbyregexp}
 
 Splits a string into substrings separated by a regular expression. It uses a regular expression string `regexp` as the separator. If the `regexp` is empty, it will split the string `s` into an array of single characters. If no match is found for this regular expression, the string `s` won't be split.
 
@@ -172,7 +172,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## splitByWhitespace
+## splitByWhitespace {#splitbywhitespace}
 
 Splits a string into substrings separated by whitespace characters. 
 Returns an array of selected substrings.
@@ -211,7 +211,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## splitByNonAlpha
+## splitByNonAlpha {#splitbynonalpha}
 
 Splits a string into substrings separated by whitespace and punctuation characters. 
 Returns an array of selected substrings.
@@ -248,7 +248,7 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 └───────────────────────────────────┘
 ```
 
-## arrayStringConcat
+## arrayStringConcat {#arraystringconcat}
 
 Concatenates string representations of values listed in the array with the separator. `separator` is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
@@ -273,7 +273,7 @@ Result:
 └─────────────────────┘
 ```
 
-## alphaTokens
+## alphaTokens {#alphatokens}
 
 Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an array of substrings.
 
@@ -310,7 +310,7 @@ SELECT alphaTokens('abca1abc');
 └─────────────────────────┘
 ```
 
-## extractAllGroups
+## extractAllGroups {#extractallgroups}
 
 Extracts all groups from non-overlapping substrings matched by a regular expression.
 
@@ -343,7 +343,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-## ngrams
+## ngrams {#ngrams}
 
 Splits a UTF-8 string into n-grams of `ngramsize` symbols.
 
@@ -376,7 +376,7 @@ Result:
 └───────────────────────────────────────────────────┘
 ```
 
-## tokens
+## tokens {#tokens}
 
 Splits a string into tokens using non-alphanumeric ASCII characters as separators.
 

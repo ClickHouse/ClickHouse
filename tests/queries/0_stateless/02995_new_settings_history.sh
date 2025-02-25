@@ -52,7 +52,7 @@ $CLICKHOUSE_LOCAL --query "
         )) AND (name NOT IN (
             SELECT arrayJoin(tupleElement(changes, 'name'))
             FROM system.settings_changes
-            WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
         ))
         UNION ALL
         (
@@ -75,7 +75,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
             )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
