@@ -193,9 +193,7 @@ extern const int CANNOT_PARSE_YAML;
 
 Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
 {
-    Poco::AutoPtr<Poco::XML::Document> xml = new Poco::XML::Document;
     throw Exception(ErrorCodes::CANNOT_PARSE_YAML, "Unable to parse YAML configuration file {} without usage of yaml-cpp library", path);
-    return xml;
 }
 
 }
