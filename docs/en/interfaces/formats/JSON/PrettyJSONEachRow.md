@@ -11,11 +11,11 @@ alias: ['PrettyJSONLines', 'PrettyNDJSON']
 |-------|--------|-----------------------------------|
 | ✗     | ✔      | `PrettyJSONLines`, `PrettyNDJSON` |
 
-## Description
+## Description {#description}
 
 Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatted with new line delimiters and 4 space indents.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ```json
 {
@@ -45,6 +45,6 @@ Differs from [JSONEachRow](./JSONEachRow.md) only in that JSON is pretty formatt
 }
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 
