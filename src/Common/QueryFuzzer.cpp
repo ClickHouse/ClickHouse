@@ -1451,24 +1451,24 @@ ASTPtr QueryFuzzer::addJoinClause()
             }
             else if (dynamic_cast<ASTWithAlias *>(input_table.get()))
             {
-                ASTPtr child = nullptr;
+                ASTPtr child = input_table->clone();
                 table_exp = std::make_shared<ASTTableExpression>();
                 auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
 
+                child->setAlias(next_alias);
+                ntexp->children.push_back(child);
                 if (typeid_cast<ASTSubquery *>(input_table.get()))
                 {
-                    child = ntexp->subquery = input_table->clone();
+                    ntexp->subquery = ntexp->children.back();
                 }
                 else if (typeid_cast<ASTFunction *>(input_table.get()))
                 {
-                    child = ntexp->table_function = input_table->clone();
+                    ntexp->table_function = ntexp->children.back();
                 }
                 else
                 {
-                    child = ntexp->database_and_table_name = input_table->clone();
+                    ntexp->database_and_table_name = ntexp->children.back();
                 }
-                child->setAlias(next_alias);
-                ntexp->children.push_back(child);
             }
             else
             {
@@ -1482,8 +1482,8 @@ ASTPtr QueryFuzzer::addJoinClause()
             auto * ntexp = typeid_cast<ASTTableExpression *>(table_exp.get());
             auto new_identifier = std::make_shared<ASTTableIdentifier>(old_alias);
             new_identifier->setAlias(next_alias);
-            ntexp->database_and_table_name = new_identifier;
-            ntexp->children.push_back(ntexp->database_and_table_name);
+            ntexp->children.push_back(new_identifier);
+            ntexp->database_and_table_name = ntexp->children.back();
         }
 
         const int nconditions = (fuzz_rand() % 10) < 8 ? 1 : ((fuzz_rand() % 5) + 1);
@@ -1524,8 +1524,8 @@ ASTPtr QueryFuzzer::addJoinClause()
             join_condition = tryNegateNextPredicate(join_condition, 50);
         }
         chassert(join_condition);
-        table_join->on_expression = join_condition;
-        table_join->children.push_back(table_join->on_expression);
+        table_join->children.push_back(join_condition);
+        table_join->on_expression = table_join->children.back();
 
         auto table = std::make_shared<ASTTablesInSelectQueryElement>();
         table->table_join = table_join;
@@ -1879,8 +1879,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
 
                 if (new_on_expression != original_on_expression)
                 {
-                    tj->on_expression = new_on_expression;
                     tj->children = {new_on_expression};
+                    tj->on_expression = tj->children.back();
                 }
             }
         }
