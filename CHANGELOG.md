@@ -30,7 +30,7 @@
 * Add ability to ATTACH tables without database layer. [#75788](https://github.com/ClickHouse/ClickHouse/pull/75788) ([Azat Khuzhin](https://github.com/azat)).
 * Restore QPL codec which has been removed in v24.10 due to licensing issues. [#76021](https://github.com/ClickHouse/ClickHouse/pull/76021) ([Konstantin Bogdanov](https://github.com/thevar1able)).
 * Introduce latency buckets and use them to track first byte read/write and connect times for S3 requests. `system.latency_log` will contain the history of all latency buckets [#69783](https://github.com/ClickHouse/ClickHouse/pull/69783) ([Alexey Katsman](https://github.com/alexkats)).
-* Support writing Parquet bloom filters using the `output_format_parquet_write_bloom_filter` setting (disabled by default). [#71681](https://github.com/ClickHouse/ClickHouse/pull/71681) ([Michael Kolupaev](https://github.com/al13n321)).
+* Support writing Parquet bloom filters using the `output_format_parquet_write_bloom_filter` setting (enabled by default). [#71681](https://github.com/ClickHouse/ClickHouse/pull/71681) ([Michael Kolupaev](https://github.com/al13n321)).
 
 #### Experimental Features
 * Added a new setting enable_adaptive_memory_spill_scheduler that allows multiple Grace JOINs in the same query to monitor their combined memory footprint and trigger spilling into an external storage adaptively to prevent MEMORY_LIMIT_EXCEEDED. [#72728](https://github.com/ClickHouse/ClickHouse/pull/72728) ([lgbo](https://github.com/lgbo-ustc)).
