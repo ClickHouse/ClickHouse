@@ -287,20 +287,12 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
             setIfSmaller(*opt);
     }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
-    {
-        using U = NativeType<T>;
-        std::optional<U> opt = findExtremeMin(reinterpret_cast<const U *>(vec.getData().data()), row_begin, row_end);
-        if (opt.has_value())
-            setIfSmaller(T(*opt));
-    }
-
     else
     {
         for (size_t i = row_begin; i < row_end; i++)
@@ -315,18 +307,11 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
             setIfGreater(*opt);
-    }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
-    {
-        using U = NativeType<T>;
-        std::optional<U> opt = findExtremeMax(reinterpret_cast<const U *>(vec.getData().data()), row_begin, row_end);
-        if (opt.has_value())
-            setIfGreater(T(*opt));
     }
     else
     {
@@ -347,7 +332,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -362,24 +347,6 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
 
         if (opt.has_value())
             setIfSmaller(*opt);
-    }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
-    {
-        using U = NativeType<T>;
-
-        std::optional<U> opt;
-        if (!if_map)
-            opt = findExtremeMinNotNull(reinterpret_cast<const U *>(vec.getData().data()), null_map, row_begin, row_end);
-        else if (!null_map)
-            opt = findExtremeMinIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
-        else
-        {
-            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMinIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
-        }
-
-        if (opt.has_value())
-            setIfSmaller(T(*opt));
     }
     else
     {
@@ -409,7 +376,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -424,23 +391,6 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
 
         if (opt.has_value())
             setIfGreater(*opt);
-    }
-    else if constexpr (std::is_same_v<T, Decimal32> || std::is_same_v<T, Decimal64> || std::is_same_v<T, DateTime64>)
-    {
-        using U = NativeType<T>;
-        std::optional<U> opt;
-        if (!if_map)
-            opt = findExtremeMaxNotNull(reinterpret_cast<const U *>(vec.getData().data()), null_map, row_begin, row_end);
-        else if (!null_map)
-            opt = findExtremeMaxIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
-        else
-        {
-            auto final_flags = mergeIfAndNullFlags(null_map, if_map, row_begin, row_end);
-            opt = findExtremeMaxIf(reinterpret_cast<const U *>(vec.getData().data()), if_map, row_begin, row_end);
-        }
-
-        if (opt.has_value())
-            setIfGreater(T(*opt));
     }
     else
     {
@@ -465,7 +415,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -486,7 +436,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -509,7 +459,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
 
     const auto & vec = assert_cast<const ColVecType &>(column);
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -572,7 +522,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
 
     const auto & vec = assert_cast<const ColVecType &>(column);
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
