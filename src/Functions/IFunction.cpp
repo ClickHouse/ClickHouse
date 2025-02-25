@@ -241,7 +241,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             auto temporary_result_type = removeNullable(result_type);
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
-            return wrapInNullable(std::move(res), args, result_type, input_rows_count);
+            return wrapInNullable(res, args, result_type, input_rows_count);
         }
 
         auto result_null_map = ColumnUInt8::create(input_rows_count, 0);
@@ -278,7 +278,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
-            auto new_res = wrapInNullable(std::move(res), std::move(result_null_map));
+            auto new_res = wrapInNullable(res, std::move(result_null_map));
             return new_res;
         }
         else
