@@ -12,6 +12,8 @@ class SerializationBool final : public SerializationWrapper
 public:
     explicit SerializationBool(const SerializationPtr & nested_);
 
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;

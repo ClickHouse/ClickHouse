@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/schema_inference_cache
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # schema_inference_cache
+
+<SystemTableCloud/>
 
 Contains information about all cached file schemas.
 

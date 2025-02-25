@@ -3,12 +3,21 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Interpreters/Context.h>
+#include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerUUID.h>
 #include <Disks/FakeDiskTransaction.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric IDiskCopierThreads;
+    extern const Metric IDiskCopierThreadsActive;
+    extern const Metric IDiskCopierThreadsScheduled;
+}
 
 namespace DB
 {
@@ -19,6 +28,25 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
 }
+
+IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    : name(name_)
+    , copying_thread_pool(std::make_unique<ThreadPool>(
+          CurrentMetrics::IDiskCopierThreads,
+          CurrentMetrics::IDiskCopierThreadsActive,
+          CurrentMetrics::IDiskCopierThreadsScheduled,
+          config.getUInt(config_prefix + ".thread_pool_size", 16)))
+{
+}
+
+IDisk::IDisk(const String & name_)
+    : name(name_)
+    , copying_thread_pool(std::make_unique<ThreadPool>(
+          CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16))
+{
+}
+
+IDisk::~IDisk() = default;
 
 bool IDisk::isDirectoryEmpty(const String & path) const
 {
@@ -140,7 +168,7 @@ void IDisk::copyThroughBuffers(
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(copying_thread_pool, "AsyncCopy");
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, "AsyncCopy");
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
@@ -212,7 +240,7 @@ try
 
     /// write
     {
-        auto file = writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite);
         try
         {
             file->write(payload.data(), payload.size());
@@ -263,7 +291,7 @@ catch (Exception & e)
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)
 {
-    copying_thread_pool.setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
+    copying_thread_pool->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
 
 }

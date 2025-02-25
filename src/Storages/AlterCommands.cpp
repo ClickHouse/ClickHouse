@@ -25,6 +25,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -529,9 +530,51 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             metadata.columns.add(column, after_column, first);
         }
+
+        /// Try to add "implicit" minmax index for new column
+        if (metadata.settings_changes
+            && ((isNumber(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+                || (isString(column.type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
+        {
+            bool minmax_index_exists = false;
+            for (const auto & index: metadata.secondary_indices)
+            {
+                if (index.column_names.front() == column.name && index.type == "minmax")
+                {
+                    minmax_index_exists = true;
+                    break;
+                }
+            }
+
+            if (!minmax_index_exists)
+            {
+                auto index_type = makeASTFunction("minmax");
+                auto index_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(column.name), index_type, IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column.name);
+                index_ast->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index_ast, metadata.columns, context));
+            }
+        }
     }
     else if (type == DROP_COLUMN)
     {
+        const auto * column = metadata.columns.tryGet(column_name);
+        if (column && metadata.settings_changes
+            && ((isNumber(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns"))
+                || (isString(column->type) && metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns"))))
+        {
+            for (auto index_it = metadata.secondary_indices.begin();
+                     index_it != metadata.secondary_indices.end();)
+            {
+                if (index_it->name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name)
+                {
+                    index_it = metadata.secondary_indices.erase(index_it);
+                    break;
+                }
+                else
+                    ++index_it;
+            }
+        }
+
         /// Otherwise just clear data on disk
         if (!clear && !partition)
             metadata.columns.remove(column_name);
@@ -648,6 +691,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             if (if_not_exists)
                 return;
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", index_name);
+        }
+
+        if (index_name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX)
+            && metadata.settings_changes
+            && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
+                || metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot add index {} because it uses a reserved index name", index_name);
         }
 
         auto insert_it = metadata.secondary_indices.end();
@@ -838,6 +889,13 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == MODIFY_SETTING)
     {
+        if (!metadata.settings_changes)
+        {
+            auto changes = std::make_shared<ASTSetQuery>();
+            changes->is_standalone = false;
+            metadata.settings_changes = std::move(changes);
+        }
+
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & change : settings_changes)
         {
@@ -852,6 +910,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RESET_SETTING)
     {
+        if (!metadata.settings_changes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
+
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
         for (const auto & setting_name : settings_resets)
         {
@@ -859,9 +920,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
 
             if (it != settings_from_storage.end())
+            {
                 settings_from_storage.erase(it);
-
-            /// Intentionally ignore if there is no such setting name
+            }
+            else
+            {
+                /// Intentionally ignore if there is no such setting name
+                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+            }
         }
     }
     else if (type == RENAME_COLUMN)
@@ -900,7 +966,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             rename_visitor.visit(metadata.partition_key.definition_ast);
 
         for (auto & index : metadata.secondary_indices)
-            rename_visitor.visit(index.definition_ast);
+        {
+            if (index.name == IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + column_name
+                && metadata.settings_changes
+                && (metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_numeric_columns")
+                    ||  metadata.settings_changes->as<ASTSetQuery &>().changes.tryGet("add_minmax_index_for_string_columns")))
+            {
+                auto index_type = makeASTFunction("minmax");
+                index.definition_ast = std::make_shared<ASTIndexDeclaration>(std::make_shared<ASTIdentifier>(rename_to), index_type,
+                                                                             IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX + rename_to);
+                index.definition_ast->as<ASTIndexDeclaration>()->granularity = ASTIndexDeclaration::DEFAULT_INDEX_GRANULARITY;
+            }
+            else
+                rename_visitor.visit(index.definition_ast);
+        }
     }
     else if (type == MODIFY_SQL_SECURITY)
         metadata.setSQLSecurity(sql_security->as<ASTSQLSecurity &>());
@@ -1546,7 +1625,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 }
             }
         }
-        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
+        else if (command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");

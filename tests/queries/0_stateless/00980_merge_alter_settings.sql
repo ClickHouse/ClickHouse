@@ -8,7 +8,7 @@ CREATE TABLE log_for_alter (
   Data String
 ) ENGINE = Log();
 
-ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE log_for_alter MODIFY SETTING aaa=123; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE IF EXISTS log_for_alter;
 

@@ -66,7 +66,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 - `background_insert_max_sleep_time_ms` - 等同于 [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
 
-::note
+::: note
 **稳定性设置** (`fsync_...`):
 
 - 只影响异步插入(例如:`distributed_foreground_insert=false`), 当数据首先存储在启动节点磁盘上，然后再异步发送到shard。

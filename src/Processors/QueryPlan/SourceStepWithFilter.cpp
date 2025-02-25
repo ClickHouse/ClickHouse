@@ -77,6 +77,11 @@ Block SourceStepWithFilter::applyPrewhereActions(Block block, const PrewhereInfo
     return block;
 }
 
+void SourceStepWithFilterBase::applyFilters(ActionDAGNodes added_filter_nodes)
+{
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, {});
+}
+
 void SourceStepWithFilter::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes, query_info.buildNodeNameToInputNodeColumn());

@@ -1,5 +1,5 @@
 #pragma once
-#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
@@ -17,7 +17,7 @@ using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasRe
 
 /// Reading step from remote servers.
 /// Unite query results from several shards.
-class ReadFromRemote final : public ISourceStep
+class ReadFromRemote final : public SourceStepWithFilterBase
 {
 public:
     /// @param main_table_ if Shards contains main_table then this parameter will be ignored
@@ -40,6 +40,8 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
@@ -58,8 +60,9 @@ private:
     const String cluster_name;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
-    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
+    void addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header);
 };
 
 
@@ -80,17 +83,21 @@ public:
         LoggerPtr log_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::vector<ConnectionPoolPtr> pools_to_use,
-        std::optional<size_t> exclude_pool_index_ = std::nullopt);
+        std::optional<size_t> exclude_pool_index_ = std::nullopt,
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder();
 
 private:
-    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, IConnections::ReplicaInfo replica_info);
+    Pipes addPipes(ASTPtr ast, const Header & out_header);
+    void addPipeForSingeReplica(Pipes & pipes, const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
@@ -105,6 +112,7 @@ private:
     LoggerPtr log;
     std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover;
 };
 
 }

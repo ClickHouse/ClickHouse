@@ -1,7 +1,11 @@
 ---
 slug: /en/operations/system-tables/part_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
 # part_log
+
+<SystemTableCloud/>
 
 The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#part-log) server setting is specified.
 

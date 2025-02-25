@@ -114,13 +114,21 @@ bool CreateCommand::parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & 
     int mode = zkutil::CreateMode::Persistent;
 
     if (ParserKeyword(Keyword::PERSISTENT).ignore(pos, expected))
-        mode = zkutil::CreateMode::Persistent;
+    {
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
+            mode = zkutil::CreateMode::PersistentSequential;
+        else
+            mode = zkutil::CreateMode::Persistent;
+    }
     else if (ParserKeyword(Keyword::EPHEMERAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::Ephemeral;
-    else if (ParserKeyword(Keyword::EPHEMERAL_SEQUENTIAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::EphemeralSequential;
-    else if (ParserKeyword(Keyword::PERSISTENT_SEQUENTIAL).ignore(pos, expected))
-        mode = zkutil::CreateMode::PersistentSequential;
+    {
+        ParserToken{TokenType::Whitespace}.ignore(pos);
+        if (ParserKeyword(Keyword::SEQUENTIAL).ignore(pos, expected))
+            mode = zkutil::CreateMode::EphemeralSequential;
+        else
+            mode = zkutil::CreateMode::Ephemeral;
+    }
 
     node->args.push_back(std::move(mode));
 

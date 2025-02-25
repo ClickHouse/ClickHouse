@@ -140,7 +140,7 @@ Features:
 
 ### clickhouse-plantuml {#clickhouse-plantuml}
 
-[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables’ schemes.
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables' schemes.
 
 ### xeus-clickhouse {#xeus-clickhouse}
 
@@ -308,7 +308,7 @@ Features:
 
 - Easy and agile development using LookML, a language which supports curated
     [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
-- Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
+- Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 

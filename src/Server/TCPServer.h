@@ -37,6 +37,8 @@ public:
 
     UInt16 portNumber() const { return port_number; }
 
+    const Poco::Net::ServerSocket& getSocket() { return socket; }
+
 private:
     TCPServerConnectionFactory::Ptr factory;
     Poco::Net::ServerSocket socket;

@@ -1,16 +1,16 @@
-#include <Interpreters/ClientInfo.h>
+#include <Core/ProtocolDefines.h>
 #include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
+#include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <unistd.h>
 
 #include <Common/config_version.h>
 
 #include <format>
+#include <unistd.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -19,6 +19,31 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
+{
+    if (forwarded_for.empty())
+        return {};
+    String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
+    boost::trim(last);
+
+    /// IPv6 address with port
+    if (last[0] == '[')
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
+
+    const auto colons = std::count(last.begin(), last.end(), ':');
+
+    /// IPv6 address without port
+    if (colons > 1)
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
+
+    /// IPv4 address with port
+    if (colons == 1)
+        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
+
+    /// IPv4 address without port
+    return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
 }
 
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
@@ -97,6 +122,12 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         writeVarUInt(static_cast<UInt64>(collaborate_with_initiator), out);
         writeVarUInt(obsolete_count_participating_replicas, out);
         writeVarUInt(number_of_current_replica, out);
+    }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS)
+    {
+        writeVarUInt(script_query_number, out);
+        writeVarUInt(script_line_number, out);
     }
 }
 
@@ -188,6 +219,12 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         readVarUInt(obsolete_count_participating_replicas, in);
         readVarUInt(number_of_current_replica, in);
     }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS)
+    {
+        readVarUInt(script_query_number, in);
+        readVarUInt(script_line_number, in);
+    }
 }
 
 
@@ -213,11 +250,6 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 String ClientInfo::getVersionStr() const
 {
     return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
-}
-
-VersionNumber ClientInfo::getVersionNumber() const
-{
-    return VersionNumber(client_version_major, client_version_minor, client_version_patch);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
@@ -280,6 +312,21 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
             continue;
         http_headers[header.first] = header.second;
+    }
+}
+
+String toString(ClientInfo::HTTPMethod method)
+{
+    switch (method)
+    {
+        case ClientInfo::HTTPMethod::UNKNOWN:
+            return "UNKNOWN";
+        case ClientInfo::HTTPMethod::GET:
+            return "GET";
+        case ClientInfo::HTTPMethod::POST:
+            return "POST";
+        case ClientInfo::HTTPMethod::OPTIONS:
+            return "OPTIONS";
     }
 }
 

@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 # Tags: no-cpu-aarch64, no-random-settings, no-random-merge-tree-settings
-# Some settings can be different for builds with sanitizers or aarch64
+# Some settings can be different for builds with aarch64
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+# Ignore settings that, for historic reasons, have different values in Cloud
+IGNORED_SETTINGS_FOR_CLOUD="1 = 1"
+if [[ $($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'") -eq 1 ]];
+then
+  IGNORED_SETTINGS_FOR_CLOUD="name NOT IN ('max_table_size_to_drop', 'max_partition_size_to_drop')"
+fi
+
+IGNORE_SETTINGS_FOR_SANITIZERS="1=1"
+if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() != 0 FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize' IN value) != 0") -eq 1 ]];
+then
+  IGNORE_SETTINGS_FOR_SANITIZERS="name NOT IN ('query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns')"
+fi
 
 # Note that this is a broad check. A per version check is done in the upgrade test
 # Baselines generated with 24.11.2
@@ -21,8 +34,7 @@ $CLICKHOUSE_LOCAL --query "
     ),
     new_settings AS
     (
-        -- Ignore settings that depend on the machine config (max_threads and similar)
-        SELECT name, default FROM system.settings WHERE default NOT LIKE '%auto(%'
+        SELECT name, default FROM system.settings WHERE default NOT LIKE '%auto(%' AND ${IGNORED_SETTINGS_FOR_CLOUD}
     ),
     new_merge_tree_settings AS
     (
@@ -62,12 +74,7 @@ $CLICKHOUSE_LOCAL --query "
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
                 WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 OR (splitByChar('.', version)[1]::UInt64 == 24 AND splitByChar('.', version)[2]::UInt64 > 11)
-            )) AND (
-                -- Different values for sanitizers
-                ( SELECT count() FROM system.build_options WHERE name = 'CXX_FLAGS' AND position('sanitize' IN value) = 1 )
-                AND
-                name NOT IN ('query_profiler_cpu_time_period_ns', 'query_profiler_real_time_period_ns')
-            )
+            )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
         (

@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <variant>
 
-
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <base/StringRef.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
@@ -31,7 +31,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -88,9 +87,10 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 class Aggregator final
 {
 public:
+    using AggregateFunctionContainer = PaddedPODArray<AggregateDataPtr>;
     using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
+    using AggregateColumnsData = std::vector<AggregateFunctionContainer *>;
+    using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     struct Params

@@ -3,6 +3,7 @@
 #include "config.h"
 
 #if USE_ORC
+#include <Common/PODArray_fwd.h>
 #include <IO/WriteBuffer.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
@@ -62,7 +63,7 @@ private:
     void writeStrings(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap);
 
     /// ORC column TimestampVectorBatch stores only seconds and nanoseconds,
-    /// GetSecondsFunc and GetNanosecondsFunc are needed to extract them from DataTime type.
+    /// GetSecondsFunc and GetNanosecondsFunc are needed to extract them from DateTime type.
     template <typename ColumnType, typename GetSecondsFunc, typename GetNanosecondsFunc>
     void writeDateTimes(orc::ColumnVectorBatch & orc_column, const IColumn & column, const PaddedPODArray<UInt8> * null_bytemap,
                         GetSecondsFunc get_seconds, GetNanosecondsFunc get_nanoseconds);

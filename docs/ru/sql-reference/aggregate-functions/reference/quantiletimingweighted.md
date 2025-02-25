@@ -9,7 +9,7 @@ sidebar_position: 205
 
 Результат детерминирован (не зависит от порядка обработки запроса). Функция оптимизирована для работы с последовательностями, описывающими такие распределения, как время загрузки веб-страниц или время отклика бэкенда.
 
-Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](#quantiles), это повысит эффективность запроса.
+Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantile), это повысит эффективность запроса.
 
 **Синтаксис**
 
@@ -40,7 +40,7 @@ quantileTimingWeighted(level)(expr, weight)
 В противном случае, результат вычисления округляется до ближайшего множителя числа 16.
 
 :::note Примечание
-Для указанного типа последовательностей функция производительнее и точнее, чем [quantile](#quantile).
+Для указанного типа последовательностей функция производительнее и точнее, чем [quantile](/docs/ru/sql-reference/aggregate-functions/reference/quantile).
 :::
 **Возвращаемое значение**
 
@@ -83,5 +83,5 @@ SELECT quantileTimingWeighted(response_time, weight) FROM t
 
 **Смотрите также**
 
--   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
--   [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+-   [median](/docs/ru/sql-reference/aggregate-functions/reference/median)
+-   [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles)

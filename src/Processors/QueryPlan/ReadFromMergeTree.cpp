@@ -341,7 +341,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     , mutations_snapshot(std::move(mutations_))
     , all_column_names(std::move(all_column_names_))
     , data(data_)
-    , actions_settings(ExpressionActionsSettings::fromContext(context_))
+    , actions_settings(ExpressionActionsSettings(context_))
     , block_size{
         .max_block_size_rows = max_block_size_,
         .preferred_block_size_bytes = context->getSettingsRef()[Setting::preferred_block_size_bytes],
@@ -1035,8 +1035,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     }
     else
     {
-        std::vector<RangesInDataParts> splitted_parts_and_ranges;
-        splitted_parts_and_ranges.reserve(num_streams);
+        std::vector<RangesInDataParts> split_parts_and_ranges;
+        split_parts_and_ranges.reserve(num_streams);
 
         for (size_t i = 0; i < num_streams && !parts_with_ranges.empty(); ++i)
         {
@@ -1101,10 +1101,10 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 new_parts.emplace_back(part.data_part, part.part_index_in_query, std::move(ranges_to_get_from_part));
             }
 
-            splitted_parts_and_ranges.emplace_back(std::move(new_parts));
+            split_parts_and_ranges.emplace_back(std::move(new_parts));
         }
 
-        for (auto && item : splitted_parts_and_ranges)
+        for (auto && item : split_parts_and_ranges)
             pipes.emplace_back(readInOrder(std::move(item), column_names, pool_settings, read_type, input_order_info->limit));
     }
 
@@ -1219,6 +1219,17 @@ static void addMergingFinal(
     if (enable_vertical_final)
         pipe.addSimpleTransform([](const Block & header_)
                                 { return std::make_shared<SelectByIndicesTransform>(header_); });
+}
+
+static std::pair<std::shared_ptr<ExpressionActions>, String> createExpressionForPositiveSign(const String & sign_column_name, const Block & header, const ContextPtr & context)
+{
+    ASTPtr sign_indentifier = std::make_shared<ASTIdentifier>(sign_column_name);
+    ASTPtr sign_filter = makeASTFunction("equals", sign_indentifier, std::make_shared<ASTLiteral>(Field(static_cast<Int8>(1))));
+    const auto & sign_column = header.getByName(sign_column_name);
+
+    auto syntax_result = TreeRewriter(context).analyze(sign_filter, {{sign_column.name, sign_column.type}});
+    auto actions = ExpressionAnalyzer(sign_filter, syntax_result, context).getActionsDAG(false);
+    return {std::make_shared<ExpressionActions>(std::move(actions)), sign_filter->getColumnName()};
 }
 
 bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
@@ -1418,7 +1429,29 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     if (!non_intersecting_parts_by_primary_key.empty())
     {
-        auto pipe = spreadMarkRangesAmongStreams(std::move(non_intersecting_parts_by_primary_key), num_streams, origin_column_names);
+        Pipe pipe;
+
+        /// Collapsing algorithm doesn't expose non-matched rows with a negative sign in queries with FINAL.
+        /// To support this logic without merging data, add a filtering by sign column for non-intersecting ranges.
+        if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
+        {
+            auto columns_with_sign = origin_column_names;
+            if (std::ranges::find(columns_with_sign, data.merging_params.sign_column) == columns_with_sign.end())
+                columns_with_sign.push_back(data.merging_params.sign_column);
+
+            pipe = spreadMarkRangesAmongStreams(std::move(non_intersecting_parts_by_primary_key), num_streams, columns_with_sign);
+            auto [expression, filter_name] = createExpressionForPositiveSign(data.merging_params.sign_column, pipe.getHeader(), context);
+
+            pipe.addSimpleTransform([&](const Block & header)
+            {
+                return std::make_shared<FilterTransform>(header, expression, filter_name, true);
+            });
+        }
+        else
+        {
+            pipe = spreadMarkRangesAmongStreams(std::move(non_intersecting_parts_by_primary_key), num_streams, origin_column_names);
+        }
+
         no_merging_pipes.emplace_back(std::move(pipe));
     }
 
@@ -1494,7 +1527,7 @@ static void buildIndexes(
     {
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         auto minmax_columns_names = MergeTreeData::getMinMaxColumnsNames(partition_key);
-        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(context));
+        auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(partition_key, ExpressionActionsSettings(context));
 
         indexes->minmax_idx_condition.emplace(filter_actions_dag, context, minmax_columns_names, minmax_expression_actions);
         indexes->partition_pruner.emplace(metadata_snapshot, filter_actions_dag, context, false /* strict */);
@@ -1950,15 +1983,14 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
     Names column_names_to_read = result.column_names_to_read;
     NameSet names(column_names_to_read.begin(), column_names_to_read.end());
 
-    if (!final && result.sampling.use_sampling)
+    if (result.sampling.use_sampling)
     {
         NameSet sampling_columns;
 
         /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
-        /// Skip this if final was used, because such columns were already added from PK.
         for (const auto & column : result.sampling.filter_expression->getRequiredColumns().getNames())
         {
-            if (!names.contains(column))
+            if (names.emplace(column).second)
                 column_names_to_read.push_back(column);
 
             sampling_columns.insert(column);
@@ -1975,25 +2007,25 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
         if (output_each_partition_through_separate_port)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Optimization isn't supposed to be used for queries with final");
 
+        auto original_column_names = column_names_to_read;
+
         /// Add columns needed to calculate the sorting expression and the sign.
         for (const auto & column : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
         {
-            if (!names.contains(column))
-            {
+            if (names.emplace(column).second)
                 column_names_to_read.push_back(column);
-                names.insert(column);
-            }
         }
 
-        if (!data.merging_params.is_deleted_column.empty() && !names.contains(data.merging_params.is_deleted_column))
+        if (!data.merging_params.is_deleted_column.empty() && names.emplace(data.merging_params.is_deleted_column).second)
             column_names_to_read.push_back(data.merging_params.is_deleted_column);
-        if (!data.merging_params.sign_column.empty() && !names.contains(data.merging_params.sign_column))
+        if (!data.merging_params.sign_column.empty() && names.emplace(data.merging_params.sign_column).second)
             column_names_to_read.push_back(data.merging_params.sign_column);
-        if (!data.merging_params.version_column.empty() && !names.contains(data.merging_params.version_column))
+        if (!data.merging_params.version_column.empty() && names.emplace(data.merging_params.version_column).second)
             column_names_to_read.push_back(data.merging_params.version_column);
 
-        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, result.column_names_to_read, column_names_to_read, result_projection);
+        return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, original_column_names, column_names_to_read, result_projection);
     }
+
     if (query_info.input_order_info)
     {
         return spreadMarkRangesAmongStreamsWithOrder(

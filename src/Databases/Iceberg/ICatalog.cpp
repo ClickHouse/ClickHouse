@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
+#include <filesystem>
+
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

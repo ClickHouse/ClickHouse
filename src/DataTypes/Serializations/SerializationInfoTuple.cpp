@@ -15,9 +15,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-SerializationInfoTuple::SerializationInfoTuple(
-    MutableSerializationInfos elems_, Names names_, const Settings & settings_)
-    : SerializationInfo(ISerialization::Kind::DEFAULT, settings_)
+SerializationInfoTuple::SerializationInfoTuple(MutableSerializationInfos elems_, Names names_)
+    /// Pass default settings because Tuple column cannot be sparse itself.
+    : SerializationInfo(ISerialization::Kind::DEFAULT, SerializationInfo::Settings{})
     , elems(std::move(elems_))
     , names(std::move(names_))
 {
@@ -112,7 +112,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     for (const auto & elem : elems)
         elems_cloned.push_back(elem->clone());
 
-    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names, settings);
+    auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
     ret->data = data;
     return ret;
 }
@@ -128,15 +128,15 @@ MutableSerializationInfoPtr SerializationInfoTuple::createWithType(
     const auto & old_elements = old_tuple.getElements();
     const auto & new_elements = new_tuple.getElements();
 
-    assert(elems.size() == old_elements.size());
-    assert(elems.size() == new_elements.size());
+    chassert(elems.size() == old_elements.size());
+    chassert(elems.size() == new_elements.size());
 
     MutableSerializationInfos infos;
     infos.reserve(elems.size());
     for (size_t i = 0; i < elems.size(); ++i)
         infos.push_back(elems[i]->createWithType(*old_elements[i], *new_elements[i], new_settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, new_settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const

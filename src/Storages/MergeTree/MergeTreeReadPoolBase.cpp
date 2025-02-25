@@ -155,11 +155,23 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 
+        if (read_task_info.alter_conversions->hasMutations())
+        {
+            auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+                .withExtendedObjects()
+                .withVirtuals()
+                .withSubcolumns();
+
+            auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
+            read_task_info.mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
+        }
+
         read_task_info.task_columns = getReadTaskColumns(
             part_info,
             storage_snapshot,
             column_names,
             prewhere_info,
+            read_task_info.mutation_steps,
             actions_settings,
             reader_settings,
             /*with_subcolumns=*/true);

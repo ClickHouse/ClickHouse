@@ -24,6 +24,7 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
     if (it == metadata_by_path.end())
     {
         it = metadata_by_path.emplace(zookeeper_path, std::move(metadata)).first;
+        it->second.metadata->setMetadataRefCount(*it->second.ref_count);
     }
     else
     {
@@ -33,8 +34,8 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         metadata_from_table.checkEquals(metadata_from_keeper);
     }
 
-    it->second.metadata->registerIfNot(storage_id);
-    it->second.ref_count += 1;
+    it->second.metadata->registerIfNot(storage_id, false);
+    *it->second.ref_count += 1;
     return it->second.metadata;
 }
 
@@ -46,12 +47,12 @@ void ObjectStorageQueueMetadataFactory::remove(const std::string & zookeeper_pat
     if (it == metadata_by_path.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Metadata with zookeeper path {} does not exist", zookeeper_path);
 
-    it->second.ref_count -= 1;
+    *it->second.ref_count -= 1;
 
     size_t registry_size;
     try
     {
-        registry_size = it->second.metadata->unregister(storage_id);
+        registry_size = it->second.metadata->unregister(storage_id, false);
         LOG_TRACE(log, "Remaining registry size: {}", registry_size);
     }
     catch (const zkutil::KeeperException & e)

@@ -293,21 +293,30 @@ void Pool::Entry::forceConnected() const
         LOG_DEBUG(pool->log,
             "Creating a new MySQL connection to {} with settings: connect_timeout={}, read_write_timeout={}",
             pool->description, pool->connect_timeout, pool->rw_timeout);
-
-        data->conn.connect(
-            pool->db.c_str(),
-            pool->server.c_str(),
-            pool->user.c_str(),
-            pool->password.c_str(),
-            pool->port,
-            pool->socket.c_str(),
-            pool->ssl_ca.c_str(),
-            pool->ssl_cert.c_str(),
-            pool->ssl_key.c_str(),
-            pool->connect_timeout,
-            pool->rw_timeout,
-            pool->enable_local_infile,
-            pool->opt_reconnect);
+        try
+        {
+            data->conn.connect(
+                pool->db.c_str(),
+                pool->server.c_str(),
+                pool->user.c_str(),
+                pool->password.c_str(),
+                pool->port,
+                pool->socket.c_str(),
+                pool->ssl_ca.c_str(),
+                pool->ssl_cert.c_str(),
+                pool->ssl_key.c_str(),
+                pool->connect_timeout,
+                pool->rw_timeout,
+                pool->enable_local_infile,
+                pool->opt_reconnect);
+        }
+        catch (mysqlxx::ConnectionFailed &)
+        {
+            pool->online = false;
+            pool->removeConnection(data);
+            throw;
+        }
+        pool->online = true;
     }
 }
 

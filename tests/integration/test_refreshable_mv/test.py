@@ -1,7 +1,4 @@
-import os
-import re
-import shutil
-import threading
+import logging
 import time
 from random import randint
 
@@ -221,3 +218,55 @@ def test_refreshable_mv_in_system_db(started_cluster):
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
     node1.query("drop table system.a")
+
+
+def test_refresh_vs_shutdown_smoke(started_cluster):
+    for node in nodes:
+        node.query(
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        )
+
+    node1.stop_clickhouse()
+
+    num_tables = 2
+
+    for i in range(10):
+        exec_id = node1.start_clickhouse()
+        assert exec_id is not None
+
+        if i == 0:
+            node1.query("select '===test_refresh_vs_shutdown_smoke start==='")
+            for j in range(num_tables):
+                node1.query(
+                    f"create materialized view re.a{j} refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2)"
+                )
+
+        if randint(0, 1):
+            for j in range(num_tables):
+                if randint(0, 1):
+                    node1.query(f"system refresh view re.a{j}")
+        r = randint(0, 2)
+        if r == 1:
+            time.sleep(randint(0, 10) / 1000)
+        elif r == 2:
+            time.sleep(randint(0, 100) / 1000)
+
+        node1.stop_clickhouse(stop_wait_sec=300)
+        while True:
+            exit_code = cluster.docker_client.api.exec_inspect(exec_id)["ExitCode"]
+            if exit_code is not None:
+                assert exit_code == 0
+                break
+            time.sleep(1)
+
+    assert not node1.contains_in_log("view refreshes failed to stop", from_host=True)
+    assert not node1.contains_in_log("Closed connections. But", from_host=True)
+    assert not node1.contains_in_log("Will shutdown forcefully.", from_host=True)
+    assert not node1.contains_in_log("##########", from_host=True)
+    assert node1.contains_in_log(
+        "===test_refresh_vs_shutdown_smoke start===", from_host=True
+    )
+
+    node1.start_clickhouse()
+    node1.query("drop database re sync")
+    node2.query("drop database re sync")

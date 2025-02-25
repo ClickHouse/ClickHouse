@@ -39,8 +39,11 @@ static constexpr auto DBMS_MIN_SUPPORTED_PARALLEL_REPLICAS_PROTOCOL_VERSION = 3;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_FIELD = 4;
 static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 4;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
+static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
 static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
+
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 0;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 
@@ -106,6 +109,6 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_SETTINGS = 54474;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54474;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54475;
 
 }

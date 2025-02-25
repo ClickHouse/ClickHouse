@@ -3,8 +3,13 @@ slug: /en/sql-reference/statements/alter/statistics
 sidebar_position: 45
 sidebar_label: STATISTICS
 ---
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Manipulating Column Statistics
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 The following operations are available:
 

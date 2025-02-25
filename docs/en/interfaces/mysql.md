@@ -28,26 +28,27 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 ## Enabling the MySQL Interface On ClickHouse Cloud
 
-1. After creating your ClickHouse Cloud Service, on the credentials screen, select the MySQL tab
+1. After creating your ClickHouse Cloud Service, click the `Connect` button.
+
+<br/>
+
+![Credentials screen - Prompt](./images/mysql0.png)
+
+2. Change the `Connect with` drop-down to `MySQL`. 
+
+<br/>
 
 ![Credentials screen - Prompt](./images/mysql1.png)
 
-2. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
+3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
+
+<br/>
 
 ![Credentials screen - Enabled MySQL](./images/mysql2.png)
 
-Alternatively, in order to enable the MySQL interface for an existing service:
+Copy the MySQL connection string shown.
 
-1. Ensure your service is in `Running` state then click on the "View connection string" button for the service you want to enable the MySQL interface for
-
-![Connection screen - Prompt MySQL](./images/mysql3.png)
-
-2. Toggle the switch to enable the MySQL interface for this specific service. This will prompt you to enter the default password.
-
-![Connection screen - Prompt MySQL](./images/mysql4.png)
-
-3. After entering the password, you will get prompted the MySQL connection string for this service
-![Connection screen -  MySQL Enabled](./images/mysql5.png)
+![Credentials screen - Connection String](./images/mysql3.png)
 
 ## Creating multiple MySQL users in ClickHouse Cloud
 
@@ -148,7 +149,7 @@ mysql>
 ```
 
 For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
 
 Restrictions:
 

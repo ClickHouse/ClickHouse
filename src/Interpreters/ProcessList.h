@@ -60,6 +60,7 @@ enum CancelReason
 struct QueryStatusInfo
 {
     String query;
+    UInt64 normalized_query_hash;
     IAST::QueryKind query_kind{};
     UInt64 elapsed_microseconds;
     size_t read_rows;
@@ -95,6 +96,7 @@ protected:
     friend struct ::GlobalOvercommitTracker;
 
     String query;
+    UInt64 normalized_query_hash;
     ClientInfo client_info;
 
     /// Info about all threads involved in query execution
@@ -189,6 +191,7 @@ public:
     QueryStatus(
         ContextPtr context_,
         const String & query_,
+        UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
         ThreadGroupPtr && thread_group_,
@@ -243,7 +246,7 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time, const UInt64 & elapsed_ns = 0);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
     /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
@@ -440,7 +443,7 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(const String & query_, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
 
     /// Number of currently executing queries.
     size_t size() const { return processes.size(); }

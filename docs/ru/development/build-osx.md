@@ -38,7 +38,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
   ``` bash
   $ brew update
-  $ brew install cmake ninja libtool gettext llvm gcc
+  $ brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
   ```
 
 ## Просмотр исходников ClickHouse {#checkout-clickhouse-sources}
@@ -68,7 +68,6 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
   $ rm -rf build
   $ mkdir build
   $ cd build
-  $ cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
   $ cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
   $ cmake --build . --config RelWithDebInfo
   $ cd ..
