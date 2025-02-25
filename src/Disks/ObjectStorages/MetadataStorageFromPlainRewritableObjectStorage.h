@@ -35,8 +35,7 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataSto
 {
 public:
     MetadataStorageFromPlainRewritableObjectStorage(
-        ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size);
-
+        ObjectStoragePtr object_storage_, String storage_path_prefix_);
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
 
     bool existsFile(const std::string & path) const override;
@@ -47,13 +46,17 @@ public:
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
+    uint64_t getFileSize(const String & path) const override;
+    std::optional<uint64_t> getFileSizeIfExists(const String & path) const override;
+    Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
-    void refresh() override;
+    void refresh(UInt64 not_sooner_than_milliseconds) override;
 
 private:
     const std::string metadata_key_prefix;
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
+    AtomicStopwatch previous_refresh;
 
     void load();
 
