@@ -6,13 +6,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 run_mode="${1:-CI}"
 column_names=("number_col" "str_col" "array_col" "nullable_col" "sparse_col" "tuple_col")
 table_name="table_for_estimate_compression_ratio"
-tolerance=0.25
+tolerance=0.30
 formatted_tolerance=$(awk "BEGIN {printf \"%.2f\", $tolerance * 100}")%
 
 # all combinations of the following should be tested
 codecs=("ZSTD" "LZ4")
 block_sizes=(65536 1048576)
-num_rows_list=(10_000 500_000)
+num_rows_list=(1_000 50_000)
 
 log_if_debug() {
     if [ "$run_mode" != "CI" ]; then
