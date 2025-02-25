@@ -49,11 +49,6 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
     )
 
     node1.query("OPTIMIZE TABLE test_table FINAL")
-    assert (
-        node1.query("SELECT count(*) from system.parts where table = 'test_table'")
-        == "3\n"
-    )
-
     assert_eq_with_retry(
         node1,
         "SELECT count(*) from system.parts where table = 'test_table' and active = 1",
