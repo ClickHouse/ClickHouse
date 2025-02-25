@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 
@@ -32,6 +33,8 @@ IVolume::IVolume(
     DiskSelectorPtr disk_selector)
     : name(std::move(name_))
     , load_balancing(parseVolumeLoadBalancing(config.getString(config_prefix + ".load_balancing", "round_robin")))
+    , max_wait_after_move_ms(config.getUInt64(config_prefix + ".max_wait_after_move_ms", 0))
+    , min_wait_after_move_ms(config.getUInt64(config_prefix + ".min_wait_after_move_ms", 0))
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -47,6 +50,12 @@ IVolume::IVolume(
 
     if (disks.empty())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Volume {} must contain at least one disk", name);
+
+    if (min_wait_after_move_ms > max_wait_after_move_ms)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Volume {} parameter `min_wait_after_move_ms` must not be greater than `max_wait_after_move_ms`",
+            name);
 }
 
 std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const

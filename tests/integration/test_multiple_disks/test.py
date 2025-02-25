@@ -286,6 +286,30 @@ def test_system_tables(start_cluster):
             "perform_ttl_move_on_insert": 1,
             "load_balancing": "ROUND_ROBIN",
         },
+        {
+            "policy_name": "policy_with_waiting",
+            "disks": ["jbod1"],
+            "load_balancing": "ROUND_ROBIN",
+            "max_data_part_size": "0",
+            "move_factor": 0,
+            "perform_ttl_move_on_insert": 1,
+            "prefer_not_to_merge": 0,
+            "volume_name": "main",
+            "volume_priority": "1",
+            "volume_type": "JBOD",
+        },
+        {
+            "policy_name": "policy_with_waiting",
+            "disks": ["jbod2"],
+            "load_balancing": "ROUND_ROBIN",
+            "max_data_part_size": "0",
+            "move_factor": 0,
+            "perform_ttl_move_on_insert": 1,
+            "prefer_not_to_merge": 0,
+            "volume_name": "waiting",
+            "volume_priority": "2",
+            "volume_type": "JBOD",
+        },
     ]
 
     clickhouse_policies_data = json.loads(
@@ -2074,3 +2098,28 @@ def test_yes_merges_in_configuration_disallow_from_query_with_reload(start_clust
 
     finally:
         node1.query("SYSTEM START MERGES ON VOLUME {}.external".format(policy))
+
+
+def test_waiting_after_move(start_cluster):
+    table = "table_for_move"
+
+    node1.restart_clickhouse(kill=True)
+    node1.query(
+        f"""
+        CREATE TABLE IF NOT EXISTS {table} (
+            d UInt64
+        ) ENGINE = MergeTree()
+        ORDER BY d
+        SETTINGS storage_policy='policy_with_waiting'
+    """
+    )
+    node1.query(f"INSERT INTO {table} VALUES (0)")
+
+    node1.query(f"ALTER TABLE {table} MOVE PARTITION tuple() TO VOLUME 'waiting'")
+
+    first_part = get_oldest_part(node1, table)
+    assert get_disk_for_part(node1, table, first_part) == "jbod2"
+
+    assert node1.contains_in_log(f"Sleeping [0-9]\+ ms after cloning part {first_part}")
+
+    node1.query(f"DROP TABLE IF EXISTS {table}")
