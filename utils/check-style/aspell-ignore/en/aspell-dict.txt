@@ -704,6 +704,8 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+NumericIndexedVector
+NumericIndexedVectors
 ODBCDriver
 OFNS
 OLAP
@@ -1910,6 +1912,7 @@ groupBitmapAnd
 groupBitmapOr
 groupBitmapXor
 groupConcat
+groupNumericIndexedVector
 groupUniqArray
 grouparray
 grouparrayinsertat
@@ -1927,6 +1930,7 @@ groupbitmapxor
 groupbitor
 groupbitxor
 groupconcat
+groupnumericindexedvector
 groupuniqarray
 grpc
 grpcio
@@ -2360,6 +2364,21 @@ nullable
 nullables
 nullptr
 num
+numericIndexedVectorAllValueSum
+numericIndexedVectorBuild
+numericIndexedVectorCardinality
+numericIndexedVectorGetValue
+numericIndexedVectorPointwiseAdd
+numericIndexedVectorPointwiseDivide
+numericIndexedVectorPointwiseEqual
+numericIndexedVectorPointwiseGreater
+numericIndexedVectorPointwiseGreaterEqual
+numericIndexedVectorPointwiseLess
+numericIndexedVectorPointwiseLessEqual
+numericIndexedVectorPointwiseMultiply
+numericIndexedVectorPointwiseNotEqual
+numericIndexedVectorPointwiseSubtract
+numericIndexedVectorToMap
 numerics
 nypd
 obfuscator
@@ -2427,6 +2446,7 @@ plantuml
 poco
 pointInEllipses
 pointInPolygon
+pointwise
 polygonAreaCartesian
 polygonAreaSpherical
 polygonConvexHullCartesian
