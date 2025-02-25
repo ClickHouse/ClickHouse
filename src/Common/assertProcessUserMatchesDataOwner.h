@@ -7,6 +7,6 @@ namespace DB
 {
 
 void assertProcessUserMatchesDataOwner(
-    const std::string & path, std::function<void(const std::string &)> on_warning);
+    const std::string & path, std::function<void(const std::string &, const std::string &)> on_warning);
 
 }
