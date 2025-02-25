@@ -106,6 +106,7 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -116,6 +117,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
+
 #include <filesystem>
 #include <unordered_set>
 

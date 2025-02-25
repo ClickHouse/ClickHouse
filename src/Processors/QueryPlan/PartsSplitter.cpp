@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <Core/Field.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -16,8 +17,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>

@@ -7,7 +7,7 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

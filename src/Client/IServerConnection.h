@@ -25,6 +25,7 @@ namespace DB
 {
 
 class ClientInfo;
+struct FormatSettings;
 
 /// Packet that could be received from server.
 struct Packet

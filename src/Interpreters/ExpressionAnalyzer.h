@@ -2,7 +2,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/ArrayJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -10,6 +10,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -38,6 +39,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
+
+class Set;
+using SetPtr = std::shared_ptr<Set>;
 
 namespace ExpressionActionsChainSteps
 {

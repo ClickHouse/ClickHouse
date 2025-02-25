@@ -11,7 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>

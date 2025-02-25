@@ -1,6 +1,7 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/ColumnConst.h>
