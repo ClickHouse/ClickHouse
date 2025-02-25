@@ -1,9 +1,12 @@
+#include <Common/Exception.h>
 #include <Common/TraceSender.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
+
+#include <atomic>
 
 namespace
 {
@@ -44,6 +47,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
+        + sizeof(UInt64)                     /// parent_thread_id
         + sizeof(Int64)                      /// size
         + sizeof(void *)                     /// ptr
         + sizeof(ProfileEvents::Event)       /// event
@@ -73,6 +77,8 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         thread_id = MainThreadStatus::get()->thread_id;
     }
 
+    UInt64  parent_thread_id = DB::Exception::parent_thread_id.load(std::memory_order_relaxed);
+
     writeChar(false, out);  /// true if requested to stop the collecting thread.
 
     writeBinary(static_cast<uint8_t>(query_id.size()), out);
@@ -86,6 +92,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
+    writePODBinary(parent_thread_id, out);
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);
     writePODBinary(extras.event, out);
