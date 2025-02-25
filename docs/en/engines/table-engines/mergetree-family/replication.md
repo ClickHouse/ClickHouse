@@ -2,6 +2,8 @@
 slug: /engines/table-engines/mergetree-family/replication
 sidebar_position: 20
 sidebar_label: Data Replication
+title: "Data Replication"
+description: "Overview of Data Replication in ClickHouse"
 ---
 
 # Data Replication
@@ -154,17 +156,17 @@ The `Replicated` prefix is added to the table engine name. For example:`Replicat
 Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
-### Replicated\*MergeTree parameters
+### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
-#### zoo_path
+#### zoo_path {#zoo_path}
 
 `zoo_path` — The path to the table in ClickHouse Keeper.
 
-#### replica_name
+#### replica_name {#replica_name}
 
 `replica_name` — The replica name in ClickHouse Keeper.
 
-#### other_parameters
+#### other_parameters {#other_parameters}
 
 `other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
 
