@@ -220,28 +220,20 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
 }
 
 ColumnPtr
-wrapInNullable(ColumnPtr src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
+wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
 {
+    ColumnPtr result_null_map_column;
+
+    /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
     if (src->onlyNull())
         return src;
-
-    MutableColumnPtr result_null_map_column;
-    /// If result is already nullable.
-    ColumnPtr src_not_nullable;
-
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*src))
     {
         src_not_nullable = nullable->getNestedColumnPtr();
-        if (src->use_count() == 1)
-        {
-            /// Reuse null map column to avoid unnecessary memory allocation if src is the only owner of itself.
-            result_null_map_column = assert_cast<ColumnNullable &>(src->assumeMutableRef()).detachNullMapColumn();
-        }
-        else
-            result_null_map_column = nullable->getNullMapColumn().clone();
+        result_null_map_column = nullable->getNullMapColumnPtr();
     }
-    else
-        src_not_nullable = src;
 
     for (const auto & elem : args)
     {
@@ -261,17 +253,21 @@ wrapInNullable(ColumnPtr src, const ColumnsWithTypeAndName & args, const DataTyp
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
         {
             const ColumnPtr & null_map_column = nullable->getNullMapColumnPtr();
-
             if (!result_null_map_column)
             {
-                result_null_map_column = IColumn::mutate(null_map_column);
+                result_null_map_column = null_map_column;
             }
             else
             {
+                MutableColumnPtr mutable_result_null_map_column = IColumn::mutate(std::move(result_null_map_column));
+
+                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
                 const NullMap & src_null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
-                NullMap & result_null_map = assert_cast<ColumnUInt8 &>(*result_null_map_column).getData();
+
                 for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
                     result_null_map[i] |= src_null_map[i];
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
             }
         }
     }
@@ -279,10 +275,10 @@ wrapInNullable(ColumnPtr src, const ColumnsWithTypeAndName & args, const DataTyp
     if (!result_null_map_column)
         return makeNullable(src);
 
-    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), std::move(result_null_map_column));
+    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }
 
-ColumnPtr wrapInNullable(ColumnPtr src, ColumnPtr null_map)
+ColumnPtr wrapInNullable(const ColumnPtr & src, ColumnPtr null_map)
 {
     if (src->onlyNull())
         return src;

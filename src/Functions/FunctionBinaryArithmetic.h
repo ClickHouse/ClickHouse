@@ -2427,7 +2427,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
-            return wrapInNullable(std::move(res), arguments, result_type, input_rows_count);
+            return wrapInNullable(res, arguments, result_type, input_rows_count);
         }
 
         /// Special case - one or both arguments are IPv4

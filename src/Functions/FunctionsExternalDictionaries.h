@@ -602,7 +602,7 @@ public:
             collect_values_limit, arguments[current_arguments_index-1], result_type);
 
         if (key_is_nullable)
-            result_column = wrapInNullable(std::move(result_column), {arguments[2]}, result_type, input_rows_count);
+            result_column = wrapInNullable(result_column, {arguments[2]}, result_type, input_rows_count);
 
         return result_column;
     }
