@@ -6,7 +6,6 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/KeysNullMap.h>
-
 #include <Columns/ColumnConst.h>
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -50,6 +49,16 @@ void fillFixedBatch(size_t num_rows, const T * source, T * dest)
     }
 }
 
+template <typename T, size_t step>
+void fillFixedBatchConst(size_t num_rows, const T * datum, T * dest)
+{
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        *dest = *datum;
+        dest += step;
+    }
+}
+
 /// Move keys of size T into binary blob, starting from offset.
 /// It is assumed that offset is aligned to sizeof(T).
 /// Example: sizeof(key) = 16, sizeof(T) = 4, offset = 8
@@ -67,16 +76,24 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             size_t num_rows = column->size();
             out.resize_fill(num_rows);
 
-            if (column->isConst())
-            {
-                column = &static_cast<const ColumnConst *>(column)->getDataColumn();
-            }
-
             /// Note: here we violate strict aliasing.
             /// It should be ok as long as we do not refer to any value from `out` before filling.
-            const char * source = dynamic_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
+            if (unlikely(column->isConst()))
+            {
+                const auto & raw_data = static_cast<const ColumnConst *>(column)->getRawData();
+                fillFixedBatchConst<T, sizeof(Key) / sizeof(T)>(
+                    num_rows, reinterpret_cast<const T *>(raw_data.data()), dest); /// NOLINT(bugprone-sizeof-expression)
+            }
+            else
+            {
+                const auto * base = dynamic_cast<const ColumnFixedSizeHelper *>(column);
+                chassert(base);
+                const char * source = base->getRawDataBegin<sizeof(T)>();
+                fillFixedBatch<T, sizeof(Key) / sizeof(T)>(
+                    num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
+            }
+
             offset += sizeof(T);
         }
     }
@@ -93,6 +110,20 @@ void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
+}
+
+template <size_t size>
+void copyDatum(void * __restrict dst, const IColumn * column, size_t index)
+{
+    if (unlikely(column->isConst()))
+    {
+        const auto & raw_data = static_cast<const ColumnConst *>(column)->getRawData();
+        memcpy(dst, raw_data.data() + index * size, size);
+    }
+    else
+    {
+        memcpy(dst, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<size>() + index * size, size);
+    }
 }
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
@@ -130,33 +161,44 @@ static inline T ALWAYS_INLINE packFixed(
         {
             case 1:
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index, 1);
-                    offset += 1;
+                copyDatum<1>(bytes + offset, column, index);
+                offset += 1;
                 }
                 break;
             case 2:
                 if constexpr (sizeof(T) >= 2)   /// To avoid warning about memcpy exceeding object size.
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<2>() + index * 2, 2);
+                    copyDatum<2>(bytes + offset, column, index);
                     offset += 2;
                 }
                 break;
             case 4:
                 if constexpr (sizeof(T) >= 4)
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<4>() + index * 4, 4);
+                    copyDatum<4>(bytes + offset, column, index);
                     offset += 4;
                 }
                 break;
             case 8:
                 if constexpr (sizeof(T) >= 8)
                 {
-                    memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<8>() + index * 8, 8);
+                    copyDatum<8>(bytes + offset, column, index);
                     offset += 8;
                 }
                 break;
             default:
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j], key_sizes[j]);
+                if (unlikely(column->isConst()))
+                {
+                    const auto & raw_data = static_cast<const ColumnConst *>(column)->getRawData();
+                    memcpy(bytes + offset, raw_data.data() + index * key_sizes[j], key_sizes[j]);
+                }
+                else
+                {
+                    memcpy(
+                        bytes + offset,
+                        static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<1>() + index * key_sizes[j],
+                        key_sizes[j]);
+                }
                 offset += key_sizes[j];
         }
     }
@@ -206,23 +248,35 @@ static inline T ALWAYS_INLINE packFixed(
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i, 1);
+                copyDatum<1>(bytes + offset, key_columns[j], i);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<2>() + i * 2, 2);
+                copyDatum<2>(bytes + offset, key_columns[j], i);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<4>() + i * 4, 4);
+                copyDatum<4>(bytes + offset, key_columns[j], i);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<8>() + i * 8, 8);
+                copyDatum<8>(bytes + offset, key_columns[j], i);
                 offset += 8;
                 break;
             default:
                 memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
+                if (unlikely(key_columns[j]->isConst()))
+                {
+                    const auto & raw_data = static_cast<const ColumnConst *>(key_columns[j])->getRawData();
+                    memcpy(bytes + offset, raw_data.data() + i * key_sizes[j], key_sizes[j]);
+                }
+                else
+                {
+                    memcpy(
+                        bytes + offset,
+                        static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j],
+                        key_sizes[j]);
+                }
                 offset += key_sizes[j];
         }
     }
