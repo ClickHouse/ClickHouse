@@ -24,8 +24,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/DeserializationPrefixesCache.h>
-
 
 namespace zkutil
 {
@@ -38,6 +36,7 @@ namespace DB
 
 class Block;
 struct ColumnSize;
+class DeserializationPrefixesCache;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
 class IReservation;

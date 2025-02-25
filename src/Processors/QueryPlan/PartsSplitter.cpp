@@ -27,6 +27,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 
+#include <boost/functional/hash.hpp>
+
 using namespace DB;
 
 namespace
