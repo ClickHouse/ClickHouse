@@ -1,11 +1,10 @@
 #pragma once
 
+#include <Interpreters/JoinInfo.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Interpreters/JoinInfo.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -60,7 +59,6 @@ public:
 
     bool hasPreparedJoinStorage() const;
     void setPreparedJoinStorage(PreparedJoinStorage storage);
-    void setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_);
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
     const JoinInfo & getJoinInfo() const { return join_info; }
@@ -73,9 +71,15 @@ public:
 
     JoinPtr convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical);
 
-    JoinExpressionActions & getExpressionActions() { return expression_actions; }
+    const JoinExpressionActions & getExpressionActions() const { return expression_actions; }
 
     const JoinSettings & getSettings() const { return join_settings; }
+
+    void setHashTableCacheKeys(UInt64 left_key_hash, UInt64 right_key_hash)
+    {
+        hash_table_key_hash_left = left_key_hash;
+        hash_table_key_hash_right = right_key_hash;
+    }
 
 protected:
     void updateOutputHeader() override;
@@ -89,7 +93,8 @@ protected:
     Names required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
-    IQueryTreeNode::HashState hash_table_key_hash;
+    std::optional<UInt64> hash_table_key_hash_left;
+    std::optional<UInt64> hash_table_key_hash_right;
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;

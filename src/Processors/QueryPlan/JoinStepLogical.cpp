@@ -28,6 +28,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
+
 namespace DB
 {
 
@@ -487,7 +488,6 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
     return concatConditionsWithFunction(all_conditions, expression_actions.post_join_actions, or_function);
 }
 
-void JoinStepLogical::setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_) { hash_table_key_hash = std::move(hash_table_key_hash_); }
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
 static Block blockWithColumns(ColumnsWithTypeAndName columns)
@@ -715,15 +715,11 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
     {
         table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
+        std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
     }
 
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join,
-        prepared_join_storage,
-        left_sample_block,
-        right_sample_block,
-        query_context,
-        hash_table_key_hash);
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, query_context, hash_table_key_hash_right.value_or(0));
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }
