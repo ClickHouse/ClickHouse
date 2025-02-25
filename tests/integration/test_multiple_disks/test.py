@@ -24,6 +24,7 @@ node1 = cluster.add_instance(
     stay_alive=True,
     tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 1},
+    with_remote_database_disk=False,
 )
 
 node2 = cluster.add_instance(
@@ -37,6 +38,7 @@ node2 = cluster.add_instance(
     stay_alive=True,
     tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 2},
+    with_remote_database_disk=False,
 )
 
 

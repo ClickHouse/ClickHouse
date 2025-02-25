@@ -12,6 +12,8 @@ def started_cluster():
             "disks_app_test",
             main_configs=["config.xml"],
             with_minio=True,
+            with_zookeeper=True,
+            with_remote_database_disk=False,
         )
         cluster.start()
 

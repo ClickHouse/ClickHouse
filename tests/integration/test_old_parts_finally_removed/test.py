@@ -9,7 +9,11 @@ import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1",
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
 
 
 @pytest.fixture(scope="module")

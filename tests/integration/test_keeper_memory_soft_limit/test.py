@@ -15,6 +15,7 @@ node = cluster.add_instance(
     "node",
     stay_alive=True,
     with_zookeeper=True,
+    with_remote_database_disk=False,
 )
 
 

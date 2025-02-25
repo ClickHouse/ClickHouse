@@ -21,6 +21,7 @@ node1 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    with_remote_database_disk=False,
 )
 
 node2 = cluster.add_instance(
@@ -28,6 +29,7 @@ node2 = cluster.add_instance(
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    with_remote_database_disk=False,
 )
 
 all_nodes = [node1, node2]

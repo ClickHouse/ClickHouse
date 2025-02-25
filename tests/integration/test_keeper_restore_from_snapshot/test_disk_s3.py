@@ -14,6 +14,7 @@ node1 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -24,6 +25,7 @@ node2 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",

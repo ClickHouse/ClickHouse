@@ -11,6 +11,7 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/remote_servers.xml", "configs/another_remote_servers.xml"],
     stay_alive=True,
+    with_remote_database_disk=False,
 )
 
 cluster_param = pytest.mark.parametrize(
