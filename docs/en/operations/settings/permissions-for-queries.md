@@ -18,7 +18,7 @@ Queries in ClickHouse can be divided into several types:
 
 The following settings regulate user permissions by the type of query:
 
-## readonly
+## readonly {#readonly}
 Restricts permissions for read data, write data, and change settings queries.
 
 When set to 1, allows:
