@@ -61,6 +61,7 @@ struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
 struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
+struct L2TransposedLabel { static constexpr auto name = "2"; static constexpr auto name_end = "Transposed";};
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
 
@@ -1198,7 +1199,8 @@ class FunctionLDistance : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name = std::string("L") + FuncLabel::name + "Distance";
+    static inline auto name =   std::string("L") + FuncLabel::name + "Distance" +
+                                (std::is_same_v<FuncLabel, L2TransposedLabel> ? "Transposed" : "");
 
     explicit FunctionLDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLDistance>(context_); }
@@ -1207,7 +1209,7 @@ public:
 
     size_t getNumberOfArguments() const override
     {
-        if constexpr (FuncLabel::name[0] == 'p')
+        if constexpr (FuncLabel::name[0] == 'p' || std::is_same_v<FuncLabel, L2TransposedLabel>)
             return 3;
         else
             return 2;
@@ -1262,6 +1264,8 @@ using FunctionL1Distance = FunctionLDistance<L1Label>;
 using FunctionL2Distance = FunctionLDistance<L2Label>;
 
 using FunctionL2SquaredDistance = FunctionLDistance<L2SquaredLabel>;
+
+using FunctionL2DistanceTransposed = FunctionLDistance<L2TransposedLabel>;
 
 using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 
@@ -1458,6 +1462,7 @@ extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
+extern FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
@@ -1534,6 +1539,14 @@ struct L2SquaredDistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
 };
 
+struct L2DistanceTransposedTraits
+{
+    static constexpr auto name = "L2DistanceTransposed";
+
+    static constexpr auto CreateTupleFunction = FunctionL2DistanceTransposed::create;
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2DistanceTransposed;
+};
+
 struct LpDistanceTraits
 {
     static constexpr auto name = "LpDistance";
@@ -1569,6 +1582,7 @@ using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
 using TupleOrArrayFunctionL2SquaredDistance = TupleOrArrayFunction<L2SquaredDistanceTraits>;
+using TupleOrArrayFunctionL2DistanceTransposed = TupleOrArrayFunction<L2DistanceTransposedTraits>;
 using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
 using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
@@ -1669,12 +1683,14 @@ If the types of the first interval (or the interval in the tuple) and the second
     factory.registerFunction<TupleOrArrayFunctionL1Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2Distance>();
     factory.registerFunction<TupleOrArrayFunctionL2SquaredDistance>();
+    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposed>();
     factory.registerFunction<TupleOrArrayFunctionLinfDistance>();
     factory.registerFunction<TupleOrArrayFunctionLpDistance>();
 
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("distanceL2Transposed", FunctionL2DistanceTransposed::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
 
