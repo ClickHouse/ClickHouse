@@ -1111,6 +1111,21 @@ void parseTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & loca
     parseTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
+void parseTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    parseTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr);
+}
+
+bool tryParseTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseTimeBestEffortImpl<bool, true>(res, in, local_time_zone, utc_time_zone, nullptr);
+}
+
+bool tryParseTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr);
+}
+
 void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     parseDateTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr);

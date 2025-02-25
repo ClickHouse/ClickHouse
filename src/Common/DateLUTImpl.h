@@ -1199,7 +1199,7 @@ public:
         return lut[index].date + time_offset;
     }
 
-    Time makeTime(UInt8 hour, UInt8 minute, UInt8 second) const
+    Time makeTime(uint64_t hour, UInt8 minute, UInt8 second) const
     {
         Time time_offset = hour * 3600 + minute * 60 + second;
 

@@ -154,7 +154,7 @@ public:
      * @param minute_ Minutes (0-59).
      * @param second_ Seconds (0-59).
      */
-    LocalTime(bool is_negative_, unsigned short hour_, unsigned char minute_, unsigned char second_) /// NOLINT
+    LocalTime(bool is_negative_, uint64_t hour_, unsigned char minute_, unsigned char second_) /// NOLINT
         : is_negative(is_negative_), m_hour(hour_), m_minute(minute_), m_second(second_)
     {
         std::memset(pad, 0, sizeof(pad));
@@ -198,13 +198,13 @@ public:
 
     // Accessor methods
     bool negative() const { return is_negative; }
-    unsigned short hour() const { return m_hour; } /// NOLINT
+    uint64_t hour() const { return m_hour; } /// NOLINT
     unsigned char minute() const { return m_minute; }
     unsigned char second() const { return m_second; }
 
     // Mutator methods
     void negative(bool b) { is_negative = b; }
-    void hour(unsigned short x) { m_hour = x; } /// NOLINT
+    void hour(uint64_t x) { m_hour = x; } /// NOLINT
     void minute(unsigned char x) { m_minute = x; }
     void second(unsigned char x) { m_second = x; }
 

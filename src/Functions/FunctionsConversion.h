@@ -229,7 +229,7 @@ struct ToTimeImpl
 
     static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
-        return time_zone.toTime(static_cast<Int64>(dt));
+        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int64>(dt))))));
     }
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
@@ -238,10 +238,10 @@ struct ToTimeImpl
             return static_cast<Int32>(time_zone.toTime(dt64));
         else
         {
-            if (dt64 >= MAX_TIME_TIMESTAMP) /// Add MIN_TIME_TIMESTAMP
+            if (dt64 > MAX_TIME_TIMESTAMP || dt64 < (-1 * MAX_TIME_TIMESTAMP)) /// Add MIN_TIME_TIMESTAMP
             {
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-                    return std::numeric_limits<Int32>::max();
+                    return MAX_TIME_TIMESTAMP;
                 else
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
             }
@@ -460,7 +460,7 @@ struct ToTimeTransform64
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from > MAX_TIME_TIMESTAMP) [[unlikely]]
+            if (from > MAX_TIME_TIMESTAMP || from < (-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
 
@@ -488,11 +488,13 @@ struct ToTimeTransform64Signed
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < 0 || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
-
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
+        if (from > 0)
+            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
+        else
+            return static_cast<ToType>(std::max(time_t(from), time_t(-1 * MAX_TIME_TIMESTAMP)));
     }
 };
 
@@ -621,13 +623,18 @@ struct ToTime64TransformUnsigned
         const auto converted = time_zone.toTime(from);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (converted > MAX_TIME_TIMESTAMP || converted < (-1 * MAX_TIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
             else
                 return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
         }
         else
-            return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_DATETIME64_TIMESTAMP), 0, scale_multiplier);
+        {
+            if (converted > 0)
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::min<time_t>(converted, MAX_TIME_TIMESTAMP), 0, scale_multiplier);
+            else
+                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(std::max<time_t>(converted, -1 * MAX_TIME_TIMESTAMP), 0, scale_multiplier);
+        }
     }
 };
 
@@ -651,11 +658,11 @@ struct ToTime64TransformSigned
         auto converted = time_zone.toTime(from * negative_mult) * negative_mult;
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (converted < MIN_DATETIME64_TIMESTAMP || converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (converted < (-1 * MAX_TIME_TIMESTAMP) || converted > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
-        converted = static_cast<FromType>(std::max<time_t>(converted, MIN_DATETIME64_TIMESTAMP));
-        converted = static_cast<FromType>(std::min<time_t>(converted, MAX_DATETIME64_TIMESTAMP));
+        converted = static_cast<FromType>(std::max<time_t>(converted, (-1 * MAX_TIME_TIMESTAMP)));
+        converted = static_cast<FromType>(std::min<time_t>(converted, MAX_TIME_TIMESTAMP));
 
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
     }
@@ -676,12 +683,12 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         } // need to reconsider this
 
-        from = std::max(from, static_cast<FromType>(MIN_DATETIME64_TIMESTAMP));
-        from = std::min(from, static_cast<FromType>(MAX_DATETIME64_TIMESTAMP));
+        from = std::max(from, static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP));
+        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -897,6 +904,8 @@ inline void convertFromTime<DataTypeTime>(DataTypeTime::FieldType & x, time_t & 
 {
     if (unlikely(time > MAX_TIME_TIMESTAMP))
         x = MAX_TIME_TIMESTAMP;
+    else if (unlikely(time < (-1 * MAX_TIME_TIMESTAMP)))
+        x = -1 * MAX_TIME_TIMESTAMP;
     else
         x = static_cast<Int32>(time);
 }
@@ -1296,6 +1305,18 @@ struct ConvertThroughParsing
                         parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
+                    }
                     else
                     {
                         time_t res;
@@ -1367,6 +1388,12 @@ struct ConvertThroughParsing
                         parsed = tryParseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parsed = tryParseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
+                    }
                     else
                     {
                         time_t res;
@@ -1376,11 +1403,23 @@ struct ConvertThroughParsing
                 }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
                 {
-                    if constexpr (to_datetime64 || to_time64)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
                         parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
+                    }
+                    if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parsed = tryParseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parsed = tryParseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i],res);
                     }
                     else
                     {
@@ -1391,10 +1430,16 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    if constexpr (to_datetime64 || to_time64)
+                    if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
                         parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
+                    }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 value = 0;
+                        parsed = tryReadTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)

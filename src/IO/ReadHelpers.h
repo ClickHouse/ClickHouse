@@ -1151,7 +1151,7 @@ inline ReturnType readTimeTextImpl(time_t & datetime, ReadBuffer & buf, const Da
 
     if (optimistic_path_for_date_time_input)
     {
-        UInt8 hour = 0;
+        uint64_t hour = 0;
         UInt8 minute = 0;
         UInt8 second = 0;
 

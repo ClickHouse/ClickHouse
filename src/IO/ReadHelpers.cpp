@@ -1660,7 +1660,7 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
                 return false;
         }
 
-        UInt8 hour = 0;
+        uint64_t hour = 0;
         UInt8 minute = 0;
         UInt8 second = 0;
 
