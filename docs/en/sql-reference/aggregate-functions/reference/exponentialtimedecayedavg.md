@@ -1,10 +1,10 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedAvg
+slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedAvg
 sidebar_position: 133
 title: exponentialTimeDecayedAvg
 ---
 
-## exponentialTimeDecayedAvg
+## exponentialTimeDecayedAvg {#exponentialtimedecayedavg}
 
 Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.
 

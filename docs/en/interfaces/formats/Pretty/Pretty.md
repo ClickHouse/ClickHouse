@@ -1,6 +1,6 @@
 ---
 title : Pretty
-slug : /en/interfaces/formats/Pretty
+slug: /interfaces/formats/Pretty
 keywords : [Pretty]
 input_format: false
 output_format: true
@@ -13,7 +13,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 |-------|---------|-------|
 | ✗     | ✔       |       |
 
-## Description
+## Description {#description}
 
 The `Pretty` format outputs data as Unicode-art tables, 
 using ANSI-escape sequences for displaying colors in the terminal.
@@ -21,9 +21,9 @@ A full grid of the table is drawn, and each row occupies two lines in the termin
 Each result block is output as a separate table. 
 This is necessary so that blocks can be output without buffering results (buffering would be necessary to pre-calculate the visible width of all the values).
 
-[NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[NULL](/docs/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Example (shown for the [`PrettyCompact`](./PrettyCompact.md) format):
 
@@ -92,7 +92,7 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 <PrettyFormatSettings/>
 

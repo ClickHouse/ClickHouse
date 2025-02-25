@@ -1,6 +1,6 @@
 ---
 title : Template
-slug : /en/interfaces/formats/Template
+slug: /interfaces/formats/Template
 keywords : [Template]
 input_format: true
 output_format: true
@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 For cases where you need more customization than other standard formats offer, 
 the `Template` format allows the user to specify their own custom format string with placeholders for values,
@@ -28,9 +28,9 @@ It uses the following settings:
 | `format_template_resultset_format`                                                                       | Specifies the result set format string [in-line](#inline_specification).                                                   |
 | Some settings of other formats (e.g.`output_format_json_quote_64bit_integers` when using `JSON` escaping |                                                                                                                            |
 
-## Settings And Escaping Rules
+## Settings And Escaping Rules {#settings-and-escaping-rules}
 
-### format_template_row
+### format_template_row {#format_template_row}
 
 The setting `format_template_row` specifies the path to the file which contains format strings for rows with the following syntax:
 
@@ -82,11 +82,11 @@ For example:
 Search phrase: 'bathroom interior design', count: 2166, ad price: $3;
 ```
 
-### format_template_rows_between_delimiter
+### format_template_rows_between_delimiter {#format_template_rows_between_delimiter}
 
 The setting `format_template_rows_between_delimiter` setting specifies the delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
-### format_template_resultset
+### format_template_resultset {#format_template_resultset}
 
 The setting `format_template_resultset` specifies the path to the file, which contains a format string for the result set. 
 
@@ -126,11 +126,11 @@ The rules for format strings and escape sequences are the same as those for:
 - [`format_template_resultset`](#format_template_resultset) when using `format_template_resultset_format`.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Let's look at two examples of how we can use the `Template` format, first for selecting data and then for inserting data.
 
-### Selecting Data
+### Selecting Data {#selecting-data}
 
 ``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
@@ -179,7 +179,7 @@ Result:
 </html>
 ```
 
-### Inserting Data
+### Inserting Data {#inserting-data}
 
 ``` text
 Some header
@@ -205,7 +205,7 @@ Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Du
 `PageViews`, `UserID`, `Duration` and `Sign` inside placeholders are names of columns in the table. Values after `Useless field` in rows and after `\nTotal rows:` in suffix will be ignored.
 All delimiters in the input data must be strictly equal to delimiters in specified format strings.
 
-### In-line Specification
+### In-line Specification {#in-line-specification}
 
 Tired of manually formatting markdown tables? In this example we'll look at how we can use the `Template` format and in-line specification settings to achieve a simple task - `SELECT`ing the names of some ClickHouse formats from the `system.formats` table and formatting them as a markdown table. This can be easily achieved using the `Template` format and settings `format_template_row_format` and `format_template_resultset_format`.
 
