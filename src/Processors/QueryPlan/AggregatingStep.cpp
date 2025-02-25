@@ -27,6 +27,7 @@
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include "Processors/QueryPlan/scatterDataByKeys.h"
 
 namespace DB
 {
@@ -496,71 +497,44 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     size_t streams = pipeline.getNumStreams();
     if (streams > 1)
     {
-        bool use_sharding = group_by_use_sharding && transform_params->params.keys_size > 0;
+        bool use_sharding = group_by_use_sharding && transform_params->params.keys_size > 0 && merge_threads > 1;
         if (use_sharding)
         {
-            if (merge_threads > 1)
-            {
-                const auto & stream_header = pipeline.getHeader();
+            const auto & stream_header = pipeline.getHeader();
 
-                ColumnNumbers key_columns;
-                key_columns.reserve(transform_params->params.keys_size);
-                for (const auto & key : transform_params->params.keys)
-                    key_columns.push_back(stream_header.getPositionByName(key));
+            ColumnNumbers key_columns;
+            key_columns.reserve(transform_params->params.keys_size);
+            for (const auto & key : transform_params->params.keys)
+                key_columns.push_back(stream_header.getPositionByName(key));
 
-                pipeline.transform([&](OutputPortRawPtrs ports)
-                {
-                    Processors processors;
-                    for (auto * port : ports)
-                    {
-                        auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, merge_threads, key_columns);
-                        connect(*port, scatter->getInputs().front());
-                        processors.push_back(scatter);
-                    }
-                    return processors;
-                });
+            scatterDataByKeysIfNeeded(pipeline, key_columns, merge_threads, streams);
 
-                pipeline.transform([&](OutputPortRawPtrs ports)
-                {
-                    Processors processors;
-                    for (size_t i = 0; i < merge_threads; ++i)
-                    {
-                        size_t output_it = i;
-                        auto resize = std::make_shared<ResizeProcessor>(stream_header, streams, 1);
-                        auto & inputs = resize->getInputs();
-
-                        for (auto input_it = inputs.begin(); input_it != inputs.end(); output_it += merge_threads, ++input_it)
-                            connect(*ports[output_it], *input_it);
-                        processors.push_back(resize);
-                    }
-                    return processors;
-                });
-            }
-            else
-                pipeline.resize(1);
+            pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
         }
+        else
+        {
+            /// Add resize transform to uniformly distribute data between aggregating streams.
+            /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
+            if (!storage_has_evenly_distributed_read && !skip_merging && !use_sharding)
+                pipeline.resize(pipeline.getNumStreams(), true, true);
 
-        /// Add resize transform to uniformly distribute data between aggregating streams.
-        /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
-        if (!storage_has_evenly_distributed_read && !skip_merging && !use_sharding)
-            pipeline.resize(pipeline.getNumStreams(), true, true);
+            auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
-        auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
-
-        size_t counter = 0;
-        pipeline.addSimpleTransform(
-            [&](const Block & header)
-            {
-                return std::make_shared<AggregatingTransform>(
-                    header,
-                    transform_params,
-                    many_data,
-                    counter++,
-                    new_merge_threads,
-                    new_temporary_data_merge_threads,
-                    should_produce_results_in_order_of_bucket_number,
-                    skip_merging || use_sharding);
-            });
+            size_t counter = 0;
+            pipeline.addSimpleTransform(
+                [&](const Block & header)
+                {
+                    return std::make_shared<AggregatingTransform>(
+                        header,
+                        transform_params,
+                        many_data,
+                        counter++,
+                        new_merge_threads,
+                        new_temporary_data_merge_threads,
+                        should_produce_results_in_order_of_bucket_number,
+                        skip_merging || use_sharding);
+                });
+        }
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
 
