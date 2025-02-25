@@ -17,11 +17,10 @@ namespace DB
 
 struct Settings;
 
-/// Does AST contain non-deterministic functions like rand() and now()?
-bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context);
-
-/// Does AST contain system tables like "system.processes"?
-bool astContainsSystemTables(ASTPtr ast, ContextPtr context);
+/// Checks that query cache can be used for query.
+/// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
+/// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
+bool checkCanWriteQueryCache(ASTPtr ast, ContextPtr context);
 
 class QueryCacheWriter;
 class QueryCacheReader;
@@ -60,7 +59,7 @@ public:
         /// The id and current roles of the user who executed the query.
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
         /// the same roles. Example attack scenarios:
-        /// - after DROP USER, it must not be possible to create a new user with with the dropped user name and access the dropped user's
+        /// - after DROP USER, it must not be possible to create a new user with the dropped user name and access the dropped user's
         ///   query cache entries
         /// - different roles of the same user may be tied to different row-level policies. It must not be possible to switch role and
         ///   access another role's cache entries
@@ -92,6 +91,9 @@ public:
         /// compute the tag from the query AST.
         const String tag;
 
+        /// Is it subquery entry? Displayed in SYSTEM.QUERY_CACHE.
+        const bool is_subquery;
+
         /// Ctor to construct a Key for writing into query cache.
         Key(ASTPtr ast_,
             const String & current_database,
@@ -101,14 +103,16 @@ public:
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
-            bool is_compressed);
+            bool is_compressed,
+            bool is_subquery_);
 
         /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
             const String & query_id_,
-            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_);
+            std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
+            bool is_subquery_);
 
         bool operator==(const Key & other) const;
     };
@@ -221,7 +225,7 @@ private:
     const size_t max_block_size;
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryCache::Entry>();
     std::atomic<bool> skip_insert = false;
-    bool was_finalized = false;
+    std::atomic<bool> was_finalized = false;
     LoggerPtr logger = getLogger("QueryCache");
 
     QueryCacheWriter(
