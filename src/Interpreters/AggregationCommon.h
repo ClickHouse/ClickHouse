@@ -67,7 +67,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
 
             /// Note: here we violate strict aliasing.
             /// It should be ok as long as we do not refer to any value from `out` before filling.
-            const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
+            const char * source = assert_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
             offset += sizeof(T);
