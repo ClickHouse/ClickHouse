@@ -23,7 +23,7 @@ from kafka.protocol.admin import DescribeGroupsRequest_v1
 from kafka.protocol.group import MemberAssignment
 
 from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.cluster import ClickHouseCluster, is_arm, ScopedContainerPause
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV, assert_eq_with_retry
 
@@ -459,9 +459,8 @@ def test_kafka_consumer_hang(kafka_cluster):
     # This should trigger heartbeat fail,
     # which will trigger REBALANCE_IN_PROGRESS,
     # and which can lead to consumer hang.
-    kafka_cluster.pause_container("kafka1")
-    instance.wait_for_log_line("heartbeat error")
-    kafka_cluster.unpause_container("kafka1")
+    with ScopedContainerPause(kafka_cluster, "kafka1"):
+        instance.wait_for_log_line("heartbeat error")
 
     # logging.debug("Attempt to drop")
     instance.query("DROP TABLE test.kafka")
