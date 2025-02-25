@@ -109,9 +109,8 @@ public:
     explicit CompressionCodecGorilla(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
-
     void updateHash(SipHash & hash) const override;
-
+    void validate(const IDataType * column_type) const override;
 protected:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -338,23 +337,36 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest,
     }
 }
 
-UInt8 getDataBytesSize(const IDataType * column_type)
+
+void validateImpl(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Codec Gorilla is not applicable for {} because the data type is not of fixed size",
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();
-    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-        return static_cast<UInt8>(max_size);
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+    const bool size_is_good = (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8);
+    if (!size_is_good)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Codec Gorilla is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
+}
+
+UInt8 getDataBytesSize(const IDataType * column_type)
+{
+    validateImpl(column_type);
+    return column_type->getSizeOfValueInMemory();
 }
 
 }
 
+void CompressionCodecGorilla::validate(const IDataType * column_type) const
+{
+    validateImpl(column_type);
+}
 
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)

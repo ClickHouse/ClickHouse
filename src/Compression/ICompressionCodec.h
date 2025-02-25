@@ -19,6 +19,8 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
+class IDataType;
+
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
 */
@@ -126,6 +128,10 @@ public:
 
     /// If it does nothing.
     virtual bool isNone() const { return false; }
+
+    /// This method checks whether a codec can be applied to a given type.
+    /// It is existential and cannot be avoided.
+    virtual void validate(const IDataType *) const {}
 
 protected:
     /// This is used for fuzz testing

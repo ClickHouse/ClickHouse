@@ -18,7 +18,7 @@ public:
     uint8_t getMethodByte() const override;
 
     void updateHash(SipHash & hash) const override;
-
+    void validate(const IDataType * column_type) const override;
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
@@ -171,21 +171,34 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 namespace
 {
 
-UInt8 getDeltaBytesSize(const IDataType * column_type)
+void validateImpl(const IDataType * column_type)
 {
     if (!column_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Codec Delta is not applicable for {} because the data type is not of fixed size",
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Codec Delta is not applicable for {} because the data type is not of fixed size",
             column_type->getName());
 
     size_t max_size = column_type->getSizeOfValueInMemory();
-    if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
-        return static_cast<UInt8>(max_size);
-    throw Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
-        column_type->getName());
+    const bool size_is_good = (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8);
+    if (!size_is_good)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Codec Delta is only applicable for data types of size 1, 2, 4, 8 bytes. Given type {}",
+            column_type->getName());
 }
 
+UInt8 getDataBytesSize(const IDataType * column_type)
+{
+    validateImpl(column_type);
+    return column_type->getSizeOfValueInMemory();
+}
+
+}
+
+void CompressionCodecDelta::validate(const IDataType * column_type) const
+{
+    validateImpl(column_type);
 }
 
 void registerCodecDelta(CompressionCodecFactory & factory)
@@ -213,7 +226,7 @@ void registerCodecDelta(CompressionCodecFactory & factory)
         }
         else if (column_type)
         {
-            delta_bytes_size = getDeltaBytesSize(column_type);
+            delta_bytes_size = getDataBytesSize(column_type);
         }
 
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);

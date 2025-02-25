@@ -189,6 +189,11 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
             if (result_codec->isEncryption())
                 encryption_codecs_pos.insert(i);
+
+            /// This type of check cannot be avoided and usually checks
+            /// the applicability of a codec to a given type.
+            if (column_type)
+                result_codec->validate(column_type.get());
         }
 
         String codec_description = queryToString(codecs_descriptions);
