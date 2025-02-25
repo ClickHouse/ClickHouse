@@ -1,6 +1,6 @@
 from praktika import Job
 
-from ci.workflows.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
+from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 
 class JobConfigs:
