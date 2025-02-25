@@ -83,7 +83,7 @@ generates merged configuration file:
 </clickhouse>
 ```
 
-### Substitution by Environment Variables and ZooKeeper Nodes
+### Substitution by Environment Variables and ZooKeeper Nodes {#from_env_zk}
 
 To specify that a value of an element should be replaced by the value of an environment variable, you can use attribute `from_env`.
 
@@ -214,6 +214,72 @@ Example:
         <user>admin</user>
         <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
     </interserver_http_credentials>
+
+</clickhouse>
+```
+
+The attributes [from_env](#from_env_zk) and [from_zk](#from_env_zk) can also be applied to ```encryption_codecs```:
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+Encryption keys and encrypted values can be defined in either config file.
+
+Example `config.xml`:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+</clickhouse>
+```
+
+Example `users.xml`:
+
+```xml
+<clickhouse>
+
+    <users>
+        <test_user>
+            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
+            <profile>default</profile>
+        </test_user>
+    </users>
 
 </clickhouse>
 ```

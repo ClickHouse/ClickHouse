@@ -116,6 +116,7 @@
 #include <azure/core/http/http.hpp>
 #endif
 
+
 template <>
 struct fmt::formatter<DB::DataPartPtr> : fmt::formatter<std::string>
 {
@@ -1509,7 +1510,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
     }
     catch (...)
     {
-        LOG_DEBUG(log, "Failed to load unexcepted data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
+        LOG_DEBUG(log, "Failed to load unexpected data part {} with exception: {}", part_name, getExceptionMessage(std::current_exception(), false));
         if (!state.part)
         {
             /// Build a fake part and mark it as broken in case of filesystem error.
@@ -1522,7 +1523,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
         }
 
         state.is_broken = true;
-        tryLogCurrentException(log, fmt::format("while loading unexcepted part {} on path {}", part_name, part_path));
+        tryLogCurrentException(log, fmt::format("while loading unexpected part {} on path {}", part_name, part_path));
     }
 }
 
@@ -1832,7 +1833,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     /// Only check if user did touch storage configuration for this table.
     if (!getStoragePolicy()->isDefaultPolicy() && !skip_sanity_checks)
     {
-        /// Check extra parts at different disks, in order to not allow to miss data parts at undefined disks.
+        /// Check extra parts on different disks, in order to not allow to miss data parts at undefined disks.
         std::unordered_set<String> defined_disk_names;
 
         for (const auto & disk_ptr : disks)
@@ -2074,7 +2075,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     resetObjectColumnsFromActiveParts(part_lock);
     resetSerializationHints(part_lock);
-    are_columns_and_secondary_inices_sizes_calculated = false;
+    are_columns_and_secondary_indices_sizes_calculated = false;
     if (!(*settings)[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
         calculateColumnAndSecondaryIndexSizesIfNeeded();
 
@@ -2744,7 +2745,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 || force
                 || (part->version.creation_csn == Tx::RolledBackCSN && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
             {
-                if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLBACKED)
+                if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLED_BACK)
                     part->removal_state.store(DataPartRemovalState::REMOVE_RETRY, std::memory_order_relaxed);
                 else
                     part->removal_state.store(DataPartRemovalState::REMOVE, std::memory_order_relaxed);
@@ -2785,7 +2786,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
         /// We should modify it under data_parts_mutex
         part->assertState({DataPartState::Deleting});
         modifyPartState(part, DataPartState::Outdated);
-        part->removal_state.store(DataPartRemovalState::REMOVE_ROLLBACKED, std::memory_order_relaxed);
+        part->removal_state.store(DataPartRemovalState::REMOVE_ROLLED_BACK, std::memory_order_relaxed);
     }
 }
 
@@ -5269,8 +5270,8 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part, C
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
 {
-    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
-    if (are_columns_and_secondary_inices_sizes_calculated)
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     column_sizes.clear();
@@ -5280,14 +5281,14 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesIfNeeded() const
     for (const auto & part : committed_parts_range)
         addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 
-    are_columns_and_secondary_inices_sizes_calculated = true;
+    are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
-    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
-    if (!are_columns_and_secondary_inices_sizes_calculated)
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
@@ -5315,8 +5316,8 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
-    std::unique_lock lock(columns_and_secondary_inices_sizes_mutex);
-    if (!are_columns_and_secondary_inices_sizes_calculated)
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
     for (const auto & column : part->getColumns())
@@ -6178,9 +6179,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
 
         if (!retryable || (try_no + 1 == loading_parts_max_tries))
         {
-            if (Exception * e = exception_cast<Exception *>(error))
-                e->addMessage("while restoring part {} of table {}", part_name, getStorageID());
-            std::rethrow_exception(error);
+            try
+            {
+                std::rethrow_exception(error);
+            }
+            catch (...)
+            {
+                if (Exception * e = current_exception_cast<Exception *>())
+                    e->addMessage("while restoring part {} of table {}", part_name, getStorageID());
+                throw;
+            }
         }
 
         tryLogException(error, log,
@@ -9099,7 +9107,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         /// The path has to be unique, all tmp directories are deleted at startup in case of stale files from previous runs.
         /// New part have to capture its name, therefore there is no concurrentcy in directory creation
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "New empty part is about to matirialize but the dirrectory already exist"
+                        "New empty part is about to matirialize but the directory already exist"
                         ", new part {}"
                         ", directory {}",
                         new_part_name, new_data_part_storage->getFullPath());
