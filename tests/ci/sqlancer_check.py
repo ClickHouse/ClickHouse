@@ -114,14 +114,14 @@ def main():
 
     if not test_results:
         test_results = [TestResult(name=__file__, status=status)]
-
+    paths.sort()
     JobReport(
         description=description,
         test_results=test_results,
         status=status,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=paths.sort(),
+        additional_files=paths,
     ).dump()
 
 
