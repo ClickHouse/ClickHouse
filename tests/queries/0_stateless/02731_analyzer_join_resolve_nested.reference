@@ -93,7 +93,7 @@
 0	UInt32
 (((1,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
 (((2,'s'),'s'),'s')	s	Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
-(((0,''),''),'')		Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
+(((3,'s'),'s'),'s')		Tuple(\n    t Tuple(\n        t Tuple(\n            t UInt32,\n            s String),\n        s String),\n    s String)	String
 ((1,'s'),'s')	s	Tuple(Tuple(Int64, String), String)	String
 ((2,'s'),'s')	s	Tuple(Tuple(Int64, String), String)	String
 ((3,'s'),'s')	s	Tuple(Tuple(Int64, String), String)	String
