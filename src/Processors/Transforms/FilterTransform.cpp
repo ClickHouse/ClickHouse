@@ -130,7 +130,8 @@ void FilterTransform::doTransform(Chunk & chunk)
         ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows_before_filtration);
 
         size_t num_bytes_before_filtration = 0;
-        for (const auto & column : columns) {
+        for (const auto & column : columns)
+        {
             if (column)
                 num_bytes_before_filtration += column->byteSize();
         }
@@ -203,7 +204,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_filtered_rows);
     size_t num_filtered_bytes = 0;
-    for (const auto & column : columns) {
+    for (const auto & column : columns)
+    {
         if (column)
             num_filtered_bytes += column->byteSize();
     }
