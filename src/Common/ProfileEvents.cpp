@@ -953,8 +953,8 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
-    M(WhereFilterPassedRows, "Number of rows that passed the WHERE filter in the query", ValueType::Number) \
-    M(WhereFilterPassedBytes, "Number of bytes that passed the WHERE filter in the query", ValueType::Number) \
+    M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
+    M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
 
 
 

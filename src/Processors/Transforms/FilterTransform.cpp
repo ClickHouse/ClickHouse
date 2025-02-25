@@ -9,8 +9,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event WhereFilterPassedRows;
-    extern const Event WhereFilterPassedBytes;
+    extern const Event FilterTransformPassedRows;
+    extern const Event FilterTransformPassedBytes;
 }
 
 namespace DB
@@ -127,6 +127,15 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
+        ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows_before_filtration);
+
+        size_t num_bytes_before_filtration = 0;
+        for (const auto & column: columns) {
+            if (column)
+                num_bytes_before_filtration += column->byteSize();
+        }
+        ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes_before_filtration);
+
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -143,7 +152,11 @@ void FilterTransform::doTransform(Chunk & chunk)
     constant_filter_description = ConstantFilterDescription(*filter_column);
 
     if (constant_filter_description.always_false)
+    {
+        ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, 0);
+        ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, 0);
         return; /// Will finish at next prepare call
+    }
 
     if (constant_filter_description.always_true)
     {
@@ -188,13 +201,13 @@ void FilterTransform::doTransform(Chunk & chunk)
     else
         num_filtered_rows = filter_description->countBytesInFilter();
 
-    ProfileEvents::increment(ProfileEvents::WhereFilterPassedRows, num_filtered_rows);
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_filtered_rows);
     size_t num_filtered_bytes = 0;
     for (const auto & column: columns) {
         if (column)
             num_filtered_bytes += column->byteSize();
     }
-    ProfileEvents::increment(ProfileEvents::WhereFilterPassedBytes, num_filtered_bytes);
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_filtered_bytes);
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
