@@ -1608,6 +1608,9 @@ try
     DateLUT::serverTimezoneInstance();
     LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", getDateLUTTimeZone(DateLUT::serverTimezoneInstance()));
 
+    if (config().has("macros"))
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
+
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings[ServerSetting::tmp_policy].value.empty())
     {
@@ -1701,9 +1704,6 @@ try
 
     LOG_DEBUG(log, "Initializing interserver credentials.");
     global_context->updateInterserverCredentials(config());
-
-    if (config().has("macros"))
-        global_context->setMacros(std::make_unique<Macros>(config(), "macros", log));
 
     /// Set up caches.
 
