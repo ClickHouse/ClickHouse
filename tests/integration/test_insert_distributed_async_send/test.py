@@ -17,12 +17,14 @@ n1 = cluster.add_instance(
     "n1",
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/users.d/batch.xml"],
+    with_remote_database_disk=False,
 )
 # n2 -- distributed_background_insert_batch=0
 n2 = cluster.add_instance(
     "n2",
     main_configs=["configs/remote_servers.xml"],
     user_configs=["configs/users.d/no_batch.xml"],
+    with_remote_database_disk=False,
 )
 
 # n3 -- distributed_background_insert_batch=1/distributed_background_insert_split_batch_on_failure=1
@@ -33,6 +35,7 @@ n3 = cluster.add_instance(
         "configs/users.d/batch.xml",
         "configs/users.d/split.xml",
     ],
+    with_remote_database_disk=False,
 )
 # n4 -- distributed_background_insert_batch=0/distributed_background_insert_split_batch_on_failure=1
 n4 = cluster.add_instance(
@@ -42,6 +45,7 @@ n4 = cluster.add_instance(
         "configs/users.d/no_batch.xml",
         "configs/users.d/split.xml",
     ],
+    with_remote_database_disk=False,
 )
 
 batch_params = pytest.mark.parametrize(

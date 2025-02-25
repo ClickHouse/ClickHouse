@@ -9,16 +9,19 @@ node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/enable_keeper1.xml", "configs/local_storage_path.xml"],
     stay_alive=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/enable_keeper2.xml", "configs/local_storage_path.xml"],
     stay_alive=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/enable_keeper3.xml", "configs/local_storage_path.xml"],
     stay_alive=True,
+    with_remote_database_disk=False,
 )
 
 

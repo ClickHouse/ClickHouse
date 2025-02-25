@@ -60,6 +60,7 @@ def cluster():
             with_azurite=True,
             stay_alive=True,
             main_configs=["configs/disable_async_loader.xml"],
+            with_remote_database_disk=False,
         )
         cluster.start()
 

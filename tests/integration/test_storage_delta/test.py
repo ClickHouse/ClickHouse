@@ -81,6 +81,7 @@ def started_cluster():
             with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
+            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node2",
@@ -92,6 +93,7 @@ def started_cluster():
             with_minio=True,
             stay_alive=True,
             with_zookeeper=True,
+            with_remote_database_disk=False,
         )
 
         logging.info("Starting cluster...")

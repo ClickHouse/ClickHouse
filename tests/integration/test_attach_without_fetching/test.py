@@ -23,9 +23,21 @@ def fill_node(node):
 
 cluster = ClickHouseCluster(__file__)
 
-node_1 = cluster.add_instance("replica1", with_zookeeper=True)
-node_2 = cluster.add_instance("replica2", with_zookeeper=True)
-node_3 = cluster.add_instance("replica3", with_zookeeper=True)
+node_1 = cluster.add_instance(
+    "replica1",
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
+node_2 = cluster.add_instance(
+    "replica2",
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
+node_3 = cluster.add_instance(
+    "replica3",
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
 
 
 @pytest.fixture(scope="module")

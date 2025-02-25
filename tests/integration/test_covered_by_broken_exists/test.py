@@ -7,8 +7,12 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", stay_alive=True, with_zookeeper=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1", stay_alive=True, with_zookeeper=True, with_remote_database_disk=False
+)
+node2 = cluster.add_instance(
+    "node2", with_zookeeper=True, with_remote_database_disk=False
+)
 
 instance = node1
 q = node1.query
