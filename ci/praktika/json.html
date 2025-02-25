@@ -404,7 +404,7 @@
             options.forEach(optionValue => {
                 const option = document.createElement('option');
                 option.value = optionValue;
-                option.textContent = optionValue.slice(0, 10);
+                option.textContent = optionValue;
 
                 // Set the initially selected option
                 if (optionValue === value) {
@@ -1011,8 +1011,11 @@
         if (PR > 0) {
             addKeyValueToStatus("PR", PR, null, runtimeCache.prLink);
         }
-        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
-        addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
+        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
+        const commitOptions = runtimeCache.commits
+            .map(({ sha, message }) => message ? `${sha.substring(0, 8)}: ${message}` : sha.substring(0, 8))
+            .filter(Boolean);
+        addKeyValueToStatus("sha", sha || "latest", commitOptions);
         addKeyValueToStatus("", current_sha);
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
@@ -1046,12 +1049,12 @@
                 `${baseUrl}/${suffix}/commits.json`,
             );
             if (updated) {
-                runtimeCache.commits = data ? data.map(item => item.sha) : [];
+                runtimeCache.commits = data ? data : [];
                 hasNewData = true;
             }
         }
 
-        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1] : sha;
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1].sha : sha;
         if (nameParams.length > 1) {
             const task = normalizeTaskName(nameParams[1]);
             const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
