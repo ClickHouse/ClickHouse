@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/array_concat_agg
+slug: /sql-reference/aggregate-functions/reference/grouparrayarray
 sidebar_position: 111
 title: "groupArrayArray"
 description: "Aggregates arrays into a larger array of those arrays."
