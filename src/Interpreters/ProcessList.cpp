@@ -28,6 +28,7 @@ namespace Setting
     extern const SettingsUInt64 max_concurrent_queries_for_all_users;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsSeconds max_execution_time;
+    extern const SettingsSeconds low_priority_query_waiting_time;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_memory_usage_for_user;
     extern const SettingsUInt64 max_network_bandwidth_for_all_users;
