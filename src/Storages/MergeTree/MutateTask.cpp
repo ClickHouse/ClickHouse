@@ -78,6 +78,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
 }
 
 namespace ErrorCodes
@@ -211,8 +212,12 @@ static void splitAndModifyMutationCommands(
                     if (command.type == MutationCommand::Type::DROP_COLUMN)
                         dropped_columns.emplace(command.column_name);
                 }
+                else if (command.type == MutationCommand::READ_COLUMN)
+                {
+                    for_interpreter.push_back(command);
+                    mutated_columns.emplace(command.column_name);
+                }
             }
-
         }
 
         /// We don't add renames from commands, instead we take them from rename_map.
@@ -1017,7 +1022,8 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(new_data_part->checksums.getTotalSizeOnDisk());
     new_data_part->setBytesUncompressedOnDisk(new_data_part->checksums.getTotalSizeUncompressedOnDisk());
     /// Also use information from checksums
-    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    if (!(*new_data_part->storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
+        new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
 }

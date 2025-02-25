@@ -546,7 +546,6 @@ public:
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
-
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
@@ -685,6 +684,7 @@ public:
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
+
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {
@@ -884,6 +884,7 @@ public:
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
@@ -891,6 +892,7 @@ public:
     ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
 
@@ -901,6 +903,7 @@ public:
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
 
@@ -1197,11 +1200,21 @@ protected:
     /// under lockForShare if rename is possible.
     String relative_data_path;
 
+private:
+    /// Columns and secondary indices sizes can be calculated lazily.
+    mutable std::mutex columns_and_secondary_indices_sizes_mutex;
+    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
-    ColumnSizeByName column_sizes;
-
+    mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
-    IndexSizeByName secondary_index_sizes;
+    mutable IndexSizeByName secondary_index_sizes;
+
+protected:
+    void resetColumnSizes()
+    {
+        column_sizes.clear();
+        are_columns_and_secondary_indices_sizes_calculated = false;
+    }
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -1373,11 +1386,12 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesImpl();
+    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
-    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
-    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
+    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
+    void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
+    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
@@ -1463,7 +1477,6 @@ protected:
                             , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
             {}
 
-
             size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
@@ -1498,19 +1511,19 @@ protected:
 
         void resetMutationFailures()
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             failed_mutation_parts.clear();
         }
 
         void removePartFromFailed(const String & part_name)
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             failed_mutation_parts.erase(part_name);
         }
 
         void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             auto part_info_it = failed_mutation_parts.find(part_name);
             if (part_info_it == failed_mutation_parts.end())
             {
@@ -1523,8 +1536,7 @@ protected:
 
         bool partCanBeMutated(const String& part_name)
         {
-
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             auto iter = failed_mutation_parts.find(part_name);
             if (iter == failed_mutation_parts.end())
                 return true;
@@ -1576,11 +1588,11 @@ protected:
      *  This tree provides the order of loading of parts.
      *
      *  We start to traverse tree from the top level and load parts
-     *  corresposponded to nodes. If part is loaded successfully then
+     *  corresponding to nodes. If part is loaded successfully then
      *  we stop traversal at this node. Otherwise part is broken and we
      *  traverse its children and try to load covered parts which will
      *  replace broken covering part. Unloaded nodes represent outdated parts
-     *  nd they are pushed to background task and loaded asynchronoulsy.
+     *  and they are pushed to background task and loaded asynchronously.
      */
     class PartLoadingTree
     {

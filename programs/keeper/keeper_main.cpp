@@ -13,6 +13,7 @@
 #include "config_tools.h"
 
 #include <Common/EnvironmentChecks.h>
+#include <Common/Exception.h>
 #include <Common/Coverage.h>
 
 #include <Common/StringUtils.h>

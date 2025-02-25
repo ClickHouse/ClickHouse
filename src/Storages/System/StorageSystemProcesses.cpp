@@ -13,6 +13,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 
 namespace DB
 {
@@ -94,13 +96,13 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
 
         res_columns[i++]->insert(process.client_info.current_user);
         res_columns[i++]->insert(process.client_info.current_query_id);
-        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.current_address.host()).data(), 16);
-        res_columns[i++]->insert(process.client_info.current_address.port());
+        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.current_address->host()).data(), 16);
+        res_columns[i++]->insert(process.client_info.current_address->port());
 
         res_columns[i++]->insert(process.client_info.initial_user);
         res_columns[i++]->insert(process.client_info.initial_query_id);
-        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address.host()).data(), 16);
-        res_columns[i++]->insert(process.client_info.initial_address.port());
+        res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address->host()).data(), 16);
+        res_columns[i++]->insert(process.client_info.initial_address->port());
 
         res_columns[i++]->insert(UInt64(process.client_info.interface));
 

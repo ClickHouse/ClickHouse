@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupbitmapand
+slug: /sql-reference/aggregate-functions/reference/groupbitmapand
 sidebar_position: 149
 title: groupBitmapAnd
 ---

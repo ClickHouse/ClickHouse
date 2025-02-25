@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/third-party/integrations
+slug: /interfaces/third-party/integrations
 sidebar_position: 27
 sidebar_label: Integrations
 ---

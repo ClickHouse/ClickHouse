@@ -1,6 +1,6 @@
 ---
 description: "Ingest and query Tab Separated Value data in 5 steps"
-slug: /en/getting-started/example-datasets/nypd_complaint_data
+slug: /getting-started/example-datasets/nypd_complaint_data
 sidebar_label: NYPD Complaint Data
 title: "NYPD Complaint Data"
 ---
@@ -19,12 +19,12 @@ The dataset used in this guide comes from the NYC Open Data team, and contains d
 **Source**: [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
 **Terms of use**: https://www1.nyc.gov/home/terms-of-use.page
 
-## Prerequisites
+## Prerequisites {#prerequisites}
 - Download the dataset by visiting the [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) page, clicking the Export button, and choosing **TSV for Excel**.
 - Install [ClickHouse server and client](../../getting-started/install.md).
 - [Launch](../../getting-started/install.md#launch) ClickHouse server, and connect with `clickhouse-client`
 
-### A note about the commands described in this guide
+### A note about the commands described in this guide {#a-note-about-the-commands-described-in-this-guide}
 There are two types of commands in this guide:
 - Some of the commands are querying the TSV files, these are run at the command prompt.
 - The rest of the commands are querying ClickHouse, and these are run in the `clickhouse-client` or Play UI.
@@ -33,11 +33,11 @@ There are two types of commands in this guide:
 The examples in this guide assume that you have saved the TSV file to `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`, please adjust the commands if needed.
 :::
 
-## Familiarize yourself with the TSV file
+## Familiarize yourself with the TSV file {#familiarize-yourself-with-the-tsv-file}
 
 Before starting to work with the ClickHouse database familiarize yourself with the data.
 
-### Look at the fields in the source TSV file
+### Look at the fields in the source TSV file {#look-at-the-fields-in-the-source-tsv-file}
 
 This is an example of a command to query a TSV file, but don't run it yet.
 ```sh
@@ -55,7 +55,7 @@ CMPLNT_FR_TM                Nullable(String)
 ```
 
 :::tip
-Most of the time the above command will let you know which fields in the input data are numeric, and which are strings, and which are tuples.  This is not always the case.  Because ClickHouse is routineley used with datasets containing billions of records there is a default number (100) of rows examined to [infer the schema](/en/integrations/data-formats/json/inference) in order to avoid parsing billions of rows to infer the schema. The response below may not match what you see, as the dataset is updated several times each year. Looking at the Data Dictionary you can see that CMPLNT_NUM is specified as text, and not numeric.  By overriding the default of 100 rows for inference with the setting `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
+Most of the time the above command will let you know which fields in the input data are numeric, and which are strings, and which are tuples.  This is not always the case.  Because ClickHouse is routineley used with datasets containing billions of records there is a default number (100) of rows examined to [infer the schema](/integrations/data-formats/json/inference) in order to avoid parsing billions of rows to infer the schema. The response below may not match what you see, as the dataset is updated several times each year. Looking at the Data Dictionary you can see that CMPLNT_NUM is specified as text, and not numeric.  By overriding the default of 100 rows for inference with the setting `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000`
 you can get a better idea of the content.
 
 Note: as of version 22.5 the default is now 25,000 rows for inferring the schema, so only change the setting if you are on an older version or if you need more than 25,000 rows to be sampled.
@@ -110,7 +110,7 @@ New Georeferenced Column Nullable(String)
 
 At this point you should check that the columns in the TSV file match the names and types specified in the **Columns in this Dataset** section of the [dataset web page](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243).  The data types are not very specific, all numeric fields are set to `Nullable(Float64)`, and all other fields are `Nullable(String)`.  When you create a ClickHouse table to store the data you can specify more appropriate and performant types.
 
-### Determine the proper schema
+### Determine the proper schema {#determine-the-proper-schema}
 
 In order to figure out what types should be used for the fields it is necessary to know what the data looks like. For example, the field `JURISDICTION_CODE` is a numeric: should it be a `UInt8`, or an `Enum`, or is `Float64` appropriate?
 
@@ -196,7 +196,7 @@ Result:
 
 The dataset in use at the time of writing has only a few hundred distinct parks and playgrounds in the `PARK_NM` column.  This is a small number based on the [LowCardinality](../../sql-reference/data-types/lowcardinality.md#lowcardinality-dscr) recommendation to stay below 10,000 distinct strings in a `LowCardinality(String)` field.
 
-### DateTime fields
+### DateTime fields {#datetime-fields}
 Based on the **Columns in this Dataset** section of the [dataset web page](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) there are date and time fields for the start and end of the reported event.  Looking at the min and max of the `CMPLNT_FR_DT` and `CMPLT_TO_DT` gives an idea of whether or not the fields are always populated:
 
 ```sh title="CMPLNT_FR_DT"
@@ -259,7 +259,7 @@ Result:
 └───────────────────┴───────────────────┘
 ```
 
-## Make a plan
+## Make a plan {#make-a-plan}
 
 Based on the above investigation:
 - `JURISDICTION_CODE` should be cast as `UInt8`.
@@ -276,7 +276,7 @@ Based on the above investigation:
 There are many more changes to be made to the types, they all can be determined by following the same investigation steps.  Look at the number of distinct strings in a field, the min and max of the numerics, and make your decisions.  The table schema that is given later in the guide has many low cardinality strings and unsigned integer fields and very few floating point numerics.
 :::
 
-## Concatenate the date and time fields
+## Concatenate the date and time fields {#concatenate-the-date-and-time-fields}
 
 To concatenate the date and time fields `CMPLNT_FR_DT` and `CMPLNT_FR_TM` into a single `String` that can be cast to a `DateTime`, select the two fields joined by the concatenation operator: `CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`.  The `CMPLNT_TO_DT` and `CMPLNT_TO_TM` fields are handled similarly.
 
@@ -305,7 +305,7 @@ Result:
 └─────────────────────┘
 ```
 
-## Convert the date and time String to a DateTime64 type
+## Convert the date and time String to a DateTime64 type {#convert-the-date-and-time-string-to-a-datetime64-type}
 
 Earlier in the guide we discovered that there are dates in the TSV file before January 1st 1970, which means that we need a 64 bit DateTime type for the dates.  The dates also need to be converted from `MM/DD/YYYY` to `YYYY/MM/DD` format.  Both of these can be done with [`parseDateTime64BestEffort()`](../../sql-reference/functions/type-conversion-functions.md#parsedatetime64besteffort).
 
@@ -358,7 +358,7 @@ Result:
 The dates shown as `1925` above are from errors in the data.  There are several records in the original data with dates in the years `1019` - `1022` that should be `2019` - `2022`.  They are being stored as Jan 1st 1925 as that is the earliest date with a 64 bit DateTime.
 :::
 
-## Create a table
+## Create a table {#create-a-table}
 
 The decisions made above on the data types used for the columns are reflected in the table schema
 below. We also need to decide on the `ORDER BY` and `PRIMARY KEY` used for the table.  At least one
@@ -366,7 +366,7 @@ of `ORDER BY` or `PRIMARY KEY` must be specified.  Here are some guidelines on d
 columns to includes in `ORDER BY`, and more information is in the *Next Steps* section at the end
 of this document.
 
-### Order By and Primary Key clauses
+### Order By and Primary Key clauses {#order-by-and-primary-key-clauses}
 
 - The `ORDER BY` tuple should include fields that are used in query filters
 - To maximize compression on disk the `ORDER BY` tuple should be ordered by ascending cardinality
@@ -407,12 +407,12 @@ Result:
 ```
 Ordering by cardinality, the `ORDER BY` becomes:
 
-```
+```sql
 ORDER BY ( BORO_NM, OFNS_DESC, RPT_DT )
 ```
 :::note
 The table below will use more easily read column names, the above names will be mapped to
-```
+```sql
 ORDER BY ( borough, offense_description, date_reported )
 ```
 :::
@@ -457,7 +457,7 @@ CREATE TABLE NYPD_Complaint (
   ORDER BY ( borough, offense_description, date_reported )
 ```
 
-### Finding the primary key of a table
+### Finding the primary key of a table {#finding-the-primary-key-of-a-table}
 
 The ClickHouse `system` database, specifically `system.table` has all of the information about the table you
 just created.  This query shows the `ORDER BY` (sorting key), and the `PRIMARY KEY`:
@@ -490,7 +490,7 @@ table:         NYPD_Complaint
 
 We will use `clickhouse-local` tool for data preprocessing and `clickhouse-client` to upload it.
 
-### `clickhouse-local` arguments used
+### `clickhouse-local` arguments used {#clickhouse-local-arguments-used}
 
 :::tip
 `table='input'` appears in the arguments to clickhouse-local below.  clickhouse-local takes the provided input (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) and inserts the input into a table.  By default the table is named `table`.  In this guide the name of the table is set to `input` to make the data flow clearer. The final argument to clickhouse-local is a query that selects from the table (`FROM input`) which is then piped to `clickhouse-client` to populate the table `NYPD_Complaint`.
@@ -583,7 +583,7 @@ Result:
 
 ## Run Some Queries {#run-queries}
 
-### Query 1. Compare the number of complaints by month
+### Query 1. Compare the number of complaints by month {#query-1-compare-the-number-of-complaints-by-month}
 
 Query:
 
@@ -619,7 +619,7 @@ Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
 12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
 ```
 
-### Query 2. Compare total number of complaints by Borough
+### Query 2. Compare total number of complaints by Borough {#query-2-compare-total-number-of-complaints-by-borough}
 
 Query:
 
@@ -649,6 +649,6 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
 ```
 
-## Next Steps
+## Next Steps {#next-steps}
 
-[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/en/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.

@@ -1,7 +1,8 @@
 ---
-slug: /en/operations/system-tables/parts
+slug: /operations/system-tables/parts
+title: "parts"
+keywords: ["system table", "parts"]
 ---
-# parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -18,7 +19,7 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part. The part naming structure can be used to determine many aspects of the data, ingest, and merge patterns. The part naming format is the following:
 
-```
+```text
 <partition_id>_<minimum_block_number>_<maximum_block_number>_<level>_<data_version>
 ```
 
