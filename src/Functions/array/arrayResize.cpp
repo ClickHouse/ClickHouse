@@ -39,10 +39,14 @@ DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) 
                         "First argument for function {} must be an array but it has type {}.",
                         getName(), arguments[0]->getName());
 
+    if (arguments[1]->isNullable())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Second argument for function {} must not be a Nullable.", getName());
+
     if (WhichDataType(array_type->getNestedType()).isNothing())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} cannot resize {}", getName(), array_type->getName());
 
-    if (!isInteger(removeNullable(arguments[1])) && !arguments[1]->onlyNull())
+    if (!isInteger(arguments[1]))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "Argument {} for function {} must be integer but it has type {}.",
                         toString(1), getName(), arguments[1]->getName());
