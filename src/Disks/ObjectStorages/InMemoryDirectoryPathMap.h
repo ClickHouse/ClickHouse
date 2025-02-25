@@ -82,36 +82,23 @@ public:
     bool addFile(const std::string & local_path, size_t size)
     {
         auto path = std::filesystem::path(local_path);
+        auto dir = path.has_parent_path() ? path.parent_path() : "";
         auto file = path.filename();
 
-        /// Root always exists
-        if (!path.has_parent_path())
-        {
-            std::lock_guard lock(mutex);
-            if (map[""].files.emplace(file, size).second)
-                metric_files.add(1);
-            return true;
-        }
-        else
-        {
-            auto dir = path.parent_path();
-
-            std::lock_guard lock(mutex);
-            auto it = map.find(dir);
-            if (it == map.end())
-                return false;
-            if (it->second.files.emplace(file, size).second)
-                metric_files.add(1);
-            return true;
-        }
+        std::lock_guard lock(mutex);
+        auto it = map.find(dir);
+        if (it == map.end())
+            return false;
+        if (it->second.files.emplace(file, size).second)
+            metric_files.add(1);
+        return true;
     }
 
     bool removeFile(const std::string & local_path)
     {
         auto path = std::filesystem::path(local_path);
-        auto file = path.filename();
-
         auto dir = path.has_parent_path() ? path.parent_path() : "";
+        auto file = path.filename();
 
         std::lock_guard lock(mutex);
         auto it = map.find(dir);
