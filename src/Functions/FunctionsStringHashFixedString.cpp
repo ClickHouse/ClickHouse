@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <base/IPv4andIPv6.h>
+#include <ethash/keccak.hpp>
 
 #include "config.h"
 
@@ -218,6 +219,24 @@ struct ImplBLAKE3
 
 #endif
 
+struct Keccak256Impl
+{
+    static constexpr auto name = "keccak256";
+    enum
+    {
+        length = 32
+    };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        auto h = ethash::keccak256(
+            reinterpret_cast<const uint8_t*>(begin), 
+            size
+        );
+        memcpy(out_char_data, h.bytes, Keccak256Impl::length);
+    }
+};
+
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
 {
@@ -311,6 +330,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
     using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
     using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
+    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
 
     factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
         .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
@@ -454,6 +474,22 @@ REGISTER_FUNCTION(HashFixedStrings)
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
         .category{"Hash"}});
 #    endif
+
+    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
+    factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
+        .description = R"(Calculates the keccak-256 hash of the given string.)",
+        .syntax = "SELECT keccak256(s);",
+        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
+        .returned_value
+        = "The keccak-256 hash of the given input string returned as a [FixedString(32)](../../sql-reference/data-types/fixedstring.md).",
+        .examples
+        = {{"",
+            "SELECT HEX(keccak256('hello'));",
+            R"(
+    ┌─hex(KECCAK256('hello'))──────────────────────────────────────────┐
+    │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
+    └──────────────────────────────────────────────────────────────────┘
+        )"}}});
 }
 #endif
 }
