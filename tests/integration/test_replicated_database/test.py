@@ -759,11 +759,11 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM recover.rmt1",
+        f"CREATE MATERIALIZED VIEW {db}.mv1 (n int) ENGINE=ReplicatedMergeTree order by n AS SELECT n FROM {db}.rmt1",
         settings=settings,
     )
     dummy_node.query(
-        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM recover.rmt2",
+        f"CREATE MATERIALIZED VIEW {db}.mv2 (n int) ENGINE=ReplicatedMergeTree order by n  AS SELECT n FROM {db}.rmt2",
         settings=settings,
     )
     main_node.query(
@@ -975,6 +975,8 @@ def test_recover_staled_replica(started_cluster):
     )
     main_node.query("DROP DATABASE recover SYNC")
     dummy_node.query("DROP DATABASE recover SYNC")
+    dummy_node.query("DROP DATABASE recover_broken_tables SYNC")
+    dummy_node.query("DROP DATABASE recover_broken_replicated_tables SYNC")
 
 
 def test_recover_staled_replica_many_mvs(started_cluster):
@@ -1304,6 +1306,12 @@ def test_force_synchronous_settings(started_cluster):
         "CREATE TABLE test_force_synchronous_settings.t (n String) ENGINE=ReplicatedMergeTree('/test/same/path/{shard}', '{replica}') ORDER BY tuple()"
     )
     select_thread.join()
+
+    main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE test_force_synchronous_settings SYNC"
+    )
 
 
 def test_recover_digest_mismatch(started_cluster):
