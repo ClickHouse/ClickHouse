@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
+#include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/ArrayJoin.h>
@@ -10,7 +10,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
@@ -43,6 +42,8 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class Set;
 using SetPtr = std::shared_ptr<Set>;
 
+class QueryPlan;
+
 namespace ExpressionActionsChainSteps
 {
 struct Step;
@@ -54,6 +55,7 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;

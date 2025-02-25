@@ -5,9 +5,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/WriteHelpers.h>
-#include <QueryPipeline/SizeLimits.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <deque>
 #include <string_view>
@@ -188,20 +187,7 @@ public:
          * Generate a column name that is not present in the sample block, using
          * the given prefix and an optional numeric suffix.
          */
-        String getUniqueName(const String & prefix)
-        {
-            auto result = prefix;
-
-            // First, try the name without any suffix, because it is currently
-            // used both as a display name and a column id.
-            while (hasColumn(result))
-            {
-                result = prefix + "_" + toString(next_unique_suffix);
-                ++next_unique_suffix;
-            }
-
-            return result;
-        }
+        String getUniqueName(const String & prefix);
     };
 
     static void visit(const ASTPtr & ast, Data & data);
