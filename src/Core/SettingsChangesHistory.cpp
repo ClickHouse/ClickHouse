@@ -659,6 +659,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.3",
+        {
+            {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
             {"shared_merge_tree_initial_parts_update_backoff_ms", 50, 50, "New setting"},
