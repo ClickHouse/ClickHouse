@@ -1,10 +1,10 @@
 ---
 title: "varSamp"
-slug: /en/sql-reference/aggregate-functions/reference/varSamp
+slug: /sql-reference/aggregate-functions/reference/varSamp
 sidebar_position: 212
 ---
 
-## varSamp
+## varSamp {#varsamp}
 
 Calculate the sample variance of a data set.
 

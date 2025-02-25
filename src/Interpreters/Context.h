@@ -62,6 +62,7 @@ class SystemLogs;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
+class Field;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;

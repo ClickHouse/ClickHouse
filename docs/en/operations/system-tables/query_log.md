@@ -1,10 +1,10 @@
 ---
 description: "System table containing information about executed queries, for example, start time, duration of processing, error messages."
-slug: /en/operations/system-tables/query_log
+slug: /operations/system-tables/query_log
 title: "query_log"
 keywords: ["system table", "query_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -20,7 +20,7 @@ You can disable queries logging by setting [log_queries = 0](../../operations/se
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 

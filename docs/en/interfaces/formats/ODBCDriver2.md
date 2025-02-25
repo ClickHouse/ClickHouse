@@ -1,11 +1,11 @@
 ---
 title : ODBCDriver2
-slug : /en/interfaces/formats/ODBCDriver2
+slug: /interfaces/formats/ODBCDriver2
 keywords : [ODBCDriver2]
 ---
 
-## Description
+## Description {#description}
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

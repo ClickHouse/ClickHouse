@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/create/row-policy
+slug: /sql-reference/statements/create/row-policy
 sidebar_position: 41
 sidebar_label: ROW POLICY
 title: "CREATE ROW POLICY"
@@ -22,11 +22,11 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluste
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
 
-## USING Clause
+## USING Clause {#using-clause}
 
 Allows specifying a condition to filter rows. A user will see a row if the condition is calculated to non-zero for the row.
 
-## TO Clause
+## TO Clause {#to-clause}
 
 In the `TO` section you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
@@ -44,7 +44,7 @@ If that's not desirable, it can be fixed by adding one more row policy, like the
 `CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
 :::
 
-## AS Clause
+## AS Clause {#as-clause}
 
 It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.
 
@@ -91,12 +91,12 @@ any other table in mydb would have only `b=1` policy applied for the user.
 
 
 
-## ON CLUSTER Clause
+## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
 
-## Examples
+## Examples {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 
