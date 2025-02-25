@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Stopwatch.h>
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/ParsedTemplateFormatString.h>
@@ -9,6 +7,10 @@
 
 namespace DB
 {
+
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 class TemplateBlockOutputFormat : public IOutputFormat
 {

@@ -1,10 +1,10 @@
 ---
-slug: /en/sql-reference/functions/files
+slug: /sql-reference/functions/files
 sidebar_position: 75
 sidebar_label: Files
 ---
 
-## file
+## file {#file}
 
 Reads a file as string and loads the data into the specified column. The file content is not interpreted.
 

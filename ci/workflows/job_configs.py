@@ -59,6 +59,7 @@ class JobConfigs:
         requires=[JobNames.DOCKER_BUILDS_AMD],
         timeout=3000,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        provides=[ArtifactNames.FAST_TEST],
     )
     build_jobs = Job.Config(
         name=JobNames.BUILD,
@@ -79,6 +80,7 @@ class JobConfigs:
                 "./tests/ci/build_check.py",
                 "./tests/performance",
             ],
+            with_git_submodules=True,
         ),
     ).parametrize(
         parameter=[
@@ -111,12 +113,10 @@ class JobConfigs:
             [
                 ArtifactNames.CH_AMD_DEBUG,
                 ArtifactNames.DEB_AMD_DEBUG,
-                ArtifactNames.CH_ODBC_B_AMD_DEBUG,
             ],
             [
                 ArtifactNames.CH_AMD_RELEASE,
                 ArtifactNames.DEB_AMD_RELEASE,
-                ArtifactNames.CH_ODBC_B_AMD_RELEASE,
                 ArtifactNames.RPM_AMD_RELEASE,
                 ArtifactNames.TGZ_AMD_RELEASE,
                 ArtifactNames.PERFORMANCE_PACKAGE_AMD,
@@ -124,25 +124,21 @@ class JobConfigs:
             [
                 ArtifactNames.CH_AMD_ASAN,
                 ArtifactNames.DEB_AMD_ASAN,
-                ArtifactNames.CH_ODBC_B_AMD_ASAN,
                 ArtifactNames.UNITTEST_AMD_ASAN,
             ],
             [
                 ArtifactNames.CH_AMD_TSAN,
                 ArtifactNames.DEB_AMD_TSAN,
-                ArtifactNames.CH_ODBC_B_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             [
                 ArtifactNames.CH_AMD_MSAN,
                 ArtifactNames.DEB_AMD_MSAM,
-                ArtifactNames.CH_ODBC_B_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             [
                 ArtifactNames.CH_AMD_UBSAN,
                 ArtifactNames.DEB_AMD_UBSAN,
-                ArtifactNames.CH_ODBC_B_AMD_UBSAN,
                 ArtifactNames.UNITTEST_AMD_UBSAN,
             ],
             [
@@ -152,7 +148,6 @@ class JobConfigs:
             [
                 ArtifactNames.CH_ARM_RELEASE,
                 ArtifactNames.DEB_ARM_RELEASE,
-                ArtifactNames.CH_ODBC_B_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
                 ArtifactNames.PERFORMANCE_PACKAGE_ARM,
@@ -160,7 +155,6 @@ class JobConfigs:
             [
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
-                ArtifactNames.CH_ODBC_B_ARM_ASAN,
             ],
             # special builds
             [ArtifactNames.DEB_AMD_COV, ArtifactNames.CH_AMD_COV_BIN],
@@ -711,7 +705,7 @@ class JobConfigs:
             ["Build (amd_ubsan)"],
         ],
     )
-    performance_comparison_jobs = Job.Config(
+    performance_comparison_amd_jobs = Job.Config(
         name=JobNames.PERFORMANCE,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
@@ -728,7 +722,6 @@ class JobConfigs:
             "release, 1/3",
             "release, 2/3",
             "release, 3/3",
-            # "aarch64",
         ],
         runs_on=[
             RunnerLabels.FUNC_TESTER_AMD,
@@ -741,7 +734,35 @@ class JobConfigs:
             ["Build (amd_release)"],
         ],
     )
-    clickbench_jobs = Job.Config(
+    performance_comparison_arm_jobs = Job.Config(
+        name=JobNames.PERFORMANCE,
+        runs_on=["..params.."],
+        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./tests/ci/performance_comparison_check.py",
+                "./tests/performance/",
+            ],
+        ),
+        allow_merge_on_failure=True,
+    ).parametrize(
+        parameter=[
+            "aarch64, 1/3",
+            "aarch64, 2/3",
+            "aarch64, 3/3",
+        ],
+        runs_on=[
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_ARM,
+            RunnerLabels.FUNC_TESTER_ARM,
+        ],
+        requires=[
+            ["Build (arm_release)"],
+            ["Build (arm_release)"],
+            ["Build (arm_release)"],
+        ],
+    )
+    clickbench_master_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=["..params.."],
         command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
@@ -765,7 +786,12 @@ class JobConfigs:
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
-            include_paths=["**/*.md", "./docs", "tests/ci/docs_check.py", "./docker"],
+            include_paths=[
+                "**/*.md",
+                "./docs",
+                "tests/ci/docs_check.py",
+                "./docker/docs",
+            ],
         ),
         requires=[JobNames.STYLE_CHECK],
     )

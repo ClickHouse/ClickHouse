@@ -4,7 +4,10 @@ OK="\tOK\t\\N\t"
 FAIL="\tFAIL\t\\N\t"
 
 FAILURE_CONTEXT_LINES=100
-FAILURE_CONTEXT_MAX_LINE_WIDTH=300
+FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
+
+# shellcheck disable=SC1091
+source /basic_helpers.sh
 
 function escaped()
 {
@@ -31,10 +34,10 @@ function trim_server_logs()
 
 function install_packages()
 {
-    dpkg -i "$1"/clickhouse-common-static_*.deb
-    dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
-    dpkg -i "$1"/clickhouse-server_*.deb
-    dpkg -i "$1"/clickhouse-client_*.deb
+    run_with_retry 3 dpkg -i "$1"/clickhouse-common-static_*.deb
+    run_with_retry 3 dpkg -i "$1"/clickhouse-common-static-dbg_*.deb
+    run_with_retry 3 dpkg -i "$1"/clickhouse-server_*.deb
+    run_with_retry 3 dpkg -i "$1"/clickhouse-client_*.deb
 }
 
 function configure()

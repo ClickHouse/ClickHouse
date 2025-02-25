@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
