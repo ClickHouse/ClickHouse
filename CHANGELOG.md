@@ -1,13 +1,13 @@
 ### Table of Contents
 **[ClickHouse release v25.1, 2025-01-28](#251)**<br/>
-**[Changelog for 2024](https://clickhouse.com/docs/en/whats-new/changelog/2024/)**<br/>
-**[Changelog for 2023](https://clickhouse.com/docs/en/whats-new/changelog/2023/)**<br/>
-**[Changelog for 2022](https://clickhouse.com/docs/en/whats-new/changelog/2022/)**<br/>
-**[Changelog for 2021](https://clickhouse.com/docs/en/whats-new/changelog/2021/)**<br/>
-**[Changelog for 2020](https://clickhouse.com/docs/en/whats-new/changelog/2020/)**<br/>
-**[Changelog for 2019](https://clickhouse.com/docs/en/whats-new/changelog/2019/)**<br/>
-**[Changelog for 2018](https://clickhouse.com/docs/en/whats-new/changelog/2018/)**<br/>
-**[Changelog for 2017](https://clickhouse.com/docs/en/whats-new/changelog/2017/)**<br/>
+**[Changelog for 2024](https://clickhouse.com/docs/whats-new/changelog/2024/)**<br/>
+**[Changelog for 2023](https://clickhouse.com/docs/whats-new/changelog/2023/)**<br/>
+**[Changelog for 2022](https://clickhouse.com/docs/whats-new/changelog/2022/)**<br/>
+**[Changelog for 2021](https://clickhouse.com/docs/whats-new/changelog/2021/)**<br/>
+**[Changelog for 2020](https://clickhouse.com/docs/whats-new/changelog/2020/)**<br/>
+**[Changelog for 2019](https://clickhouse.com/docs/whats-new/changelog/2019/)**<br/>
+**[Changelog for 2018](https://clickhouse.com/docs/whats-new/changelog/2018/)**<br/>
+**[Changelog for 2017](https://clickhouse.com/docs/whats-new/changelog/2017/)**<br/>
 
 # 2025 Changelog
 

@@ -145,7 +145,7 @@ REGISTER_FUNCTION(Idna)
 Computes an ASCII representation of an Internationalized Domain Name. Throws an exception in case of error.)",
         .syntax="idnaEncode(str)",
         .arguments={{"str", "Input string"}},
-        .returned_value="An ASCII-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
+        .returned_value="An ASCII-encoded domain name [String](/docs/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT idnaEncode('straße.münchen.de') AS ascii;",
@@ -162,7 +162,7 @@ Computes an ASCII representation of an Internationalized Domain Name. Throws an 
 Computes a ASCII representation of an Internationalized Domain Name. Returns an empty string in case of error)",
         .syntax="punycodeEncode(str)",
         .arguments={{"str", "Input string"}},
-        .returned_value="An ASCII-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
+        .returned_value="An ASCII-encoded domain name [String](/docs/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT idnaEncodeOrNull('München') AS ascii;",
@@ -179,7 +179,7 @@ Computes a ASCII representation of an Internationalized Domain Name. Returns an 
 Computes the Unicode representation of ASCII-encoded Internationalized Domain Name.)",
         .syntax="idnaDecode(str)",
         .arguments={{"str", "Input string"}},
-        .returned_value="An Unicode-encoded domain name [String](/docs/en/sql-reference/data-types/string.md).",
+        .returned_value="An Unicode-encoded domain name [String](/docs/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de') AS unicode;",

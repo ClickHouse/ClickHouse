@@ -130,7 +130,7 @@ function manage_clickhouse_user() {
         echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
         cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
-  <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
+  <!-- Docs: <https://clickhouse.com/docs/operations/settings/settings_users/> -->
   <users>
     <!-- Remove default user -->
     <default remove="remove">
@@ -155,7 +155,7 @@ EOT
         echo "$0: neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD is set, disabling network access for user '$CLICKHOUSE_USER'"
         cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
 <clickhouse>
-  <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
+  <!-- Docs: <https://clickhouse.com/docs/operations/settings/settings_users/> -->
   <users>
     <default>
       <!-- User default is available only locally -->
