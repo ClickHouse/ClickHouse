@@ -27,6 +27,13 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
+#include <llvm/Transforms/Scalar/EarlyCSE.h>
+#include <llvm/Transforms/Scalar/CorrelatedValuePropagation.h>
+#include <llvm/Transforms/Scalar/LICM.h>
+#include <llvm/Transforms/Scalar/SimpleLoopUnswitch.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/Transforms/Utils/SimplifyCFGOptions.h>
 
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
@@ -260,7 +267,7 @@ public:
     {
         llvm::legacy::PassManager pass_manager;
         target_machine.Options.MCOptions.AsmVerbose = true;
-        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::CGFT_AssemblyFile))
+        if (target_machine.addPassesToEmitFile(pass_manager, llvm::errs(), nullptr, llvm::CodeGenFileType::AssemblyFile))
             throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "MachineCode cannot be printed");
 
         pass_manager.run(module);
@@ -268,6 +275,14 @@ public:
 private:
     llvm::TargetMachine & target_machine;
 };
+
+static std::string DumpModuleIR(const llvm::Module& module)
+{
+    std::string ir;
+    llvm::raw_string_ostream stream(ir);
+    module.print(stream, nullptr);
+    return ir;
+}
 
 #endif
 
@@ -490,19 +505,49 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
+    /// Use specific target analysis for function analysis manager
+    auto target_analysis = machine->getTargetIRAnalysis();
+    fam.registerPass([&] { return target_analysis; });
+
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
+    /// Following options can be good for performance
+    pto.ForgetAllSCEVInLoopUnroll = false;
+    pto.MergeFunctions = false;
+    pto.EagerlyInvalidateAnalyses = true;
 
     llvm::PassBuilder pb(nullptr, pto);
-
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
     pb.registerFunctionAnalyses(fam);
     pb.registerLoopAnalyses(lam);
     pb.crossRegisterProxies(lam, fam, cgam, mam);
-
+    /// Add passes the same with LLVM option: ExtraVectorizerPasses = true
+    pb.registerOptimizerLastEPCallback(
+        [&](llvm::ModulePassManager& module_pm, llvm::OptimizationLevel)
+        {
+            llvm::FunctionPassManager ExtraPasses;
+            ExtraPasses.addPass(llvm::EarlyCSEPass());
+            ExtraPasses.addPass(llvm::CorrelatedValuePropagationPass());
+            ExtraPasses.addPass(llvm::InstCombinePass());
+            llvm::LoopPassManager LPM;
+            LPM.addPass(llvm::LICMPass(pto.LicmMssaOptCap, pto.LicmMssaNoAccForPromotionCap,
+                                 /*AllowSpeculation=*/true));
+            LPM.addPass(llvm::SimpleLoopUnswitchPass(true));
+            ExtraPasses.addPass(
+                createFunctionToLoopPassAdaptor(std::move(LPM), /*UseMemorySSA=*/true,
+                                                /*UseBlockFrequencyInfo=*/true));
+            ExtraPasses.addPass(
+                llvm::SimplifyCFGPass(llvm::SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+            ExtraPasses.addPass(llvm::InstCombinePass());
+            module_pm.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(ExtraPasses)));
+    });
     llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
     mpm.run(module, mam);
+
+#ifdef PRINT_ASSEMBLY
+    DumpModuleIR(module);
+#endif
 }
 
 std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
