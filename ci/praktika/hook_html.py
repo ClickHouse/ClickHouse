@@ -19,7 +19,7 @@ from .utils import Utils
 @dataclasses.dataclass
 class GitCommit:
     # date: str
-    # message: str
+    message: str
     sha: str
 
     @staticmethod
@@ -31,7 +31,7 @@ class GitCommit:
                 json_data = json.load(f)
             commits = [
                 GitCommit(
-                    # message=commit["messageHeadline"],
+                    message=commit["message"],
                     sha=commit["sha"],
                     # date=commit["committedDate"],
                 )
@@ -58,7 +58,9 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        commits.append(GitCommit(sha=sha))
+        commits.append(
+            GitCommit(sha=sha, message=Shell.get_output("git log -1 --pretty=%s"))
+        )
         commits = commits[
             -20:
         ]  # limit maximum number of commits from the past to show in the report
