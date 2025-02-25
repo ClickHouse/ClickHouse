@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/StatementGenerator.h>
 
@@ -112,7 +113,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     aj->set_left(rg.nextBool());
     const uint32_t nccols = std::min<uint32_t>(
         UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1);
-    const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols) + UINT32_C(1);
+    const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
 
     for (uint32_t i = 0; i < nclauses; i++)
     {
@@ -911,7 +912,7 @@ void StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint3
 
         this->depth++;
         this->width++;
-        if (rg.nextSmallNumber() < 3)
+        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 3)
         {
             generateArrayJoin(rg, jcc->mutable_arr());
         }
