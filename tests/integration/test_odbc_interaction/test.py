@@ -673,7 +673,7 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
             try:
                 node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
             except Exception as ex:
-                assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
+                assert False, "Exception occurred -- odbc-bridge hangs: " + str(ex)
 
         assert_eq_with_retry(
             node1,
