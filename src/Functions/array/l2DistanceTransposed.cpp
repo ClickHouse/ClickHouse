@@ -374,7 +374,6 @@ private:
         int numbits = static_cast<int>(sizeof(ResultType)) * 8;
         using BitType = std::conditional_t<std::is_same_v<ResultType, Float32>, uint32_t, uint64_t>;
 
-        if()
         auto data_x_transpose = ColumnVector<BitType>::create(offsets_x[0]);
         auto & data_x_t = data_x_transpose->getData();
         BitType y = 0;
