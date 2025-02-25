@@ -1015,6 +1015,7 @@
         const commitOptions = runtimeCache.commits
             .map(({ sha, message }) => message ? `${sha.substring(0, 8)}: ${message}` : sha.substring(0, 8))
             .filter(Boolean);
+        commitOptions.push("latest")
         addKeyValueToStatus("sha", sha || "latest", commitOptions);
         addKeyValueToStatus("", current_sha);
         addStatusToStatus(result.status, result.start_time, result.duration);

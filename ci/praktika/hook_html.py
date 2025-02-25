@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import os
 from pathlib import Path
 from typing import List
 
@@ -18,9 +19,9 @@ from .utils import Utils
 
 @dataclasses.dataclass
 class GitCommit:
-    # date: str
-    message: str
     sha: str
+    message: str = ""
+    # date: str
 
     @staticmethod
     def from_json(file) -> List["GitCommit"]:
@@ -59,7 +60,9 @@ class GitCommit:
                 )
                 return
         commits.append(
-            GitCommit(sha=sha, message=Shell.get_output("git log -1 --pretty=%s"))
+            GitCommit(
+                sha=sha, message=Shell.get_output(f"git show -s --format=%B {sha}")
+            )
         )
         commits = commits[
             -20:
