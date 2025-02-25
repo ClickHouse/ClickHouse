@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 [Apache Parquet](https://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
@@ -55,7 +55,7 @@ Unsupported Parquet data types are:
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 ### Inserting and Selecting Data {#inserting-and-selecting-data-parquet}
 
@@ -73,7 +73,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 To exchange data with Hadoop, you can use the [`HDFS table engine`](/docs/engines/table-engines/integrations/hdfs.md).
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                        | Description                                                                                                                                                                                                                       | Default     |
 |--------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|

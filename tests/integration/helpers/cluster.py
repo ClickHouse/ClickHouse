@@ -3277,6 +3277,7 @@ services:
             - {env_file}
         security_opt:
             - label:disable
+            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
