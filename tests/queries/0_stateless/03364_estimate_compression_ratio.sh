@@ -33,7 +33,7 @@ create_table() {
         array_col Array(String),
         nullable_col Nullable(Int64),
         sparse_col Int64,
-        tuple_col Tuple(Int64, String)
+        tuple_col Tuple(Int64, Int64)
     ) ENGINE = MergeTree ORDER BY number_col
     SETTINGS min_bytes_for_wide_part = 0"
 
@@ -47,7 +47,7 @@ create_table() {
         [toString(number+rand()), toString(number+rand())] as array_col,
         if(number % 20 = 0, number+rand(), NULL) as nullable_col,
         if(number % 10 = 0, number+rand(), 0) as sparse_col,
-        (number+rand(), toString(number+rand())) as tuple_col
+        (number+rand(), number*2) as tuple_col
     FROM system.numbers LIMIT $num_rows"
 
     log_if_debug "Running: $query"
@@ -63,7 +63,7 @@ apply_codec() {
            MODIFY COLUMN array_col Array(String) CODEC($codec),
            MODIFY COLUMN nullable_col Nullable(Int64) CODEC($codec),
            MODIFY COLUMN sparse_col Int64 CODEC($codec),
-           MODIFY COLUMN tuple_col Tuple(Int64, String) CODEC($codec)
+           MODIFY COLUMN tuple_col Tuple(Int64, Int64) CODEC($codec)
            SETTINGS min_compress_block_size = $block_size,
                     max_compress_block_size = $block_size"
 
