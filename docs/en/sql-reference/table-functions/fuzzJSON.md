@@ -33,7 +33,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 A table object with a a single column containing perturbed JSON strings.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ``` sql
 CREATE NAMED COLLECTION json_fuzzer AS json_str='{}';
