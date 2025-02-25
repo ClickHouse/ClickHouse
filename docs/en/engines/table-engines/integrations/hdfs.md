@@ -2,6 +2,8 @@
 slug: /engines/table-engines/integrations/hdfs
 sidebar_position: 80
 sidebar_label: HDFS
+title: "HDFS"
+description: "This engine provides integration with the Apache Hadoop ecosystem by allowing to manage data on HDFS via ClickHouse. This engine is similar to the File and URL engines, but provides Hadoop-specific features."
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -29,7 +31,7 @@ ENGINE = HDFS(URI, format)
 [Formats](../../../interfaces/formats.md#formats) section.
 - [PARTITION BY expr]
 
-### PARTITION BY
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Optional. In most cases you don't need a partition key, and if it is needed you generally don't need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 

@@ -2,6 +2,8 @@
 slug: /engines/table-engines/special/set
 sidebar_position: 60
 sidebar_label: Set
+title: "Set Table Engine"
+description: "A data set that is always in RAM. It is intended for use on the right side of the `IN` operator."
 ---
 
 # Set Table Engine
@@ -19,7 +21,7 @@ For a rough server restart, the block of data on the disk might be lost or damag
 
 When creating a table, the following settings are applied:
 
-#### persistent
+#### persistent {#persistent}
 
 Disables persistency for the Set and [Join](/docs/engines/table-engines/special/join.md/#join) table engines.
 
