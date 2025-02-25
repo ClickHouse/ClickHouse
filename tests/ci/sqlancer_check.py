@@ -86,6 +86,8 @@ def main():
     paths = [
         run_log_path,
         workspace_path / "clickhouse-server.log",
+        workspace_path / "clickhouse-server.log.err",
+        workspace_path / "cores",
         workspace_path / "stderr.log",
         workspace_path / "stdout.log",
     ]
@@ -119,7 +121,7 @@ def main():
         status=status,
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
-        additional_files=paths,
+        additional_files=paths.sort(),
     ).dump()
 
 
