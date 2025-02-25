@@ -230,8 +230,11 @@ public:
         CurrentThread::updateProgressIn(value);
         progress_in.incrementPiecewiseAtomically(value);
 
-        if (priority_handle)
-            priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
+        if (priority_handle){
+            UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_waiting_time].totalMilliseconds();
+            priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));        /// NOTE Could make timeout customizable.
+        }
+            
 
         return !is_killed.load(std::memory_order_relaxed);
     }
@@ -412,10 +415,13 @@ protected:
     QueryStatusPtr getProcessListElement(const String & query_id) const;
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
-    size_t max_insert_queries_amount = 0;
+    size_t c = 0;
 
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
+
+    /// timeout in millisecond to wait for low priority query to wait for higher priority query to finish
+    size_t low_priority_wait_timeout_millisec = 0;
 
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
@@ -486,6 +492,18 @@ public:
         return max_insert_queries_amount;
     }
 
+    void setLowPriorityWaitTimeoutMillisec(size_t low_priority_wait_timeout_millisec_)
+    {
+        Lock lock(mutex);
+        low_priority_wait_timeout_millisec = low_priority_wait_timeout_millisec_;
+    }
+
+    size_t getLowPriorityWaitTimeoutMillisec() const
+    {
+        Lock lock(mutex);
+        return low_priority_wait_timeout_millisec;
+    }
+
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
     {
         Lock lock(mutex);
@@ -497,6 +515,7 @@ public:
         Lock lock(mutex);
         return max_select_queries_amount;
     }
+
 
     void setMaxWaitingQueriesAmount(UInt64 max_waiting_queries_amount_)
     {
