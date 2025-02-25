@@ -21,6 +21,11 @@
 #    include <openssl/sha.h>
 #endif
 
+#if defined USE_ETHASH && USE_ETHASH
+#    include <ethash/keccak.hpp>
+#endif
+
+
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
 /// to better parallelize the build procedure and avoid MSan build failure
 /// due to excessive resource consumption.
@@ -216,6 +221,26 @@ struct ImplBLAKE3
     }
 };
 
+#endif
+
+#if defined USE_ETHASH && USE_ETHASH
+struct Keccak256Impl
+{
+    static constexpr auto name = "keccak256";
+    enum
+    {
+        length = 32
+    };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        auto h = ethash::keccak256(
+            reinterpret_cast<const uint8_t*>(begin),
+            size
+        );
+        memcpy(out_char_data, h.bytes, Keccak256Impl::length);
+    }
+};
 #endif
 
 template <typename Impl>
@@ -455,5 +480,24 @@ REGISTER_FUNCTION(HashFixedStrings)
         .category{"Hash"}});
 #    endif
 }
+
+#   if defined USE_ETHASH && USE_ETHASH
+    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
+    factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
+        .description = R"(Calculates the keccak-256 hash of the given string.)",
+        .syntax = "SELECT keccak256(s);",
+        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
+        .returned_value
+        = "The keccak-256 hash of the given input string returned as a [FixedString(32)](../../sql-reference/data-types/fixedstring.md).",
+        .examples
+        = {{"",
+            "SELECT HEX(keccak256('hello'));",
+            R"(
+    ┌─hex(KECCAK256('hello'))──────────────────────────────────────────┐
+    │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
+    └──────────────────────────────────────────────────────────────────┘
+        )"}}});
+#    endif
+
 #endif
 }
