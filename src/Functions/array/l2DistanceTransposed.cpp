@@ -10,7 +10,10 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/range.h>
-#include <cstring>
+
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 namespace DB
 {
@@ -28,7 +31,7 @@ struct L2DistanceTransposed
     static constexpr auto name = "L2T";
 
     struct ConstParams {
-        int p;
+        UInt8 p;
     };
 
     template <typename FloatType>
@@ -40,7 +43,6 @@ struct L2DistanceTransposed
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams &)
     {
-        
         state.sum += (x - y) * (x - y);
     }
 
@@ -50,12 +52,83 @@ struct L2DistanceTransposed
         state.sum += other_state.sum;
     }
 
+#if USE_MULTITARGET_CODE
+    template <typename ResultType>
+    AVX512_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombine(
+        const ResultType * __restrict data_x,
+        const ResultType * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<ResultType> & state)
+    {
+        __m512 sums;
+        if constexpr (sizeof(ResultType) <= 4)
+            sums = _mm512_setzero_ps();
+        else
+            sums = _mm512_setzero_pd();
+
+        constexpr size_t n = sizeof(__m512) / sizeof(ResultType);
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            if constexpr (sizeof(ResultType) == 4)
+            {
+                __m512 x = _mm512_loadu_ps(data_x + i_x);
+                __m512 y = _mm512_loadu_ps(data_y + i_y);
+                __m512 differences = _mm512_sub_ps(x, y);
+                sums = _mm512_fmadd_ps(differences, differences, sums);
+            }
+            else
+            {
+                __m512 x = _mm512_loadu_pd(data_x + i_x);
+                __m512 y = _mm512_loadu_pd(data_y + i_y);
+                __m512 differences = _mm512_sub_pd(x, y);
+                sums = _mm512_fmadd_pd(differences, differences, sums);
+            }
+        }
+
+        if constexpr (sizeof(ResultType) <= 4)
+            state.sum = _mm512_reduce_add_ps(sums);
+        else
+            state.sum = _mm512_reduce_add_pd(sums);
+    }
+
+    AVX512BF16_FUNCTION_SPECIFIC_ATTRIBUTE static void accumulateCombineBF16(
+        const BFloat16 * __restrict data_x,
+        const BFloat16 * __restrict data_y,
+        size_t i_max,
+        size_t & i_x,
+        size_t & i_y,
+        State<Float32> & state)
+    {
+        __m512 sums = _mm512_setzero_ps();
+        constexpr size_t n = sizeof(__m512) / sizeof(BFloat16);
+
+        for (; i_x + n < i_max; i_x += n, i_y += n)
+        {
+            __m512 x_1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x)));
+            __m512 x_2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_x + i_x + n / 2)));
+            __m512 y_1 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y)));
+            __m512 y_2 = _mm512_cvtpbh_ps(_mm256_loadu_ps(reinterpret_cast<const Float32 *>(data_y + i_y + n / 2)));
+
+            __m512 differences_1 = _mm512_sub_ps(x_1, y_1);
+            __m512 differences_2 = _mm512_sub_ps(x_2, y_2);
+            sums = _mm512_fmadd_ps(differences_1, differences_1, sums);
+            sums = _mm512_fmadd_ps(differences_2, differences_2, sums);
+        }
+
+        state.sum = _mm512_reduce_add_ps(sums);
+    }
+#endif
+
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams &)
     {
         return sqrt(state.sum);
     }
 };
+
 
 template <typename Kernel>
 class FunctionArrayDistanceTransposed : public IFunction
@@ -252,6 +325,7 @@ private:
                 Kernel::template accumulate<ResultType>(
                     state, std::bit_cast<ResultType>(x), std::bit_cast<ResultType>(y), kernel_params);
             }
+            prev=curr;
             result_data[row] = Kernel::finalize(state, kernel_params);
             ++row;
         }
@@ -295,7 +369,32 @@ private:
         auto & result_data = result->getData();
 
         size_t prev = 0;
+        size_t curr = 0;
         size_t row = 0;
+        int numbits = static_cast<int>(sizeof(ResultType)) * 8;
+        using BitType = std::conditional_t<std::is_same_v<ResultType, Float32>, uint32_t, uint64_t>;
+
+        if()
+        auto data_x_transpose = ColumnVector<BitType>::create(offsets_x[0]);
+        auto & data_x_t = data_x_transpose->getData();
+        BitType y = 0;
+        BitType bits = 0;
+
+        size_t array_size = offsets_x[0];
+
+        size_t ind=0;
+        while(ind<offsets_x[0])
+        {
+            for(int j=0; j < numbits; j++)
+            {
+                size_t idx = (array_size * j + ind) / numbits;
+                int bitpos = (array_size * j + ind) % numbits;
+                memcpy(&bits, &data_x[idx], sizeof(bits));
+                bool bx = (bits & (static_cast<BitType>(1) << (numbits - 1 - bitpos)));
+                data_x_t[ind] |= (static_cast<BitType>(bx) << j);
+            }
+            ind++;
+        }
 
         for (auto off : offsets_y)
         {
@@ -307,11 +406,21 @@ private:
                 /// Process chunks in a vectorized manner.
                 static constexpr size_t VEC_SIZE = 32;
                 typename Kernel::template State<ResultType> states[VEC_SIZE];
-                for (; prev + VEC_SIZE < off; i += VEC_SIZE, prev += VEC_SIZE)
+                for (; curr + VEC_SIZE < off; i += VEC_SIZE, curr += VEC_SIZE)
                 {
-                    for (size_t s = 0; s < VEC_SIZE; ++s)
+                    for (size_t s = 0; s < VEC_SIZE; ++s){
+                        y=0; bits = 0;
+                        ind = curr + s - prev;
+                        for(int j=0; j < numbits; j++){
+                            size_t idx = (array_size * j + ind) / numbits;
+                            int bitpos = (array_size * j + ind) % numbits;
+                            memcpy(&bits, &data_y[idx], sizeof(bits));
+                            bool by = (bits & (static_cast<BitType>(1) << (numbits - 1 - bitpos)));
+                            y |= (static_cast<BitType>(by) << j);
+                        }
                         Kernel::template accumulate<ResultType>(
-                            states[s], static_cast<ResultType>(data_x[i + s]), static_cast<ResultType>(data_y[prev + s]), kernel_params);
+                            states[s], static_cast<ResultType>(data_x_t[i+s]), static_cast<ResultType>(y), kernel_params);
+                    }
                 }
 
                 for (const auto & other_state : states)
@@ -319,11 +428,21 @@ private:
             }
 
             /// Process the tail.
-            for (; prev < off; ++i, ++prev)
+            for (; curr < off; ++i, ++curr)
             {
+                y=0; bits = 0;
+                ind = curr + - prev;
+                for(int j=0; j < numbits; j++){
+                    size_t idx = (array_size * j + ind) / numbits;
+                    int bitpos = (array_size * j + ind) % numbits;
+                    memcpy(&bits, &data_y[idx], sizeof(bits));
+                    bool by = (bits & (static_cast<BitType>(1) << (numbits - 1 - bitpos)));
+                    y |= (static_cast<BitType>(by) << j);
+                }
                 Kernel::template accumulate<ResultType>(
-                    state, static_cast<ResultType>(data_x[i]), static_cast<ResultType>(data_y[prev]), kernel_params);
+                    state, static_cast<ResultType>(data_x_t[i]), static_cast<ResultType>(data_y[curr]), kernel_params);
             }
+            prev=curr;
             result_data[row] = Kernel::finalize(state, kernel_params);
             row++;
         }
