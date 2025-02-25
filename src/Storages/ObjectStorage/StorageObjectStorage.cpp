@@ -584,42 +584,41 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 }
 
 void StorageObjectStorage::Configuration::initialize(
-    Configuration & configuration,
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
     StorageObjectStorageSettings * settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-        configuration.fromNamedCollection(*named_collection, local_context);
+        fromNamedCollection(*named_collection, local_context);
     else
-        configuration.fromAST(engine_args, local_context, with_table_structure);
+        fromAST(engine_args, local_context, with_table_structure);
 
-    if (configuration.format == "auto")
+    if (format == "auto")
     {
-        if (configuration.isDataLakeConfiguration())
+        if (isDataLakeConfiguration())
         {
-            configuration.format = "Parquet";
+            format = "Parquet";
         }
         else
         {
-            configuration.format
+            format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
+                      .tryGetFormatFromFileName(isArchive() ? getPathInArchive() : getPath())
                       .value_or("auto");
         }
     }
     else
-        FormatFactory::instance().checkFormatName(configuration.format);
+        FormatFactory::instance().checkFormatName(format);
 
     if (settings)
     {
-        configuration.allow_dynamic_metadata_for_data_lakes
+        allow_dynamic_metadata_for_data_lakes
             = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
-        configuration.allow_experimental_delta_kernel_rs
+        allow_experimental_delta_kernel_rs
             = (*settings)[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
     }
-    configuration.initialized = true;
+    initialized = true;
 }
 
 void StorageObjectStorage::Configuration::check(ContextPtr) const

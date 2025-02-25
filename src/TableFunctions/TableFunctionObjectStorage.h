@@ -65,7 +65,7 @@ struct LocalDefinition
 struct IcebergDefinition
 {
     static constexpr auto name = "iceberg";
-    static constexpr auto storage_type_name = "S3";
+    static constexpr auto storage_type_name = "UNDEFINED";
 };
 
 struct IcebergS3Definition
@@ -130,7 +130,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true, &settings);
+        getConfiguration()->initialize(args, context, true, &settings);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -184,8 +184,9 @@ using TableFunctionLocal = TableFunctionObjectStorage<LocalDefinition, StorageLo
 
 
 #if USE_AVRO
+using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageIcebergConfiguration>;
+
 #    if USE_AWS_S3
-using TableFunctionIceberg = TableFunctionObjectStorage<IcebergDefinition, StorageS3IcebergConfiguration>;
 using TableFunctionIcebergS3 = TableFunctionObjectStorage<IcebergS3Definition, StorageS3IcebergConfiguration>;
 #    endif
 #    if USE_AZURE_BLOB_STORAGE
