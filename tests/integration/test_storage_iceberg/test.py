@@ -1732,6 +1732,33 @@ def test_metadata_file_format_with_uuid(started_cluster, format_version, storage
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
 
 
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_uuid_column(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_uuid_" + format_version + "_" + storage_type + "_" + get_uuid_str()
+    )
+
+    spark.sql(
+        f"CREATE TABLE {TABLE_NAME} (id UUID) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}', 'write.format.default' = '{format}')"
+    )
+
+    spark.sql(f"INSERT INTO {TABLE_NAME} select {get_uuid_str()}")
+
+    default_upload_directory(
+        started_cluster,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    check_schema_and_data(instance, TABLE_NAME, [], [])
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 500
+
+
 def test_restart_broken_s3(started_cluster):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
