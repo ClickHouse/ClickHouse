@@ -75,19 +75,26 @@ UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide si
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
 
+    auto serialize_join_condition = [&](const JoinCondition & condition)
+    {
+        writeBinary(condition.predicates.size(), wbuf);
+        for (const auto & pred : condition.predicates)
+        {
+            const auto & node = side == JoinTableSide::Left ? pred.left_node : pred.right_node;
+            writeStringBinary(node.getColumnName(), wbuf);
+            writeBinary(static_cast<UInt8>(pred.op), wbuf);
+        }
+    };
+
     writeStringBinary(join_step.getSerializationName(), wbuf);
     const auto & pre_join_actions = side == JoinTableSide::Left ? join_step.getExpressionActions().left_pre_join_actions
                                                                 : join_step.getExpressionActions().right_pre_join_actions;
     chassert(pre_join_actions);
     pre_join_actions->serialize(ctx.out, ctx.registry);
-    chassert(join_step.getJoinInfo().expression.disjunctive_conditions.empty(), "ConcurrentHashJoin supports only one disjunct currently");
-    writeBinary(join_step.getJoinInfo().expression.condition.predicates.size(), wbuf);
-    for (const auto & pred : join_step.getJoinInfo().expression.condition.predicates)
-    {
-        const auto & node = side == JoinTableSide::Left ? pred.left_node : pred.right_node;
-        writeStringBinary(node.getColumnName(), wbuf);
-        writeBinary(static_cast<UInt8>(pred.op), wbuf);
-    }
+    serialize_join_condition(join_step.getJoinInfo().expression.condition);
+    for (const auto & condition : join_step.getJoinInfo().expression.disjunctive_conditions)
+        serialize_join_condition(condition);
+    writeBinary(join_step.getJoinInfo().expression.is_using, wbuf);
 
     SipHash hash;
     hash.update(wbuf.str());
