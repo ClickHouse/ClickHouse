@@ -644,20 +644,15 @@ struct ToTime64TransformSigned
         : scale_multiplier(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale))
     {}
 
-    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & time_zone) const
+    NO_SANITIZE_UNDEFINED Time64::NativeType execute(FromType from, const DateLUTImpl & /*time_zone*/) const
     {
-        Int8 negative_mult = 1;
-        if (from < 0)
-            negative_mult = -1;
-
-        auto converted = time_zone.toTime(from * negative_mult) * negative_mult;
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (converted < (-1 * MIN_DATETIME64_TIMESTAMP) || converted > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(converted, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(from, 0, scale_multiplier);
     }
 };
 
@@ -708,9 +703,9 @@ struct ToTime64Transform
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
     }
 
-    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
+    Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
     {
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(time_zone.toTime(dt), 0, scale_multiplier);
     }
 };
 
@@ -1706,12 +1701,8 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr ((
-                std::is_same_v<FromDataType, DataTypeDate>
-                || std::is_same_v<FromDataType, DataTypeDate32>
-                || std::is_same_v<FromDataType, DataTypeDateTime>
-                || std::is_same_v<FromDataType, DataTypeTime>)
-            && std::is_same_v<ToDataType, DataTypeTime64>)
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeTime>)
+                            && std::is_same_v<ToDataType, DataTypeTime64>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64Transform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, additions);
@@ -2228,6 +2219,14 @@ struct ConvertImpl
                                     "Conversion between numeric types and IPv6 is not supported. "
                                     "Probably the passed IPv6 is unquoted");
                 }
+                else if constexpr (
+                    ((std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
+                        && (std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeTime64>))
+                    || ((std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
+                        && (std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)))
+                {
+                    vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
+                }
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
@@ -2321,14 +2320,6 @@ struct ConvertImpl
                     && (std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>))
                 {
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i] * DATE_SECONDS_PER_DAY);
-                }
-                else if constexpr (
-                    ((std::is_same_v<FromDataType, DataTypeDate> || std::is_same_v<FromDataType, DataTypeDate32>)
-                        && (std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeTime64>))
-                    || ((std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
-                        && (std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)))
-                {
-                    vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
                 }
                 else
                 {

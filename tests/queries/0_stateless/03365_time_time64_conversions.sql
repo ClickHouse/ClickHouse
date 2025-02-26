@@ -179,22 +179,22 @@ SELECT -3600::Int16::Time64;
 SELECT 0::Int32::Time64;
 SELECT 12::Int32::Time64;
 SELECT 3600::Int32::Time64;
-SELECT 360000::Int32::Time64; -- bug
+SELECT 360000::Int32::Time64;
 SELECT -0::Int32::Time64;
 SELECT -12::Int32::Time64;
 SELECT -3600::Int32::Time64;
-SELECT -360000::Int32::Time64; -- bug
+SELECT -360000::Int32::Time64;
 
 -- Int64
 SELECT 0::Int64::Time64;
 SELECT 12::Int64::Time64;
 SELECT 3600::Int64::Time64;
-SELECT 360000::Int64::Time64; -- bug
-SELECT 999999999::Int64::Time64; -- bug
+SELECT 360000::Int64::Time64;
+SELECT 999999999::Int64::Time64;
 SELECT -0::Int64::Time64;
 SELECT -12::Int64::Time64;
 SELECT -3600::Int64::Time64;
-SELECT -360000::Int64::Time64; -- bug
+SELECT -360000::Int64::Time64;
 
 -- Float32
 SELECT 0::Float32::Time64;
@@ -240,11 +240,11 @@ SELECT toTime(toDateTime64('2022-01-01 00:99:12.123', 2));
 SELECT toTime(toDateTime64('1970-01-01 00:99:12.123', 2));
 
 -- Conversion from DateTime to Time64
-SELECT toTime64(toDateTime('2022-01-01 12:12:12'), 2); -- bug
+SELECT toTime64(toDateTime('2022-01-01 12:12:12'), 2);
 SELECT toTime64(toDateTime('1970-01-01 12:12:12'), 2);
-SELECT toTime64(toDateTime('2022-01-01 23:99:12'), 2); -- bug
+SELECT toTime64(toDateTime('2022-01-01 23:99:12'), 2);
 SELECT toTime64(toDateTime('1970-01-01 23:99:12'), 2);
-SELECT toTime64(toDateTime('2022-01-01 00:99:12'), 2); -- bug
+SELECT toTime64(toDateTime('2022-01-01 00:99:12'), 2);
 SELECT toTime64(toDateTime('1970-01-01 00:99:12'), 2);
 
 -- Conversion from Time64 to DateTime64
@@ -271,11 +271,11 @@ SELECT toTime(toDate('2022-01-01'));
 SELECT toTime(toDate('1970-01-01'));
 
 -- Conversion from Date to Time64
-SELECT toTime64(toDate('2022-01-01'), 2); -- bug
+SELECT toTime64(toDate('2022-01-01'), 2);
 SELECT toTime64(toDate('1970-01-01'), 2);
-SELECT toTime64(toDate('2022-01-01'), 2); -- bug
+SELECT toTime64(toDate('2022-01-01'), 2);
 SELECT toTime64(toDate('1970-01-01'), 2);
-SELECT toTime64(toDate('2022-01-01'), 2); -- bug
+SELECT toTime64(toDate('2022-01-01'), 2);
 SELECT toTime64(toDate('1970-01-01'), 2);
 
 -- Conversion from Time to Date
@@ -288,5 +288,13 @@ SELECT toDate32(toTime('00:99:12'));
 SELECT toDate32(toTime('23:99:12'));
 SELECT toDate32(toTime('999:99:99'));
 
-SELECT toDate32(toTime64('00:99:12', 2)); -- { serverError CANNOT_CONVERT_TYPE }
-SELECT toDate(toTime64('00:99:12', 2)); -- { serverError CANNOT_CONVERT_TYPE }
+-- Conversion from Time64 to Date32 (result is always zero)
+SELECT toDate32(toTime64('00:99:12', 2));
+SELECT toDate32(toTime64('23:99:12', 2));
+SELECT toDate32(toTime64('999:99:99', 2));
+
+
+-- Conversion from Time64 to Date (result is always zero)
+SELECT toDate(toTime64('00:99:12', 2));
+SELECT toDate(toTime64('23:99:12', 2));
+SELECT toDate(toTime64('999:99:99', 2));

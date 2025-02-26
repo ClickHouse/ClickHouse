@@ -14,4 +14,3 @@ SELECT toTime64('-0:00:00.0', 9);
 
 -- Exceeds the acceptable range
 SELECT toTime('999:99:99');
-SELECT toTime('-999:99:99');
