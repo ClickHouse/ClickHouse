@@ -550,7 +550,9 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
             table_join_clauses.pop_back();
             bool can_convert_to_cross = (isInner(join_info.kind) || isCrossOrComma(join_info.kind))
                 && join_info.strictness == JoinStrictness::All
-                && join_expression.disjunctive_conditions.empty();
+                && join_expression.disjunctive_conditions.empty()
+                && join_expression.condition.left_filter_conditions.empty()
+                && join_expression.condition.right_filter_conditions.empty();
 
             if (!can_convert_to_cross)
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
@@ -561,12 +563,12 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
 
     if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions))
     {
-        table_join_clauses.back().analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
     }
 
     if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions))
     {
-        table_join_clauses.back().analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
 
     if (join_info.strictness == JoinStrictness::Asof)

@@ -238,7 +238,7 @@ See [JSONCompactEachRowWithNames](formats/JSON/JSONCompactEachRowWithNames.md)
 
 See [JSONCompactEachRowWithNamesAndTypes](formats/JSON/JSONCompactEachRowWithNamesAndTypes.md)
 
-## JSONCompactEachRowWithProgress
+## JSONCompactEachRowWithProgress {#jsoncompacteachrowwithprogress}
 
 Similar to `JSONEachRowWithProgress` but outputs `row` events in a compact form, like in the `JSONCompactEachRow` format. 
 
@@ -441,7 +441,7 @@ Limitations:
 
 See [RawBLOB](formats/RawBLOB.md)
 
-## Markdown
+## Markdown {#markdown}
 
 See [Markdown](formats/Markdown.md)
 

@@ -2,14 +2,16 @@
 slug: /sql-reference/table-functions/hdfs
 sidebar_position: 80
 sidebar_label: hdfs
+title: "hdfs"
+description: "Creates a table from files in HDFS. This table function is similar to the url and file table functions."
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# hdfs
+# hdfs Table Function
 
-Creates a table from files in HDFS. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) ones.
+Creates a table from files in HDFS. This table function is similar to the [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) table functions.
 
 ``` sql
 hdfs(URI, format, structure)
@@ -96,7 +98,7 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
 
-## Virtual Columns
+## Virtual Columns {#virtual-columns}
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
