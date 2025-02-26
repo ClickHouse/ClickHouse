@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/merge
 sidebar_position: 130
 sidebar_label: merge
+title: "merge"
+description: "Creates a temporary Merge table. The table structure is taken from the first table encountered that matches the regular expression."
 ---
 
-# merge
+# merge Table Function
 
 Creates a temporary [Merge](../../engines/table-engines/special/merge.md) table. The table structure is taken from the first table encountered that matches the regular expression.
 

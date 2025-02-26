@@ -40,9 +40,9 @@ For a description of request parameters, see [statement description](../../../sq
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
-## ReplacingMergeTree Parameters
+## ReplacingMergeTree Parameters {#replacingmergetree-parameters}
 
-### ver
+### ver {#ver}
 
 `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
@@ -94,7 +94,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### is_deleted
+### is_deleted {#is_deleted}
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
@@ -142,7 +142,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-## Query clauses
+## Query clauses {#query-clauses}
 
 When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
@@ -169,7 +169,7 @@ All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
 </details>
 
-## Query time de-duplication & FINAL
+## Query time de-duplication & FINAL {#query-time-de-duplication--final}
 
 At merge time, the ReplacingMergeTree identifies duplicate rows, using the values of the `ORDER BY` columns (used to create the table) as a unique identifier, and retains only the highest version. This, however, offers eventual correctness only - it does not guarantee rows will be deduplicated, and you should not rely on it. Queries can, therefore, produce incorrect answers due to update and delete rows being considered in queries.
 

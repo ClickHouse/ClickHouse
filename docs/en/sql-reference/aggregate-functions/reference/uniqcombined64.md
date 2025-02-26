@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/uniqcombined64
 sidebar_position: 206
+title: "uniqCombined64"
+description: "Calculates the approximate number of different argument values. It is the same as uniqCombined, but uses a 64-bit hash for all data types rather than just for the String data type."
 ---
 
 # uniqCombined64
