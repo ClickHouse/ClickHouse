@@ -6939,7 +6939,7 @@ parseDateTime(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -6988,7 +6988,7 @@ parseDateTimeInJodaSyntax(str[, format[, timezone]])
 
 - `str` — The String to be parsed
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 

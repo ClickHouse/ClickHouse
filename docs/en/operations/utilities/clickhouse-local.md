@@ -58,7 +58,7 @@ The `file` table function creates a table, and you can use `DESCRIBE` to see the
 ```
 
 :::tip
-You are allowed to use globs in file name (See [glob substitutions](/docs/sql-reference/table-functions/file.md/#globs-in-path)).
+You are allowed to use globs in file name (See [glob substitutions](/sql-reference/table-functions/file.md/#globs-in-path)).
 
 Examples:
 

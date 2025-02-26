@@ -257,6 +257,10 @@ class Result(MetaClasses.Serializable):
             print("Pipeline finished")
             self.update_duration()
 
+    def add_ext_key_value(self, key, value):
+        self.ext[key] = value
+        return self
+
     @classmethod
     def generate_pending(cls, name, results=None):
         return Result(
