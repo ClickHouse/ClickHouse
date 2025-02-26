@@ -997,6 +997,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    can_use_query_cache(o.can_use_query_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -3651,6 +3652,16 @@ void Context::clearCaches() const
     shared->mmap_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+}
+
+void Context::setCanUseQueryCache(bool can_use_query_cache_)
+{
+    can_use_query_cache = can_use_query_cache_;
+}
+
+bool Context::getCanUseQueryCache() const
+{
+    return can_use_query_cache;
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)

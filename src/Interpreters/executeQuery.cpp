@@ -165,9 +165,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
@@ -1321,7 +1319,9 @@ static BlockIO executeQueryImpl(
         const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+        context->setCanUseQueryCache(can_use_query_cache);
         QueryCacheUsage query_cache_usage = QueryCacheUsage::None;
+
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
         /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
@@ -1355,7 +1355,7 @@ static BlockIO executeQueryImpl(
             {
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+                    QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryCacheReader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
@@ -1456,60 +1456,37 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
-
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings[Setting::enable_writes_to_query_cache])
+                    if (checkCanWriteQueryCache(out_ast, context))
                     {
-                        /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
+                        QueryCache::Key key(
+                            out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                            context->getCurrentQueryId(),
+                            context->getUserID(), context->getCurrentRoles(),
+                            settings[Setting::query_cache_share_between_users],
+                            std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
+                            settings[Setting::query_cache_compress_entries],
+                            /* is_subquery = */ false);
 
-                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(out_ast, context);
-                        const bool ast_contains_system_tables = astContainsSystemTables(out_ast, context);
-
-                        const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling
-                            = settings[Setting::query_cache_nondeterministic_function_handling];
-                        const QueryCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
-
-                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
-                                "The query result was not cached because the query contains a non-deterministic function."
-                                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
-                            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                                "The query result was not cached because the query contains a system table."
-                                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
-
-                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
-                            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
+                        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+                        if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                         {
-                            QueryCache::Key key(
-                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
-                                context->getCurrentQueryId(),
-                                context->getUserID(), context->getCurrentRoles(),
-                                settings[Setting::query_cache_share_between_users],
-                                std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
-                                settings[Setting::query_cache_compress_entries]);
-
-                            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
-                            if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
-                            {
-                                LOG_TRACE(getLogger("QueryCache"),
-                                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                        num_query_runs, settings[Setting::query_cache_min_query_runs]);
-                            }
-                            else
-                            {
-                                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
-                                                 key,
-                                                 std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                                 settings[Setting::query_cache_squash_partial_results],
-                                                 settings[Setting::max_block_size],
-                                                 settings[Setting::query_cache_max_size_in_bytes],
-                                                 settings[Setting::query_cache_max_entries]));
-                                res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                                query_cache_usage = QueryCacheUsage::Write;
-                            }
+                            LOG_TRACE(getLogger("QueryCache"),
+                                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                    num_query_runs, settings[Setting::query_cache_min_query_runs]);
+                        }
+                        else
+                        {
+                            auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
+                                                key,
+                                                std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                                settings[Setting::query_cache_squash_partial_results],
+                                                settings[Setting::max_block_size],
+                                                settings[Setting::query_cache_max_size_in_bytes],
+                                                settings[Setting::query_cache_max_entries]));
+                            res.pipeline.writeResultIntoQueryCache(query_cache_writer);
+                            query_cache_usage = QueryCacheUsage::Write;
                         }
                     }
                 }
@@ -1568,9 +1545,10 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCacheUsage::Write)
-                    /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
-                    /// partial/garbage results in case of exceptions during query execution.
+                /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
+                /// partial/garbage results in case of exceptions during query execution.
+                /// Should call this even if QueryCacheUsage::Read, because QueryCache may be used for write in subqueries.
+                if (context->getCanUseQueryCache())
                     query_pipeline.finalizeWriteInQueryCache();
 
                 logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
