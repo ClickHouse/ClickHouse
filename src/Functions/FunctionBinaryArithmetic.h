@@ -1101,6 +1101,20 @@ class FunctionBinaryArithmetic : public IFunction
         return which1.isDateTime64() && which0.isDateTimeOrDateTime64();
     }
 
+    static bool isTime64Subtraction(const DataTypePtr & type0, const DataTypePtr & type1)
+    {
+        if constexpr (!is_minus)
+            return false;
+
+        WhichDataType which0(type0);
+        WhichDataType which1(type1);
+
+        if (which0.isTime64() && which1.isTimeOrTime64())
+            return true;
+
+        return which1.isTime64() && which0.isTimeOrTime64();
+    }
+
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
     ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
     {
@@ -1256,6 +1270,105 @@ class FunctionBinaryArithmetic : public IFunction
                 {
                     to_be_checked.col = checkAndGetColumn<ColumnDateTime64>(col_raw);
                     const auto & from_type = *checkAndGetDataType<DataTypeDateTime64>(to_be_checked.argument.type.get());
+                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
+                }
+
+                if (!to_be_checked.col)
+                    return false;
+            }
+            return true;
+        };
+
+        /// Process both columns
+        if (!process(cols[0], cols[1].argument.type))
+            return nullptr;
+        if (!process(cols[1], cols[0].argument.type))
+            return nullptr;
+
+        /// Handle constant values
+        if (cols[0].is_const && cols[1].is_const)
+        {
+            auto res = helperInvokeEither</* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck, Decimal64>(
+                cols[0].const_val, cols[1].const_val, cols[0].scale, cols[1].scale);
+            return type->createColumnConst(input_row_count, toField(res, type->getScale()));
+        }
+
+        auto col_res = ColumnDecimal<Decimal64>::create(input_row_count, type->getScale());
+        auto & vec_res = col_res->getData();
+
+        auto invoke = [&]<OpCase op_case>(const auto& col0, const auto& col1)
+        {
+            helperInvokeEither<op_case, /* left_is_decimal */ true, /* right_is_decimal */ true, OpImpl, OpImplCheck>(
+                col0, col1, vec_res, cols[0].scale, cols[1].scale, nullptr);
+        };
+        /// Process based on whether the column is constant or not
+        if (cols[0].is_const)
+            invoke.template operator()<OpCase::LeftConstant>(cols[0].const_val, cols[1].col->getData());
+        else if (cols[1].is_const)
+            invoke.template operator()<OpCase::RightConstant>(cols[0].col->getData(), cols[1].const_val);
+        else
+            invoke.template operator()<OpCase::Vector>(cols[0].col->getData(), cols[1].col->getData());
+
+        return col_res;
+    }
+
+    ColumnPtr executeTime64Subtraction(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type,
+                                           size_t input_row_count) const
+    {
+        using OpImplCheck = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ true>;
+        using OpImpl = DecimalBinaryOperation<Op, Decimal64, /* check_overflow */ false>;
+        using ColumnTime64 = DataTypeTime64::ColumnType;
+        using ColumnTime = DataTypeTime::ColumnType;
+
+        struct ColumnInfo
+        {
+            explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
+            const ColumnWithTypeAndName & argument;
+            const ColumnTime64 * col;
+            ColumnPtr converted_col;
+            UInt64 const_val;
+            bool is_const;
+            UInt64 scale;
+        } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
+
+        const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
+        if (!type)
+            return nullptr;
+
+        /// Process column information for both arguments
+        auto process = [type] (struct ColumnInfo & to_be_checked, const DataTypePtr & other_type)
+        {
+            const auto * col_raw = to_be_checked.argument.column.get();
+            to_be_checked.is_const = isColumnConst(*col_raw);
+
+            if (to_be_checked.is_const)
+            {
+                if (WhichDataType(to_be_checked.argument.type).isTime())
+                {
+                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<UInt32>();
+                    /// the output type is the same as the other argument, which is Time64
+                    to_be_checked.scale = type->getScaleMultiplier();
+                }
+                else
+                {
+                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime64>(col_raw)->template getValue<Decimal64>().value;
+                    const auto & from_type = *checkAndGetDataType<DataTypeTime64>(to_be_checked.argument.type.get());
+                    to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
+                }
+            }
+            else
+            {
+                if (WhichDataType(to_be_checked.argument.type).isTime())
+                {
+                    to_be_checked.converted_col = castColumn(to_be_checked.argument, other_type);
+                    to_be_checked.col = checkAndGetColumn<ColumnTime64>(to_be_checked.converted_col.get());
+                    /// the DateTime argument is already scaled up by calling castColumn
+                    to_be_checked.scale = 1;
+                }
+                else
+                {
+                    to_be_checked.col = checkAndGetColumn<ColumnTime64>(col_raw);
+                    const auto & from_type = *checkAndGetDataType<DataTypeTime64>(to_be_checked.argument.type.get());
                     to_be_checked.scale = type->scaleFactorFor(from_type, /* is_multiply_or_divisor */ false);
                 }
 
@@ -1640,6 +1753,7 @@ public:
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
+        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here2");
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
@@ -1697,6 +1811,7 @@ public:
         /// Special case when the function is minus, both arguments are DateTime64.
         if (isDateTime64Subtraction(arguments[0], arguments[1]))
         {
+            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here3");
             UInt32 scale_lhs = 0;
             UInt32 scale_rhs = 0;
             if (isDateTime64(arguments[0]))
@@ -1711,6 +1826,24 @@ public:
             }
             return std::make_shared<DataTypeDecimal64>(DecimalUtils::max_precision<DateTime64>, std::max(scale_lhs, scale_rhs));
         }
+        else if (isTime64Subtraction(arguments[0], arguments[1])) /// Special case when the function is minus, both arguments are Time64.
+        {
+            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here4");
+            UInt32 scale_lhs = 0;
+            UInt32 scale_rhs = 0;
+            if (isTime64(arguments[0]))
+            {
+                const auto *lhs = checkAndGetDataType<DataTypeTime64>(arguments[0].get());
+                scale_lhs = lhs->getScale();
+            }
+            if (isTime64(arguments[1]))
+            {
+                const auto *rhs = checkAndGetDataType<DataTypeTime64>(arguments[1].get());
+                scale_rhs = rhs->getScale();
+            }
+            return std::make_shared<DataTypeDecimal64>(DecimalUtils::max_precision<Time64>, std::max(scale_lhs, scale_rhs));
+        }
+        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here5");
 
         if constexpr (is_multiply || is_division)
         {
@@ -1735,6 +1868,7 @@ public:
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
+            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here6");
             ColumnsWithTypeAndName new_arguments(2);
 
             for (size_t i = 0; i < 2; ++i)
@@ -1762,6 +1896,7 @@ public:
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
         }
+        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here7");
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
         if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context))
@@ -1778,6 +1913,7 @@ public:
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
         }
+        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here8");
 
         /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
         if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context))
@@ -1808,9 +1944,11 @@ public:
         }
 
         DataTypePtr type_res;
+        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here9");
 
         const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
+            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here10");
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
 
@@ -1875,6 +2013,8 @@ public:
 
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
+                LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here1");
+
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {
                     if constexpr (is_int_div || is_int_div_or_zero)
@@ -1927,9 +2067,9 @@ public:
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
                     {
-                        // Special case for DateTime: binary OPS should reuse timezone
-                        // of DateTime argument as timezeone of result type.
-                        // NOTE: binary plus/minus are not allowed on DateTime64, and we are not handling it here.
+                        // Special case for Time: binary OPS should reuse timezone
+                        // of Time argument as timezeone of result type.
+                        // NOTE: binary plus/minus are not allowed on Time64, and we are not handling it here.
 
                         const TimezoneMixin * tz = nullptr;
                         if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
@@ -2396,6 +2536,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         if (isDateTime64Subtraction(arguments[0].type, arguments[1].type))
         {
             return executeDateTime64Subtraction(arguments, result_type, input_rows_count);
+        }
+        /// Special case when the function is minus, both arguments are Time64.
+        if (isTime64Subtraction(arguments[0].type, arguments[1].type))
+        {
+            return executeTime64Subtraction(arguments, result_type, input_rows_count);
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.

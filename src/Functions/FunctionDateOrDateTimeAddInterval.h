@@ -182,11 +182,9 @@ struct AddSecondsImpl
     {
         return static_cast<UInt32>(t + delta);
     }
-    static NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        // use default datetime64 scale
-        static_assert(DataTypeDateTime64::default_scale == 3);
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+        return static_cast<Int32>(d + delta);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -217,11 +215,9 @@ struct AddMinutesImpl
     {
         return static_cast<UInt32>(t + delta * 60);
     }
-    static NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        // use default datetime64 scale
-        static_assert(DataTypeDateTime64::default_scale == 3);
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60) * 1000;
+        return static_cast<Int32>(d + delta * 60);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -252,11 +248,9 @@ struct AddHoursImpl
     {
         return static_cast<UInt32>(t + delta * 3600);
     }
-    static NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        // use default datetime64 scale
-        static_assert(DataTypeDateTime64::default_scale == 3);
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600) * 1000;
+        return static_cast<Int32>(d + delta * 3600);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -792,7 +786,7 @@ public:
 
             return std::make_shared<DataTypeDateTime64>(target_scale.value_or(DataTypeDateTime64::default_scale), std::move(timezone));
         }
-        else if constexpr (std::is_same_v<ResultDataType, DataTypeInt8>)
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeInt8>)  // TODO: FORBID addSecond .. AddHour with Date32 and addDay .. with Time
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");

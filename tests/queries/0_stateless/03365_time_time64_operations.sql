@@ -1,22 +1,60 @@
 SET session_timezone = 'UTC';
-SELECT toTime(12) + 1; -- bug
-SELECT toTime(12) + 25; -- bug
-SELECT toTime(12) - 1; -- bug
-SELECT toTime(12) - 25; -- bug
+-- Operations <Time> + <number>
+SELECT toTime(12) + 1;
+SELECT toTime(12) + 25;
+SELECT toTime(12) + 1.1;
+SELECT toTime(12) + 25.2;
+-- Operations <Time> - <number>
+SELECT toTime(12) - 1;
+SELECT toTime(12) - 25;
+SELECT toTime(12) - 1.1;
+SELECT toTime(12) - 25.2;
+-- Operations <Time> + <INTERVAL>
 SELECT toTime(12) + INTERVAL 1 SECOND;
 SELECT toTime(12) + INTERVAL 1 MINUTE;
 SELECT toTime(12) + INTERVAL 1 HOUR;
+-- Operations <Time> - <INTERVAL>
 SELECT toTime(12) - INTERVAL 1 SECOND;
 SELECT toTime(72) - INTERVAL 1 MINUTE;
 SELECT toTime(3610) - INTERVAL 1 HOUR;
+SELECT toTime(12) - INTERVAL 1 MINUTE;
+SELECT toTime(12) - INTERVAL 1 HOUR;
+-- Operations <Time> % <number>
+SELECT toTime(12) % 1;
+SELECT toTime(12) % 7;
+SELECT toTime(12) % 25;
+SELECT toTime(12) % 7.1;
+SELECT toTime(12) % 25.2;
+-- Operations <Time> - <Time>
+SELECT toTime(12) - toTime(11);
+SELECT toTime(12) - toTime(2);
+SELECT toTime(12) - toTime(20);
 
-SELECT toTime64(12, 2) + 1; -- bug
-SELECT toTime64(12, 2) + 25; -- bug
-SELECT toTime64(12, 2) - 1; -- bug
-SELECT toTime64(12, 2) - 25; -- bug
+-- Operations <Time64> + <number>
+SELECT toTime64(12, 2) + 1;
+SELECT toTime64(12, 2) + 25;
+SELECT toTime64(12, 2) + 1.1;
+SELECT toTime64(12, 2) + 25.2;
+-- Operations <Time64> - <number>
+SELECT toTime64(12, 2) - 1;
+SELECT toTime64(12, 2) - 25;
+SELECT toTime64(12, 2) - 1.1;
+SELECT toTime64(12, 2) - 25.2;
+-- Operations <Time64> + <INTERVAL>
+SELECT toTime64(12, 2) + INTERVAL 1 NANOSECOND;
+SELECT toTime64(12, 2) + INTERVAL 1 MICROSECOND;
+SELECT toTime64(12, 2) + INTERVAL 1 MILLISECOND;
 SELECT toTime64(12, 2) + INTERVAL 1 SECOND;
 SELECT toTime64(12, 2) + INTERVAL 1 MINUTE;
 SELECT toTime64(12, 2) + INTERVAL 1 HOUR;
+-- Operations <Time64> - <INTERVAL>
+SELECT toTime64(12, 2) - INTERVAL 1 NANOSECOND;
+SELECT toTime64(12, 2) - INTERVAL 1 MICROSECOND;
+SELECT toTime64(12, 2) - INTERVAL 1 MILLISECOND;
 SELECT toTime64(12, 2) - INTERVAL 1 SECOND;
 SELECT toTime64(72, 2) - INTERVAL 1 MINUTE;
 SELECT toTime64(3610, 2) - INTERVAL 1 HOUR;
+-- Operations <Time64> - <Time64>
+SELECT toTime64(12, 2) - toTime64(12, 2);
+SELECT toTime64(12, 2) - toTime64(10.13, 2);
+SELECT toTime64(12, 2) - toTime64(20.13, 2);
