@@ -127,7 +127,9 @@ StoragePtr TableFunctionURL::getStorage(
         global_context,
         compression_method_,
         configuration.headers,
-        configuration.http_method);
+        configuration.http_method,
+        nullptr,
+        /*distributed_processing=*/ true);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
