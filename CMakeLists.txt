@@ -314,9 +314,9 @@ endif()
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
 
 if (DISABLE_OMIT_FRAME_POINTER)
-    set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
-    set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
-    set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer")
+    set (CMAKE_CXX_FLAGS_ADD "${CMAKE_CXX_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
+    set (CMAKE_C_FLAGS_ADD "${CMAKE_C_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
+    set (CMAKE_ASM_FLAGS_ADD "${CMAKE_ASM_FLAGS_ADD} -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fno-optimize-sibling-calls")
 endif()
 
 # Before you start hating your debugger because it refuses to show variables ('<optimized out>'), try building with -DDEBUG_O_LEVEL="0"
@@ -387,6 +387,10 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
+if (ENABLE_EXTERN_LOCAL_ENGINE)
+    set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
@@ -438,7 +442,7 @@ if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 endif()
 
-if (ENABLE_POSITION_INDEPENDENT_BINARY)
+if (ENABLE_POSITION_INDEPENDENT_BINARY AND NOT ENABLE_EXTERN_LOCAL_ENGINE)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
