@@ -30,6 +30,8 @@
 
 #include <Poco/Util/Application.h>
 
+#include <filesystem>
+
 #include "config.h"
 
 namespace fs = std::filesystem;
