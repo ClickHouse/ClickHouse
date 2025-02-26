@@ -162,11 +162,21 @@ def test_size_adjustment(started_cluster):
     ):
         pytest.skip("sanitizer build has higher memory consumption; also it is slow")
 
-    # Insert 1.6 GB of data, more than max_server_memory_usage (1.5 GB). Then read it with cache enabled.
+    rss = int(
+        node.query(
+            "select value from system.asynchronous_metrics where metric = 'MemoryResident'"
+        )
+    )
+    # Check there's at least some free memory for page cache. If this fails, maybe server's memory
+    # usage bloated enough that max_server_memory_usage needs to be increased in this test
+    # (along with numbers in the next query below).
+    assert rss < 2.5e9
+
+    # Insert 3.2 GB of data, more than max_server_memory_usage (3.0 GB). Then read it with cache enabled.
     node.query(
         "create table a (k Int64 CODEC(NONE)) engine MergeTree order by k settings storage_policy = 's3';"
         "system stop merges a;"
-        "insert into a select * from numbers(200000000);"
+        "insert into a select * from numbers(400000000);"
         "select sum(k) from a settings use_page_cache_for_disks_without_file_cache=1;"
     )
     node.query("system reload asynchronous metrics")
