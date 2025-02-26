@@ -124,8 +124,7 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     auto it = partition_id_to_sink.find(partition_key);
     if (it == partition_id_to_sink.end())
     {
-        auto partition_key_str = partition_key.toString();
-        auto sink = createSinkForPartition(partition_key_str);
+        auto sink = createSinkForPartition(partition_key.toString());
         std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, sink);
     }
 
