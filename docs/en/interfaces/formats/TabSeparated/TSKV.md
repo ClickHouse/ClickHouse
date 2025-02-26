@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 Similar to the [`TabSeparated`](./TabSeparated.md) format, but outputs a value in `name=value` format. 
 Names are escaped the same way as in the [`TabSeparated`](./TabSeparated.md) format, and the `=` symbol is also escaped.
@@ -55,6 +55,6 @@ if setting [`input_format_skip_unknown_fields`](/docs/operations/settings/settin
 
 [NULL](/docs/sql-reference/syntax.md) is formatted as `\N`.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
