@@ -25,7 +25,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     std::shared_ptr<FilesystemCacheLog> cache_log_,
     bool use_external_buffer_,
     size_t buffer_size)
-    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase()
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)
     , read_buffer_creator(std::move(read_buffer_creator_))

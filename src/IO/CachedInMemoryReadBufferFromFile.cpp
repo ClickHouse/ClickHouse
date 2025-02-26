@@ -15,10 +15,15 @@ namespace ErrorCodes
 
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     FileChunkAddress cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
-    : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_), settings(settings_), in(std::move(in_))
+    : ReadBufferFromFileBase()
+    , cache_key(cache_key_)
+    , cache(cache_)
+    , settings(settings_)
+    , in(std::move(in_))
     , read_until_position(file_size.value())
 {
     cache_key.offset = 0;
+    file_size = in->tryGetFileSize();
 }
 
 String CachedInMemoryReadBufferFromFile::getFileName() const

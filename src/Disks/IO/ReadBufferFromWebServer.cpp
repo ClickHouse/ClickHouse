@@ -38,7 +38,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     const ReadSettings & settings_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
+    : ReadBufferFromFileBase()
     , log(getLogger("ReadBufferFromWebServer"))
     , context(context_)
     , url(url_)
@@ -47,6 +47,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
+    file_size = file_size_;
 }
 
 
