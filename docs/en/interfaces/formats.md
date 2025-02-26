@@ -40,7 +40,7 @@ Formats supported for output are used for:
 - Arranging the results of a `SELECT` query
 - Performing `INSERT` operations into file-backed tables
 
-## Formats overview
+## Formats overview {#formats-overview}
 
 The supported formats are:
 
