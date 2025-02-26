@@ -1305,6 +1305,12 @@ def test_force_synchronous_settings(started_cluster):
     )
     select_thread.join()
 
+    main_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    dummy_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
+    snapshotting_node.query(
+        "DROP DATABASE test_force_synchronous_settings SYNC"
+    )
+
 
 def test_recover_digest_mismatch(started_cluster):
     main_node.query("DROP DATABASE IF EXISTS recover_digest_mismatch SYNC")
