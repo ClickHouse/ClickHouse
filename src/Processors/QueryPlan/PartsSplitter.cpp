@@ -932,6 +932,7 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
 
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
     ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,
@@ -966,14 +967,16 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     }
 
     bool in_reverse_order = false;
-    if (!primary_key.reverse_flags.empty())
+    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
+    if (!sorting_key.reverse_flags.empty())
     {
-        in_reverse_order = primary_key.reverse_flags[0];
-        for (size_t i = 1; i < primary_key.reverse_flags.size(); ++i)
+        chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
+        in_reverse_order = sorting_key.reverse_flags[0];
+        for (size_t i = 1; i < num_primary_keys; ++i)
         {
             /// It's not possible to split parts when some keys are in ascending
             /// order while others are in descending order.
-            if (in_reverse_order != primary_key.reverse_flags[i])
+            if (in_reverse_order != sorting_key.reverse_flags[i])
             {
                 result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
                 return result;

@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/cli
+slug: /interfaces/cli
 sidebar_position: 17
 sidebar_label: ClickHouse Client
 title: ClickHouse Client
@@ -10,7 +10,7 @@ ClickHouse provides a native command-line client for executing SQL queries direc
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
 
 
-## Install
+## Install {#install}
 
 To download ClickHouse, run:
 
@@ -28,7 +28,7 @@ See [Install ClickHouse](../getting-started/install.md) for more installation op
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
 
 
-## Run
+## Run {#run}
 
 :::note
 If you only downloaded but did not install ClickHouse, use `./clickhouse client` instead of `clickhouse-client`.
@@ -172,7 +172,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 ```
 
 
-## Notes
+## Notes {#notes}
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
 

@@ -169,6 +169,14 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                                             { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
     }
 
+    const auto & pipeline_output_header = joined_pipeline->getHeader();
+    const auto & expected_output_header = getOutputHeader();
+    if (!isCompatibleHeader(pipeline_output_header, expected_output_header))
+    {
+        assertBlocksHaveEqualStructure(pipeline_output_header, expected_output_header,
+            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header.dumpNames()));
+    }
+
     return joined_pipeline;
 }
 

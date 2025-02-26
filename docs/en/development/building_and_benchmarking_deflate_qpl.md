@@ -1,5 +1,5 @@
 ---
-slug: /en/development/building_and_benchmarking_deflate_qpl
+slug: /development/building_and_benchmarking_deflate_qpl
 sidebar_position: 73
 sidebar_label: Building and Benchmarking DEFLATE_QPL
 description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
@@ -10,22 +10,22 @@ description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 - Make sure your host machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
 - deflate_qpl is enabled by default during cmake build. In case you accidentally change it, please double-check build flag: ENABLE_QPL=1
 
-- For generic requirements, please refer to Clickhouse generic [build instructions](/docs/en/development/build.md)
+- For generic requirements, please refer to Clickhouse generic [build instructions](/docs/development/build.md)
 
 # Run Benchmark with DEFLATE_QPL
 
-## Files list
+## Files list {#files-list}
 
 The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) give example to run benchmark with python scripts:
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
 - `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.
-- `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](/docs/en/getting-started/example-datasets/star-schema/)
+- `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema/)
 - `allin1_ssb.sh`: This shell script executes benchmark workflow all in one automatically.
 
 `database_files` means it will store database files according to lz4/deflate/zstd codec.
 
-## Run benchmark automatically for Star Schema:
+## Run benchmark automatically for Star Schema: {#run-benchmark-automatically-for-star-schema}
 
 ``` bash
 $ cd ./benchmark_sample/client_scripts
@@ -36,11 +36,11 @@ After complete, please check all the results in this folder:`./output/`
 
 In case you run into failure, please manually run benchmark as below sections.
 
-## Definition
+## Definition {#definition}
 
 [CLICKHOUSE_EXE] means the path of clickhouse executable program.
 
-## Environment
+## Environment {#environment}
 
 - CPU: Sapphire Rapid
 - OS Requirements refer to [System Requirements for QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)
@@ -66,19 +66,19 @@ Expected output like this:
 
 If you see nothing output, it means IAA is not ready to work. Please check IAA setup again.
 
-## Generate raw data
+## Generate raw data {#generate-raw-data}
 
 ``` bash
 $ cd ./benchmark_sample
 $ mkdir rawdata_dir && cd rawdata_dir
 ```
 
-Use [`dbgen`](/docs/en/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
+Use [`dbgen`](/docs/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
 The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
 
-## Database setup
+## Database setup {#database-setup}
 
 Set up database with LZ4 codec
 
@@ -90,7 +90,7 @@ $ [CLICKHOUSE_EXE] client
 
 Here you should see the message `Connected to ClickHouse server` from console which means client successfully setup connection with server.
 
-Complete below three steps mentioned in [Star Schema Benchmark](/docs/en/getting-started/example-datasets/star-schema)
+Complete below three steps mentioned in [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema)
 - Creating tables in ClickHouse
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
 - Converting "star schema" to de-normalized "flat schema"
@@ -136,7 +136,7 @@ Initialization of hardware-assisted DeflateQpl codec failed
 ```
 That means IAA devices is not ready, you need check IAA setup again.
 
-## Benchmark with single instance 
+## Benchmark with single instance {#benchmark-with-single-instance}
 
 - Before start benchmark, Please disable C6 and set CPU frequency governor to be `performance`
 
@@ -188,7 +188,7 @@ How to check performance metrics:
 
 We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 
-## Benchmark with multi-instances
+## Benchmark with multi-instances {#benchmark-with-multi-instances}
 
 - To reduce impact of memory bound on too much threads, We recommend run benchmark with multi-instances.
 - Multi-instance means multiple（2 or 4）servers connected with respective client.
@@ -316,7 +316,7 @@ We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 Benchmark setup for 4 instances is similar with 2 instances above.
 We recommend use 2 instances benchmark data as final report for review.
 
-## Tips
+## Tips {#tips}
 
 Each time before launch new clickhouse server, please make sure no background clickhouse process running, please check and kill old one:
 
@@ -324,4 +324,4 @@ Each time before launch new clickhouse server, please make sure no background cl
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]
 ```
-By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](/docs/en/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.
+By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.
