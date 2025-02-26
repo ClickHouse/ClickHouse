@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/cramersv
 sidebar_position: 127
+title: "cramersV"
+description: "The result of the `cramersV` function ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other. It may be viewed as the association between two variables as a percentage of their maximum possible variation."
 ---
 
 # cramersV
