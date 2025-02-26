@@ -2,8 +2,12 @@
 slug: /sql-reference/table-functions/deltalakeCluster
 sidebar_position: 46
 sidebar_label: deltaLakeCluster
-title: "deltaLakeCluster Table Function"
+title: "deltaLakeCluster"
+description: "This is an extension to the deltaLake table function."
 ---
+
+# deltaLakeCluster Table Function
+
 This is an extension to the [deltaLake](/docs/sql-reference/table-functions/deltalake.md) table function.
 
 Allows processing files from [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
