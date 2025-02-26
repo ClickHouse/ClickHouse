@@ -2,12 +2,14 @@
 slug: /sql-reference/table-functions/url
 sidebar_position: 200
 sidebar_label: url
+title: "url"
+description: "Creates a table from the `URL` with given `format` and `structure`"
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# url
+# url Table Function
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
