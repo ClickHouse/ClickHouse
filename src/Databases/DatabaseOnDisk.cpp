@@ -72,6 +72,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 

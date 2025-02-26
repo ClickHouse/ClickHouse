@@ -21,6 +21,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 struct Settings;
 struct ConstraintsDescription;
 struct IndicesDescription;
