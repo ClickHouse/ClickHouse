@@ -248,6 +248,8 @@ void SerializationDynamic::deserializeBinaryBulkStatePrefix(
     }
 
     dynamic_state->variant_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_state->variant_state, cache);
+    if (!dynamic_state->variant_state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant deserialization state is empty for dynamic with variant type {}", checkAndGetState<DeserializeBinaryBulkStateDynamicStructure>(dynamic_state->structure_state)->variant_type->getName());
     settings.path.pop_back();
 
     state = std::move(dynamic_state);
