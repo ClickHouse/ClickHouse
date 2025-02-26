@@ -1123,11 +1123,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     if (const auto * union_step = typeid_cast<const UnionStep *>(node.children.front()->step.get()))
     {
-        auto & union_node = node.children.front();
-
-        bool use_buffering = false;
-        const SortDescription * max_sort_descr = nullptr;
-
         if (union_step->parallelReplicas())
         {
             /// in case of parallel replicas
@@ -1136,6 +1131,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
             /// between local and remote nodes
             return;
         }
+
+        auto & union_node = node.children.front();
+
+        bool use_buffering = false;
+        const SortDescription * max_sort_descr = nullptr;
 
         std::vector<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
