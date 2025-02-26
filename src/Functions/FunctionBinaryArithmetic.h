@@ -58,7 +58,6 @@
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include "Common/logger_useful.h"
 
 #include <absl/container/inlined_vector.h>
 
@@ -1753,7 +1752,6 @@ public:
 
     static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
-        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here2");
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
@@ -1811,7 +1809,6 @@ public:
         /// Special case when the function is minus, both arguments are DateTime64.
         if (isDateTime64Subtraction(arguments[0], arguments[1]))
         {
-            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here3");
             UInt32 scale_lhs = 0;
             UInt32 scale_rhs = 0;
             if (isDateTime64(arguments[0]))
@@ -1828,7 +1825,6 @@ public:
         }
         else if (isTime64Subtraction(arguments[0], arguments[1])) /// Special case when the function is minus, both arguments are Time64.
         {
-            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here4");
             UInt32 scale_lhs = 0;
             UInt32 scale_rhs = 0;
             if (isTime64(arguments[0]))
@@ -1843,7 +1839,6 @@ public:
             }
             return std::make_shared<DataTypeDecimal64>(DecimalUtils::max_precision<Time64>, std::max(scale_lhs, scale_rhs));
         }
-        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here5");
 
         if constexpr (is_multiply || is_division)
         {
@@ -1868,7 +1863,6 @@ public:
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
-            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here6");
             ColumnsWithTypeAndName new_arguments(2);
 
             for (size_t i = 0; i < 2; ++i)
@@ -1896,7 +1890,6 @@ public:
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
         }
-        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here7");
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
         if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context))
@@ -1913,7 +1906,6 @@ public:
             auto function = function_builder->build(new_arguments);
             return function->getResultType();
         }
-        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here8");
 
         /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
         if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context))
@@ -1944,11 +1936,9 @@ public:
         }
 
         DataTypePtr type_res;
-        LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here9");
 
         const bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
         {
-            LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here10");
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
 
@@ -2013,7 +2003,6 @@ public:
 
                 using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
 
-                LOG_TRACE(getLogger("DEBUGGING OPERATIONS"), "here1");
 
                 if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
                 {

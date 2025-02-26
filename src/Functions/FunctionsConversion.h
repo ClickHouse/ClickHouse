@@ -198,7 +198,7 @@ struct ToTimeImpl
 {
     static constexpr auto name = "toTime";
 
-    static Int32 execute(UInt16 d, const DateLUTImpl & time_zone)
+    static Int64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -209,10 +209,10 @@ struct ToTimeImpl
         {
             d = std::min<time_t>(d, MAX_DATETIME_DAY_NUM);
         }
-        return static_cast<Int32>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
+        return static_cast<Int64>(time_zone.fromDayNum(DayNum(time_zone.toTime(d))));
     }
 
-    static Int32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
@@ -227,18 +227,18 @@ struct ToTimeImpl
         return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(d)))));
     }
 
-    static Int32 execute(UInt32 dt, const DateLUTImpl & time_zone)
+    static Int64 execute(UInt32 dt, const DateLUTImpl & time_zone)
     {
-        return static_cast<Int32>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int64>(dt))))));
+        return static_cast<Int64>(time_zone.fromDayNum((ExtendedDayNum(time_zone.toTime(static_cast<Int64>(dt))))));
     }
 
-    static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
+    static Int64 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
-            return static_cast<Int32>(time_zone.toTime(dt64));
+            return static_cast<Int64>(time_zone.toTime(dt64));
         else
         {
-            if (dt64 > MAX_TIME_TIMESTAMP || dt64 < (-1 * MAX_TIME_TIMESTAMP)) /// Add MIN_TIME_TIMESTAMP
+            if (dt64 > MAX_TIME_TIMESTAMP || dt64 < (-1 * MAX_TIME_TIMESTAMP))
             {
                 if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
                     return MAX_TIME_TIMESTAMP;
@@ -246,7 +246,7 @@ struct ToTimeImpl
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
             }
             else
-                return static_cast<Int32>(time_zone.toTime(dt64));
+                return static_cast<Int64>(time_zone.toTime(dt64));
         }
     }
 };
@@ -697,9 +697,9 @@ struct ToTime64Transform
         return execute(dt, time_zone);
     }
 
-    Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    Time64::NativeType execute(Int64 d, const DateLUTImpl & time_zone) const
     {
-        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(d)));
+        Int64 dt = static_cast<Int64>(time_zone.fromDayNum(ExtendedDayNum(static_cast<int>(d))));
         return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
     }
 
@@ -893,7 +893,7 @@ inline void convertFromTime<DataTypeTime>(DataTypeTime::FieldType & x, time_t & 
     if (unlikely(time > MAX_TIME_TIMESTAMP))
         x = MAX_TIME_TIMESTAMP;
     else
-        x = static_cast<Int32>(time);
+        x = static_cast<Int64>(time);
 }
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
@@ -1596,7 +1596,7 @@ struct ConvertImpl
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> && std::is_same_v<ToDataType, DataTypeTime>)
         {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformFromDateTime<typename FromDataType::FieldType, Int64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         /// Special case of converting Int8, Int16, Int32 or (U)Int64 (and also, for convenience, Float32, Float64) to DateTime.
@@ -1610,7 +1610,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransformSigned<typename FromDataType::FieldType, Int64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
@@ -1620,7 +1620,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64<typename FromDataType::FieldType, Int64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr ((
@@ -1633,7 +1633,7 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransform64Signed<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTimeTransform64Signed<typename FromDataType::FieldType, Int64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count);
         }
         else if constexpr ((

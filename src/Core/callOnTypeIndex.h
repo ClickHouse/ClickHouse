@@ -79,7 +79,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::Date32:       return f(TypePair<T, Int32>());
             case TypeIndex::DateTime:     return f(TypePair<T, UInt32>());
             case TypeIndex::DateTime64:   return f(TypePair<T, DateTime64>());
-            case TypeIndex::Time:         return f(TypePair<T, Int32>());
+            case TypeIndex::Time:         return f(TypePair<T, Int64>());
             case TypeIndex::Time64:       return f(TypePair<T, Time64>());
             default:
                 break;
@@ -150,7 +150,7 @@ static bool callOnBasicTypeSecondArg(TypeIndex number, F && f)
         {
             case TypeIndex::Date:         return f(TypePair<UInt16, T>());
             case TypeIndex::Date32:       return f(TypePair<Int32, T>());
-            case TypeIndex::Time:         return f(TypePair<Int32, T>());
+            case TypeIndex::Time:         return f(TypePair<Int64, T>());
             case TypeIndex::Time64:       return f(TypePair<Time64, T>());
             case TypeIndex::DateTime:     return f(TypePair<UInt32, T>());
             case TypeIndex::DateTime64:   return f(TypePair<DateTime64, T>());
@@ -225,7 +225,7 @@ static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F 
             case TypeIndex::Date32: return callOnBasicType<Int32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::DateTime: return callOnBasicType<UInt32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::DateTime64: return callOnBasicType<DateTime64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
-            case TypeIndex::Time: return callOnBasicType<Int32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
+            case TypeIndex::Time: return callOnBasicType<Int64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Time64: return callOnBasicType<Time64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
                 break;

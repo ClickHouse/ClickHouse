@@ -838,6 +838,10 @@ struct ToTimeWithFixedDateImpl
     {
         throwDateIsNotSupported(name);
     }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ToDateImpl<>;
@@ -866,6 +870,10 @@ struct ToStartOfMinuteImpl
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -928,6 +936,10 @@ struct ToStartOfSecondImpl
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -992,6 +1004,10 @@ struct ToStartOfMillisecondImpl
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
         throwDate32IsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
@@ -1058,6 +1074,10 @@ struct ToStartOfMicrosecondImpl
     {
         throwDate32IsNotSupported(name);
     }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
@@ -1112,6 +1132,10 @@ struct ToStartOfNanosecondImpl
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -1182,6 +1206,10 @@ struct ToStartOfTenMinutesImpl
     {
         throwDateIsNotSupported(name);
     }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
         return {time_zone.toStartOfTenMinutes(t.whole), 0};
@@ -1221,6 +1249,10 @@ struct ToStartOfFifteenMinutesImpl
     static UInt32 execute(UInt16, const DateLUTImpl &)
     {
         throwDateIsNotSupported(name);
+    }
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -1268,6 +1300,11 @@ struct TimeSlotImpl
         throwDateIsNotSupported(name);
     }
 
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
+    }
+
     static DecimalUtils::DecimalComponents<DateTime64>  executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
         if (likely(t.whole >= 0))
@@ -1312,6 +1349,11 @@ struct ToStartOfHourImpl
     static UInt32 execute(Int32, const DateLUTImpl &)
     {
         throwDate32IsNotSupported(name);
+    }
+
+    static UInt32 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
 
     static UInt32 execute(UInt16, const DateLUTImpl &)
@@ -1750,6 +1792,10 @@ struct ToMillisecondImpl
     static UInt16 execute(Int32, const DateLUTImpl &)
     {
         throwDate32IsNotSupported(name);
+    }
+    static UInt16 execute(Int64, const DateLUTImpl &)
+    {
+        throwTimeIsNotSupported(name);
     }
     static UInt16 execute(UInt16, const DateLUTImpl &)
     {

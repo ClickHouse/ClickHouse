@@ -77,6 +77,10 @@ struct AddNanosecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Date32");
     }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -116,6 +120,10 @@ struct AddMicrosecondsImpl
     static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Date32");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
     }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
@@ -157,6 +165,10 @@ struct AddMillisecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Date32");
     }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -182,9 +194,15 @@ struct AddSecondsImpl
     {
         return static_cast<UInt32>(t + delta);
     }
-    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta);
+        // use default datetime64 scale
+        static_assert(DataTypeDateTime64::default_scale == 3);	
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
+    }
+    static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(d + delta);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -215,9 +233,15 @@ struct AddMinutesImpl
     {
         return static_cast<UInt32>(t + delta * 60);
     }
-    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta * 60);
+        // use default datetime64 scale
+        static_assert(DataTypeDateTime64::default_scale == 3);	
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60) * 1000;
+    }
+    static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(d + delta * 60);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -248,9 +272,15 @@ struct AddHoursImpl
     {
         return static_cast<UInt32>(t + delta * 3600);
     }
-    static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta * 3600);
+        // use default datetime64 scale
+        static_assert(DataTypeDateTime64::default_scale == 3);	
+        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600) * 1000;
+    }
+    static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int64>(d + delta * 3600);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -293,6 +323,10 @@ struct AddDaysImpl
     {
         return static_cast<Int32>(d + delta);
     }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -329,6 +363,10 @@ struct AddWeeksImpl
     static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int32>(d + delta * 7);
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
     }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
@@ -367,6 +405,10 @@ struct AddMonthsImpl
     {
         return time_zone.addMonths(ExtendedDayNum(d), delta);
     }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -404,6 +446,10 @@ struct AddQuartersImpl
     {
         return time_zone.addQuarters(ExtendedDayNum(d), delta);
     }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -440,6 +486,10 @@ struct AddYearsImpl
     static NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return time_zone.addYears(ExtendedDayNum(d), delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
     }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
@@ -635,19 +685,14 @@ struct DateTimeAddIntervalImpl
 namespace date_and_time_type_details
 {
 // Compile-time mapping of value (DataType::FieldType) types to corresponding DataType
-template <typename FieldType, bool is_time = false> struct ResultDataTypeMap {};
+template <typename FieldType> struct ResultDataTypeMap {};
 template <> struct ResultDataTypeMap<UInt16>           { using ResultDataType = DataTypeDate; };
 template <> struct ResultDataTypeMap<UInt32>           { using ResultDataType = DataTypeDateTime; };
 template <> struct ResultDataTypeMap<Int32>            { using ResultDataType = DataTypeDate32; };
-template <> struct ResultDataTypeMap<Int32, true>      { using ResultDataType = DataTypeTime; };
 template <> struct ResultDataTypeMap<DateTime64>       { using ResultDataType = DataTypeDateTime64; };
-template <> struct ResultDataTypeMap<DateTime64, true> { using ResultDataType = DataTypeDateTime64; };
-template <> struct ResultDataTypeMap<Int64>            { using ResultDataType = DataTypeDateTime64; };
-template <> struct ResultDataTypeMap<Int64, true>      { using ResultDataType = DataTypeTime64; };
+template <> struct ResultDataTypeMap<Int64>            { using ResultDataType = DataTypeTime; };
 template <> struct ResultDataTypeMap<Time64>           { using ResultDataType = DataTypeTime64; };
-template <> struct ResultDataTypeMap<Time64, true>     { using ResultDataType = DataTypeTime64; };
 template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = DataTypeInt8; }; // error
-template <> struct ResultDataTypeMap<Int8, true>       { using ResultDataType = DataTypeInt8; };
 }
 
 template <typename Transform>
@@ -723,7 +768,7 @@ public:
     // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
     // argument type is expected to be 'Date', and result type is deduced to be 'DateTime'.
     template <typename FromDataType>
-    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<typename FromDataType::FieldType>, std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>>::ResultDataType;
+    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<typename FromDataType::FieldType>>::ResultDataType;
 
     template <typename FromDataType>
     DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
@@ -732,22 +777,10 @@ public:
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
             return std::make_shared<DataTypeDate>();
-        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>) // We need to check the functions for Date32 and Time here
-        {                                                                  // be they have the same generic type (Int32)
-            if constexpr ((std::is_base_of_v<AddSecondsImpl, Transform>
-                          || std::is_base_of_v<AddMinutesImpl, Transform>
-                          || std::is_base_of_v<AddHoursImpl, Transform>))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
             return std::make_shared<DataTypeDate32>();
-        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
-        {
-            if constexpr (!(std::is_base_of_v<AddSecondsImpl, Transform>
-                          || std::is_base_of_v<AddMinutesImpl, Transform>
-                          || std::is_base_of_v<AddHoursImpl, Transform>))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
             return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
-        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         else if constexpr (std::is_same_v<ResultDataType, DataTypeTime64>)
