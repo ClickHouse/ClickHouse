@@ -353,7 +353,7 @@ private:
         chassert(global_discr != ColumnVariant::NULL_DISCRIMINATOR);
         if (global_discr == dynamic_column->getSharedVariantDiscriminator())
         {
-            if (dynamic_column->getSharedVariant().size() < variant_column.offsetAt(i))
+            if (dynamic_column->getSharedVariant().size() <= variant_column.offsetAt(i))
                 dynamic_column->checkConsistency();
             auto value = dynamic_column->getSharedVariant().getDataAt(variant_column.offsetAt(i));
             ReadBufferFromMemory buf(value.data, value.size);
