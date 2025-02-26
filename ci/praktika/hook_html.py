@@ -141,11 +141,6 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
         info = Info()
-        summary_result.set_info(
-            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
-            if info.pr_number
-            else f"{info.git_branch}  |  {Shell.get_output('git log -1 --pretty=%s | head -n1')}  |  {info.git_sha}"
-        )
         summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
             "git_branch", info.git_branch
         ).dump()

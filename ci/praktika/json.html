@@ -65,7 +65,7 @@
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding: 20px;
+            padding: 10px;
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
@@ -91,7 +91,8 @@
         .key-value-pair {
             display: flex;               /* Enable Flexbox for alignment */
             justify-content: space-between; /* Distribute space between key and value */
-            margin-bottom: 20px;         /* Add space between each pair */
+            padding-bottom: 10px;
+            padding-top: 10px;
         }
 
         .json-key {
@@ -119,6 +120,7 @@
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
             font-size: 0.75rem;
+            justify-content: left;
         }
         .dropdown-value {
             width: 100px;
@@ -384,6 +386,14 @@
         return 'status-other';
     }
 
+    function addInfoLineToStatus(info) {
+        const statusContainer = document.getElementById('status-container');
+        const line = document.createElement('div');
+        line.className = 'json-value-small';
+        line.textContent = info;
+        statusContainer.appendChild(line);
+    }
+
     function addKeyValueToStatus(key, value, options = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
@@ -430,7 +440,7 @@
             } else {
                 // Create a simple text display if no options or link are provided
                 valueElement = document.createElement('div');
-                valueElement.className = key !== "" ? "json-value" : "json-value-small";
+                valueElement.className = "json-value";
                 valueElement.textContent = value || 'N/A';
             }
         }
@@ -1017,7 +1027,12 @@
             .filter(Boolean);
         commitOptions.push("latest")
         addKeyValueToStatus("sha", sha || "latest", commitOptions);
-        addKeyValueToStatus("", current_sha);
+        if (PR > 0) {
+            const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
+            if (pr_title) addInfoLineToStatus(pr_title);
+            if (git_branch) addInfoLineToStatus(git_branch);
+            addInfoLineToStatus(current_sha);
+        }
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
