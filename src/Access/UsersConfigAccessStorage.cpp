@@ -169,7 +169,7 @@ namespace
         else if (has_scram_password_sha256_hex)
         {
             user->authentication_methods.emplace_back(AuthenticationType::SCRAM_SHA256_PASSWORD);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".password_scram_sha256_hex"), validate);
+            user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_scram_sha256_hex"), validate);
         }
         else if (has_password_double_sha1_hex)
         {
