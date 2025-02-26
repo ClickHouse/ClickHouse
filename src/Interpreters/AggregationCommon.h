@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Common/assert_cast.h>
-#include <Core/Defines.h>
-#include <base/StringRef.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnsNumber.h>
-#include <Interpreters/KeysNullMap.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
+#include <Core/Defines.h>
+#include <Interpreters/KeysNullMap.h>
+#include <base/StringRef.h>
+#include <Common/assert_cast.h>
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 #include <tmmintrin.h>
@@ -118,7 +118,7 @@ void copyDatum(void * __restrict dst, const IColumn * column, size_t index)
     if (unlikely(column->isConst()))
     {
         const auto & raw_data = static_cast<const ColumnConst *>(column)->getRawData();
-        memcpy(dst, raw_data.data() + index * size, size);
+        memcpy(dst, raw_data.data(), size);
     }
     else
     {
@@ -190,7 +190,7 @@ static inline T ALWAYS_INLINE packFixed(
                 if (unlikely(column->isConst()))
                 {
                     const auto & raw_data = static_cast<const ColumnConst *>(column)->getRawData();
-                    memcpy(bytes + offset, raw_data.data() + index * key_sizes[j], key_sizes[j]);
+                    memcpy(bytes + offset, raw_data.data(), key_sizes[j]);
                 }
                 else
                 {
@@ -264,11 +264,10 @@ static inline T ALWAYS_INLINE packFixed(
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, static_cast<const ColumnFixedSizeHelper *>(key_columns[j])->getRawDataBegin<1>() + i * key_sizes[j], key_sizes[j]);
                 if (unlikely(key_columns[j]->isConst()))
                 {
                     const auto & raw_data = static_cast<const ColumnConst *>(key_columns[j])->getRawData();
-                    memcpy(bytes + offset, raw_data.data() + i * key_sizes[j], key_sizes[j]);
+                    memcpy(bytes + offset, raw_data.data(), key_sizes[j]);
                 }
                 else
                 {
