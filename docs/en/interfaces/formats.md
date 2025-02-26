@@ -7,12 +7,12 @@ title: Formats for Input and Output Data
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# Formats for input and output data
+# Formats for input and output data {#formats-for-input-and-output-data}
 
 ClickHouse supports most of the known text and binary data formats. This allows easy integration into almost any working
 data pipeline to leverage the benefits of ClickHouse.
 
-## Input formats
+## Input formats {#input-formats}
 
 Input formats are used for:
 - Parsing data provided to `INSERT` statements
@@ -34,7 +34,7 @@ For a deep dive into the results and best practices,
 read the full [benchmark analysis](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
 For the full test results, explore the [FastFormats](.) online dashboard.
 
-## Output formats
+## Output formats {#output-formats}
 
 Formats supported for output are used for:
 - Arranging the results of a `SELECT` query
