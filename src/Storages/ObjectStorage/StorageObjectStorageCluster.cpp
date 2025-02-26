@@ -1,6 +1,8 @@
 #include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
+
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/queryToString.h>

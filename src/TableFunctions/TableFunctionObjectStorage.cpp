@@ -136,17 +136,17 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         columns = cached_columns;
 
     StoragePtr storage;
-    const auto & settings = context->getSettingsRef();
+    const auto & query_settings = context->getSettingsRef();
 
-    const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && query_settings[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed();
 
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
         storage = std::make_shared<StorageObjectStorageCluster>(
             parallel_replicas_cluster_name,
@@ -171,7 +171,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         /* comment */ String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
-        /* distributed_processing */ false,
+        /* distributed_processing */ is_secondary_query,
         /* partition_by */ nullptr);
 
     storage->startup();
