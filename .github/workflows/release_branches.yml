@@ -101,6 +101,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       # always rebuild on release branches to be able to publish from any commit
       force: true
+      runner_type: builder-aarch64
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -157,6 +158,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       # always rebuild on release branches to be able to publish from any commit
       force: true
+      runner_type: builder-aarch64
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
