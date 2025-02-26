@@ -206,6 +206,7 @@ StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr contex
     LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
+    LOG_DEBUG(log, "Got columns {}", columns.toString());
 
     DatabaseIcebergStorageType storage_type;
     auto storage_type_from_catalog = catalog->getStorageType();
@@ -219,7 +220,7 @@ StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr contex
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, std::move(storage_settings));
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, storage_settings.get());
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
@@ -271,6 +272,7 @@ ASTPtr DatabaseDeltaLake::getCreateTableQueryImpl(
     ContextPtr /* context_ */,
     bool /* throw_on_error */) const
 {
+    LOG_DEBUG(log, "SHOW CREATE TABLE FOR {}", name);
     auto catalog = getCatalog();
     auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
 
@@ -297,6 +299,7 @@ ASTPtr DatabaseDeltaLake::getCreateTableQueryImpl(
 
     for (const auto & column_type_and_name : table_metadata.getSchema())
     {
+        LOG_DEBUG(log, "Processing column {}", column_type_and_name.name);
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column_type_and_name.name;
         column_declaration->type = makeASTDataType(column_type_and_name.type->getName());

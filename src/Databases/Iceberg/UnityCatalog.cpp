@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <DataTypes/DataTypeNullable.h>
 #include <Poco/URI.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -135,9 +136,11 @@ bool UnityCatalog::tryGetTableMetadata(
 
             if (result.requiresSchema())
             {
+                LOG_DEBUG(log, "Requires schema, will parse from {}", json_str);
                 DB::NamesAndTypesList schema;
                 auto columns_json = object->getArray("columns");
 
+                LOG_DEBUG(log, "Columns size {}", columns_json->size());
                 for (size_t i = 0; i < columns_json->size(); ++i)
                 {
                     const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
@@ -145,11 +148,27 @@ bool UnityCatalog::tryGetTableMetadata(
                     auto is_nullable = column_json->getValue<bool>("nullable");
                     LOG_WARNING(log, "Column json {}", fmt::join(column_json->getNames(), ","));
                     auto type_json_str = column_json->get("type_json").extract<String>();
-                    auto data_type = DB::DeltaLakeMetadata::getFieldType(parser.parse(type_json_str).extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                    DB::DataTypePtr data_type;
+                    if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
+                    {
+                        type_json_str.pop_back();
+                        String type_name = type_json_str.substr(1);
+                        auto data_type_from_str = DB::DeltaLakeMetadata::getSimpleTypeByName(type_name);
+                        data_type = is_nullable ? makeNullable(data_type_from_str) : data_type_from_str;
+                    }
+                    else
+                    {
+                        auto parsed_json_type = parser.parse(type_json_str);
+                        data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
+                    }
                     schema.push_back({name, data_type});
                 }
 
                 result.setSchema(schema);
+            }
+            else
+            {
+                LOG_DEBUG(log, "Doesn't require schema");
             }
 
             return true;

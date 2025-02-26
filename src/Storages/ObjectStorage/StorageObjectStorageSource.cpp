@@ -233,6 +233,7 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
+            const auto & full_path = fs::path(configuration->getPath()) / object_info->getPath();
 
             chassert(object_info->metadata);
 
@@ -248,9 +249,11 @@ Chunk StorageObjectStorageSource::generate()
 
             if (chunk_size && chunk.hasColumns())
             {
+                LOG_DEBUG(log, "HERE");
                 const auto * object_with_partition_columns_info = dynamic_cast<const ObjectInfoWithPartitionColumns *>(object_info.get());
                 if (object_with_partition_columns_info)
                 {
+                    LOG_DEBUG(log, "PARTITIONS INFO BRANCH");
                     for (const auto & [name_and_type, value] : object_with_partition_columns_info->partitions_info)
                     {
                         if (!read_from_format_info.source_header.has(name_and_type.name))
@@ -272,6 +275,7 @@ Chunk StorageObjectStorageSource::generate()
                 else
                 {
 #if USE_PARQUET && USE_AWS_S3
+                    LOG_DEBUG(log, "OTHER BRANCH INFO BRANCH");
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
                     /// By release 25.3.
@@ -279,38 +283,48 @@ Chunk StorageObjectStorageSource::generate()
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
                     {
-                        /// Delta lake supports only s3.
+                        LOG_DEBUG(log, "DATALAKE CONF");
                         /// A terrible crutch, but it this code will be removed next month.
-                        if (auto * delta_conf = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
+                        DeltaLakePartitionColumns partition_columns;
+                        if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
-                            auto partition_columns = delta_conf->getDeltaLakePartitionColumns();
-                            if (!partition_columns.empty())
+                            partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
+                        }
+                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+                        {
+                            partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
+                        }
+                        LOG_DEBUG(log, "Partition columns size {}", partition_columns.size());
+                        for (const auto & [n, column] : partition_columns)
+                            LOG_DEBUG(log, "NAME {} COL {}", n, column.size());
+                        if (!partition_columns.empty())
+                        {
+                            auto partition_values = partition_columns.find(full_path);
+                            if (partition_values != partition_columns.end())
                             {
-                                auto partition_values = partition_columns.find(filename);
-                                if (partition_values != partition_columns.end())
+                                for (const auto & [name_and_type, value] : partition_values->second)
                                 {
-                                    for (const auto & [name_and_type, value] : partition_values->second)
-                                    {
-                                        if (!read_from_format_info.source_header.has(name_and_type.name))
-                                            continue;
+                                    if (!read_from_format_info.source_header.has(name_and_type.name))
+                                        continue;
 
-                                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-                                        /// This column is filled with default value now, remove it.
-                                        chunk.erase(column_pos);
-                                        /// Add correct values.
-                                        if (column_pos < chunk.getNumColumns())
-                                            chunk.addColumn(column_pos, std::move(partition_column));
-                                        else
-                                            chunk.addColumn(std::move(partition_column));
-                                    }
+                                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// This column is filled with default value now, remove it.
+                                    chunk.erase(column_pos);
+                                    /// Add correct values.
+                                    if (column_pos < chunk.getNumColumns())
+                                        chunk.addColumn(column_pos, std::move(partition_column));
+                                    else
+                                        chunk.addColumn(std::move(partition_column));
                                 }
                             }
                         }
+
                     }
 #endif
                 }
             }
+
             return chunk;
         }
 

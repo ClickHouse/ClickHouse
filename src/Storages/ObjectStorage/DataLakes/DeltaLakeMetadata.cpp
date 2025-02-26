@@ -58,46 +58,6 @@ namespace ErrorCodes
 namespace
 {
 
-DataTypePtr getSimpleTypeByName(const String & type_name)
-{
-    /// https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types
-
-    if (type_name == "string" || type_name == "binary")
-        return std::make_shared<DataTypeString>();
-    if (type_name == "long")
-        return std::make_shared<DataTypeInt64>();
-    if (type_name == "integer")
-        return std::make_shared<DataTypeInt32>();
-    if (type_name == "short")
-        return std::make_shared<DataTypeInt16>();
-    if (type_name == "byte")
-        return std::make_shared<DataTypeInt8>();
-    if (type_name == "float")
-        return std::make_shared<DataTypeFloat32>();
-    if (type_name == "double")
-        return std::make_shared<DataTypeFloat64>();
-    if (type_name == "boolean")
-        return DataTypeFactory::instance().get("Bool");
-    if (type_name == "date")
-        return std::make_shared<DataTypeDate32>();
-    if (type_name == "timestamp")
-        return std::make_shared<DataTypeDateTime64>(6);
-    if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
-    {
-        ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision;
-        size_t scale;
-        readIntText(precision, buf);
-        skipWhitespaceIfAny(buf);
-        assertChar(',', buf);
-        skipWhitespaceIfAny(buf);
-        tryReadIntText(scale, buf);
-        return createDecimal<DataTypeDecimal>(precision, scale);
-    }
-
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
-}
-
 DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
 {
     String type_name = type->getValue<String>("type");
@@ -654,13 +614,54 @@ DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & fiel
      if (type.isString())
      {
          const String & type_name = type.extract<String>();
-         auto data_type = getSimpleTypeByName(type_name);
+         auto data_type = DeltaLakeMetadata::getSimpleTypeByName(type_name);
          return is_nullable ? makeNullable(data_type) : data_type;
      }
 
      throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
 
 }
+
+DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
+{
+    /// https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types
+
+    if (type_name == "string" || type_name == "binary")
+        return std::make_shared<DataTypeString>();
+    if (type_name == "long")
+        return std::make_shared<DataTypeInt64>();
+    if (type_name == "integer")
+        return std::make_shared<DataTypeInt32>();
+    if (type_name == "short")
+        return std::make_shared<DataTypeInt16>();
+    if (type_name == "byte")
+        return std::make_shared<DataTypeInt8>();
+    if (type_name == "float")
+        return std::make_shared<DataTypeFloat32>();
+    if (type_name == "double")
+        return std::make_shared<DataTypeFloat64>();
+    if (type_name == "boolean")
+        return DataTypeFactory::instance().get("Bool");
+    if (type_name == "date")
+        return std::make_shared<DataTypeDate32>();
+    if (type_name == "timestamp")
+        return std::make_shared<DataTypeDateTime64>(6);
+    if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
+    {
+        ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
+        size_t precision;
+        size_t scale;
+        readIntText(precision, buf);
+        skipWhitespaceIfAny(buf);
+        assertChar(',', buf);
+        skipWhitespaceIfAny(buf);
+        tryReadIntText(scale, buf);
+        return createDecimal<DataTypeDecimal>(precision, scale);
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
+}
+
 
 Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_type)
 {
