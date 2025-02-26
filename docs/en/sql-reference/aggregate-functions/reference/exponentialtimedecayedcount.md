@@ -1,10 +1,11 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/exponentialTimeDecayedCount
+slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedCount
 sidebar_position: 134
-title: exponentialTimeDecayedCount
+title: "exponentialTimeDecayedCount"
+description: "Returns the cumulative exponential decay over a time series at the index `t` in time."
 ---
 
-## exponentialTimeDecayedCount
+## exponentialTimeDecayedCount {#exponentialtimedecayedcount}
 
 Returns the cumulative exponential decay over a time series at the index `t` in time.
 

@@ -1,5 +1,5 @@
 ---
-slug: /en/development/developer-instruction
+slug: /development/developer-instruction
 sidebar_position: 5
 sidebar_label: Prerequisites
 ---
@@ -9,7 +9,7 @@ sidebar_label: Prerequisites
 ClickHouse can be build on Linux, FreeBSD and macOS.
 If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
-## Create a Repository on GitHub
+## Create a Repository on GitHub {#create-a-repository-on-github}
 
 To start developing for ClickHouse you will need a [GitHub](https://www.github.com/) account.
 Please also generate an SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
@@ -28,7 +28,7 @@ sudo apt install git
 A Git cheatsheet can be found [here](https://education.github.com/git-cheat-sheet-education.pdf).
 A detailed Git manual is [here](https://git-scm.com/book/en/v2).
 
-## Clone the Repository to Your Development Machine
+## Clone the Repository to Your Development Machine {#clone-the-repository-to-your-development-machine}
 
 First, download the source files to your working machine, i.e. clone the repository:
 
@@ -54,7 +54,7 @@ To check the status of the Git submodules, run `git submodule status`.
 
 If you get the following error message
 
-```
+```bash
 Permission denied (publickey).
 fatal: Could not read from remote repository.
 
@@ -83,17 +83,22 @@ git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
-## Writing Code
+:::tip
+Please do not use verbatim `git push`, you may push to the wrong remote and/or the wrong branch.
+It is better to specify the remote and branch names explicitly, e.g. `git push origin my_branch_name`.
+:::
+
+## Writing Code {#writing-code}
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
 
-- [ClickHouse Architecture](https://clickhouse.com/docs/en/development/architecture/).
-- [Code style guide](https://clickhouse.com/docs/en/development/style/).
-- [Third-party libraries](https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries)
-- [Writing tests](https://clickhouse.com/docs/en/development/tests/)
+- [ClickHouse Architecture](/docs/development/architecture/).
+- [Code style guide](/docs/development/style/).
+- [Third-party libraries](/docs/development/contrib/#adding-third-party-libraries)
+- [Writing tests](/docs/development/tests/)
 - [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
-### IDE
+### IDE {#ide}
 
 **CLion (recommended)**
 
@@ -112,34 +117,34 @@ A few things to know when using CLion to develop ClickHouse:
 
 [KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse.
 While KDevelop is a great IDE, it is sometimes unstable.
-If KDevelop crashes when opening a project, you should click the “Stop All” button as soon as it has opened the list of project’s files.
+If KDevelop crashes when opening a project, you should click the "Stop All" button as soon as it has opened the list of project's files.
 After doing so, KDevelop should be fine to work with.
 
 Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux).
 If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
 
-## Create A Pull Request
+## Create A Pull Request {#create-a-pull-request}
 
-Navigate to your fork repository in GitHub’s UI.
+Navigate to your fork repository in GitHub's UI.
 If you have been developing in a branch, you need to select that branch.
-There will be a “Pull request” button located on the screen.
-In essence, this means “create a request for accepting my changes into the main repository”.
+There will be a "Pull request" button located on the screen.
+In essence, this means "create a request for accepting my changes into the main repository".
 
 A pull request can be created even if the work is not completed yet.
-In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later.
+In this case please put the word "WIP" (work in progress) at the beginning of the title, it can be changed later.
 This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests.
 It is important that you provide a brief description of your changes, it will later be used for generating release changelog.
 
-Testing will commence as soon as ClickHouse employees label your PR with a tag “can be tested”.
+Testing will commence as soon as ClickHouse employees label your PR with a tag "can be tested".
 The results of some first checks (e.g. code style) will come in within several minutes.
 Build check results will arrive within half an hour.
 The main set of tests will report itself within an hour.
 
 The system will prepare ClickHouse binary builds for your pull request individually.
-To retrieve these builds click the “Details” link next to “Builds” entry in the list of checks.
+To retrieve these builds click the "Details" link next to "Builds" entry in the list of checks.
 There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
-## Write Documentation
+## Write Documentation {#write-documentation}
 
 Every pull request which adds a new feature must come with proper documentation.
 If you'd like to preview your documentation changes the instructions for how to build the documentation page locally are available in the README.md file [here](https://github.com/ClickHouse/clickhouse-docs).
@@ -187,7 +192,7 @@ Response:
 \```
 ```
 
-## Using Test Data
+## Using Test Data {#using-test-data}
 
 Developing ClickHouse often requires loading realistic datasets.
 This is particularly important for performance testing.
@@ -209,7 +214,7 @@ It requires additionally some 3GB of free disk space.
 In clickhouse-client:
 
 ```sql
-CREATE DATABASE IF NOT EXISTS test
+CREATE DATABASE IF NOT EXISTS test;
 
 CREATE TABLE test.hits ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8,  UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8,  SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8,  IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8,  HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16,  SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32,  DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32,  NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64,  ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  `ParsedParams.Key1` Array(String),  `ParsedParams.Key2` Array(String),  `ParsedParams.Key3` Array(String),  `ParsedParams.Key4` Array(String),  `ParsedParams.Key5` Array(String),  `ParsedParams.ValueDouble` Array(Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree PARTITION BY toYYYYMM(EventDate) SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime);
 
@@ -219,7 +224,7 @@ CREATE TABLE test.visits ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew
 
 Import the data:
 
-```
+```bash
 clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
 clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 ```

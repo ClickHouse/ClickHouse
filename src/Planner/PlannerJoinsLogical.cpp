@@ -46,18 +46,23 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinInfo.h>
 
+#include <stack>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
 namespace Setting
 {
     extern const SettingsBool join_use_nulls;
+    extern const SettingsBool allow_general_join_planning;
+    extern const SettingsJoinAlgorithm join_algorithm;
 }
 
 const ActionsDAG::Node * appendExpression(
@@ -179,14 +184,18 @@ struct JoinInfoBuildContext
 
     JoinActionRef addExpression(const QueryTreeNodePtr & node, JoinSource src)
     {
-        const ActionsDAG::Node * dag_node_ptr = nullptr;
+        ActionsDAG * actions_dag_ptr = nullptr;
+
         if (src == JoinSource::Left)
-            dag_node_ptr = appendExpression(result_join_expression_actions.left_pre_join_actions, node, planner_context);
+            actions_dag_ptr = result_join_expression_actions.left_pre_join_actions.get();
         else if (src == JoinSource::Right)
-            dag_node_ptr = appendExpression(result_join_expression_actions.right_pre_join_actions, node, planner_context);
+            actions_dag_ptr = result_join_expression_actions.right_pre_join_actions.get();
         else
-            dag_node_ptr = appendExpression(result_join_expression_actions.post_join_actions, node, planner_context);
-        return JoinActionRef(dag_node_ptr);
+            actions_dag_ptr = result_join_expression_actions.post_join_actions.get();
+
+        return JoinActionRef(
+            appendExpression(*actions_dag_ptr, node, planner_context),
+            actions_dag_ptr);
     }
 
     const JoinNode & join_node;
@@ -304,6 +313,161 @@ void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuild
     buildJoinCondition(node, builder_context, join_conditions.emplace_back());
 }
 
+
+void addConditionsToJoinInfo(JoinInfoBuildContext & build_context, std::vector<JoinCondition> join_conditions)
+{
+    if (!join_conditions.empty())
+    {
+        build_context.result_join_info.expression.condition = std::move(join_conditions.back());
+        join_conditions.pop_back();
+        build_context.result_join_info.expression.disjunctive_conditions = std::move(join_conditions);
+    }
+}
+
+
+void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinInfoBuildContext & build_context)
+{
+    std::vector<JoinCondition> join_conditions;
+    buildDisjunctiveJoinConditions(node, build_context, join_conditions);
+    addConditionsToJoinInfo(build_context, std::move(join_conditions));
+}
+
+static bool hasEquiConditions(const JoinCondition & condition)
+{
+    for (const auto & predicate : condition.predicates)
+    {
+        if (predicate.op == PredicateOperator::Equals
+         || predicate.op == PredicateOperator::NullSafeEquals)
+            return true;
+    }
+    return false;
+}
+
+
+JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & rhs)
+{
+    JoinCondition result = lhs;
+    result.predicates.insert(result.predicates.end(), rhs.predicates.begin(), rhs.predicates.end());
+    result.left_filter_conditions.insert(result.left_filter_conditions.end(), rhs.left_filter_conditions.begin(), rhs.left_filter_conditions.end());
+    result.right_filter_conditions.insert(result.right_filter_conditions.end(), rhs.right_filter_conditions.begin(), rhs.right_filter_conditions.end());
+    result.residual_conditions.insert(result.residual_conditions.end(), rhs.residual_conditions.begin(), rhs.residual_conditions.end());
+    return result;
+}
+
+static std::vector<JoinCondition> makeCrossProduct(const std::vector<JoinCondition> & lhs, const std::vector<JoinCondition> & rhs)
+{
+    std::vector<JoinCondition> result;
+    for (const auto & rhs_clause : rhs)
+    {
+        for (const auto & lhs_clause : lhs)
+        {
+            result.emplace_back(concatConditions(lhs_clause, rhs_clause));
+        }
+    }
+    return result;
+}
+
+
+void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_expression, JoinInfoBuildContext & builder_context)
+{
+    using JoinConditions = std::vector<JoinCondition>;
+    if (join_expression->getNodeType() != QueryTreeNodeType::FUNCTION)
+    {
+        std::vector<JoinCondition> join_conditions;
+        buildJoinCondition(join_expression, builder_context, join_conditions.emplace_back());
+        addConditionsToJoinInfo(builder_context, std::move(join_conditions));
+        return;
+    }
+
+    std::unordered_map<const IQueryTreeNode *, std::vector<JoinCondition>> built_clauses;
+    std::stack<QueryTreeNodePtr> nodes_to_process;
+    nodes_to_process.push(join_expression);
+
+    auto get_and_check_built_clause = [&built_clauses](const IQueryTreeNode * node) -> JoinConditions &
+    {
+        auto it = built_clauses.find(node);
+        if (it == built_clauses.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join clauses are not built for node: {}", node->formatASTForErrorMessage());
+
+        if (it->second.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join clauses are already used for node: {}", node->formatASTForErrorMessage());
+
+        return it->second;
+    };
+    while (!nodes_to_process.empty())
+    {
+        auto node = nodes_to_process.top();
+        auto * function_node = node->as<FunctionNode>();
+        const auto function_name = function_node ? function_node->getFunctionName() : String();
+        auto expression_source = builder_context.getExpressionSource(node);
+
+        // If the expression is a logical expression and it contains expressions from both sides, let's combine the clauses, otherwise let's just build one join clause
+        bool is_complex = (function_name == "and" || function_name == "or") && expression_source == JoinInfoBuildContext::JoinSource::Both;
+        if (is_complex)
+        {
+            auto & arguments = function_node->getArguments().getNodes();
+            auto * first_argument = arguments.front().get();
+            if (const auto it = built_clauses.find(first_argument); it == built_clauses.end())
+            {
+                for (auto & argument : arguments)
+                    nodes_to_process.push(argument);
+
+                continue;
+            }
+
+            nodes_to_process.pop();
+
+            std::vector<JoinCondition> result;
+            if (function_name == "or")
+            {
+                for (auto & argument : arguments)
+                {
+                    auto & child_res = get_and_check_built_clause(argument.get());
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    child_res.clear();
+                }
+
+                // When some expressions have key expressions and some doesn't, then let's plan the whole OR expression as a single clause to eliminate the chance that some clauses might end up without key expressions
+                // TODO(antaljanosbenjamin/vdimir): Analyze the expressions first, so join clauses are not built unnecessarily.
+                size_t with_key_expression = static_cast<size_t>(std::count_if(result.begin(), result.end(), hasEquiConditions));
+                if (result.size() > 1 && with_key_expression != 0 && with_key_expression < result.size())
+                {
+                    result.clear();
+                    buildJoinCondition(node, builder_context, result.emplace_back());
+                }
+            }
+            else
+            {
+                auto it = arguments.begin();
+                {
+                    auto & child_res = get_and_check_built_clause(it->get());
+
+                    result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
+                    child_res.clear();
+                }
+                it++;
+
+                for (; it != arguments.end(); it++)
+                {
+                    auto & child_res = get_and_check_built_clause(it->get());
+                    result = makeCrossProduct(result, child_res);
+                    child_res.clear();
+                }
+            }
+            built_clauses.emplace(node.get(), std::move(result));
+        }
+        else
+        {
+            nodes_to_process.pop();
+            std::vector<JoinCondition> clauses;
+            buildJoinCondition(node, builder_context, clauses.emplace_back());
+            built_clauses.emplace(node.get(), std::move(clauses));
+        }
+    }
+
+    addConditionsToJoinInfo(builder_context, std::move(built_clauses.at(join_expression.get())));
+}
+
 std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     const Block & left_header,
     const Block & right_header,
@@ -325,6 +489,9 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     auto join_expression_node = getJoinExpressionFromNode(join_node);
 
+    const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
+    const auto & join_algorithms = query_settings[Setting::join_algorithm];
+
     /// CROSS/PASTE JOIN: doesn't have expression
     if (join_expression_node == nullptr)
     {
@@ -345,34 +512,43 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
                 "JOIN {} join expression expected function",
                 join_node.formatASTForErrorMessage());
 
-        buildDisjunctiveJoinConditions(join_expression_node, build_context, build_context.result_join_info.expression.disjunctive_conditions);
-        if (!build_context.result_join_info.expression.disjunctive_conditions.empty())
-        {
-            build_context.result_join_info.expression.condition = build_context.result_join_info.expression.disjunctive_conditions.back();
-            build_context.result_join_info.expression.disjunctive_conditions.pop_back();
-        }
+        bool use_general_join_planning = (TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH)
+            || TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO)) && query_settings[Setting::allow_general_join_planning];
+
+        if (use_general_join_planning)
+            buildDisjunctiveJoinConditionsGeneral(join_expression_node, build_context);
+        else
+            buildDisjunctiveJoinConditions(join_expression_node, build_context);
     }
     else if (join_expression_constant.has_value())
     {
         auto & join_actions = build_context.result_join_expression_actions;
 
+        if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
+
         /// Joined table expression always has __tableN prefix, other columns will appear only in projections, so these names are safe
-        if (join_actions.left_pre_join_actions.tryFindInOutputs("__lhs_const"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__lhs_const' in JOIN expression {}", join_actions.left_pre_join_actions.dumpDAG());
-        if (join_actions.right_pre_join_actions.tryFindInOutputs("__rhs_const"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__rhs_const' in JOIN expression {}", join_actions.right_pre_join_actions.dumpDAG());
+        if (join_actions.left_pre_join_actions->tryFindInOutputs("__lhs_const"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__lhs_const' in JOIN expression {}", join_actions.left_pre_join_actions->dumpDAG());
+        if (join_actions.right_pre_join_actions->tryFindInOutputs("__rhs_const"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__rhs_const' in JOIN expression {}", join_actions.right_pre_join_actions->dumpDAG());
 
         bool join_expression_value = join_expression_constant.value();
         auto dt = std::make_shared<DataTypeUInt8>();
-        JoinActionRef lhs_node(&join_actions.left_pre_join_actions.addColumn(
-            ColumnWithTypeAndName(dt->createColumnConstWithDefaultValue(1), dt, "__lhs_const")));
-        join_actions.left_pre_join_actions.addOrReplaceInOutputs(*lhs_node.node);
+        const auto & lhs_node = join_actions.left_pre_join_actions->addColumn(
+            ColumnWithTypeAndName(dt->createColumnConstWithDefaultValue(1), dt, "__lhs_const"));
+        join_actions.left_pre_join_actions->addOrReplaceInOutputs(lhs_node);
 
-        JoinActionRef rhs_node(&join_actions.right_pre_join_actions.addColumn(
-            ColumnWithTypeAndName(dt->createColumnConst(1, join_expression_value ? 0 : 1), dt, "__rhs_const")));
-        join_actions.right_pre_join_actions.addOrReplaceInOutputs(*rhs_node.node);
+        const auto & rhs_node = join_actions.right_pre_join_actions->addColumn(
+            ColumnWithTypeAndName(dt->createColumnConst(1, join_expression_value ? 0 : 1), dt, "__rhs_const"));
+        join_actions.right_pre_join_actions->addOrReplaceInOutputs(rhs_node);
 
-        build_context.result_join_info.expression.condition.predicates.emplace_back(JoinPredicate{lhs_node, rhs_node, PredicateOperator::Equals});
+        JoinPredicate predicate = {
+            JoinActionRef(&lhs_node, join_actions.left_pre_join_actions.get()),
+            JoinActionRef(&rhs_node, join_actions.right_pre_join_actions.get()),
+            PredicateOperator::Equals};
+
+        build_context.result_join_info.expression.condition.predicates.push_back(std::move(predicate));
     }
 
     return std::make_unique<JoinStepLogical>(

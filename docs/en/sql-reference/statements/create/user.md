@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/create/user
+slug: /sql-reference/statements/create/user
 sidebar_position: 39
 sidebar_label: USER
 title: "CREATE USER"
@@ -24,7 +24,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `ON CLUSTER` clause allows creating users on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Identification
+## Identification {#identification}
 
 There are multiple ways of user identification:
 
@@ -43,7 +43,7 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
 - `IDENTIFIED BY 'qwerty'`
 
-Password complexity requirements can be edited in [config.xml](/docs/en/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
+Password complexity requirements can be edited in [config.xml](/docs/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
 
 ```xml
 <clickhouse>
@@ -69,7 +69,7 @@ In ClickHouse Cloud, by default, passwords must meet the following complexity re
 - Contain at least 1 special character
 :::
 
-## Examples
+## Examples {#examples}
 
 1. The following username is `name1` and does not require a password - which obviously doesn't provide much security:
 
@@ -155,7 +155,7 @@ Notes:
 2. `no_password` can not co-exist with other authentication methods for security reasons. Therefore, you can only specify
 `no_password` if it is the only authentication method in the query. 
 
-## User Host
+## User Host {#user-host}
 
 User host is a host from which a connection to ClickHouse server could be established. The host can be specified in the `HOST` query section in the following ways:
 
@@ -176,7 +176,7 @@ Another way of specifying host is to use `@` syntax following the username. Exam
 ClickHouse treats `user_name@'address'` as a username as a whole. Thus, technically you can create multiple users with the same `user_name` and different constructions after `@`. However, we do not recommend to do so.
 :::
 
-## VALID UNTIL Clause
+## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
 The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.
@@ -189,7 +189,7 @@ Examples:
 - ```CREATE USER name1 VALID UNTIL '2025-01-01 12:00:00 `Asia/Tokyo`'```
 - `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01''`
 
-## GRANTEES Clause
+## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:
 
@@ -200,7 +200,7 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `CREATE USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
-## Examples
+## Examples {#examples-1}
 
 Create the user account `mira` protected by the password `qwerty`:
 
