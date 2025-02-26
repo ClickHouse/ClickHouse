@@ -1,4 +1,4 @@
-
+#pragma once
 
 #include <map>
 #include <base/types.h>

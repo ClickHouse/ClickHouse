@@ -256,7 +256,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
                     if (sequence_number_column.value()->isNullAt(i))
                         throw Exception(
                             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                            "Data sequence number is null for the file added in another shapshot");
+                            "Data sequence number is null for the file added in another snapshot");
                     else
                         added_sequence_number = sequence_number_column.value()->getInt(i);
                     break;
