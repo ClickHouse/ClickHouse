@@ -40,7 +40,7 @@ struct MongoDBConfiguration
 };
 
 /** Implements storage in the MongoDB database.
- *  Use ENGINE = MongoDB(host:port, database, collection, user, password [, options] [, oid columns]);
+ *  Use ENGINE = MongoDB(host:port, database, collection, user, password [, options[, oid_columns]]);
  *               MongoDB(uri, collection [, oid columns]);
  *  Read only.
  *  One stream only.

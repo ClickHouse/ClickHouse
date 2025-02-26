@@ -161,7 +161,7 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
         else
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Incorrect number of arguments. Example usage: "
-                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, 'options'] [, 'oid columns']) or MongoDB('uri', 'collection' [, 'oid columns']).");
+                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, options[, oid_columns]]) or MongoDB('uri', 'collection' [, oid columns]).");
     }
 
     configuration.checkHosts(context);

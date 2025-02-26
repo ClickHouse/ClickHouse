@@ -26,7 +26,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password [, options] [, oid_columns]);
+) ENGINE = MongoDB(host:port, database, collection, user, password [, options[, oid_columns]]);
 ```
 
 **Engine Parameters**
@@ -81,11 +81,39 @@ ENGINE = MongoDB(uri, collection [, oid_columns]);
 | *any other*            | String                                                                |
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
- 
-### OID
+
+### OID {#oid}
+
 If you want a `String` to be treated as an `oid` in the WHERE clause, just put column's name in the last argument.
 It may be needed when querying a record by the `_id` column, which is by default has `oid` type in MongoDB.
 If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, because default value for this parameter is `_id`.
+
+```javascript
+db.sample_oid.insertMany([
+    {"another_oid_column": ObjectId()},
+]);
+
+db.sample_oid.find();
+[
+    {
+        "_id": {"$oid": "67bf6cc44ebc466d33d42fb2"},
+        "another_oid_column": {"$oid": "67bf6cc40000000000ea41b1"}
+    }
+]
+```
+
+Default settings: only `_id` is treated as an `oid` column
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid');
+
+SELECT count() FROM sample_oid WHERE _id = '67bf6cc44ebc466d33d42fb2'; --will output 1.
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; --will output 0
+```
+In this case the output will be `0`, because ClickHouse doesn't know that `another_oid_column` has `oid` type, so let's fix it:
 
 ```sql
 CREATE TABLE sample_oid
@@ -93,16 +121,16 @@ CREATE TABLE sample_oid
     _id String,
     another_oid_column String
 ) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
-```
 
-or
+-- or
 
-```sql
 CREATE TABLE sample_oid
 (
     _id String,
     another_oid_column String
 ) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
+
+SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea41b1'; -- will output 1 now
 ```
 
 ## Supported clauses {#supported-clauses}

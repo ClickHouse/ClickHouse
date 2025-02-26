@@ -79,7 +79,7 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     if ((args.size() < 3 || args.size() > 4) && (args.size() < 6 || args.size() > 8))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Incorrect count of arguments. Example usage: "
-                        "mongodb('host:port', database, collection, user, password, structure [, options] [, 'oid columns']) or mongodb(uri, collection, structure [, 'oid columns']).");
+                        "mongodb('host:port', database, collection, user, password, structure [, options[, oid_columns]]) or mongodb(uri, collection, structure [, oid columns]).");
 
     ASTs main_arguments;
     for (size_t i = 0; i < args.size(); ++i)
