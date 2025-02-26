@@ -368,19 +368,19 @@ private:
         auto result = ColumnVector<ResultType>::create(input_rows_count);
         auto & result_data = result->getData();
 
-        size_t prev = 0;
-        size_t curr = 0;
+        ColumnArray::Offset prev = 0;
+        ColumnArray::Offset curr = 0;
         size_t row = 0;
         int numbits = static_cast<int>(sizeof(ResultType)) * 8;
         using BitType = std::conditional_t<std::is_same_v<ResultType, Float32>, uint32_t, uint64_t>;
         BitType y = 0;
         BitType bits = 0;
+        size_t array_size = offsets_x[0];
 
         for (auto off : offsets_y)
         {
             size_t i = 0;
             typename Kernel::template State<ResultType> state;
-            size_t array_size = off - prev;
             bool processed = false;
             if (!processed)
             {
