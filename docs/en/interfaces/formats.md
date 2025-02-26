@@ -7,9 +7,40 @@ title: Formats for Input and Output Data
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-ClickHouse can accept and return data in various formats. A format supported for input can be used to parse the data provided to `INSERT`s, to perform `SELECT`s from a file-backed table such as File, URL or HDFS, or to read a dictionary. A format supported for output can be used to arrange the
-results of a `SELECT`, and to perform `INSERT`s into a file-backed table.
-All format names are case-insensitive.
+# Formats for input and output data {#formats-for-input-and-output-data}
+
+ClickHouse supports most of the known text and binary data formats. This allows easy integration into almost any working
+data pipeline to leverage the benefits of ClickHouse.
+
+## Input formats {#input-formats}
+
+Input formats are used for:
+- Parsing data provided to `INSERT` statements
+- Performing `SELECT` queries from file-backed tables such as `File`, `URL`, or `HDFS`
+- Reading dictionaries
+
+Choosing the right input format is crucial for efficient data ingestion in ClickHouse. With over 70 supported formats, 
+selecting the most performant option can significantly impact insert speed, CPU and memory usage, and overall system 
+efficiency. To help navigate these choices, we benchmarked ingestion performance across formats, revealing key takeaways:
+
+- **The [Native](formats/Native.md) format is the most efficient input format**, offering the best compression, lowest 
+  resource usage, and minimal server-side processing overhead.
+- **Compression is essential** - LZ4 reduces data size with minimal CPU cost, while ZSTD offers higher compression at the
+  expense of additional CPU usage.
+- **Pre-sorting has a moderate impact**, as ClickHouse already sorts efficiently.
+- **Batching significantly improves efficiency** - larger batches reduce insert overhead and improve throughput.
+
+For a deep dive into the results and best practices, 
+read the full [benchmark analysis](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
+For the full test results, explore the [FastFormats](https://fastformats.clickhouse.com/) online dashboard.
+
+## Output formats {#output-formats}
+
+Formats supported for output are used for:
+- Arranging the results of a `SELECT` query
+- Performing `INSERT` operations into file-backed tables
+
+## Formats overview {#formats-overview}
 
 The supported formats are:
 
@@ -100,363 +131,364 @@ The supported formats are:
 | [Form](#form)                                                                             | ✔   | ✗     |
 
 
-You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/operations/settings/settings-formats.md) section.
+You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/operations/settings/settings-formats.md) section.
 
-## TabSeparated {#tabseparated}
+### TabSeparated {#tabseparated}
 
-See [TabSeparated](../interfaces/formats/TabSeparated/TabSeparated.md)
+See [TabSeparated](/interfaces/formats/TabSeparated/TabSeparated)
 
-## TabSeparatedRaw {#tabseparatedraw}
+### TabSeparatedRaw {#tabseparatedraw}
 
 See [TabSeparatedRaw](/interfaces/formats/TabSeparatedRaw)
 
-## TabSeparatedWithNames {#tabseparatedwithnames}
+### TabSeparatedWithNames {#tabseparatedwithnames}
 
-See [TabSeparatedWithNames](../interfaces/formats/TabSeparated/TabSeparatedWithNames.md)
+See [TabSeparatedWithNames](/interfaces/formats/TabSeparated/TabSeparatedWithNames)
 
-## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
+### TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
-See [TabSeparatedWithNamesAndTypes](../interfaces/formats/TabSeparated/TabSeparatedWithNamesAndTypes.md)
+See [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
 
-## TabSeparatedRawWithNames {#tabseparatedrawwithnames}
+### TabSeparatedRawWithNames {#tabseparatedrawwithnames}
 
-See [TabSeparatedRawWithNames](../interfaces/formats/TabSeparated/TabSeparatedRawWithNames.md)
+See [TabSeparatedRawWithNames](/interfaces/formats/TabSeparated/TabSeparatedRawWithNames)
 
-## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
+### TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
-See [TabSeparatedRawWithNamesAndTypes](../interfaces/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes.md)
+See [TabSeparatedRawWithNamesAndTypes](/interfaces/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)
 
-## Template {#format-template}
+### Template {#format-template}
 
-See [Template](../interfaces/formats/Template)
+See [Template](/interfaces/formats/Template)
 
-## TemplateIgnoreSpaces {#templateignorespaces}
+### TemplateIgnoreSpaces {#templateignorespaces}
 
-See [TemplateIgnoreSpaces](../interfaces/formats/Template/TemplateIgnoreSpaces.md)
+See [TemplateIgnoreSpaces](/interfaces/formats/Template/TemplateIgnoreSpaces)
 
-## TSKV {#tskv}
+### TSKV {#tskv}
 
-See [TSKV](formats/TabSeparated/TSKV.md)
+See [TSKV](/interfaces/formats/TabSeparated/TSKV)
 
-## CSV {#csv}
+### CSV {#csv}
 
-See [CSV](../interfaces/formats/CSV/CSV.md)
+See [CSV](../interfaces/formats/CSV/CSV)
 
-## CSVWithNames {#csvwithnames}
+### CSVWithNames {#csvwithnames}
 
-See [CSVWithNames](formats/CSV/CSVWithNames.md)
+See [CSVWithNames](/interfaces/formats/CSV/CSVWithNames)
 
-## CSVWithNamesAndTypes {#csvwithnamesandtypes}
+### CSVWithNamesAndTypes {#csvwithnamesandtypes}
 
-See [CSVWithNamesAndTypes](formats/CSV/CSVWithNamesAndTypes.md)
+See [CSVWithNamesAndTypes](/interfaces/formats/CSV/CSVWithNamesAndTypes)
 
-## CustomSeparated {#format-customseparated}
+### CustomSeparated {#format-customseparated}
 
-See [CustomSeparated](formats/CustomSeparated/CustomSeparated.md)
+See [CustomSeparated](/interfaces/formats/CustomSeparated/CustomSeparated)
 
-## CustomSeparatedWithNames {#customseparatedwithnames}
+### CustomSeparatedWithNames {#customseparatedwithnames}
 
-See [CustomSeparatedWithNames](formats/CustomSeparated/CustomSeparatedWithNames.md)
+See [CustomSeparatedWithNames](/interfaces/formats/CustomSeparated/CustomSeparatedWithNames)
 
-## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
+### CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
-See [CustomSeparatedWithNamesAndTypes](formats/CustomSeparated/CustomSeparatedWithNamesAndTypes.md)
+See [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
 
-## SQLInsert {#sqlinsert}
+### SQLInsert {#sqlinsert}
 
-See [SQLInsert](formats/SQLInsert.md)
+See [SQLInsert](/interfaces/formats/SQLInsert)
 
-## JSON {#json}
+### JSON {#json}
 
-See [JSON](formats/JSON/JSON.md)
+See [JSON](/interfaces/formats/JSON/JSON)
 
-## JSONStrings {#jsonstrings}
+### JSONStrings {#jsonstrings}
 
-See [JSONStrings](formats/JSON/JSONStrings.md)
+See [JSONStrings](/interfaces/formats/JSON/JSONStrings)
 
-## JSONColumns {#jsoncolumns}
+### JSONColumns {#jsoncolumns}
 
-See [JSONColumns](formats/JSON/JSONColumns.md)
+See [JSONColumns](/interfaces/formats/JSON/JSONColumns)
 
-## JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
+### JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-See [JSONColumnsWithMetadata](formats/JSON/JSONColumnsWithMetadata.md)
+See [JSONColumnsWithMetadata](/interfaces/formats/JSON/JSONColumnsWithMetadata)
 
-## JSONAsString {#jsonasstring}
+### JSONAsString {#jsonasstring}
 
-See [JSONAsString](formats/JSON/JSONAsString.md)
+See [JSONAsString](/interfaces/formats/JSON/JSONAsString)
 
-## JSONAsObject {#jsonasobject}
+### JSONAsObject {#jsonasobject}
 
-See [JSONAsObject](formats/JSON/JSONAsObject.md)
+See [JSONAsObject](/interfaces/formats/JSON/JSONAsObject)
 
-## JSONCompact {#jsoncompact}
+### JSONCompact {#jsoncompact}
 
-See [JSONCompact](formats/JSON/JSONCompact.md)
+See [JSONCompact](/interfaces/formats/JSON/JSONCompact)
 
-## JSONCompactStrings {#jsoncompactstrings}
+### JSONCompactStrings {#jsoncompactstrings}
 
-See [JSONCompactStrings](formats/JSON/JSONCompactStrings.md)
+See [JSONCompactStrings](/interfaces/formats/JSON/JSONCompactStrings)
 
-## JSONCompactColumns {#jsoncompactcolumns}
+### JSONCompactColumns {#jsoncompactcolumns}
 
-See [JSONCompactColumns](formats/JSON/JSONCompactColumns.md)
+See [JSONCompactColumns](/interfaces/formats/JSON/JSONCompactColumns)
 
-## JSONEachRow {#jsoneachrow}
+### JSONEachRow {#jsoneachrow}
 
-See [JSONEachRow](formats/JSON/JSONEachRow.md)
+See [JSONEachRow](/interfaces/formats/JSON/JSONEachRow)
 
-## PrettyJSONEachRow {#prettyjsoneachrow}
+### PrettyJSONEachRow {#prettyjsoneachrow}
 
-See [PrettyJSONEachRow](formats/JSON/PrettyJSONEachRow.md)
+See [PrettyJSONEachRow](/interfaces/formats/JSON/PrettyJSONEachRow)
 
-## JSONStringsEachRow {#jsonstringseachrow}
+### JSONStringsEachRow {#jsonstringseachrow}
 
-See [JSONStringsEachRow](formats/JSON/JSONStringsEachRow.md)
+See [JSONStringsEachRow](/interfaces/formats/JSON/JSONStringsEachRow)
 
-## JSONCompactEachRow {#jsoncompacteachrow}
+### JSONCompactEachRow {#jsoncompacteachrow}
 
-See [JSONCompactEachRow](formats/JSON/JSONCompactEachRow.md)
+See [JSONCompactEachRow](/interfaces/formats/JSON/JSONCompactEachRow)
 
-## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
+### JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
-See [JSONCompactStringsEachRow](formats/JSON/JSONCompactStringsEachRow.md)
+See [JSONCompactStringsEachRow](/interfaces/formats/JSON/JSONCompactStringsEachRow)
 
-## JSONEachRowWithProgress {#jsoneachrowwithprogress}
+### JSONEachRowWithProgress {#jsoneachrowwithprogress}
 
-See [JSONEachRowWithProgress](formats/JSON/JSONEachRowWithProgress.md)
+See [JSONEachRowWithProgress](/interfaces/formats/JSON/JSONEachRowWithProgress)
 
-## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
+### JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-See [JSONStringsEachRowWithProgress](formats/JSON/JSONStringsEachRowWithProgress.md)
+See [JSONStringsEachRowWithProgress](/interfaces/formats/JSON/JSONStringsEachRowWithProgress)
 
-## JSONCompactEachRowWithNames {#jsoncompacteachrowwithnames}
+### JSONCompactEachRowWithNames {#jsoncompacteachrowwithnames}
 
-See [JSONCompactEachRowWithNames](formats/JSON/JSONCompactEachRowWithNames.md)
+See [JSONCompactEachRowWithNames](/interfaces/formats/JSON/JSONCompactEachRowWithNames)
 
-## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
+### JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
-See [JSONCompactEachRowWithNamesAndTypes](formats/JSON/JSONCompactEachRowWithNamesAndTypes.md)
+See [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
 
-## JSONCompactEachRowWithProgress
+### JSONCompactEachRowWithProgress {#jsoncompacteachrowwithprogress}
 
-Similar to `JSONEachRowWithProgress` but outputs `row` events in a compact form, like in the `JSONCompactEachRow` format. 
+Similar to `JSONEachRowWithProgress` but outputs `row` events in a compact form, like in the `JSONCompactEachRow` format.
 
-## JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
+### JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
 
-See [JSONCompactStringsEachRowWithNames](formats/JSON/JSONCompactStringsEachRowWithNames.md)
+See [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSON/JSONCompactStringsEachRowWithNames)
 
-## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
+### JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-See [JSONCompactStringsEachRowWithNamesAndTypes](formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes.md)
+See [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
 
-## JSONObjectEachRow {#jsonobjecteachrow}
+### JSONObjectEachRow {#jsonobjecteachrow}
 
-See [JSONObjectEachRow](formats/JSON/JSONObjectEachRow.md)
+See [JSONObjectEachRow](/interfaces/formats/JSON/JSONObjectEachRow)
 
 ### JSON Formats Settings {#json-formats-settings}
 
-See [JSON Format Settings](formats/JSON/format-settings.md)
+See [JSON Format Settings](/interfaces/formats/JSON/format-settings)
 
-## BSONEachRow {#bsoneachrow}
+### BSONEachRow {#bsoneachrow}
 
-See [BSONEachRow](formats/BSONEachRow.md)
+See [BSONEachRow](/interfaces/formats/BSONEachRow)
 
-## Native {#native}
+### Native {#native}
 
-See [Native](formats/Native.md)
+See [Native](/interfaces/formats/Native)
 
-## Null {#null}
+### Null {#null}
 
-See [Null](formats/Null.md)
+See [Null](/interfaces/formats/Null)
 
-## Pretty {#pretty}
+### Pretty {#pretty}
 
-See [Pretty](formats/Pretty/Pretty.md)
+See [Pretty](/interfaces/formats/Pretty/Pretty)
 
-## PrettyNoEscapes {#prettynoescapes}
+### PrettyNoEscapes {#prettynoescapes}
 
-See [PrettyNoEscapes](formats/Pretty/PrettyNoEscapes.md)
+See [PrettyNoEscapes](/interfaces/formats/Pretty/PrettyNoEscapes)
 
-## PrettyMonoBlock {#prettymonoblock}
+### PrettyMonoBlock {#prettymonoblock}
 
-See [PrettyMonoBlock](formats/Pretty/PrettyMonoBlock.md)
+See [PrettyMonoBlock](/interfaces/formats/Pretty/PrettyMonoBlock)
 
-## PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
+### PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
 
-See [PrettyNoEscapesMonoBlock](formats/Pretty/PrettyNoEscapesMonoBlock.md)
+See [PrettyNoEscapesMonoBlock](/interfaces/formats/Pretty/PrettyNoEscapesMonoBlock)
 
-## PrettyCompact {#prettycompact}
+### PrettyCompact {#prettycompact}
 
-See [PrettyCompact](formats/Pretty/PrettyCompact.md)
+See [PrettyCompact](/interfaces/formats/Pretty/PrettyCompact)
 
-## PrettyCompactNoEscapes {#prettycompactnoescapes}
+### PrettyCompactNoEscapes {#prettycompactnoescapes}
 
-See [PrettyCompactNoEscapes](formats/Pretty/PrettyCompactNoEscapes.md)
+See [PrettyCompactNoEscapes](/interfaces/formats/Pretty/PrettyCompactNoEscapes)
 
-## PrettyCompactMonoBlock {#prettycompactmonoblock}
+### PrettyCompactMonoBlock {#prettycompactmonoblock}
 
-See [PrettyCompactMonoBlock](formats/Pretty/PrettyCompactMonoBlock.md)
+See [PrettyCompactMonoBlock](/interfaces/formats/Pretty/PrettyCompactMonoBlock)
 
-## PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
+### PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
 
-See [PrettyCompactNoEscapesMonoBlock](formats/Pretty/PrettyCompactNoEscapesMonoBlock.md)
+See [PrettyCompactNoEscapesMonoBlock](/interfaces/formats/Pretty/PrettyCompactNoEscapesMonoBlock)
 
-## PrettySpace {#prettyspace}
+### PrettySpace {#prettyspace}
 
-See [PrettySpace](formats/Pretty/PrettySpace.md)
+See [PrettySpace](/interfaces/formats/Pretty/PrettySpace)
 
-## PrettySpaceNoEscapes {#prettyspacenoescapes}
+### PrettySpaceNoEscapes {#prettyspacenoescapes}
 
-See [PrettySpaceNoEscapes](formats/Pretty/PrettySpaceNoEscapes)
+See [PrettySpaceNoEscapes](/interfaces/formats/Pretty/PrettySpaceNoEscapes)
 
-## PrettySpaceMonoBlock {#prettyspacemonoblock}
+### PrettySpaceMonoBlock {#prettyspacemonoblock}
 
-See [PrettySpaceMonoBlock](formats/Pretty/PrettySpaceMonoBlock.md)
+See [PrettySpaceMonoBlock](/interfaces/formats/Pretty/PrettySpaceMonoBlock)
 
-## PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
+### PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
 
-See [PrettySpaceNoEscapesMonoBlock](formats/Pretty/PrettySpaceNoEscapesMonoBlock.md)
+See [PrettySpaceNoEscapesMonoBlock](/interfaces/formats/Pretty/PrettySpaceNoEscapesMonoBlock)
 
-## RowBinary {#rowbinary}
+### RowBinary {#rowbinary}
 
-See [RowBinary](formats/RowBinary/RowBinary.md)
+See [RowBinary](/interfaces/formats/RowBinary/RowBinary)
 
-## RowBinaryWithNames {#rowbinarywithnames}
+### RowBinaryWithNames {#rowbinarywithnames}
 
-See [RowBinaryWithNames](formats/RowBinary/RowBinaryWithNames.md)
+See [RowBinaryWithNames](/interfaces/formats/RowBinary/RowBinaryWithNames)
 
-## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
+### RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
-See [RowBinaryWithNamesAndTypes](formats/RowBinary/RowBinaryWithNamesAndTypes.md)
+See [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinary/RowBinaryWithNamesAndTypes)
 
-## RowBinaryWithDefaults {#rowbinarywithdefaults}
+### RowBinaryWithDefaults {#rowbinarywithdefaults}
 
-See [RowBinaryWithDefaults](formats/RowBinary/RowBinaryWithDefaults.md)
+See [RowBinaryWithDefaults](/interfaces/formats/RowBinary/RowBinaryWithDefaults)
 
-## Values {#data-format-values}
+### Values {#data-format-values}
 
-See [Values](formats/Values.md)
+See [Values](/interfaces/formats/Values)
 
-## Vertical {#vertical}
+### Vertical {#vertical}
 
-See [Vertical](formats/Vertical.md)
+See [Vertical](/interfaces/formats/Vertical)
 
-## XML {#xml}
+### XML {#xml}
 
-See [XML](formats/XML.md)
+See [XML](/interfaces/formats/XML)
 
-## CapnProto {#capnproto}
+### CapnProto {#capnproto}
 
-See [CapnProto](formats/CapnProto.md)
+See [CapnProto](/interfaces/formats/CapnProto)
 
-## Prometheus {#prometheus}
+### Prometheus {#prometheus}
 
-See [Prometheus](formats/Prometheus.md)
+See [Prometheus](/interfaces/formats/Prometheus)
 
-## Protobuf {#protobuf}
+### Protobuf {#protobuf}
 
-See [Protobuf](formats/Protobuf/Protobuf.md)
+See [Protobuf](/interfaces/formats/Protobuf/Protobuf)
 
-## ProtobufSingle {#protobufsingle}
+### ProtobufSingle {#protobufsingle}
 
-See [ProtobufSingle](formats/Protobuf/ProtobufSingle.md)
+See [ProtobufSingle](/interfaces/formats/Protobuf/ProtobufSingle)
 
-## ProtobufList {#protobuflist}
+### ProtobufList {#protobuflist}
 
-See [ProtobufList](formats/Protobuf/ProtobufList.md)
+See [ProtobufList](/interfaces/formats/Protobuf/ProtobufList)
 
-## Avro {#data-format-avro}
+### Avro {#data-format-avro}
 
-See [Avro](formats/Avro/Avro.md)
+See [Avro](/interfaces/formats/Avro/Avro)
 
-## AvroConfluent {#data-format-avro-confluent}
+### AvroConfluent {#data-format-avro-confluent}
 
-See [AvroConfluent](formats/Avro/AvroConfluent.md)
+See [AvroConfluent](/interfaces/formats/Avro/AvroConfluent)
 
-## Parquet {#data-format-parquet}
+### Parquet {#data-format-parquet}
 
-See [Parquet](formats/Parquet/Parquet.md)
+See [Parquet](/interfaces/formats/Parquet/Parquet)
 
-## ParquetMetadata {#data-format-parquet-metadata}
+### ParquetMetadata {#data-format-parquet-metadata}
 
-See [ParquetMetadata](formats/Parquet/ParquetMetadata.md)
+See [ParquetMetadata](/interfaces/formats/Parquet/ParquetMetadata)
 
-## Arrow {#data-format-arrow}
+### Arrow {#data-format-arrow}
 
-See [Arrow](formats/Arrow/ArrowStream.md)
+See [Arrow](/interfaces/formats/Arrow/ArrowStream)
 
-## ArrowStream {#data-format-arrow-stream}
+### ArrowStream {#data-format-arrow-stream}
 
-See [ArrowStream](formats/Arrow/ArrowStream.md)
+See [ArrowStream](/interfaces/formats/Arrow/ArrowStream)
 
-## ORC {#data-format-orc}
+### ORC {#data-format-orc}
 
-See [ORC](formats/ORC.md)
+See [ORC](/interfaces/formats/ORC)
 
-## One {#data-format-one}
+### One {#data-format-one}
 
-See [One](formats/One.md)
+See [One](/interfaces/formats/One)
 
-## Npy {#data-format-npy}
+### Npy {#data-format-npy}
 
-See [Npy](formats/Npy.md)
+See [Npy](/interfaces/formats/Npy)
 
-## LineAsString {#lineasstring}
+### LineAsString {#lineasstring}
 
-See [LineAsString](formats/LineAsString/LineAsString.md)
+See:
+- [LineAsString](/interfaces/formats/LineAsString/LineAsString.md)
+- [LineAsStringWithNames](/interfaces/formats/LineAsString/LineAsStringWithNames.md)
+- [LineAsStringWithNamesAndTypes](/interfaces/formats/LineAsString/LineAsStringWithNamesAndTypes.md)
 
-See also: [LineAsStringWithNames](formats/LineAsString/LineAsStringWithNames.md), [LineAsStringWithNamesAndTypes](formats/LineAsString/LineAsStringWithNamesAndTypes.md)
+### Regexp {#data-format-regexp}
 
-## Regexp {#data-format-regexp}
+See [Regexp](/interfaces/formats/Regexp)
 
-See [Regexp](formats/Regexp.md)
+### RawBLOB {#rawblob}
+
+See [RawBLOB](/interfaces/formats/RawBLOB.md)
+
+### Markdown {#markdown}
+
+See [Markdown](/interfaces/formats/Markdown.md)
+
+### MsgPack {#msgpack}
+
+See [MsgPack](/interfaces/formats/MsgPack.md)
+
+### MySQLDump {#mysqldump}
+
+See [MySQLDump](/interfaces/formats/MySQLDump.md)
+
+### DWARF {#dwarf}
+
+See [Dwarf](/interfaces/formats/DWARF.md)
+
+### Form {#form}
+
+See [Form](/interfaces/formats/Form.md)
 
 ## Format Schema {#formatschema}
 
 The file name containing the format schema is set by the setting `format_schema`.
 It's required to set this setting when it is used one of the formats `Cap'n Proto` and `Protobuf`.
 The format schema is a combination of a file name and the name of a message type in this file, delimited by a colon,
-e.g. `schemafile.proto:MessageType`.
+e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
 it can be omitted and in this case, the format schema looks like `schemafile:MessageType`.
 
-If you input or output data via the [client](/docs/interfaces/cli.md) in interactive mode, the file name specified in the format schema
+If you input or output data via the [client](/interfaces/cli.md) in interactive mode, the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
-If you use the client in the [batch mode](/docs/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
+If you use the client in the [batch mode](/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
 
-If you input or output data via the [HTTP interface](/docs/interfaces/http.md) the file name specified in the format schema
-should be located in the directory specified in [format_schema_path](/docs/operations/server-configuration-parameters/settings.md/#format_schema_path)
+If you input or output data via the [HTTP interface](/interfaces/http.md) the file name specified in the format schema
+should be located in the directory specified in [format_schema_path](/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 
 ## Skipping Errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/docs/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
-[input_format_allow_errors_ratio](/docs/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
+[input_format_allow_errors_ratio](/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
-
-## RawBLOB {#rawblob}
-
-See [RawBLOB](formats/RawBLOB.md)
-
-## Markdown
-
-See [Markdown](formats/Markdown.md)
-
-## MsgPack {#msgpack}
-
-See [MsgPack](formats/MsgPack.md)
-
-## MySQLDump {#mysqldump}
-
-See [MySQLDump](formats/MySQLDump.md)
-
-## DWARF {#dwarf}
-
-See [Dwarf](formats/DWARF.md)
-
-## Form {#form}
-
-See [Form](formats/Form.md)

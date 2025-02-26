@@ -2,9 +2,12 @@
 slug: /sql-reference/aggregate-functions/reference/groupbitmapxor
 sidebar_position: 151
 title: groupBitmapXor
+description: "Calculates the XOR of a bitmap column, and returns the cardinality of type UInt64, if used with suffix -State, then it returns a bitmap object"
 ---
 
-Calculations the XOR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
+# groupBitmapXor
+
+`groupBitmapXor` calculates the XOR of a bitmap column, and returns the cardinality of type UInt64, if used with suffix -State, then it returns a [bitmap object](../../../sql-reference/functions/bitmap-functions.md).
 
 ``` sql
 groupBitmapOr(expr)

@@ -288,7 +288,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-## Using ClickHouse sessions in the HTTP protocol 
+## Using ClickHouse sessions in the HTTP protocol {#using-clickhouse-sessions-in-the-http-protocol}
 
 You can also use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout (in seconds), modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
@@ -396,7 +396,7 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-### Tabs in URL Parameters
+### Tabs in URL Parameters {#tabs-in-url-parameters}
 
 Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
 
