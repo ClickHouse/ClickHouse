@@ -143,6 +143,29 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     );
 }
 
+SinkPtr PartitionedStorageObjectStorageSink::createSinkForHivePartition(const std::string & partition_id)
+{
+    validateNamespace(configuration->getNamespace());
+
+    auto partition_key = replaceWildcards(configuration->getPath(), partition_id);
+    validateKey(partition_key);
+
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+                     *object_storage, *configuration, query_settings, partition_key, /* sequence_number */1))
+    {
+        partition_key = *new_key;
+    }
+
+    return std::make_shared<StorageObjectStorageSink>(
+        object_storage,
+        configuration,
+        format_settings,
+        sample_block,
+        context,
+        partition_key);
+}
+
+
 void PartitionedStorageObjectStorageSink::validateKey(const String & str)
 {
     /// See:

@@ -50,6 +50,7 @@ public:
         const ASTPtr & partition_by);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
+    SinkPtr createSinkForHivePartition(const std::string & partition_id) override;
 
 private:
     void validateKey(const String & str);
