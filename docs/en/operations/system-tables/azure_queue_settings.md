@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/azure_queue_settings
+description: "System table containing information about settings of AzureQueue tables. Available from server version `24.10`."
+slug: /operations/system-tables/azure_queue_settings
+title: "azure_queue_settings"
+keywords: ["system table", "azure_queue_settings"]
 ---
-# azure_queue_settings
 
 Contains information about settings of [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) tables.
 Available from `24.10` server version.

@@ -1,12 +1,12 @@
 ---
-slug: /en/sql-reference/data-types/nested-data-structures/nested
+slug: /sql-reference/data-types/nested-data-structures/nested
 sidebar_position: 57
 sidebar_label: Nested(Name1 Type1, Name2 Type2, ...)
 ---
 
 # Nested
 
-## Nested(name1 Type1, Name2 Type2, ...)
+## Nested(name1 Type1, Name2 Type2, ...) {#nestedname1-type1-name2-type2-}
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../../sql-reference/statements/create/table.md) query. Each table row can correspond to any number of rows in a nested data structure.
 

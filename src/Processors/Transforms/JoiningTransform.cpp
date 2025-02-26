@@ -1,9 +1,10 @@
 #include <Processors/Transforms/JoiningTransform.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/JoinUtils.h>
 
-#include <Common/logger_useful.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/JoinUtils.h>
+#include <Processors/Port.h>
+#include <Common/logger_useful.h>
 
 namespace ProfileEvents
 {

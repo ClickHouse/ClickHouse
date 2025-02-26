@@ -5,6 +5,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>

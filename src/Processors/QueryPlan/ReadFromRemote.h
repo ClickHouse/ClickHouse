@@ -1,4 +1,6 @@
 #pragma once
+
+#include <stack>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>

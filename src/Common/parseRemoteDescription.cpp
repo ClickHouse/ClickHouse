@@ -206,7 +206,7 @@ std::vector<std::pair<String, uint16_t>> parseRemoteDescriptionForExternalDataba
         }
         else
         {
-            result.emplace_back(std::make_pair(host, DB::parseFromString<UInt16>(address.substr(colon + 1))));
+            result.emplace_back(std::make_pair(host, DB::parseFromStringWithoutAssertEOF<UInt16>(address.substr(colon + 1))));
         }
     }
 
