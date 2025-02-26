@@ -1,6 +1,6 @@
 ---
 description: "System table which describes the content of the settings profile: constraints, roles and users that the setting applies to, parent settings profiles."
-slug: /en/operations/system-tables/settings_profile_elements
+slug: /operations/system-tables/settings_profile_elements
 title: "settings_profile_elements"
 keywords: ["system table", "settings_profile_elements"]
 ---

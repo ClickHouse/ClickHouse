@@ -1,11 +1,11 @@
 ---
-slug: /en/operations/utilities/clickhouse-compressor
+slug: /operations/utilities/clickhouse-compressor
 title: clickhouse-compressor 
 ---
 
 Simple program for data compression and decompression.
 
-### Examples
+### Examples {#examples}
 
 Compress data with LZ4:
 ```bash

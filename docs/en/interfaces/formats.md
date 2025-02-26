@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/formats
+slug: /interfaces/formats
 sidebar_position: 21
 sidebar_label: View all formats...
 title: Formats for Input and Output Data
@@ -100,7 +100,7 @@ The supported formats are:
 | [Form](#form)                                                                             | ✔   | ✗     |
 
 
-You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/en/operations/settings/settings-formats.md) section.
+You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](/docs/operations/settings/settings-formats.md) section.
 
 ## TabSeparated {#tabseparated}
 
@@ -108,7 +108,7 @@ See [TabSeparated](../interfaces/formats/TabSeparated/TabSeparated.md)
 
 ## TabSeparatedRaw {#tabseparatedraw}
 
-See [TabSeparatedRaw](/en/interfaces/formats/TabSeparatedRaw)
+See [TabSeparatedRaw](/interfaces/formats/TabSeparatedRaw)
 
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
@@ -238,7 +238,7 @@ See [JSONCompactEachRowWithNames](formats/JSON/JSONCompactEachRowWithNames.md)
 
 See [JSONCompactEachRowWithNamesAndTypes](formats/JSON/JSONCompactEachRowWithNamesAndTypes.md)
 
-## JSONCompactEachRowWithProgress
+## JSONCompactEachRowWithProgress {#jsoncompacteachrowwithprogress}
 
 Similar to `JSONEachRowWithProgress` but outputs `row` events in a compact form, like in the `JSONCompactEachRow` format. 
 
@@ -421,18 +421,18 @@ e.g. `schemafile.proto:MessageType`.
 If the file has the standard extension for the format (for example, `.proto` for `Protobuf`),
 it can be omitted and in this case, the format schema looks like `schemafile:MessageType`.
 
-If you input or output data via the [client](/docs/en/interfaces/cli.md) in interactive mode, the file name specified in the format schema
+If you input or output data via the [client](/docs/interfaces/cli.md) in interactive mode, the file name specified in the format schema
 can contain an absolute path or a path relative to the current directory on the client.
-If you use the client in the [batch mode](/docs/en/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
+If you use the client in the [batch mode](/docs/interfaces/cli.md/#batch-mode), the path to the schema must be relative due to security reasons.
 
-If you input or output data via the [HTTP interface](/docs/en/interfaces/http.md) the file name specified in the format schema
-should be located in the directory specified in [format_schema_path](/docs/en/operations/server-configuration-parameters/settings.md/#format_schema_path)
+If you input or output data via the [HTTP interface](/docs/interfaces/http.md) the file name specified in the format schema
+should be located in the directory specified in [format_schema_path](/docs/operations/server-configuration-parameters/settings.md/#format_schema_path)
 in the server configuration.
 
 ## Skipping Errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/docs/en/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
-[input_format_allow_errors_ratio](/docs/en/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/docs/operations/settings/settings-formats.md/#input_format_allow_errors_num) and
+[input_format_allow_errors_ratio](/docs/operations/settings/settings-formats.md/#input_format_allow_errors_ratio) settings.
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.
@@ -441,7 +441,7 @@ Limitations:
 
 See [RawBLOB](formats/RawBLOB.md)
 
-## Markdown
+## Markdown {#markdown}
 
 See [Markdown](formats/Markdown.md)
 

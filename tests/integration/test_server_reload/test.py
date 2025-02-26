@@ -346,13 +346,14 @@ def test_reload_via_client(cluster, zk):
         instance.docker_id,
     ] + localhost_client.command
 
-    # NOTE: reload via zookeeper is too fast, but 100 iterations was enough, even for debug build.
-    for i in range(0, 100):
+    listen_config = "/etc/clickhouse-server/config.d/99-listen.yaml"
+    # NOTE: this test cannot use ZooKeeper since it uses watches to subscribe to changes and they are very fast
+    for i in range(0, 10):
         try:
-            client = get_client(cluster, port=9000)
-            zk.set("/clickhouse/listen_hosts", b"<listen_host>127.0.0.1</listen_host>")
+            instance.replace_config(listen_config, "listen_host: 127.0.0.1")
+
             query_id = f"reload_config_{i}"
-            client.query("SYSTEM RELOAD CONFIG", query_id=query_id)
+            instance.query("SYSTEM RELOAD CONFIG", query_id=query_id)
             assert int(localhost_client.query("SELECT 1")) == 1
             localhost_client.query("SYSTEM FLUSH LOGS")
             MainConfigLoads = int(
@@ -372,14 +373,21 @@ def test_reload_via_client(cluster, zk):
             logging.exception("Retry %s", i)
             exception = e
         finally:
-            while True:
+            instance.replace_config(listen_config, "")
+
+            reset_config_exception = None
+            for i in range(1, 10):
                 try:
-                    with sync_loaded_config(localhost_client.query):
-                        configure_from_zk(zk)
+                    instance.query("SYSTEM RELOAD CONFIG")
+                    reset_config_exception = None
                     break
-                except QueryRuntimeException:
+                except QueryRuntimeException as e:
                     logging.exception("The new socket is not bound yet")
                     time.sleep(0.1)
+                    reset_config_exception = e
+
+            if reset_config_exception is not None:
+                raise reset_config_exception
 
     if exception:
         raise exception

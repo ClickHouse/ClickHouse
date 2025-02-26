@@ -72,7 +72,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupInMemory::readFile(const String & 
 }
 
 
-class BackupInMemory::WriteBufferToBackupInMemory : public WriteBufferFromOwnStringImpl
+class BackupInMemory::WriteBufferToBackupInMemory : public WriteBufferFromOwnString
 {
 public:
     WriteBufferToBackupInMemory(std::shared_ptr<BackupInMemory> backup_, const String & file_name_)
@@ -82,7 +82,7 @@ private:
     void finalizeImpl() override
     {
         String file_contents{stringView()};
-        WriteBufferFromOwnStringImpl::finalizeImpl();
+        WriteBufferFromOwnString::finalizeImpl();
         std::lock_guard lock{backup->mutex};
         auto it = backup->files.find(file_name);
         if (it == backup->files.end())
