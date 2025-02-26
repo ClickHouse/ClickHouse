@@ -26,6 +26,19 @@ bool FilterTransform::canUseType(const DataTypePtr & filter_type)
     return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
 }
 
+auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
+{
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows);
+
+    size_t num_bytes = 0;
+    for (const auto & column : columns)
+    {
+        if (column)
+            num_bytes += column->byteSize();
+    }
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
+};
+
 Block FilterTransform::transformHeader(
     const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
 {
@@ -127,16 +140,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
-        ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows_before_filtration);
-
-        size_t num_bytes_before_filtration = 0;
-        for (const auto & column : columns)
-        {
-            if (column)
-                num_bytes_before_filtration += column->byteSize();
-        }
-        ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes_before_filtration);
-
+        incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -154,16 +158,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_false)
     {
-        ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, 0);
-        ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, 0);
+        incrementProfileEvents(0, {});
         return; /// Will finish at next prepare call
-    }
-
-    if (constant_filter_description.always_true)
-    {
-        removeFilterIfNeed(columns);
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        return;
     }
 
     std::unique_ptr<IFilterDescription> filter_description;
@@ -202,14 +198,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     else
         num_filtered_rows = filter_description->countBytesInFilter();
 
-    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_filtered_rows);
-    size_t num_filtered_bytes = 0;
-    for (const auto & column : columns)
-    {
-        if (column)
-            num_filtered_bytes += column->byteSize();
-    }
-    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_filtered_bytes);
+    incrementProfileEvents(num_filtered_rows, columns);
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
