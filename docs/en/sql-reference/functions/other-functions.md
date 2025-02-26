@@ -386,7 +386,7 @@ materialize(x)
 
 **Parameters**
 
-- `x` — A constant. [Constant](overview.md/#constants).
+- `x` — A constant. [Constant](../functions/index.md/#constants).
 
 **Returned value**
 
@@ -3029,7 +3029,7 @@ Result:
 
 ## getSetting
 
-Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings).
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings).
 
 **Syntax**
 
@@ -3060,11 +3060,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/overview#custom_settings)
+- [Custom Settings](../../operations/settings/index.md#custom_settings)
 
 ## getSettingOrDefault
 
-Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](../../operations/settings/index.md#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3099,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/overview#custom_settings)
+- [Custom Settings](../../operations/settings/index.md#custom_settings)
 
 ## isDecimalOverflow
 

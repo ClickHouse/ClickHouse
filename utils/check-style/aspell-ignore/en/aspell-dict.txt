@@ -89,7 +89,6 @@ BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
 BetaBadge
-Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -464,12 +463,10 @@ JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes
-JSONCompactEachRowWithProgress
 JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
-JSONCompactStringsEachRowWithProgress
 JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
@@ -832,7 +829,6 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
-PrettyFormatSettings
 PrettyJSONEachRow
 PrettyJSONLines
 PrettyMonoBlock
@@ -843,6 +839,7 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
+PrettyFormatSettings
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
@@ -938,10 +935,10 @@ RoaringBitmap
 RocksDB
 Rollup
 RowBinary
-RowBinaryFormatSettings
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
+RowBinaryFormatSettings
 Runtime
 SATA
 SELECTs
@@ -1032,10 +1029,10 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
-SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
+SystemLogParameters
 TABLUM
 TAVG
 TCPConnection
@@ -1327,7 +1324,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
@@ -1515,7 +1511,6 @@ codepoints
 collapsingmergetree
 combinator
 combinators
-compareSubstrings
 comparising
 composable
 composable
@@ -1535,7 +1530,6 @@ connectionId
 const
 contrib
 convertCharset
-cooldown
 coroutines
 corrMatrix
 corrStable
@@ -1543,6 +1537,7 @@ corrmatrix
 corrstable
 cors
 cosineDistance
+cooldown
 countDigits
 countEqual
 countIf
@@ -2503,11 +2498,11 @@ proleptic
 prometheus
 proportionsZTest
 proto
+protos
 protobuf
 protobuflist
 protobufsingle
 protocol
-protos
 proxied
 pseudorandom
 pseudorandomize
@@ -2766,7 +2761,6 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
-sqlreference
 sqrt
 src
 srcReplicas
@@ -2803,6 +2797,7 @@ stringJaccardIndex
 stringJaccardIndexUTF
 stringToH
 stripelog
+stringCompare
 strtod
 strtoll
 strtoull
@@ -2892,6 +2887,7 @@ sysctl
 syslog
 syslogd
 systemd
+sqlreference
 tabix
 tablum
 tabseparated
@@ -3222,3 +3218,5 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+JSONCompactEachRowWithProgress
+JSONCompactStringsEachRowWithProgress

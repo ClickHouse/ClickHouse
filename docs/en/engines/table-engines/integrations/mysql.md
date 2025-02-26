@@ -2,7 +2,6 @@
 slug: /engines/table-engines/integrations/mysql
 sidebar_position: 138
 sidebar_label: MySQL
-title: "The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server."
 ---
 
 # MySQL Table Engine

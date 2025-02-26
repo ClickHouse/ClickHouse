@@ -2,8 +2,6 @@
 slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
 sidebar_position: 80
 sidebar_label:  VersionedCollapsingMergeTree
-title: "VersionedCollapsingMergeTree"
-description: "Allows for quick writing of object states that are continually changing, and deleting old object states in the background."
 ---
 
 # VersionedCollapsingMergeTree

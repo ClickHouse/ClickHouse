@@ -2,8 +2,6 @@
 slug: /engines/table-engines/special/buffer
 sidebar_position: 120
 sidebar_label:  Buffer
-title: "Buffer Table Engine"
-description: "Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously."
 ---
 
 # Buffer Table Engine

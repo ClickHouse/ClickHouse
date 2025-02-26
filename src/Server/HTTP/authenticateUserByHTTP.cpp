@@ -217,9 +217,6 @@ bool authenticateUserByHTTP(
         if (!basic_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
 
-        if (request.get("Authorization", "") != "never")
-            basic_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
-
         chassert(!user.empty());
         basic_credentials->setUserName(user);
         basic_credentials->setPassword(password);

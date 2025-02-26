@@ -2,8 +2,6 @@
 slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 30
 sidebar_label: Custom Partitioning Key
-title: "Custom Partitioning Key"
-description: "Learn how to add a custom partitioning key to MergeTree tables."
 ---
 
 # Custom Partitioning Key

@@ -2,8 +2,6 @@
 slug: /engines/table-engines/integrations/iceberg
 sidebar_position: 90
 sidebar_label: Iceberg
-title: "Iceberg Table Engine"
-description: "This engine provides a read-only integration with existing Apache Iceberg tables in Amazon S3, Azure, HDFS and locally stored tables."
 ---
 
 # Iceberg Table Engine

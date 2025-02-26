@@ -2,8 +2,6 @@
 slug: /engines/table-engines/special/keeper-map
 sidebar_position: 150
 sidebar_label: KeeperMap
-title: "KeeperMap"
-description: "This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads."
 ---
 
 # KeeperMap {#keepermap}

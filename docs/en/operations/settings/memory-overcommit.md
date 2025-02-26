@@ -1,9 +1,6 @@
 ---
-title: "Memory overcommit"
-description: "An experimental technique intended to allow to set more flexible memory limits for queries."
 slug: /operations/settings/memory-overcommit
 ---
-
 # Memory overcommit
 
 Memory overcommit is an experimental technique intended to allow to set more flexible memory limits for queries.

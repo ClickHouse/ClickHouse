@@ -140,7 +140,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **See also**
 
-- [Settings](../../operations/settings/overview#session-settings-intro)
+- [Settings](../../operations/settings/index.md#session-settings-intro)
 - [Permissions for Queries](../../operations/settings/permissions-for-queries.md#settings_readonly)
 - [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 - [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement

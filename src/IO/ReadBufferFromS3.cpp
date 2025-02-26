@@ -246,7 +246,7 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
         getCurrentExceptionMessage(/* with_stacktrace = */ false));
 
 
-    if (auto * s3_exception = current_exception_cast<S3Exception *>())
+    if (auto * s3_exception = exception_cast<S3Exception *>(std::current_exception()))
     {
         /// It doesn't make sense to retry Access Denied or No Such Key
         if (!s3_exception->isRetryableError())

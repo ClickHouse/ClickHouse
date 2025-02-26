@@ -38,6 +38,7 @@ const char * auto_config_build[]
     "OPENSSL_IS_BORING_SSL", "@OPENSSL_IS_BORING_SSL@",
     "USE_VECTORSCAN", "@USE_VECTORSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_ODBC", "@USE_ODBC@",
     "USE_GRPC", "@USE_GRPC@",
     "USE_LDAP", "@USE_LDAP@",
     "TZDATA_VERSION", "@TZDATA_VERSION@",

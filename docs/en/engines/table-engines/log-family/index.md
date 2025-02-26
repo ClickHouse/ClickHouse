@@ -10,11 +10,9 @@ These engines were developed for scenarios when you need to quickly write many s
 
 Engines of the family:
 
-| Log Engines                                                         |
-|---------------------------------------------------------------------|
-| [StripeLog](/docs/en/engines/table-engines/log-family/stripelog.md) |
-| [Log](/docs/en/engines/table-engines/log-family/log.md)             |
-| [TinyLog](/docs/en/engines/table-engines/log-family/tinylog.md)     |
+- [StripeLog](/docs/engines/table-engines/log-family/stripelog.md)
+- [Log](/docs/engines/table-engines/log-family/log.md)
+- [TinyLog](/docs/engines/table-engines/log-family/tinylog.md)
 
 `Log` family table engines can store data to [HDFS](/docs/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-hdfs) or [S3](/docs/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3) distributed file systems.
 

@@ -2,8 +2,6 @@
 slug: /engines/table-engines/integrations/embedded-rocksdb
 sidebar_position: 50
 sidebar_label: EmbeddedRocksDB
-title: "EmbeddedRocksDB Engine"
-description: "This engine allows integrating ClickHouse with RocksDB"
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

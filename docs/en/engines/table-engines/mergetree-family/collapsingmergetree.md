@@ -3,8 +3,6 @@ slug: /engines/table-engines/mergetree-family/collapsingmergetree
 sidebar_position: 70
 sidebar_label: CollapsingMergeTree
 keywords: ['updates', 'collapsing']
-title: "CollapsingMergeTree"
-description: "Inherits from MergeTree but adds logic for collapsing rows during the merge process."
 ---
 
 # CollapsingMergeTree

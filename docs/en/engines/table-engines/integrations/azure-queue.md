@@ -2,13 +2,11 @@
 slug: /engines/table-engines/integrations/azure-queue
 sidebar_position: 181
 sidebar_label: AzureQueue
-title: "AzureQueue Table Engine"
-description: "This engine provides an integration with the Azure Blob Storage ecosystem, allowing streaming data import."
 ---
 
 # AzureQueue Table Engine
 
-This engine provides an integration with the [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
+This engine provides an integration with [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem, allowing streaming data import.
 
 ## Create Table {#creating-a-table}
 
