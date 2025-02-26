@@ -81,8 +81,9 @@ ENGINE = MongoDB(uri, collection [, oid_columns]);
 | *any other*            | String                                                                |
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
- 
-### OID
+
+### OID {#oid}
+
 If you want a `String` to be treated as an `oid` in the WHERE clause, just put column's name in the last argument.
 It may be needed when querying a record by the `_id` column, which is by default has `oid` type in MongoDB.
 If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, because default value for this parameter is `_id`.
