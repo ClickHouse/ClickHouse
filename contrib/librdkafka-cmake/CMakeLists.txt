@@ -161,3 +161,47 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/config.h"
   IMMEDIATE @ONLY
 )
+
+# -----------------------------------------------------------------------------
+# Adjust to avoid the ClickHouse runtime trap for harmful functions:
+#
+# librdkafka uses the tinycthreads library for threading primitives.
+# Note that tinycthreads is not actually using the C11 threads API,
+# yet it defines and uses functions with the same names (e.g. mtx_lock,
+# thrd_create, etc.). ClickHouse’s runtime trap monitors for these names
+# and will immediately terminate the program if they are present.
+#
+# To avoid triggering this runtime trap, we replace these symbols via compile
+# definitions. That is, we redefine each harmful function to an alias prefixed
+# with "rd_kafka_". This ensures that none of the original harmful symbol
+# names appear in the final binary.
+target_compile_definitions(_rdkafka PRIVATE
+  thrd_create=rd_kafka_thrd_create
+  thrd_equal=rd_kafka_thrd_equal
+  thrd_current=rd_kafka_thrd_current
+  thrd_sleep=rd_kafka_thrd_sleep
+  thrd_yield=rd_kafka_thrd_yield
+  thrd_exit=rd_kafka_thrd_exit
+  thrd_detach=rd_kafka_thrd_detach
+  thrd_join=rd_kafka_thrd_join
+
+  mtx_init=rd_kafka_mtx_init
+  mtx_lock=rd_kafka_mtx_lock
+  mtx_timedlock=rd_kafka_mtx_timedlock
+  mtx_trylock=rd_kafka_mtx_trylock
+  mtx_unlock=rd_kafka_mtx_unlock
+  mtx_destroy=rd_kafka_mtx_destroy
+  call_once=rd_kafka_call_once
+
+  cnd_init=rd_kafka_cnd_init
+  cnd_signal=rd_kafka_cnd_signal
+  cnd_broadcast=rd_kafka_cnd_broadcast
+  cnd_wait=rd_kafka_cnd_wait
+  cnd_timedwait=rd_kafka_cnd_timedwait
+  cnd_destroy=rd_kafka_cnd_destroy
+
+  tss_create=rd_kafka_tss_create
+  tss_get=rd_kafka_tss_get
+  tss_set=rd_kafka_tss_set
+  tss_delete=rd_kafka_tss_delete
+)
