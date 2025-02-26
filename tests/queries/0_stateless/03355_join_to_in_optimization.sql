@@ -44,4 +44,4 @@ INNER JOIN
         'k' AS a,
         'v' AS c
 ) AS s ON q.a = s.a
-WHERE deleted AND (b = c)
+WHERE deleted AND (b = c);
