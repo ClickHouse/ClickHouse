@@ -47,7 +47,8 @@ public:
         const String & common_path,
         const DB::FormatSettings & format_settings,
         Int32 schema_id_,
-        const DB::IcebergSchemaProcessor & schema_processor);
+        const DB::IcebergSchemaProcessor & schema_processor,
+        const std::string & table_location);
 
     Int32 schema_id;
 

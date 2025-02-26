@@ -108,6 +108,7 @@ private:
     Int32 format_version;
     Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
+    String table_location;
 
     mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 
