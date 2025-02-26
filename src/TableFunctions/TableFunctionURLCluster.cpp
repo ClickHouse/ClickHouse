@@ -8,7 +8,7 @@ namespace DB
 
 StoragePtr TableFunctionURLCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/) const
+    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
 {
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
