@@ -1680,7 +1680,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        if (nargs == 2 && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
+        if (nargs == 2 && fn->arguments->children[1] && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
         {
             /// Fuzz casts
             const auto old_type = DataTypeFactory::instance().tryGet(fn->arguments->children[1]);
