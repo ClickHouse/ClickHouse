@@ -13,6 +13,7 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -1578,8 +1579,13 @@ private:
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
             builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
+                builder->getHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
 
             builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
         }
