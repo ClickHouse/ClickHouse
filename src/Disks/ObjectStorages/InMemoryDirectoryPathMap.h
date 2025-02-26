@@ -88,7 +88,11 @@ public:
         std::lock_guard lock(mutex);
         auto it = map.find(dir);
         if (it == map.end())
+        {
+            if (map[""].files.emplace(file, size).second)
+                metric_files.add(1);
             return false;
+        }
         if (it->second.files.emplace(file, size).second)
             metric_files.add(1);
         return true;
