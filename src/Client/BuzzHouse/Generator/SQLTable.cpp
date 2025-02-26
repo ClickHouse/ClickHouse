@@ -1489,8 +1489,7 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
        TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::Merge,
-       TableEngineValues::Distributed};
+       TableEngineValues::Merge};
 
 static const auto replace_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
 
