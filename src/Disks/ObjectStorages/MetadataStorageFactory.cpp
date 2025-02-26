@@ -131,7 +131,8 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
            ObjectStoragePtr object_storage) -> MetadataStoragePtr
         {
             auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
+            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
+                object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
         });
 }
 

@@ -35,12 +35,12 @@ public:
         }
     };
 
-    using Files = std::map<std::string, size_t /* file size */>;
+    using FileNames = std::set<std::string>;
     struct RemotePathInfo
     {
         std::string path;
         time_t last_modified = 0;
-        Files files;
+        FileNames files;
     };
 
     size_t directoriesCount() const
@@ -79,7 +79,7 @@ public:
         return res;
     }
 
-    bool addFile(const std::string & local_path, size_t size)
+    bool addFile(const std::string & local_path)
     {
         auto path = std::filesystem::path(local_path);
         auto dir = path.parent_path();
@@ -89,7 +89,7 @@ public:
         auto it = map.find(dir);
         if (it == map.end())
             return false;
-        if (it->second.files.emplace(file, size).second)
+        if (it->second.files.emplace(file).second)
             metric_files.add(1);
         return true;
     }
@@ -169,7 +169,7 @@ public:
         auto it = map.find(base_path);
         if (it != map.end())
             for (const auto & file : it->second.files)
-                callback(file.first);
+                callback(file);
     }
 
     void iterateSubdirectories(const std::string & path, std::function<void(const std::string &)> callback) const
@@ -209,7 +209,7 @@ private:
     Map TSA_GUARDED_BY(mutex) map;
 
     /// A set of known storage paths (randomly-assigned names).
-    std::set<std::string> TSA_GUARDED_BY(mutex) remote_directories;
+    FileNames TSA_GUARDED_BY(mutex) remote_directories;
 
     CurrentMetrics::Increment metric_directories;
     CurrentMetrics::Increment metric_files;

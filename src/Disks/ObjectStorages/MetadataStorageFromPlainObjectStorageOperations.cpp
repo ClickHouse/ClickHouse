@@ -275,7 +275,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
 
-    if (path_map.addFile(path, 0))
+    if (path_map.addFile(path))
     {
         written = true;
     }
@@ -323,7 +323,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
     if (!unlinked)
         return;
 
-    if (!path_map.addFile(path, 0))
+    if (!path_map.addFile(path))
     {
         /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
         LOG_TRACE(
