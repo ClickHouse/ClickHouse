@@ -1620,13 +1620,6 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
     char s[time_broken_down_length];
     char * s_pos = s;
 
-    /** Read characters, that could represent unix timestamp.
-      * Only unix timestamp of at least 5 characters is supported by default, exception is thrown for a shorter one
-      * (unless parsing a string like '1.23' or '-12': there is no ambiguity, it is a DT64 timestamp).
-      * Then look at 5th character. If it is a number - treat whole as unix timestamp.
-      * If it is not a number - then parse datetime in YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format.
-      */
-
     int negative_multiplier = 1;
 
     if (!buf.eof() && *buf.position() == '-')
@@ -1700,7 +1693,6 @@ ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTIm
 
         if (!too_short || t64_mode)
         {
-            /// Not very efficient.
             for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
             {
                 if constexpr (!throw_exception)

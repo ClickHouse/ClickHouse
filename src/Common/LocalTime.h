@@ -150,7 +150,7 @@ public:
     /**
      * Constructor with individual time components.
      *
-     * @param hour_ Hours (0-65535).
+     * @param hour_ Hours (0-999).
      * @param minute_ Minutes (0-59).
      * @param second_ Seconds (0-59).
      */

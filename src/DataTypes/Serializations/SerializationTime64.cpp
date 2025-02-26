@@ -27,7 +27,7 @@ void SerializationTime64::serializeText(const IColumn & column, size_t row_num, 
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
             if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
-                writeTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone); // Maybe to remove
+                writeTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone);
             else
                 writeTime64Text(value, scale, ostr);
             return;
@@ -137,12 +137,12 @@ void SerializationTime64::serializeTextQuoted(const IColumn & column, size_t row
 void SerializationTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     Time64 x = 0;
-    if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
+    if (checkChar('\'', istr)) /// Cases: '18:36:48' or '1504193808'
     {
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else
     {
         readIntText(x, istr);
     }
@@ -152,12 +152,12 @@ void SerializationTime64::deserializeTextQuoted(IColumn & column, ReadBuffer & i
 bool SerializationTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     Time64 x = 0;
-    if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
+    if (checkChar('\'', istr)) /// Cases: '18:36:48' or '1504193808'
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else /// Just 1504193808 or 01504193808
+    else
     {
         if (!tryReadIntText(x, istr))
             return false;
@@ -229,21 +229,10 @@ void SerializationTime64::deserializeTextCSV(IColumn & column, ReadBuffer & istr
     }
     else
     {
-        if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
-        {
-            readText(x, scale, istr, settings, time_zone, utc_time_zone);
-        }
-        /// Best effort parsing supports datetime in format like "01.01.2000, 00:00:00"
-        /// and can mistakenly read comma as a part of datetime.
-        /// For example data "...,01.01.2000,some string,..." cannot be parsed correctly.
-        /// To fix this problem we first read CSV string and then try to parse it as datetime.
-        else
-        {
-            String datetime_str;
-            readCSVString(datetime_str, istr, settings.csv);
-            ReadBufferFromString buf(datetime_str);
-            readText(x, scale, buf, settings, time_zone, utc_time_zone);
-        }
+        String datetime_str;
+        readCSVString(datetime_str, istr, settings.csv);
+        ReadBufferFromString buf(datetime_str);
+        readText(x, scale, buf, settings, time_zone, utc_time_zone);
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);
@@ -266,19 +255,11 @@ bool SerializationTime64::tryDeserializeTextCSV(IColumn & column, ReadBuffer & i
     }
     else
     {
-        if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
-        {
-            if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone))
-                return false;
-        }
-        else
-        {
-            String datetime_str;
-            readCSVString(datetime_str, istr, settings.csv);
-            ReadBufferFromString buf(datetime_str);
-            if (!tryReadText(x, scale, buf, settings, time_zone, utc_time_zone) || !buf.eof())
-                return false;
-        }
+        String datetime_str;
+        readCSVString(datetime_str, istr, settings.csv);
+        ReadBufferFromString buf(datetime_str);
+        if (!tryReadText(x, scale, buf, settings, time_zone, utc_time_zone) || !buf.eof())
+            return false;
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(x);

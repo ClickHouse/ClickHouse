@@ -366,12 +366,12 @@ void SerializationTime::serializeTextQuoted(const IColumn & column, size_t row_n
 void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
-    if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
+    if (checkChar('\'', istr)) /// Cases: '18:36:48' or '493808'
     {
         readText(x, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
-    else /// Just 1504193808 or 01504193808
+    else
     {
         readAsIntText(x, istr);
     }
@@ -383,12 +383,12 @@ void SerializationTime::deserializeTextQuoted(IColumn & column, ReadBuffer & ist
 bool SerializationTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     time_t x = 0;
-    if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
+    if (checkChar('\'', istr)) /// Cases: '18:36:48' or '123808'
     {
         if (!tryReadText(x, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
             return false;
     }
-    else /// Just 1504193808 or 01504193808
+    else
     {
         if (!tryReadAsIntText(x, istr))
             return false;
@@ -464,23 +464,12 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     }
     else
     {
-        if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
-        {
-            readText(x, istr, settings, time_zone, utc_time_zone);
-        }
-        /// Best effort parsing supports datetime in format like "01.01.2000, 00:00:00"
-        /// and can mistakenly read comma as a part of datetime.
-        /// For example data "...,01.01.2000,some string,..." cannot be parsed correctly.
-        /// To fix this problem we first read CSV string and then try to parse it as datetime.
-        else
-        {
-            String time_str;
-            readCSVString(time_str, istr, settings.csv);
-            ReadBufferFromString buf(time_str);
-            readText(x, buf, settings, time_zone, utc_time_zone);
-            if (!buf.eof())
-                throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
-        }
+        String time_str;
+        readCSVString(time_str, istr, settings.csv);
+        ReadBufferFromString buf(time_str);
+        readText(x, buf, settings, time_zone, utc_time_zone);
+        if (!buf.eof())
+            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int64>(x));
@@ -503,19 +492,11 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
     }
     else
     {
-        if (settings.csv.delimiter != ',' || settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic)
-        {
-            if (!tryReadText(x, istr, settings, time_zone, utc_time_zone))
-                return false;
-        }
-        else
-        {
-            String time_str;
-            readCSVString(time_str, istr, settings.csv);
-            ReadBufferFromString buf(time_str);
-            if (!tryReadText(x, buf, settings, time_zone, utc_time_zone) || !buf.eof())
-                return false;
-        }
+        String time_str;
+        readCSVString(time_str, istr, settings.csv);
+        ReadBufferFromString buf(time_str);
+        if (!tryReadText(x, buf, settings, time_zone, utc_time_zone) || !buf.eof())
+            return false;
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int64>(x));

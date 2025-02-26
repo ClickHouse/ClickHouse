@@ -113,7 +113,7 @@ SELECT toStartOfYear(toDateTime(1419800400), 'Pacific/Pitcairn');
 SELECT toStartOfYear(toDate(16433), 'Asia/Istanbul'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toStartOfYear(toDate(16433));
 
-/* toTime */
+/* toTimeWithFixedDate */
 
 SELECT 'toTimeWithFixedDate';
 SELECT toString(toTimeWithFixedDate(toDateTime(1420102800), 'Asia/Istanbul'), 'Asia/Istanbul'), toString(toTimeWithFixedDate(toDateTime(1428310800), 'Asia/Istanbul'), 'Asia/Istanbul');

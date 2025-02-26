@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <bit>
 
-#include "Common/logger_useful.h"
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>

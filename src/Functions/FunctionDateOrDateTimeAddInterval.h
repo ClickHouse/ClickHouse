@@ -197,7 +197,7 @@ struct AddSecondsImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
-        static_assert(DataTypeDateTime64::default_scale == 3);	
+        static_assert(DataTypeDateTime64::default_scale == 3);
         return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
     }
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
@@ -236,7 +236,7 @@ struct AddMinutesImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
-        static_assert(DataTypeDateTime64::default_scale == 3);	
+        static_assert(DataTypeDateTime64::default_scale == 3);
         return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60) * 1000;
     }
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
@@ -275,7 +275,7 @@ struct AddHoursImpl
     static NO_SANITIZE_UNDEFINED DateTime64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         // use default datetime64 scale
-        static_assert(DataTypeDateTime64::default_scale == 3);	
+        static_assert(DataTypeDateTime64::default_scale == 3);
         return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600) * 1000;
     }
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
