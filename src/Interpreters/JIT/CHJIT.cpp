@@ -505,7 +505,6 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
-    /// Use specific target analysis for function analysis manager
     auto target_analysis = machine->getTargetIRAnalysis();
     fam.registerPass([&] { return target_analysis; });
 

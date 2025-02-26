@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/fuzzJSON
 sidebar_position: 75
 sidebar_label: fuzzJSON
+title: "fuzzJSON"
+description: "Perturbs a JSON string with random variations."
 ---
 
-# fuzzJSON
+# fuzzJSON Table Function
 
 Perturbs a JSON string with random variations.
 
@@ -33,7 +35,7 @@ fuzzJSON({ named_collection [, option=value [,..]] | json_str[, random_seed] })
 
 A table object with a a single column containing perturbed JSON strings.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ``` sql
 CREATE NAMED COLLECTION json_fuzzer AS json_str='{}';
