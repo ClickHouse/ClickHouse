@@ -1,6 +1,5 @@
 #include "IMergeTreeDataPart.h"
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
@@ -10,10 +9,8 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/NestedUtils.h>
-#include <IO/HashingReadBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -32,7 +29,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <base/JSON.h>
-#include <boost/algorithm/string/join.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -625,12 +621,10 @@ void IMergeTreeDataPart::clearCaches()
     if (cleared_data_in_caches.exchange(true) || is_duplicate)
         return;
 
-    size_t uncompressed_bytes = getBytesUncompressedOnDisk();
-
-    /// Remove index and marks from cache if it was prewarmed to avoid threshing it with outdated data.
-    /// Do not remove in other cases to avoid extra contention on caches.
-    removeMarksFromCache(storage.getMarkCacheToPrewarm(uncompressed_bytes).get());
-    removeIndexFromCache(storage.getPrimaryIndexCacheToPrewarm(uncompressed_bytes).get());
+    /// Remove index and marks from the cache, because otherwise the cache will grow to its maximum size
+    /// even if the overall index size is much less.
+    removeMarksFromCache(storage.getContext()->getMarkCache().get());
+    removeIndexFromCache(storage.getPrimaryIndexCache().get());
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -882,7 +876,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
                 getDataPartStorage().getFullPath(), message);
 
-            if (Exception * e = exception_cast<Exception *>(std::current_exception()))
+            if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
                 /// So it can be helpful to add to the error message some information about those files.

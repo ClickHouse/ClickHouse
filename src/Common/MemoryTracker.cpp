@@ -15,6 +15,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
+#include <base/defines.h>
 
 #include "config.h"
 
@@ -610,6 +611,20 @@ void MemoryTracker::setParent(MemoryTracker * elem)
         DB::current_thread->flushUntrackedMemory();
 
     parent.store(elem, std::memory_order_relaxed);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    bool found_total_memory_tracker = false;
+    const auto * next = this;
+    do
+    {
+        if (found_total_memory_tracker)
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Double total in the MemoryTracker chains. It is a bug.");
+        if (next == &total_memory_tracker)
+            found_total_memory_tracker = true;
+    } while ((next = next->parent.load(std::memory_order_relaxed)));
+    if (!found_total_memory_tracker)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot found total MemoryTracker. Bug in nesting.");
+#endif
 }
 
 bool canEnqueueBackgroundTask()

@@ -49,18 +49,17 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
 
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
-
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr
-    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
+    static DataLakeMetadataPtr create(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationObserverPtr & configuration,
+        const ContextPtr & local_context,
+        bool allow_experimental_delta_kernel_rs);
 
     size_t getVersion() const { return current_metadata_version; }
 
@@ -126,11 +125,6 @@ private:
     Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
-
-    //Fields are needed only for providing dynamic polymorphism
-    std::unordered_map<String, String> column_name_to_physical_name;
-    /// NOTE: Partition columns are unused
-    DataLakePartitionColumns partition_columns;
 };
 
 }

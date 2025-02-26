@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/replication
+slug: /engines/table-engines/mergetree-family/replication
 sidebar_position: 20
 sidebar_label: Data Replication
+title: "Data Replication"
+description: "Overview of Data Replication in ClickHouse"
 ---
 
 # Data Replication
@@ -38,7 +40,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/docs/en/sql-reference/statements/alter/index.md#query_language_queries_alter)).
+Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](/docs/sql-reference/statements/alter/index.md#query_language_queries_alter)).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
@@ -46,9 +48,9 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 - The `DROP TABLE` query deletes the replica located on the server where the query is run.
 - The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
-ClickHouse uses [ClickHouse Keeper](/docs/en/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
+ClickHouse uses [ClickHouse Keeper](/docs/guides/sre/keeper/index.md) for storing replicas meta information. It is possible to use ZooKeeper version 3.4.5 or newer, but ClickHouse Keeper is recommended.
 
-To use replication, set parameters in the [zookeeper](/docs/en/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
+To use replication, set parameters in the [zookeeper](/docs/operations/server-configuration-parameters/settings.md/#server-settings_zookeeper) server configuration section.
 
 :::note
 Don't neglect the security setting. ClickHouse supports the `digest` [ACL scheme](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) of the ZooKeeper security subsystem.
@@ -113,21 +115,21 @@ You can specify any existing ZooKeeper cluster and the system will use a directo
 
 If ZooKeeper is not set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
 
-ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/en/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/en/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
+ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](/docs/operations/settings/settings.md/#max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](/docs/operations/settings/settings.md/#fallback_to_stale_replicas_for_distributed_queries).
 
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it does not create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
 For very large clusters, you can use different ZooKeeper clusters for different shards. However, from our experience this has not proven necessary based on production clusters with approximately 300 servers.
 
-Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size) setting.
+Replication is asynchronous and multi-master. `INSERT` queries (as well as `ALTER`) can be sent to any available server. Data is inserted on the server where the query is run, and then it is copied to the other servers. Because it is asynchronous, recently inserted data appears on the other replicas with some latency. If part of the replicas are not available, the data is written when they become available. If a replica is available, the latency is the amount of time it takes to transfer the block of compressed data over the network. The number of threads performing background tasks for replicated tables can be set by [background_schedule_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size) setting.
 
-`ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/docs/en/operations/settings/settings.md/#background_fetches_pool_size) setting which can be tuned with a server restart.
+`ReplicatedMergeTree` engine uses a separate thread pool for replicated fetches. Size of the pool is limited by the [background_fetches_pool_size](/docs/operations/settings/settings.md/#background_fetches_pool_size) setting which can be tuned with a server restart.
 
 By default, an INSERT query waits for confirmation of writing the data from only one replica. If the data was successfully written to only one replica and the server with this replica ceases to exist, the stored data will be lost. To enable getting confirmation of data writes from multiple replicas, use the `insert_quorum` option.
 
 Each block of data is written atomically. The INSERT query is divided into blocks up to `max_insert_block_size = 1048576` rows. In other words, if the `INSERT` query has less than 1048576 rows, it is made atomically.
 
-Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application does not know if the data was written to the DB, so the `INSERT` query can simply be repeated. It does not matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](/docs/en/operations/server-configuration-parameters/settings.md/#merge_tree) server settings.
+Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application does not know if the data was written to the DB, so the `INSERT` query can simply be repeated. It does not matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](/docs/operations/server-configuration-parameters/settings.md/#merge_tree) server settings.
 
 During replication, only the source data to insert is transferred over the network. Further data transformation (merging) is coordinated and performed on all the replicas in the same way. This minimizes network usage, which means that replication works well when replicas reside in different datacenters. (Note that duplicating data in different datacenters is the main goal of replication.)
 
@@ -154,17 +156,17 @@ The `Replicated` prefix is added to the table engine name. For example:`Replicat
 Adding `Replicated` is optional in ClickHouse Cloud, as all of the tables are replicated.
 :::
 
-### Replicated\*MergeTree parameters
+### Replicated\*MergeTree parameters {#replicatedmergetree-parameters}
 
-#### zoo_path
+#### zoo_path {#zoo_path}
 
 `zoo_path` — The path to the table in ClickHouse Keeper.
 
-#### replica_name
+#### replica_name {#replica_name}
 
 `replica_name` — The replica name in ClickHouse Keeper.
 
-#### other_parameters
+#### other_parameters {#other_parameters}
 
 `other_parameters` — Parameters of an engine which is used for creating the replicated version, for example, version in `ReplacingMergeTree`.
 
@@ -198,7 +200,7 @@ CREATE TABLE table_name
 
 </details>
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the [macros](/docs/en/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
+As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the [macros](/docs/operations/server-configuration-parameters/settings.md/#macros) section of the configuration file.
 
 Example:
 
@@ -304,7 +306,7 @@ We use the term `MergeTree` to refer to all table engines in the `MergeTree fami
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
-[ATTACH TABLE ... AS REPLICATED](/docs/en/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
+[ATTACH TABLE ... AS REPLICATED](/docs/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
 
 `MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
@@ -332,7 +334,7 @@ Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data
 
 ## Converting from ReplicatedMergeTree to MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
-Use [ATTACH TABLE ... AS NOT REPLICATED](/docs/en/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
+Use [ATTACH TABLE ... AS NOT REPLICATED](/docs/sql-reference/statements/attach.md#attach-mergetree-table-as-replicatedmergetree) statement to attach detached `ReplicatedMergeTree` table as `MergeTree` on a single server.
 
 Another way to do this involves server restart. Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table's data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 
@@ -349,8 +351,8 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
 
 **See Also**
 
-- [background_schedule_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
-- [background_fetches_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
-- [execute_merges_on_single_replica_time_threshold](/docs/en/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
-- [max_replicated_fetches_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
-- [max_replicated_sends_network_bandwidth](/docs/en/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)
+- [background_schedule_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_schedule_pool_size)
+- [background_fetches_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_fetches_pool_size)
+- [execute_merges_on_single_replica_time_threshold](/docs/operations/settings/settings.md/#execute-merges-on-single-replica-time-threshold)
+- [max_replicated_fetches_network_bandwidth](/docs/operations/settings/merge-tree-settings.md/#max_replicated_fetches_network_bandwidth)
+- [max_replicated_sends_network_bandwidth](/docs/operations/settings/merge-tree-settings.md/#max_replicated_sends_network_bandwidth)

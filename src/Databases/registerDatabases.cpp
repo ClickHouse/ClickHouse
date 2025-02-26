@@ -42,6 +42,8 @@ void registerDatabaseIceberg(DatabaseFactory & factory);
 void registerDatabaseDeltaLake(DatabaseFactory & factory);
 #endif
 
+void registerDatabaseBackup(DatabaseFactory & factory);
+
 void registerDatabases()
 {
     auto & factory = DatabaseFactory::instance();
@@ -78,5 +80,7 @@ void registerDatabases()
     registerDatabaseIceberg(factory);
     registerDatabaseDeltaLake(factory);
 #endif
+
+    registerDatabaseBackup(factory);
 }
 }

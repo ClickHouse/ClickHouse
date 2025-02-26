@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, List, Union
+from typing import Any
 
 from ._environment import _Environment
 from .result import Result

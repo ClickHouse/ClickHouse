@@ -1,21 +1,21 @@
 ---
 title : JSONAsObject
-slug : /en/interfaces/formats/JSONAsObject
+slug: /interfaces/formats/JSONAsObject
 keywords : [JSONAsObject]
 input_format: true
 output_format: false
 alias: []
 ---
 
-## Description
+## Description {#description}
 
-In this format, a single JSON object is interpreted as a single [JSON](/docs/en/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
+In this format, a single JSON object is interpreted as a single [JSON](/docs/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
-This format can only be parsed for a table with a single field of type [JSON](/docs/en/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/docs/en/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/docs/en/sql-reference/statements/create/table.md/#materialized).
+This format can only be parsed for a table with a single field of type [JSON](/docs/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/docs/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/docs/sql-reference/statements/create/table.md/#materialized).
 
-## Example Usage
+## Example Usage {#example-usage}
 
-### Basic Example
+### Basic Example {#basic-example}
 
 ```sql title="Query"
 SET allow_experimental_json_type = 1;
@@ -30,7 +30,7 @@ SELECT * FROM json_as_object FORMAT JSONEachRow;
 {"json":{"any json stucture":"1"}}
 ```
 
-### An array of JSON objects
+### An array of JSON objects {#an-array-of-json-objects}
 
 ```sql title="Query"
 SET allow_experimental_json_type = 1;
@@ -44,7 +44,7 @@ SELECT * FROM json_square_brackets FORMAT JSONEachRow;
 {"field":{"id":"2","name":"name2"}}
 ```
 
-### Columns with default values
+### Columns with default values {#columns-with-default-values}
 
 ```sql title="Query"
 SET allow_experimental_json_type = 1;
@@ -61,5 +61,5 @@ SELECT time, json FROM json_as_object FORMAT JSONEachRow
 {"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
