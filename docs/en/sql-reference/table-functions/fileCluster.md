@@ -2,6 +2,8 @@
 slug: /sql-reference/table-functions/fileCluster
 sidebar_position: 61
 sidebar_label: fileCluster
+title: "fileCluster"
+description: "Enables simultaneous processing of files matching a specified path across multiple nodes within a cluster. The initiator establishes connections to worker nodes, expands globs in the file path, and delegates file-reading tasks to worker nodes. Each worker node is querying the initiator for the next file to process, repeating until all tasks are completed (all files are read)."
 ---
 
 # fileCluster Table Function
@@ -74,7 +76,7 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 ```
 
 
-## Globs in Path
+## Globs in Path {#globs-in-path}
 
 All patterns supported by [File](../../sql-reference/table-functions/file.md#globs-in-path) table function are supported by FileCluster.
 

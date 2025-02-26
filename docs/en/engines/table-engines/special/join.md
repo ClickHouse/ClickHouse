@@ -2,6 +2,8 @@
 slug: /engines/table-engines/special/join
 sidebar_position: 70
 sidebar_label: Join
+title: "Join Table Engine"
+description: "Optional prepared data structure for usage in JOIN operations."
 ---
 
 # Join Table Engine
@@ -24,17 +26,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 See the detailed description of the [CREATE TABLE](/docs/sql-reference/statements/create/table.md/#create-table-query) query.
 
-## Engine Parameters
+## Engine Parameters {#engine-parameters}
 
-### join_strictness
+### join_strictness {#join_strictness}
 
 `join_strictness` – [JOIN strictness](/docs/sql-reference/statements/select/join.md/#select-join-types).
 
-### join_type
+### join_type {#join_type}
 
 `join_type` – [JOIN type](/docs/sql-reference/statements/select/join.md/#select-join-types).
 
-### Key columns
+### Key columns {#key-columns}
 
 `k1[, k2, ...]` – Key columns from the `USING` clause that the `JOIN` operation is made with.
 
@@ -65,28 +67,28 @@ Main use-cases for `Join`-engine tables are following:
 
 When creating a table, the following settings are applied:
 
-#### join_use_nulls
+#### join_use_nulls {#join_use_nulls}
 
 [join_use_nulls](/docs/operations/settings/settings.md/#join_use_nulls)
 
-#### max_rows_in_join
+#### max_rows_in_join {#max_rows_in_join}
 
 [max_rows_in_join](/docs/operations/settings/query-complexity.md/#settings-max_rows_in_join)
 
-#### max_bytes_in_join
+#### max_bytes_in_join {#max_bytes_in_join}
 
 [max_bytes_in_join](/docs/operations/settings/query-complexity.md/#settings-max_bytes_in_join)
 
-#### join_overflow_mode
+#### join_overflow_mode {#join_overflow_mode}
 
 [join_overflow_mode](/docs/operations/settings/query-complexity.md/#settings-join_overflow_mode)
 
-#### join_any_take_last_row
+#### join_any_take_last_row {#join_any_take_last_row}
 
 [join_any_take_last_row](/docs/operations/settings/settings.md/#join_any_take_last_row)
-#### join_use_nulls
+#### join_use_nulls {#join_use_nulls-1}
 
-#### persistent
+#### persistent {#persistent}
 
 Disables persistency for the Join and [Set](/docs/engines/table-engines/special/set.md) table engines.
 

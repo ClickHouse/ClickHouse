@@ -220,7 +220,7 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
 
 Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
 {
-    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
     String json_str;
@@ -295,7 +295,10 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 
 
 DataLakeMetadataPtr IcebergMetadata::create(
-    const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
+    const ObjectStoragePtr & object_storage,
+    const ConfigurationObserverPtr & configuration,
+    const ContextPtr & local_context,
+    bool)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -303,7 +306,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto log = getLogger("IcebergMetadata");
 
-    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
     String json_str;
@@ -330,7 +333,8 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
     auto context = getContext();
-    StorageObjectStorageSource::ObjectInfo object_info(std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
+    ObjectInfo object_info(
+        std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
     auto manifest_list_file_reader
@@ -405,7 +409,7 @@ ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filen
     auto configuration_ptr = configuration.lock();
     String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
 
-    StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
+    ObjectInfo manifest_object_info(manifest_file);
     auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
     auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
     auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);

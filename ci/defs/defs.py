@@ -394,21 +394,8 @@ class ArtifactNames:
     PERF_REPORTS_ARM = "PERF_REPORTS_ARM"
 
 
-ARTIFACTS = [
-    *Artifact.Config(
-        name="...",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/unit_tests_dbms",
-    ).parametrize(
-        names=[
-            ArtifactNames.UNITTEST_AMD_ASAN,
-            ArtifactNames.UNITTEST_AMD_TSAN,
-            ArtifactNames.UNITTEST_AMD_MSAN,
-            ArtifactNames.UNITTEST_AMD_UBSAN,
-            ArtifactNames.UNITTEST_AMD_BINARY,
-        ]
-    ),
-    *Artifact.Config(
+class ArtifactConfigs:
+    clickhouse_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/clickhouse",
@@ -437,26 +424,63 @@ ARTIFACTS = [
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
         ]
-    ),
-    Artifact.Config(
-        name=ArtifactNames.FAST_TEST,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*",
-    ),
-    *Artifact.Config(
+    )
+    clickhouse_debians = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/*.deb",
     ).parametrize(
         names=[
+            ArtifactNames.DEB_AMD_RELEASE,
             ArtifactNames.DEB_AMD_DEBUG,
             ArtifactNames.DEB_AMD_ASAN,
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAM,
             ArtifactNames.DEB_AMD_UBSAN,
+            ArtifactNames.DEB_AMD_COV,
+            ArtifactNames.DEB_ARM_RELEASE,
+            ArtifactNames.DEB_ARM_ASAN,
         ]
-    ),
-    Artifact.Config(
+    )
+    clickhouse_rpms = Artifact.Config(
+        name="*",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/*.rpm",
+    ).parametrize(
+        names=[
+            ArtifactNames.RPM_AMD_RELEASE,
+            ArtifactNames.RPM_ARM_RELEASE,
+        ]
+    )
+    clickhouse_tgzs = Artifact.Config(
+        name="*",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/*64.tgz*",
+    ).parametrize(
+        names=[
+            ArtifactNames.TGZ_AMD_RELEASE,
+            ArtifactNames.TGZ_ARM_RELEASE,
+        ]
+    )
+    unittests_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/unit_tests_dbms",
+    ).parametrize(
+        names=[
+            ArtifactNames.UNITTEST_AMD_ASAN,
+            ArtifactNames.UNITTEST_AMD_TSAN,
+            ArtifactNames.UNITTEST_AMD_MSAN,
+            ArtifactNames.UNITTEST_AMD_UBSAN,
+            ArtifactNames.UNITTEST_AMD_BINARY,
+        ]
+    )
+    fast_test = Artifact.Config(
+        name=ArtifactNames.FAST_TEST,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/*",
+    )
+    fuzzers = Artifact.Config(
         name=ArtifactNames.FUZZERS,
         type=Artifact.Type.S3,
         path=[
@@ -464,64 +488,24 @@ ARTIFACTS = [
             f"{TEMP_DIR}/build/programs/*_fuzzer.options",
             f"{TEMP_DIR}/build/programs/all.dict",
         ],
-    ),
-    Artifact.Config(
+    )
+    fuzzers_corpus = Artifact.Config(
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.DEB_AMD_RELEASE,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.deb",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.DEB_AMD_COV,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.deb",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.RPM_AMD_RELEASE,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.rpm",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.TGZ_AMD_RELEASE,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*64.tgz*",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.PERFORMANCE_PACKAGE_AMD,
+    )
+    performance_packages = Artifact.Config(
+        name="*",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/performance.tar.zst",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.PERFORMANCE_PACKAGE_ARM,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/performance.tar.zst",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.DEB_ARM_RELEASE,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.deb",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.RPM_ARM_RELEASE,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.rpm",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.TGZ_ARM_RELEASE,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*64.tgz*",
-    ),
-    Artifact.Config(
-        name=ArtifactNames.DEB_ARM_ASAN,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.deb",
-    ),
-    *Artifact.Config(
-        name="",
+    ).parametrize(
+        names=[
+            ArtifactNames.PERFORMANCE_PACKAGE_AMD,
+            ArtifactNames.PERFORMANCE_PACKAGE_ARM,
+        ]
+    )
+    performance_reports = Artifact.Config(
+        name="*",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/perf_wd/*.html",
     ).parametrize(
@@ -531,8 +515,7 @@ ARTIFACTS = [
             ArtifactNames.PERF_REPORTS_AMD_1_2_WITH_RELEASE,
             ArtifactNames.PERF_REPORTS_AMD_2_2_WITH_RELEASE,
         ]
-    ),
-]
+    )
 
 
 class Jobs:

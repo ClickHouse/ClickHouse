@@ -2,6 +2,8 @@
 slug: /engines/database-engines/materialized-postgresql
 sidebar_label: MaterializedPostgreSQL
 sidebar_position: 60
+title: "MaterializedPostgreSQL"
+description: "Creates a ClickHouse database with tables from PostgreSQL database."
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -273,7 +275,7 @@ Please note that this should be used only if it is actually needed. If there is 
     kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
     ```
 
-### Required permissions
+### Required permissions {#required-permissions}
 
 1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
 

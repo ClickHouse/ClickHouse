@@ -364,8 +364,11 @@ Each time this number of parts was uploaded to S3, s3_min_upload_part_size is mu
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
 Maximum part number number for s3 upload part.
 )", 0) \
+    DECLARE(Bool, s3_allow_multipart_copy, true, R"(
+Allow multipart copy in S3.
+)", 0) \
     DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
-Maximum size for a single copy operation in s3
+Maximum size for single-operation copy in s3. This setting is used only if s3_allow_multipart_copy is true.
 )", 0) \
     DECLARE(UInt64, azure_upload_part_size_multiply_factor, 2, R"(
 Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage.
@@ -1006,14 +1009,14 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, group_by_use_nulls, false, R"(
-Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+Changes the way the [GROUP BY clause](/docs/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
 When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
 Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
 
 Possible values:
 
 - 0 — The default value for the aggregation key type is used to produce missing values.
-- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/sql-reference/syntax.md) for rows that didn't use it.
 
 See also:
 
@@ -5805,6 +5808,10 @@ Build local plan for local replica
 )", BETA) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+)", BETA) \
+    \
+    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
+The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
