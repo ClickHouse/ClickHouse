@@ -6,7 +6,7 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
-#include "IteratorWrapper.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
 
 namespace Iceberg
 {

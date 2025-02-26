@@ -45,6 +45,11 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 
 using namespace Iceberg;
 
+
+constexpr const char * COLUMN_SEQ_NUMBER_NAME = "sequence_number";
+constexpr const char * COLUMN_MANIFEST_FILE_PATH_NAME = "manifest_path";
+constexpr const char * FIELD_FORMAT_VERSION_NAME = "format-version";
+
 std::pair<Int32, Poco::JSON::Object::Ptr>
 parseTableSchemaFromManifestFile(const avro::DataFileReaderBase & manifest_file_reader, const String & manifest_file_name)
 {
@@ -134,7 +139,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
 {
-    Int32 format_version = metadata_object->getValue<Int32>("format-version");
+    Int32 format_version = metadata_object->getValue<Int32>(FIELD_FORMAT_VERSION_NAME);
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
@@ -244,7 +249,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 
     auto metadata_object = readJSON(metadata_file_path, local_context);
 
-    chassert(format_version == metadata_object->getValue<int>("format-version"));
+    chassert(format_version == metadata_object->getValue<int>(FIELD_FORMAT_VERSION_NAME));
 
 
     auto manifest_list_file = getRelevantManifestList(metadata_object);
@@ -318,7 +323,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     IcebergSchemaProcessor schema_processor;
 
-    auto format_version = object->getValue<int>("format-version");
+    auto format_version = object->getValue<int>(FIELD_FORMAT_VERSION_NAME);
 
     auto ptr
         = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
@@ -342,37 +347,41 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
 
     auto [name_to_index, name_to_data_type, header] = getColumnsAndTypesFromAvroByNames(
         manifest_list_file_reader->dataSchema().root(),
-        {"manifest_path", "sequence_number"},
+        {COLUMN_MANIFEST_FILE_PATH_NAME, COLUMN_SEQ_NUMBER_NAME},
         {avro::Type::AVRO_STRING, avro::Type::AVRO_LONG});
 
-    if (name_to_index.find("manifest_path") == name_to_index.end())
-        throw Exception(DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: manifest_path");
-    if (format_version > 1 && name_to_index.find("sequence_number") == name_to_index.end())
+    if (name_to_index.find(COLUMN_MANIFEST_FILE_PATH_NAME) == name_to_index.end())
+        throw Exception(
+            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Required columns are not found in manifest file: {}",
+            COLUMN_MANIFEST_FILE_PATH_NAME);
+    if (format_version > 1 && name_to_index.find(COLUMN_SEQ_NUMBER_NAME) == name_to_index.end())
         throw Exception(
             DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: sequence_number");
 
 
     auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));
-    const auto & manifest_path_col = columns.at(name_to_index.at("manifest_path"));
+    const auto & manifest_path_col = columns.at(name_to_index.at(COLUMN_MANIFEST_FILE_PATH_NAME));
 
     std::optional<const ColumnInt64 *> sequence_number_column = std::nullopt;
     if (format_version > 1)
     {
-        if (columns.at(name_to_index.at("sequence_number"))->getDataType() != TypeIndex::Int64)
+        if (columns.at(name_to_index.at(COLUMN_SEQ_NUMBER_NAME))->getDataType() != TypeIndex::Int64)
         {
             throw Exception(
                 DB::ErrorCodes::ILLEGAL_COLUMN,
                 "The parsed column from Avro file of `sequence_number` field should be Int64 type, got {}",
-                columns.at(name_to_index.at("sequence_number"))->getFamilyName());
+                columns.at(name_to_index.at(COLUMN_SEQ_NUMBER_NAME))->getFamilyName());
         }
-        sequence_number_column = assert_cast<const ColumnInt64 *>(columns.at(name_to_index.at("sequence_number")).get());
+        sequence_number_column = assert_cast<const ColumnInt64 *>(columns.at(name_to_index.at(COLUMN_SEQ_NUMBER_NAME)).get());
     }
 
     if (manifest_path_col->getDataType() != TypeIndex::String)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `manifest_path` field should be String type, got {}",
+            "The parsed column from Avro file of `{}` field should be String type, got {}",
+            COLUMN_MANIFEST_FILE_PATH_NAME,
             manifest_path_col->getFamilyName());
     }
 

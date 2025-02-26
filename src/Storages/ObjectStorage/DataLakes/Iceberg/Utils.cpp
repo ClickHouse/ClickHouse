@@ -6,7 +6,7 @@
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#    include <Common/logger_useful.h>
+#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
