@@ -62,31 +62,31 @@ public:
     }
 
     ServerCredentials(
-        const String & h,
-        const uint32_t p,
-        const uint32_t mp,
-        const String & us,
-        const String & u,
-        const String & pass,
-        const String & db,
-        const std::filesystem::path & ufd,
-        const std::filesystem::path & qlf)
-        : hostname(h)
-        , port(p)
-        , mysql_port(mp)
-        , unix_socket(us)
-        , user(u)
-        , password(pass)
-        , database(db)
-        , user_files_dir(ufd)
-        , query_log_file(qlf)
+        const String & hostname_,
+        const uint32_t port_,
+        const uint32_t mysql_port_,
+        const String & unix_socket_,
+        const String & user_,
+        const String & password_,
+        const String & database_,
+        const std::filesystem::path & user_files_dir_,
+        const std::filesystem::path & query_log_file_)
+        : hostname(hostname_)
+        , port(port_)
+        , mysql_port(mysql_port_)
+        , unix_socket(unix_socket_)
+        , user(user_)
+        , password(password_)
+        , database(database_)
+        , user_files_dir(user_files_dir_)
+        , query_log_file(query_log_file_)
     {
     }
 
-    ServerCredentials(const ServerCredentials & c) = default;
-    ServerCredentials(ServerCredentials && c) = default;
-    ServerCredentials & operator=(const ServerCredentials & c) = default;
-    ServerCredentials & operator=(ServerCredentials && c) noexcept = default;
+    ServerCredentials(const ServerCredentials & sc) = default;
+    ServerCredentials(ServerCredentials && sc) = default;
+    ServerCredentials & operator=(const ServerCredentials & sc) = default;
+    ServerCredentials & operator=(ServerCredentials && sc) noexcept = default;
 };
 
 class PerformanceMetric
@@ -97,17 +97,17 @@ public:
 
     PerformanceMetric() = default;
 
-    PerformanceMetric(const bool e, const uint64_t t, const uint64_t m)
-        : enabled(e)
-        , threshold(t)
-        , minimum(m)
+    PerformanceMetric(const bool enabled_, const uint64_t threshold_, const uint64_t minimum_)
+        : enabled(enabled_)
+        , threshold(threshold_)
+        , minimum(minimum_)
     {
     }
 
-    PerformanceMetric(const PerformanceMetric & c) = default;
-    PerformanceMetric(PerformanceMetric && c) = default;
-    PerformanceMetric & operator=(const PerformanceMetric & c) = default;
-    PerformanceMetric & operator=(PerformanceMetric && c) noexcept = default;
+    PerformanceMetric(const PerformanceMetric & pm) = default;
+    PerformanceMetric(PerformanceMetric && pm) = default;
+    PerformanceMetric & operator=(const PerformanceMetric & pm) = default;
+    PerformanceMetric & operator=(PerformanceMetric && pm) noexcept = default;
 };
 
 class PerformanceResult
@@ -120,10 +120,10 @@ public:
 
     PerformanceResult() = default;
 
-    PerformanceResult(const PerformanceResult & c) = default;
-    PerformanceResult(PerformanceResult && c) = default;
-    PerformanceResult & operator=(const PerformanceResult & c) = default;
-    PerformanceResult & operator=(PerformanceResult && c) noexcept = default;
+    PerformanceResult(const PerformanceResult & pr) = default;
+    PerformanceResult(PerformanceResult && pr) = default;
+    PerformanceResult & operator=(const PerformanceResult & pr) = default;
+    PerformanceResult & operator=(PerformanceResult && pr) noexcept = default;
 };
 
 class FuzzConfig

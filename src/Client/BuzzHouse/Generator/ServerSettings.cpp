@@ -3,10 +3,10 @@
 namespace BuzzHouse
 {
 
-const std::function<String(RandomGenerator &)> probRange
+const RandomSettingParameter probRange
     = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
-const std::function<String(RandomGenerator &)> highRange
+const RandomSettingParameter highRange
     = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
 
 static const CHSetting threadRange = CHSetting(

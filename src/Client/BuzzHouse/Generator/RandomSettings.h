@@ -12,12 +12,12 @@
 namespace BuzzHouse
 {
 
-const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
+const RandomSettingParameter trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
 
-const std::function<String(RandomGenerator &)> zeroOneTwo
+const RandomSettingParameter zeroOneTwo
     = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
 
-const std::function<String(RandomGenerator &)> zeroToThree
+const RandomSettingParameter zeroToThree
     = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
 extern std::unordered_map<String, CHSetting> performanceSettings;
