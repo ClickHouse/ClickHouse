@@ -190,6 +190,11 @@ struct IdentifierResolveScope
       */
     QueryTreeNodePtr expression_join_tree_node;
 
+    /** Used to indicate that we replace one node with another.
+     * Valid while replacing identifier nodes with constants where applicable.
+     */
+    QueryTreeNodePtr runtimeNodeReplacement;
+
     /// Node hash to mask id map
     std::shared_ptr<std::map<IQueryTreeNode::Hash, size_t>> projection_mask_map;
 

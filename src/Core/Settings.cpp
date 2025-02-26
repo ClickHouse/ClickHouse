@@ -2512,6 +2512,9 @@ Maximum size of query syntax tree in number of nodes. Checked after parsing.
 Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
 )", 0) \
     \
+    DECLARE(Bool, nullify_invalid_identifier, false, R"(
+Automatically correct invalid identifier references to NULL alias defintions.
+)", 0) \
     DECLARE(UInt64, readonly, 0, R"(
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
 )", 0) \
