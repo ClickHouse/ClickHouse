@@ -148,7 +148,7 @@ namespace DB
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, tmp_policy, "", R"(
-    Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/en/engines/table-engines/mergetree-family/mergetree) documentation.
+    Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/engines/table-engines/mergetree-family/mergetree) documentation.
 
     :::note
     - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
@@ -331,7 +331,7 @@ namespace DB
     \
     /* Database Catalog */ \
     DECLARE(UInt64, database_atomic_delay_before_drop_table_sec, 8 * 60, R"(
-    The delay during which a dropped table can be restored using the [`UNDROP`](/docs/en/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+    The delay during which a dropped table can be restored using the [`UNDROP`](/docs/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
     The default for this setting is `480` (8 minutes).
     )", 0) \
     DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
@@ -447,7 +447,7 @@ namespace DB
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-    Maximum size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
+    Maximum size of cache for marks (index of [`MergeTree`](/docs/engines/table-engines/mergetree-family) family of tables).
 
     :::note
     This setting can be modified at runtime and will take effect immediately.
@@ -498,9 +498,9 @@ namespace DB
 
     | System Table                                                                                                                                                                                                                                                                                                                                                       | Metric                                                                                                   |
     |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-    | [`system.metrics`](/docs/en/operations/system-tables/metrics) and [`system.metric_log`](/docs/en/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
-    | [`system.asynchronous_metrics_log`](/docs/en/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
-    | [`system.events`](/docs/en/operations/system-tables/events), [`system.processes`](/docs/en/operations/system-tables/processes), [`system.query_log`](/docs/en/operations/system-tables/query_log), [`system.query_thread_log`](/docs/en/operations/system-tables/query_thread_log), [`system.query_views_log`](/docs/en/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
+    | [`system.metrics`](/docs/operations/system-tables/metrics) and [`system.metric_log`](/docs/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
+    | [`system.asynchronous_metrics_log`](/docs/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
+    | [`system.events`](/docs/operations/system-tables/events), [`system.processes`](/docs/operations/system-tables/processes), [`system.query_log`](/docs/operations/system-tables/query_log), [`system.query_thread_log`](/docs/operations/system-tables/query_thread_log), [`system.query_views_log`](/docs/en/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
 
     :::note
     The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
