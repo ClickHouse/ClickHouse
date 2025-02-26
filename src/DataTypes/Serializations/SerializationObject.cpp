@@ -444,6 +444,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
                 settings_copy.prefixes_prefetch_callback = settings.prefixes_prefetch_callback ? safe_prefixes_prefetch_callback : StreamCallback{};
                 for (size_t j = batch_start; j != batch_end; ++j)
                 {
+                    LOG_TEST(getLogger("SerializationObject"), "Deserialize dynamic paths prefixes for {}", structure_state_concrete->sorted_dynamic_paths[j]);
                     settings_copy.path.push_back(Substream::ObjectDynamicPath);
                     settings_copy.path.back().object_path_name = structure_state_concrete->sorted_dynamic_paths[j];
                     dynamic_serialization->deserializeBinaryBulkStatePrefix(settings_copy, object_state->dynamic_path_states.at(structure_state_concrete->sorted_dynamic_paths[j]), cache_ptr);

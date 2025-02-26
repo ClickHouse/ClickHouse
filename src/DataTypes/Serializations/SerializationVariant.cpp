@@ -18,6 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -190,6 +191,7 @@ void SerializationVariant::deserializeBinaryBulkStatePrefix(
     for (size_t i = 0; i < variants.size(); ++i)
     {
         addVariantElementToPath(settings.path, i);
+        LOG_TEST(getLogger("SerializationVariant"), "Deserialize prefix state for variant {}", variant_names[i]);
         variants[i]->deserializeBinaryBulkStatePrefix(settings, variant_state->variant_states[i], cache);
         settings.path.pop_back();
     }
@@ -207,6 +209,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     DeserializeBinaryBulkStatePtr discriminators_state = nullptr;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
+        LOG_TEST(getLogger("SerializationVariant"), "Got variant discriminators structure state from cache");
         discriminators_state = cached_state;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
@@ -215,6 +218,11 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
         readBinaryLittleEndian(mode, *discriminators_stream);
         discriminators_state = std::make_shared<DeserializeBinaryBulkStateVariantDiscriminators>(mode);
         addToSubstreamsDeserializeStatesCache(cache, settings.path, discriminators_state);
+        LOG_TEST(getLogger("SerializationVariant"), "Deserialize variant discriminators structure state: {}", mode);
+    }
+    else
+    {
+        LOG_TEST(getLogger("SerializationVariant"), "No stream for variant discriminators structure");
     }
 
     settings.path.pop_back();

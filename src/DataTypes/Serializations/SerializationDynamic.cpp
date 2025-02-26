@@ -14,6 +14,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -263,6 +264,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
     DeserializeBinaryBulkStatePtr state = nullptr;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
+        LOG_TEST(getLogger("SerializationDynamic"), "Got dynamic structure state from cache");
         state = std::move(cached_state);
     }
     else if (auto * structure_stream = settings.getter(settings.path))
@@ -323,6 +325,12 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         structure_state->variant_type = std::move(variant_type);
         state = structure_state;
         addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+
+        LOG_TEST(getLogger("SerializationDynamic"), "Deserialize dynamic structure state prefix: {}", structure_state->variant_type->getName());
+    }
+    else
+    {
+        LOG_TEST(getLogger("SerializationDynamic"), "No stream for dynamic structure");
     }
 
     settings.path.pop_back();
