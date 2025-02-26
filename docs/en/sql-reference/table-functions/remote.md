@@ -2,15 +2,17 @@
 slug: /sql-reference/table-functions/remote
 sidebar_position: 175
 sidebar_label: remote
+title: "remote, remoteSecure"
+description: "Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a distributed table. Table function `remoteSecure` is same as `remote` but over a secure connection."
 ---
 
-# remote, remoteSecure
+# remote, remoteSecure Table Function
 
 Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Table function `remoteSecure` is same as `remote` but over a secure connection.
 
 Both functions can be used in `SELECT` and `INSERT` queries.
 
-## Syntax
+## Syntax {#syntax}
 
 ``` sql
 remote(addresses_expr, [db, table, user [, password], sharding_key])
@@ -21,7 +23,7 @@ remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
 remoteSecure(named_collection[, option=value [,..]])
 ```
 
-## Parameters
+## Parameters {#parameters}
 
 - `addresses_expr` — A remote server address or an expression that generates multiple addresses of remote servers. Format: `host` or `host:port`.
 
@@ -43,11 +45,11 @@ remoteSecure(named_collection[, option=value [,..]])
 
 Arguments also can be passed using [named collections](/docs/operations/named-collections.md).
 
-## Returned value
+## Returned value {#returned-value}
 
 A table located on a remote server.
 
-## Usage
+## Usage {#usage}
 
 As table functions `remote` and `remoteSecure` re-establish the connection for each request, it is recommended to use a `Distributed` table instead. Also, if hostnames are set, the names are resolved, and errors are not counted when working with various replicas. When processing a large number of queries, always create the `Distributed` table ahead of time, and do not use the `remote` table function.
 
@@ -59,7 +61,7 @@ The `remote` table function can be useful in the following cases:
 - Infrequent distributed requests that are made manually.
 - Distributed requests where the set of servers is re-defined each time.
 
-### Addresses
+### Addresses {#addresses}
 
 ``` text
 example01-01-1
@@ -78,9 +80,9 @@ Multiple addresses can be comma-separated. In this case, ClickHouse will use dis
 example01-01-1,example01-02-1
 ```
 
-## Examples
+## Examples {#examples}
 
-### Selecting data from a remote server:
+### Selecting data from a remote server: {#selecting-data-from-a-remote-server}
 
 ``` sql
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
@@ -95,7 +97,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
 ```
 
-### Inserting data into a table on a remote server:
+### Inserting data into a table on a remote server: {#inserting-data-into-a-table-on-a-remote-server}
 
 ``` sql
 CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
@@ -103,11 +105,11 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-### Migration of tables from one system to another:
+### Migration of tables from one system to another: {#migration-of-tables-from-one-system-to-another}
 
 This example uses one table from a sample dataset.  The database is `imdb`, and the table is `actors`.
 
-#### On the source ClickHouse system (the system that currently hosts the data)
+#### On the source ClickHouse system (the system that currently hosts the data) {#on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data}
 
 - Verify the source database and table name (`imdb.actors`)
 
@@ -138,7 +140,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### On the destination ClickHouse system:
+#### On the destination ClickHouse system {#on-the-destination-clickhouse-system}
 
 - Create the destination database:
 
@@ -157,7 +159,7 @@ This example uses one table from a sample dataset.  The database is `imdb`, and 
                   ORDER BY (id, first_name, last_name, gender);
   ```
 
-#### Back on the source deployment:
+#### Back on the source deployment {#back-on-the-source-deployment}
 
 Insert into the new database and table created on the remote system.  You will need the host, port, username, password, destination database, and destination table.
 
