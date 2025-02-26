@@ -2,13 +2,15 @@
 slug: /engines/table-engines/integrations/deltalake
 sidebar_position: 40
 sidebar_label: DeltaLake
+title: "DeltaLake Table Engine"
+description: "This engine provides a read-only integration with existing Delta Lake tables in Amazon S3."
 ---
 
 # DeltaLake Table Engine
 
 This engine provides a read-only integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
-## Create Table
+## Create Table {#create-table}
 
 Note that the Delta Lake table must already exist in S3, this command does not take DDL parameters to create a new table.
 
@@ -52,6 +54,6 @@ CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
-## See also
+## See also {#see-also}
 
 - [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
