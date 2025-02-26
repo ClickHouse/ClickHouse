@@ -157,14 +157,14 @@ public:
     Discriminator ALWAYS_INLINE globalDiscriminatorByLocal(Discriminator local_discr) const
     {
         /// NULL_DISCRIMINATOR is always the same in local and global orders.
-        chassert(local_discr < local_to_global_discriminators.size());
+        chassert(local_discr == NULL_DISCRIMINATOR || local_discr < local_to_global_discriminators.size());
         return local_discr == NULL_DISCRIMINATOR ? NULL_DISCRIMINATOR : local_to_global_discriminators[local_discr];
     }
 
     Discriminator ALWAYS_INLINE localDiscriminatorByGlobal(Discriminator global_discr) const
     {
         /// NULL_DISCRIMINATOR is always the same in local and global orders.
-        chassert(global_discr < global_to_local_discriminators.size());
+        chassert(global_discr == NULL_DISCRIMINATOR || global_discr < global_to_local_discriminators.size());
         return global_discr == NULL_DISCRIMINATOR ? NULL_DISCRIMINATOR : global_to_local_discriminators[global_discr];
     }
 
