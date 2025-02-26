@@ -726,6 +726,11 @@ public:
             partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);
     }
 
+    SinkPtr createSinkForHivePartition(const String & partition_id) override
+    {
+        return createSinkForPartition(partition_id);
+    }
+
 private:
     const String uri;
     const String format;
