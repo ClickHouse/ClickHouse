@@ -2,11 +2,13 @@
 slug: /sql-reference/table-functions/mergeTreeIndex
 sidebar_position: 77
 sidebar_label: mergeTreeIndex
+title: "mergeTreeIndex"
+description: "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection."
 ---
 
-# mergeTreeIndex
+# mergeTreeIndex Table Function
 
-Represents the contents of index and marks files of MergeTree tables. It can be used for introspection
+Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
 
 ``` sql
 mergeTreeIndex(database, table, [with_marks = true])
