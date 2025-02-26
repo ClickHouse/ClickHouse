@@ -39,6 +39,9 @@ def should_skip_job(job_name):
     if only_docs(changed_files) and job_name not in ONLY_DOCS_JOBS:
         return True, "Docs only update"
 
+    if "do not test" in _info_cache.pr_labels and job_name not in ONLY_DOCS_JOBS:
+        return True, "Skipped, labeled with 'do not test'"
+
     # skip ARM perf tests for non-performance update
     if (
         "pr-performance" not in _info_cache.pr_labels
