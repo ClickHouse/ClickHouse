@@ -17,10 +17,10 @@ Exposes metrics in the [Prometheus text-based exposition format](https://prometh
 
 For this format, it is a requirement for the output table to be structured correctly, by the following rules:
 
-- Columns `name` ([String](/docs/sql-reference/data-types/string.md)) and `value` (number) are required.
-- Rows may optionally contain `help` ([String](/docs/sql-reference/data-types/string.md)) and `timestamp` (number).
-- Column `type` ([String](/docs/sql-reference/data-types/string.md)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
-- Each metric value may also have some `labels` ([Map(String, String)](/docs/sql-reference/data-types/map.md)).
+- Columns `name` ([String](/sql-reference/data-types/string.md)) and `value` (number) are required.
+- Rows may optionally contain `help` ([String](/sql-reference/data-types/string.md)) and `timestamp` (number).
+- Column `type` ([String](/sql-reference/data-types/string.md)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+- Each metric value may also have some `labels` ([Map(String, String)](/sql-reference/data-types/map.md)).
 - Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
 
 There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 

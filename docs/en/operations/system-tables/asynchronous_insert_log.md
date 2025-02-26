@@ -25,7 +25,7 @@ Columns:
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `format` ([String](/docs/sql-reference/data-types/string.md)) — Format name.
+- `format` ([String](/sql-reference/data-types/string.md)) — Format name.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query.
 - `bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of inserted bytes.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.

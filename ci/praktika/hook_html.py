@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import os
 from pathlib import Path
 from typing import List
 
@@ -18,9 +19,9 @@ from .utils import Utils
 
 @dataclasses.dataclass
 class GitCommit:
-    # date: str
-    # message: str
     sha: str
+    message: str = ""
+    # date: str
 
     @staticmethod
     def from_json(file) -> List["GitCommit"]:
@@ -31,7 +32,7 @@ class GitCommit:
                 json_data = json.load(f)
             commits = [
                 GitCommit(
-                    # message=commit["messageHeadline"],
+                    message=commit["message"],
                     sha=commit["sha"],
                     # date=commit["committedDate"],
                 )
@@ -58,7 +59,17 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        commits.append(GitCommit(sha=sha))
+        # TODO: fetch and store commit message in RunConfig (to be available from every job) and use it here
+        if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
+            commit_message = Shell.get_output(
+                f"git log -1 --pretty=%s {sha}", verbose=True
+            )
+        else:
+            commit_message = Shell.get_output(
+                f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'",
+                verbose=True,
+            )
+        commits.append(GitCommit(sha=sha, message=commit_message))
         commits = commits[
             -20:
         ]  # limit maximum number of commits from the past to show in the report
@@ -136,11 +147,9 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
         info = Info()
-        summary_result.set_info(
-            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
-            if info.pr_number
-            else f"{info.git_branch}  |  {Shell.get_output('git log -1 --pretty=%s | head -n1')}  |  {info.git_sha}"
-        )
+        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
+            "git_branch", info.git_branch
+        ).dump()
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
         page_url = Info().get_report_url(latest=bool(info.pr_number))
         print(f"CI Status page url [{page_url}]")
