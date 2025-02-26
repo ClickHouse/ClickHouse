@@ -32,7 +32,7 @@ efficiency. To help navigate these choices, we benchmarked ingestion performance
 
 For a deep dive into the results and best practices, 
 read the full [benchmark analysis](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
-For the full test results, explore the [FastFormats](.) online dashboard.
+For the full test results, explore the [FastFormats](https://fastformats.clickhouse.com/) online dashboard.
 
 ## Output formats {#output-formats}
 
