@@ -25,7 +25,7 @@ create_table() {
         array_col Array(String),
         nullable_col Nullable(Int64),
         sparse_col Int64,
-        tuple_col Tuple(Int64, Int64)
+        tuple_col Tuple(Int64, Tuple(Int64, Int64)),
     ) ENGINE = MergeTree ORDER BY number_col
     SETTINGS min_bytes_for_wide_part = 0"
 
@@ -38,7 +38,7 @@ create_table() {
         [toString(number+rand()), toString(number+rand())] as array_col,
         if(number % 20 = 0, number+rand(), NULL) as nullable_col,
         if(number % 3 = 0, number+rand(), 0) as sparse_col,
-        (number+rand(), number*2) as tuple_col
+        (number+rand(), (0, 0)) as tuple_col
     FROM system.numbers LIMIT $num_rows"
 
     $CLICKHOUSE_CLIENT -q "$query"
@@ -48,12 +48,12 @@ apply_codec() {
     local codec=$1
     local block_size=$2
 
-    query="ALTER TABLE $table_name MODIFY COLUMN number_col UInt64 CODEC($codec),
-           MODIFY COLUMN str_col String CODEC($codec),
-           MODIFY COLUMN array_col Array(String) CODEC($codec),
-           MODIFY COLUMN nullable_col Nullable(Int64) CODEC($codec),
-           MODIFY COLUMN sparse_col Int64 CODEC($codec),
-           MODIFY COLUMN tuple_col Tuple(Int64, Int64) CODEC($codec)
+    query="ALTER TABLE $table_name MODIFY COLUMN number_col CODEC($codec),
+           MODIFY COLUMN str_col CODEC($codec),
+           MODIFY COLUMN array_col CODEC($codec),
+           MODIFY COLUMN nullable_col CODEC($codec),
+           MODIFY COLUMN sparse_col CODEC($codec),
+           MODIFY COLUMN tuple_col CODEC($codec)
            SETTINGS min_compress_block_size = $block_size,
                     max_compress_block_size = $block_size"
 
