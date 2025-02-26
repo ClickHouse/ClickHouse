@@ -567,7 +567,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
                 cdf->set_sharding_key(rg.pickRandomlyFromVector(this->remote_entries).getBottomName());
                 this->remote_entries.clear();
             }
-            addTableRelation(rg, true, name, t);
+            addTableRelation(rg, false, name, t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
@@ -911,7 +911,7 @@ void StatementGenerator::generateFromStatement(RandomGenerator & rg, const uint3
 
         this->depth++;
         this->width++;
-        if (rg.nextSmallNumber() < 3)
+        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 3)
         {
             generateArrayJoin(rg, jcc->mutable_arr());
         }

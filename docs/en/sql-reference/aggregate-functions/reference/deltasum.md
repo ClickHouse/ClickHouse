@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/deltasum
 sidebar_position: 129
+title: "deltaSum"
+description: "Sums the arithmetic difference between consecutive rows."
 ---
 
 # deltaSum
