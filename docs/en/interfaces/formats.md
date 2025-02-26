@@ -446,7 +446,7 @@ See [Regexp](/interfaces/formats/Regexp)
 
 ### RawBLOB {#rawblob}
 
-See [RawBLOB](/interfacesformats/RawBLOB.md)
+See [RawBLOB](/interfaces/formats/RawBLOB.md)
 
 ### Markdown {#markdown}
 

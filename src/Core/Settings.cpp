@@ -957,7 +957,7 @@ Number of threads to use for merge intermediate aggregation results in memory ef
 Enable memory bound merging strategy for aggregation.
 )", 0) \
     DECLARE(Bool, enable_positional_arguments, true, R"(
-Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
+Enables or disables supporting positional arguments for [GROUP BY](/sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
 
 Possible values:
 
@@ -2572,7 +2572,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity.md/#max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity.md/#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -2848,7 +2848,7 @@ Log query settings into the query_log and OpenTelemetry span log.
     DECLARE(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](/operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -2864,7 +2864,7 @@ log_query_threads=1
     DECLARE(Bool, log_query_views, true, R"(
 Setting up query views logging.
 
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](/operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
 
 Example:
 
@@ -2904,7 +2904,7 @@ Result:
     DECLARE(Int64, query_metric_log_interval, -1, R"(
 The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
 
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](../../operations/server-configuration-parameters/settings.md/#query_metric_log) or default to 1000 if not present.
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/operations/server-configuration-parameters/settings.md/#query_metric_log) or default to 1000 if not present.
 
 To disable the collection of a single query, set `query_metric_log_interval` to 0.
 
