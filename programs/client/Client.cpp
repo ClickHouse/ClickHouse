@@ -34,6 +34,11 @@
 
 #include "config.h"
 
+#if USE_BUZZHOUSE
+#   include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
+#   include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#endif
+
 namespace fs = std::filesystem;
 using namespace std::literals;
 
@@ -57,6 +62,13 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
 }
 
+Client::Client()
+{
+    fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
+}
+
+
+Client::~Client() = default;
 
 void Client::processError(const String & query) const
 {

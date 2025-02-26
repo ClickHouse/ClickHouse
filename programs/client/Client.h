@@ -2,9 +2,12 @@
 
 #include <Client/ClientApplicationBase.h>
 
-#if USE_BUZZHOUSE
-#    include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
-#endif
+
+namespace BuzzHouse
+{
+    class FuzzConfig;
+    class ExternalIntegrations;
+};
 
 namespace DB
 {
@@ -14,7 +17,8 @@ class Client : public ClientApplicationBase
 public:
     using Arguments = ClientApplicationBase::Arguments;
 
-    Client() { fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr); }
+    Client();
+    ~Client() override;
 
     void initialize(Poco::Util::Application & self) override;
 

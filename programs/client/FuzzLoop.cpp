@@ -20,6 +20,7 @@
 
 #if USE_BUZZHOUSE
 #    include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#    include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #    include <Client/BuzzHouse/Generator/QueryOracle.h>
 #    include <Client/BuzzHouse/Generator/StatementGenerator.h>
 namespace BuzzHouse
