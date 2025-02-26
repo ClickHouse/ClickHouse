@@ -2,11 +2,13 @@
 slug: /engines/table-engines/integrations/mongodb
 sidebar_position: 135
 sidebar_label: MongoDB
+title: "MongoDB"
+description: "MongoDB engine is read-only table engine which allows to read data from a remote collection."
 ---
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data from remote [MongoDB](https://www.mongodb.com/) collection.
+MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
@@ -63,7 +65,7 @@ ENGINE = MongoDB(uri, collection [, oid_columns]);
 - `oid_columns` - List of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 
-## Types mappings
+## Types mappings {#types-mappings}
 
 | MongoDB                | ClickHouse                                                            |
 |------------------------|-----------------------------------------------------------------------|
@@ -103,7 +105,7 @@ CREATE TABLE sample_oid
 ) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
 ```
 
-## Supported clauses
+## Supported clauses {#supported-clauses}
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
@@ -210,7 +212,7 @@ LIMIT 3;
    └────────────────────────┴────────┘
 ```
 
-## Troubleshooting
+## Troubleshooting {#troubleshooting}
 You can see the generated MongoDB query in DEBUG level logs.
 
 Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.
