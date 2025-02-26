@@ -100,3 +100,9 @@ maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg && \
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+# Allow execute a well-known short version for clickhouse client during tests
+# NOTE: aliases weren't loaded for non-interactive shells, so we can't create alias
+#       and run `docker exec container_name chc -q ...`
+RUN echo '#!/bin/sh' > /usr/bin/chc \
+    && echo 'exec /usr/bin/clickhouse client "$@"' >> /usr/bin/chc \
+    && chmod +x /usr/bin/chc
