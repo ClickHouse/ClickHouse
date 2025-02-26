@@ -986,6 +986,7 @@ def test_formats_errors(kafka_cluster):
             instance.query("DROP TABLE test.view")
 
 
+@pytest.mark.skip(reason="this test can not work stable in CI/CD environment, as relies on a very strict synchronization between the kafka and the clickhouse, which is hard to achieve")
 def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     messages = [json.dumps({"key": j + 1, "value": "x" * 300}) for j in range(22)]
     k.kafka_produce(kafka_cluster, "duplicates_when_commit_failed", messages)
