@@ -53,10 +53,10 @@ namespace
 {
 #if USE_SSL 
 
-std::vector<uint8_t> pbkdf2SHA256(const std::string& password, const std::vector<uint8_t>& salt, int iterations) {
+std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations) {
     std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
     PKCS5_PBKDF2_HMAC(
-        password.c_str(),
+        password.data(),
         static_cast<Int32>(password.size()),
         salt.data(),
         static_cast<Int32>(salt.size()),
@@ -67,16 +67,17 @@ std::vector<uint8_t> pbkdf2SHA256(const std::string& password, const std::vector
     return derived_key;
 }
 
-std::vector<uint8_t> base64Decode(const std::string& encoded) {
-    BIO *bio, *b64;
-    Int32 decodeLen = static_cast<Int32>(encoded.size());
-    std::vector<uint8_t> decoded(decodeLen);
+std::vector<uint8_t> base64Decode(std::string_view encoded) {
+    BIO *bio;
+    BIO *b64;
+    size_t decode_len = encoded.size();
+    std::vector<uint8_t> decoded(decode_len);
 
-    bio = BIO_new_mem_buf(encoded.data(), encoded.size());
+    bio = BIO_new_mem_buf(encoded.data(), static_cast<Int32>(encoded.size()));
     b64 = BIO_new(BIO_f_base64());
     bio = BIO_push(b64, bio);
     BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-    Int32 len = BIO_read(bio, decoded.data(), decodeLen);
+    Int32 len = BIO_read(bio, decoded.data(), static_cast<Int32>(decode_len));
     BIO_free_all(bio);
     decoded.resize(len);
     return decoded;
@@ -100,8 +101,8 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password, std::string_view salt)
 {
 #if USE_SSL
-    auto salt_digest = base64Decode(std::string(salt));
-    auto salted_password = pbkdf2SHA256(std::string(password), salt_digest, 4096);
+    auto salt_digest = base64Decode(salt);
+    auto salted_password = pbkdf2SHA256(password, salt_digest, 4096);
     return salted_password;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SCRAM SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
