@@ -79,6 +79,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
+            {"parallel_replicas_only_with_analyzer", false, true, "Parallel replicas is supported only with analyzer enabled"},
+            {"s3_allow_multipart_copy", true, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -658,6 +660,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.3",
+        {
+            {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
             {"shared_merge_tree_initial_parts_update_backoff_ms", 50, 50, "New setting"},

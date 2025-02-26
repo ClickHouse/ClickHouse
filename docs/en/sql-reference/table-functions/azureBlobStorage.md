@@ -2,6 +2,8 @@
 slug: /sql-reference/table-functions/azureBlobStorage
 sidebar_position: 10
 sidebar_label: azureBlobStorage
+title: "azureBlobStorage"
+description: "Provides a table-like interface to select/insert files in Azure Blob Storage. Similar to the s3 function."
 keywords: [azure blob storage]
 ---
 
@@ -81,7 +83,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 **See Also**
 
-- [AzureBlobStorage Table Engine](/docs/engines/table-engines/integrations/azureBlobStorage.md)
+- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
