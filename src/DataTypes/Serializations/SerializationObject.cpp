@@ -13,6 +13,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -427,6 +429,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         };
 
         size_t task_size = std::max(structure_state_concrete->sorted_dynamic_paths.size() / num_tasks, 1ul);
+        LOG_TEST(getLogger("SerializationObject"), "Deserialize dynamic paths prefixes using thread pool: num_tasks: {}, task_size: {}, dynamic paths: {}", num_tasks, task_size, structure_state_concrete->sorted_dynamic_paths.size());
         for (size_t i = 0; i != num_tasks; ++i)
         {
             auto cache_copy = cache ? std::make_unique<SubstreamsDeserializeStatesCache>(*cache) : nullptr;
@@ -434,6 +437,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             size_t batch_end = (i + 1) == num_tasks ? structure_state_concrete->sorted_dynamic_paths.size() : (i + 1) * task_size;
             auto deserialize = [&, batch_start, batch_end, cache_ptr = cache_copy.get()]()
             {
+                LOG_TEST(getLogger("SerializationObject"), "Deserialize batch of dynamic paths prefixes: batch_start: {}, batch_end: {}", batch_start, batch_end);
                 auto settings_copy = settings;
                 settings_copy.getter = safe_getter;
                 settings_copy.dynamic_subcolumns_callback = settings.dynamic_subcolumns_callback ? safe_dynamic_subcolumns_callback : StreamCallback{};
@@ -485,6 +489,12 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         {
             for (const auto & cache_copy : caches)
                 cache->merge(*cache_copy);
+        }
+
+        for (size_t i = 0; i != structure_state_concrete->sorted_dynamic_paths.size(); ++i)
+        {
+            if (!object_state->dynamic_path_states[structure_state_concrete->sorted_dynamic_paths[i]])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialization state for dynamic path {} (index {}) is not initialized", structure_state_concrete->sorted_dynamic_paths[i], i);
         }
     }
     else
