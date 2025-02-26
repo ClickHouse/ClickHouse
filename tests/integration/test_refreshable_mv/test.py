@@ -179,7 +179,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     # Drop all tables and check that coordination znodes were deleted.
     for name, uuid, coordinated in tables:
         sync = randint(0, 1) == 0
-        nodes[randint(0, 1)].query(f"drop table re.{name}{" sync" if sync else ""}")
+        nodes[randint(0, 1)].query(f"drop table re.{name}{' sync' if sync else ''}")
         # TODO: After https://github.com/ClickHouse/ClickHouse/issues/61065 is done (for MVs, not ReplicatedMergeTree), check the parent znode instead.
         if sync:
             assert not znode_exists(uuid)
