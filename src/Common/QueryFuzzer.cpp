@@ -1908,7 +1908,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 auto & children = select->refTables()->children;
 
-                children.erase(children.begin() + (fuzz_rand() % children.size()));
+                /// Don't remove first FROM table
+                children.erase(children.begin() + (fuzz_rand() % (children.size() - 1)) + 1);
             }
             /// Add array join
             if (fuzz_rand() % 50 == 0 && !select->refTables()->children.empty() && (arr_join = addArrayJoinClause()))
