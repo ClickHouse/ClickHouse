@@ -70,17 +70,22 @@ struct ConstructBitInt256<unsigned>
     using Type = BitUInt256;
 };
 
+/// Converts a wide integer to clang's built-in 256-bit integer representation.
+/// This function takes a wide integer of 256 bits and converts it to a 256-bit integer type.
+/// The source and target types have the same byte order regardless of endianness (big-endian or little-endian).
 template <size_t Bits, typename Signed>
 requires(Bits == 256)
-constexpr auto toBitInt256(const wide::integer<Bits, Signed> & n)
+constexpr const auto & toBitInt256(const wide::integer<Bits, Signed> & n)
 {
     using T = ConstructBitInt256<Signed>::Type;
     return *reinterpret_cast<const T *>(&n);
 }
 
+/// Converts a clang's built-in 256-bit integer representation to a wide integer.
+/// This function takes a wide integer of 256 bits and converts it to a 256-bit integer type.
 template <typename T>
 requires(std::is_same_v<T, BitInt256> || std::is_same_v<T, BitUInt256>)
-constexpr auto fromBitInt256(const T & n)
+constexpr const auto & fromBitInt256(const T & n)
 {
     using Signed = std::conditional_t<std::is_same_v<T, BitInt256>, signed, unsigned>;
     return *reinterpret_cast<const wide::integer<256, Signed> *>(&n);
@@ -240,6 +245,8 @@ struct integer<Bits, Signed>::_impl
     static constexpr const unsigned byte_count = Bits / 8;
     static constexpr const unsigned item_count = byte_count / sizeof(base_type);
     static constexpr const unsigned base_bits = sizeof(base_type) * 8;
+
+    /// Use clang's built-in 256-bit integer to improve performance if possible.
     static constexpr const bool could_use_bitint256 = supportsBitInt256() && Bits == 256;
 
     static_assert(Bits % base_bits == 0);
@@ -563,18 +570,6 @@ private:
     constexpr static integer<Bits, Signed>
     minus(const integer<Bits, Signed> & lhs, T rhs)
     {
-        if constexpr (could_use_bitint256)
-        {
-            auto new_lhs = toBitInt256(lhs);
-            if constexpr (!std::same_as<T, integer<Bits, signed>>)
-            {
-                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
-                return fromBitInt256(new_lhs - new_rhs);
-            }
-            else
-                return fromBitInt256(new_lhs - toBitInt256(rhs));
-        }
-
         constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
         constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
@@ -608,18 +603,6 @@ private:
     constexpr static integer<Bits, Signed>
     plus(const integer<Bits, Signed> & lhs, T rhs)
     {
-        if constexpr (could_use_bitint256)
-        {
-            auto new_lhs = toBitInt256(lhs);
-            if constexpr (!std::same_as<T, integer<Bits, signed>>)
-            {
-                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
-                return fromBitInt256(new_lhs + new_rhs);
-            }
-            else
-                return fromBitInt256(new_lhs + toBitInt256(rhs));
-        }
-
         constexpr const unsigned rhs_items = (sizeof(T) > sizeof(base_type)) ? (sizeof(T) / sizeof(base_type)) : 1;
         constexpr const unsigned op_items = (item_count < rhs_items) ? item_count : rhs_items;
 
@@ -652,18 +635,6 @@ private:
     template <typename T>
     constexpr static integer<Bits, Signed> multiply(const integer<Bits, Signed> & lhs, const T & rhs)
     {
-        if constexpr (could_use_bitint256)
-        {
-            auto new_lhs = toBitInt256(lhs);
-            if constexpr (!std::same_as<T, integer<Bits, signed>>)
-            {
-                auto new_rhs = toBitInt256(static_cast<integer<Bits, Signed>>(rhs));
-                return fromBitInt256(new_lhs * new_rhs);
-            }
-            else
-                return fromBitInt256(new_lhs * toBitInt256(rhs));
-        }
-
         if constexpr (Bits == 256 && sizeof(base_type) == 8)
         {
             /// @sa https://github.com/abseil/abseil-cpp/blob/master/absl/numeric/int128.h
@@ -783,10 +754,23 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (is_negative(rhs))
-                return minus(lhs, -rhs);
+            if constexpr (could_use_bitint256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) + toBitInt256(rhs));
+            }
             else
-                return plus(lhs, rhs);
+            {
+                if (is_negative(rhs))
+                    return minus(lhs, -rhs);
+                else
+                    return plus(lhs, rhs);
+            }
         }
         else
         {
@@ -801,10 +785,23 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            if (is_negative(rhs))
-                return plus(lhs, -rhs);
+            if constexpr (could_use_bitint256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) - toBitInt256(rhs));
+            }
             else
-                return minus(lhs, rhs);
+            {
+                if (is_negative(rhs))
+                    return plus(lhs, -rhs);
+                else
+                    return minus(lhs, rhs);
+            }
         }
         else
         {
@@ -819,22 +816,34 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, Signed> res;
-
-            if constexpr (std::is_signed_v<Signed>)
+            if constexpr (could_use_bitint256)
             {
-                res = multiply((is_negative(lhs) ? make_positive(lhs) : lhs),
-                                  (is_negative(rhs) ? make_positive(rhs) : rhs));
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) * toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) * toBitInt256(rhs));
             }
             else
             {
-                res = multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
+                integer<Bits, Signed> res;
+
+                if constexpr (std::is_signed_v<Signed>)
+                {
+                    res = multiply((is_negative(lhs) ? make_positive(lhs) : lhs), (is_negative(rhs) ? make_positive(rhs) : rhs));
+                }
+                else
+                {
+                    res = multiply(lhs, (is_negative(rhs) ? make_positive(rhs) : rhs));
+                }
+
+                if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
+                    res = operator_unary_minus(res);
+
+                return res;
             }
-
-            if (std::is_same_v<Signed, signed> && is_negative(lhs) != is_negative(rhs))
-                res = operator_unary_minus(res);
-
-            return res;
         }
         else
         {
@@ -978,16 +987,6 @@ public:
         if (is_zero(denominator))
             throwError("Division by zero");
 
-        if constexpr (could_use_bitint256)
-        {
-            auto new_numerator = toBitInt256(numerator);
-            auto new_denominator = toBitInt256(denominator);
-            auto new_quotient = new_numerator / new_denominator;
-            auto new_remainder = new_numerator % new_denominator;
-            numerator = fromBitInt256(new_remainder);
-            return fromBitInt256(new_quotient);
-        }
-
         if constexpr (Bits == 128 && sizeof(base_type) == 8)
         {
             using CompilerUInt128 = unsigned __int128;
@@ -1036,13 +1035,26 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, unsigned> numerator = make_positive(lhs);
-            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
+            if constexpr (could_use_bitint256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, Signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) / toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) / toBitInt256(rhs));
+            }
+            else
+            {
+                integer<Bits, unsigned> numerator = make_positive(lhs);
+                integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+                integer<Bits, unsigned> quotient = integer<Bits, unsigned>::_impl::divide(numerator, std::move(denominator));
 
-            if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
-                quotient = operator_unary_minus(quotient);
-            return quotient;
+                if (std::is_same_v<Signed, signed> && is_negative(rhs) != is_negative(lhs))
+                    quotient = operator_unary_minus(quotient);
+                return quotient;
+            }
         }
         else
         {
@@ -1056,13 +1068,26 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
-            integer<Bits, unsigned> remainder = make_positive(lhs);
-            integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
-            integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
+            if constexpr (could_use_bitint256)
+            {
+                if constexpr (!std::same_as<T, integer<Bits, signed>>)
+                {
+                    auto new_rhs = static_cast<integer<Bits, Signed>>(rhs);
+                    return fromBitInt256(toBitInt256(lhs) % toBitInt256(new_rhs));
+                }
+                else
+                    return fromBitInt256(toBitInt256(lhs) % toBitInt256(rhs));
+            }
+            else
+            {
+                integer<Bits, unsigned> remainder = make_positive(lhs);
+                integer<Bits, unsigned> denominator = make_positive(integer<Bits, Signed>(rhs));
+                integer<Bits, unsigned>::_impl::divide(remainder, std::move(denominator));
 
-            if (std::is_same_v<Signed, signed> && is_negative(lhs))
-                remainder = operator_unary_minus(remainder);
-            return remainder;
+                if (std::is_same_v<Signed, signed> && is_negative(lhs))
+                    remainder = operator_unary_minus(remainder);
+                return remainder;
+            }
         }
         else
         {
