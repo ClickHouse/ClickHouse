@@ -145,29 +145,17 @@ private:
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
 
-    template <typename T>
-    const T & pickRandomlyFromVector(pcg64 & rand, const std::vector<T> & vals)
+    template <typename Container>
+    const auto & pickRandomly(pcg64 & rand, const Container & container)
     {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        return vals[d(rand)];
-    }
-
-    template <typename T>
-    const T & pickRandomlyFromSet(pcg64 & rand, const std::unordered_set<T> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
+        std::uniform_int_distribution<size_t> d{0, container.size() - 1};
+        auto it = container.begin();
         std::advance(it, d(rand));
-        return *it;
-    }
 
-    template <typename K, typename V>
-    const K & pickKeyRandomlyFromMap(pcg64 & rand, const std::unordered_map<K, V> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(rand));
-        return it->first;
+        if constexpr (requires { it->first; })
+            return it->first;
+        else
+            return *it;
     }
 };
 

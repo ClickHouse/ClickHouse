@@ -1,15 +1,9 @@
 #include "Client.h"
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <optional>
-#include <string>
-#include <fcntl.h>
+#include <Client/ConnectionString.h>
+#include <Core/Protocol.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
-#include "Client/ConnectionString.h"
-#include "Core/Protocol.h"
 
 #include <Access/AccessControl.h>
 
@@ -37,8 +31,6 @@
 #include <Poco/Util/Application.h>
 
 #include "config.h"
-
-#include <filesystem>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -847,12 +839,12 @@ void Client::processOptions(
 #if USE_BUZZHOUSE
         if (query_fuzzer_runs && !buzz_house_options_path.empty())
         {
-            fc = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
-            ei = std::make_unique<BuzzHouse::ExternalIntegrations>(*fc);
+            fuzz_config = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
+            external_integrations = std::make_unique<BuzzHouse::ExternalIntegrations>(*fuzz_config);
 
-            if (fc->seed)
+            if (fuzz_config->seed)
             {
-                fuzzer.setSeed(fc->seed);
+                fuzzer.setSeed(fuzz_config->seed);
             }
         }
 #endif

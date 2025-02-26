@@ -74,8 +74,8 @@ void QueryFuzzer::getRandomSettings(SettingsChanges & settings_changes)
 
         for (uint32_t i = 0; i < nsettings; i++)
         {
-            const String & setting = pickKeyRandomlyFromMap(fuzz_rand, BuzzHouse::performanceSettings);
-            String value = pickRandomlyFromSet(fuzz_rand, BuzzHouse::performanceSettings.at(setting).oracle_values);
+            const String & setting = pickRandomly(fuzz_rand, BuzzHouse::performanceSettings);
+            String value = pickRandomly(fuzz_rand, BuzzHouse::performanceSettings.at(setting).oracle_values);
 
             value.erase(std::remove(value.begin(), value.end(), '\''), value.end());
             settings_changes.setSetting(setting, value);
@@ -713,7 +713,7 @@ DataTypePtr QueryFuzzer::getRandomType()
            TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
            TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
            TypeIndex::Variant,     TypeIndex::Dynamic};
-    const auto type_id = pickRandomlyFromVector(fuzz_rand, random_types);
+    const auto type_id = pickRandomly(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DISPATCH(DECIMAL) \
@@ -1742,7 +1742,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     {
                         if (startsWith(fn->name, entry))
                         {
-                            String nfname = pickRandomlyFromVector(fuzz_rand, commonAggrs);
+                            String nfname = pickRandomly(fuzz_rand, commonAggrs);
                             /// keep modifiers
                             nfname += fn->name.substr(entry.length(), fn->name.size() - entry.length());
 
@@ -1868,7 +1868,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             {
                 if (entry.contains(fn->name))
                 {
-                    fn->name = pickRandomlyFromSet(fuzz_rand, entry);
+                    fn->name = pickRandomly(fuzz_rand, entry);
                     break;
                 }
             }

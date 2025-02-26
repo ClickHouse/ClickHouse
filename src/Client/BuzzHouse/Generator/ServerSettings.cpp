@@ -923,7 +923,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         serverSettings.emplace(std::move(setting));
     }
 
-    /// When measuring performance use higher block sizes
+    /// When measuring performance use bigger block sizes
     const auto max_bytes_func = [](RandomGenerator & rg)
     {
         return std::to_string(
