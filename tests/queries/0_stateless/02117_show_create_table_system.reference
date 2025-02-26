@@ -119,7 +119,7 @@ CREATE TABLE system.data_skipping_indices
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
-    `marks` UInt64
+    `marks_bytes` UInt64
 )
 ENGINE = SystemDataSkippingIndices
 COMMENT 'Contains all the information about all the data skipping indices in tables, similar to system.columns.'
@@ -1124,6 +1124,8 @@ CREATE TABLE system.tables
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),
+    `active_on_fly_data_mutations` UInt64,
+    `active_on_fly_metadata_mutations` UInt64,
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
     `comment` String,

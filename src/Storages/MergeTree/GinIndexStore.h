@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/FST.h>
-#include <Core/Block.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>

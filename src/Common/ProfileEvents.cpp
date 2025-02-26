@@ -771,6 +771,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(BackupsOpenedForRead, "Number of backups opened for reading", ValueType::Number) \
     M(BackupsOpenedForWrite, "Number of backups opened for writing", ValueType::Number) \
+    M(BackupsOpenedForUnlock, "Number of backups opened for unlocking", ValueType::Number) \
     M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file", ValueType::Microseconds) \
     M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file", ValueType::Microseconds) \
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \

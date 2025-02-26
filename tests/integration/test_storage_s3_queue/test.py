@@ -1974,7 +1974,7 @@ def test_exception_during_insert(started_cluster):
     wait_for_rows(expected_rows[0])
 
 
-@pytest.mark.parametrize("processing_threads", [1, 8])
+@pytest.mark.parametrize("processing_threads", [1, 16])
 def test_commit_on_limit(started_cluster, processing_threads):
     node = started_cluster.instances["instance"]
 
@@ -1983,7 +1983,8 @@ def test_commit_on_limit(started_cluster, processing_threads):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 10
+    dst_table_name = f"{table_name}_dst"
+    files_to_generate = 40
 
     failed_files_event_before = int(
         node.query(
@@ -1994,7 +1995,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -2038,6 +2039,13 @@ def test_commit_on_limit(started_cluster, processing_threads):
     )
 
     create_mv(node, table_name, dst_table_name)
+
+    expected_files = files_to_generate + 4
+    for _ in range(100):
+        if expected_files == int(node.query(f"select count() from {dst_table_name}")):
+            break
+        time.sleep(1)
+    assert expected_files == int(node.query(f"select count() from {dst_table_name}"))
 
     def get_processed_files():
         return (
@@ -2090,6 +2098,11 @@ def test_commit_on_limit(started_cluster, processing_threads):
         assert value not in processed
         assert value in failed
 
+    node.query("system flush logs")
+    count = node.query(f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: 10)%' and logger_name ILIKE '%{table_name}%'")
+    count_2 = node.query(f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: 4)%' and logger_name ILIKE '%{table_name}%'")
+    assert int(count) + int(count_2) == int(node.query(f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: %' and logger_name ILIKE '%{table_name}%'"))
+
 
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
@@ -2141,19 +2154,21 @@ def test_replicated(started_cluster):
     node2 = started_cluster.instances["node2"]
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
+    mv_name = f"{table_name}_mv"
+    db_name = f"r"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1000
 
-    node1.query("DROP DATABASE IF EXISTS r")
-    node2.query("DROP DATABASE IF EXISTS r")
+    node1.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node2.query(f"DROP DATABASE IF EXISTS {db_name}")
 
     node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node1')"
     )
     node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/clickhouse/databases/replicateddb', 'shard1', 'node2')"
     )
 
     create_table(
@@ -2176,18 +2191,17 @@ def test_replicated(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"r.{table_name}", dst_table_name)
-    create_mv(node2, f"r.{table_name}", dst_table_name)
+    create_mv(node1, f"{db_name}.{table_name}", f"{db_name}.{dst_table_name}", mv_name = f"{db_name}.{mv_name}")
 
     def get_count():
         return int(
             node1.query(
-                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+                f"SELECT count() FROM clusterAllReplicas(cluster, {db_name}.{dst_table_name})"
             )
         )
 
     expected_rows = files_to_generate
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
@@ -2559,6 +2573,7 @@ def test_registry(started_cluster):
 
     table_name = f"test_registry_{uuid.uuid4().hex[:8]}"
     db_name = f"db_{table_name}"
+    mv_name = f"{table_name}_mv"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
@@ -2601,13 +2616,12 @@ def test_registry(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"{db_name}.{table_name}", dst_table_name)
-    create_mv(node2, f"{db_name}.{table_name}", dst_table_name)
+    create_mv(node1, f"{db_name}.{table_name}", f"{db_name}.{dst_table_name}", mv_name = f"{db_name}.{mv_name}")
 
     def get_count():
         return int(
             node1.query(
-                f"SELECT count() FROM clusterAllReplicas(cluster, default.{dst_table_name})"
+                f"SELECT count() FROM clusterAllReplicas(cluster, {db_name}.{dst_table_name})"
             )
         )
 

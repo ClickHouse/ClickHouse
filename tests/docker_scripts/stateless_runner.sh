@@ -5,6 +5,8 @@ set -e -x -a
 
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
+# shellcheck disable=SC1091
+source /basic_helpers.sh
 
 # shellcheck source=../stateless/stress_tests.lib
 source /repo/tests/docker_scripts/stress_tests.lib
@@ -26,12 +28,10 @@ TZ="$(rg -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -
 echo "Chosen random timezone $TZ"
 ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
-dpkg -i package_folder/clickhouse-common-static_*.deb
-dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
-dpkg -i package_folder/clickhouse-library-bridge_*.deb
-dpkg -i package_folder/clickhouse-server_*.deb
-dpkg -i package_folder/clickhouse-client_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
+run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
 
 echo "$BUGFIX_VALIDATE_CHECK"
 
@@ -260,22 +260,6 @@ function prepare_stateful_data() {
     clickhouse-client --query "SELECT count() FROM test.visits"
 }
 
-function fn_exists() {
-    declare -F "$1" > /dev/null;
-}
-
-# FIXME: to not break old builds, clean on 2023-09-01
-function try_run_with_retry() {
-    local total_retries="$1"
-    shift
-
-    if fn_exists run_with_retry; then
-        run_with_retry "$total_retries" "$@"
-    else
-        "$@"
-    fi
-}
-
 function run_tests()
 {
     set -x
@@ -359,7 +343,7 @@ function run_tests()
     fi
     ADDITIONAL_OPTIONS+=('--report-logs-stats')
 
-    try_run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
+    run_with_retry 10 clickhouse-client -q "insert into system.zookeeper (name, path, value) values ('auxiliary_zookeeper2', '/test/chroot/', '')"
 
     set +e
 
@@ -407,7 +391,7 @@ logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_th
 
 # Try to get logs while server is running
 failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latecy_log
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
 do
     if ! clickhouse-client ${logs_saver_client_options} -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
         failed_to_save_logs=1
@@ -527,8 +511,6 @@ fi
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 
 rm -rf /var/lib/clickhouse/data/system/*/
-tar -chf /test_output/store.tar /var/lib/clickhouse/store ||:
-tar -chf /test_output/metadata.tar /var/lib/clickhouse/metadata/*.sql ||:
 
 
 if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then

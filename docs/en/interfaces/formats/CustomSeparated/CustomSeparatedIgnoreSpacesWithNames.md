@@ -1,11 +1,11 @@
 ---
 title : CustomSeparatedIgnoreSpacesWithNames
-slug : /en/interfaces/formats/CustomSeparatedIgnoreSpacesWithNames
+slug: /interfaces/formats/CustomSeparatedIgnoreSpacesWithNames
 keywords : [CustomSeparatedIgnoreSpacesWithNames]
 ---
 
-## Description
+## Description {#description}
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/move
+slug: /sql-reference/statements/move
 sidebar_position: 54
 sidebar_label: MOVE
 ---

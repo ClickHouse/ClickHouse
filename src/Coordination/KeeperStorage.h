@@ -497,9 +497,12 @@ public:
 
         Coordination::ACLs getACLs(StringRef path) const;
 
-        void applyDeltas(const std::list<Delta> & new_deltas);
-        void applyDelta(const Delta & delta);
+        void applyDeltas(const std::list<Delta> & new_deltas, uint64_t * digest);
+        void applyDelta(const Delta & delta, uint64_t * digest);
         void rollbackDelta(const Delta & delta);
+
+        /// Update digest with new nodes
+        UInt64 updateNodesDigest(UInt64 current_digest, UInt64 zxid) const;
 
         bool hasACL(int64_t session_id, bool is_local, std::function<bool(const AuthID &)> predicate) const;
 
@@ -561,16 +564,13 @@ public:
     // Create node in the storage
     // Returns false if it failed to create the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool createNode(
-        const std::string & path,
-        String data,
-        const Coordination::Stat & stat,
-        Coordination::ACLs node_acls);
+    bool
+    createNode(const std::string & path, String data, const Coordination::Stat & stat, Coordination::ACLs node_acls, bool update_digest);
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
     // We don't care about the exact failure because we should've caught it during preprocessing
-    bool removeNode(const std::string & path, int32_t version);
+    bool removeNode(const std::string & path, int32_t version, bool update_digest);
 
     bool checkACL(StringRef path, int32_t permissions, int64_t session_id, bool is_local);
 

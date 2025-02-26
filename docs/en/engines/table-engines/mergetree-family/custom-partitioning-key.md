@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/custom-partitioning-key
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 30
 sidebar_label: Custom Partitioning Key
+title: "Custom Partitioning Key"
+description: "Learn how to add a custom partitioning key to MergeTree tables."
 ---
 
 # Custom Partitioning Key
@@ -48,7 +50,7 @@ When inserting new data to a table, this data is stored as a separate part (chun
 A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn't make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 :::
 
-Use the [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
+Use the [system.parts](../../../operations/system-tables/parts.md) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
 ``` sql
 SELECT
@@ -134,7 +136,7 @@ Note that on the operating server, you cannot manually change the set of parts o
 
 ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
 
-## Group By optimisation using partition key
+## Group By optimisation using partition key {#group-by-optimisation-using-partition-key}
 
 For some combinations of table's partition key and query's group by key it might be possible to execute aggregation for each partition independently.
 Then we'll not have to merge partially aggregated data from all execution threads at the end,

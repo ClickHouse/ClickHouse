@@ -15,6 +15,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
@@ -222,7 +223,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_);
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {});
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
