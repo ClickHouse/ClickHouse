@@ -732,10 +732,22 @@ public:
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
             return std::make_shared<DataTypeDate>();
-        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>) // We need to check the functions for Date32 and Time here
+        {                                                                  // be they have the same generic type (Int32)
+            if constexpr ((std::is_base_of_v<AddSecondsImpl, Transform>
+                          || std::is_base_of_v<AddMinutesImpl, Transform>
+                          || std::is_base_of_v<AddHoursImpl, Transform>))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
             return std::make_shared<DataTypeDate32>();
+        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
+        {
+            if constexpr (!(std::is_base_of_v<AddSecondsImpl, Transform>
+                          || std::is_base_of_v<AddMinutesImpl, Transform>
+                          || std::is_base_of_v<AddHoursImpl, Transform>))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
             return std::make_shared<DataTypeTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
+        }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false));
         else if constexpr (std::is_same_v<ResultDataType, DataTypeTime64>)
@@ -786,7 +798,7 @@ public:
 
             return std::make_shared<DataTypeDateTime64>(target_scale.value_or(DataTypeDateTime64::default_scale), std::move(timezone));
         }
-        else if constexpr (std::is_same_v<ResultDataType, DataTypeInt8>)  // TODO: FORBID addSecond .. AddHour with Date32 and addDay .. with Time
+        else if constexpr (std::is_same_v<ResultDataType, DataTypeInt8>)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} cannot be used with {}", getName(), arguments[0].type->getName());
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result type in datetime add interval function");
