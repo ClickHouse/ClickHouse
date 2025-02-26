@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS t_get_subcolumn;
 
+SET enable_analyzer = 1;
 SET enable_json_type = 1;
 SET optimize_functions_to_subcolumns = 1;
 
