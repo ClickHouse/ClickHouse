@@ -107,6 +107,8 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
 
+    bool isZooKeeperSessionExpired() const { return zk_client->expired(); }
+
     void release();
 
 private:

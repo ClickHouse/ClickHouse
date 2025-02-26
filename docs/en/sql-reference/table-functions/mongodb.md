@@ -1,10 +1,12 @@
 ---
-slug: /en/sql-reference/table-functions/mongodb
+slug: /sql-reference/table-functions/mongodb
 sidebar_position: 135
 sidebar_label: mongodb
+title: "mongodb"
+description: "Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server."
 ---
 
-# mongodb
+# mongodb Table Function
 
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 
@@ -33,7 +35,7 @@ mongodb(host:port, database, collection, user, password, structure [, options])
 :::tip
 If you are using the MongoDB Atlas cloud offering please add these options:
 
-```
+```ini
 'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
 
@@ -100,5 +102,5 @@ SELECT * FROM mongodb(
 
 **See Also**
 
-- [The `MongoDB` table engine](/docs/en/engines/table-engines/integrations/mongodb.md)
-- [Using MongoDB as a dictionary source](/docs/en/sql-reference/dictionaries/index.md#mongodb)
+- [The `MongoDB` table engine](/docs/engines/table-engines/integrations/mongodb.md)
+- [Using MongoDB as a dictionary source](/docs/sql-reference/dictionaries/index.md#mongodb)

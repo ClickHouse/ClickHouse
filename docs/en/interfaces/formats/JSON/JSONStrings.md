@@ -1,6 +1,6 @@
 ---
 title : JSONStrings
-slug : /en/interfaces/formats/JSONStrings
+slug: /interfaces/formats/JSONStrings
 keywords : [JSONStrings]
 input_format: true
 output_format: true
@@ -11,11 +11,11 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 Differs from the [JSON](./JSON.md) format only in that data fields are output as strings, not as typed JSON values.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Example:
 
@@ -69,5 +69,5 @@ Example:
 }
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
