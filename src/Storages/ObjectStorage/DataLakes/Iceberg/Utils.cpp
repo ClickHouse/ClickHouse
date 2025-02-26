@@ -37,9 +37,9 @@ MutableColumns parseAvro(avro::DataFileReaderBase & file_reader, const Block & h
 // This function is used to get the file path inside the directory which corresponds to iceberg table from the full blob path which is written in manifest and metadata files.
 // For example, if the full blob path is s3://bucket/table_name/data/00000-1-1234567890.avro, the function will return table_name/data/00000-1-1234567890.avro
 // Common path should end with "<table_name>" or "<table_name>/".
-std::string getFilePath(std::string_view data_path, std::string_view common_path, std::string_view table_location)
+std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location)
 {
-    auto trim_slash = [](std::string_view str) -> std::string_view
+    auto trim_backward_slash = [](std::string_view str) -> std::string_view
     {
         if (str.ends_with('/'))
         {
@@ -47,11 +47,19 @@ std::string getFilePath(std::string_view data_path, std::string_view common_path
         }
         return str;
     };
-    common_path = trim_slash(common_path);
-    table_location = trim_slash(table_location);
+    auto trim_forward_slash = [](std::string_view str) -> std::string_view
+    {
+        if (str.starts_with('/'))
+        {
+            return str.substr(1);
+        }
+        return str;
+    };
+    common_path = trim_backward_slash(common_path);
+    table_location = trim_backward_slash(table_location);
     if (data_path.starts_with(table_location) && table_location.ends_with(common_path))
     {
-        return std::filesystem::path{common_path} / std::string{data_path.substr(table_location.size())};
+        return std::filesystem::path{common_path} / trim_forward_slash(data_path.substr(table_location.size()));
     }
 
 

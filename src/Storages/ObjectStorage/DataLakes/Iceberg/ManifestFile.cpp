@@ -211,7 +211,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         }
         const auto status = ManifestEntryStatus(status_int_column->getInt(i));
 
-        const auto file_path = getFilePath(file_path_string_column->getDataAt(i).toView(), common_path, table_location);
+        const auto file_path = getProperFilePathFromMetadataInfo(file_path_string_column->getDataAt(i).toView(), common_path, table_location);
 
         std::unordered_map<Int32, Range> partition_ranges;
         for (size_t j = 0; j < partition_columns.size(); ++j)

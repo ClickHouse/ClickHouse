@@ -271,7 +271,7 @@ std::optional<String> IcebergMetadata::getRelevantManifestList(const Poco::JSON:
         if (snapshot->getValue<Int64>("snapshot-id") == current_snapshot_id)
         {
             const auto path = snapshot->getValue<String>("manifest-list");
-            return getFilePath(std::string_view(path), configuration_ptr->getPath(), table_location);
+            return getProperFilePathFromMetadataInfo(std::string_view(path), configuration_ptr->getPath(), table_location);
         }
     }
     return std::nullopt;
@@ -351,7 +351,7 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
     for (size_t i = 0; i < col_str->size(); ++i)
     {
         const std::string_view file_path = col_str->getDataAt(i).toView();
-        const auto filename = getFilePath(std::string_view(file_path), configuration_ptr->getPath(), table_location);
+        const auto filename = getProperFilePathFromMetadataInfo(std::string_view(file_path), configuration_ptr->getPath(), table_location);
         auto manifest_file_it = manifest_files_by_name.find(filename);
         if (manifest_file_it != manifest_files_by_name.end())
         {
