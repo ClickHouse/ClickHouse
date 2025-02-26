@@ -1,12 +1,14 @@
 #include "QueryFuzzer.h"
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -702,43 +704,65 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 
 DataTypePtr QueryFuzzer::getRandomType()
 {
-    auto type_id = static_cast<TypeIndex>(fuzz_rand() % static_cast<size_t>(TypeIndex::Tuple) + 1);
-
-    if (type_id == TypeIndex::Tuple)
-    {
-        size_t tuple_size = fuzz_rand() % 6 + 1;
-        DataTypes elements;
-        for (size_t i = 0; i < tuple_size; ++i)
-            elements.push_back(getRandomType());
-        return std::make_shared<DataTypeTuple>(elements);
-    }
-
-    if (type_id == TypeIndex::Array)
-        return std::make_shared<DataTypeArray>(getRandomType());
+    static const std::vector<TypeIndex> & random_types
+        = {TypeIndex::UInt8,       TypeIndex::UInt16,         TypeIndex::UInt32,   TypeIndex::UInt64,     TypeIndex::UInt128,
+           TypeIndex::UInt256,     TypeIndex::Int8,           TypeIndex::Int16,    TypeIndex::Int32,      TypeIndex::Int64,
+           TypeIndex::Int128,      TypeIndex::Int256,         TypeIndex::BFloat16, TypeIndex::Float32,    TypeIndex::Float64,
+           TypeIndex::Date,        TypeIndex::Date32,         TypeIndex::DateTime, TypeIndex::DateTime64, TypeIndex::String,
+           TypeIndex::FixedString, TypeIndex::Enum8,          TypeIndex::Enum16,   TypeIndex::Decimal32,  TypeIndex::Decimal64,
+           TypeIndex::Decimal128,  TypeIndex::Decimal256,     TypeIndex::UUID,     TypeIndex::Array,      TypeIndex::Tuple,
+           TypeIndex::Nullable,    TypeIndex::LowCardinality, TypeIndex::Map,      TypeIndex::IPv4,       TypeIndex::IPv6,
+           TypeIndex::Variant,     TypeIndex::Dynamic};
+    const auto type_id = pickRandomlyFromVector(fuzz_rand, random_types);
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DISPATCH(DECIMAL) \
-    if (type_id == TypeIndex::DECIMAL) \
+    case TypeIndex::DECIMAL: \
         return std::make_shared<DataTypeDecimal<DECIMAL>>( \
             DataTypeDecimal<DECIMAL>::maxPrecision(), (fuzz_rand() % DataTypeDecimal<DECIMAL>::maxPrecision()) + 1);
 
-    DISPATCH(Decimal32)
-    DISPATCH(Decimal64)
-    DISPATCH(Decimal128)
-    DISPATCH(Decimal256)
+    switch (type_id)
+    {
+        case TypeIndex::Tuple: {
+            const size_t tuple_size = fuzz_rand() % 6;
+            DataTypes elements;
+            for (size_t i = 0; i < tuple_size; ++i)
+                elements.push_back(getRandomType());
+            return std::make_shared<DataTypeTuple>(elements);
+        }
+        case TypeIndex::Variant: {
+            const size_t tuple_size = fuzz_rand() % 6 + 1;
+            DataTypes elements;
+            for (size_t i = 0; i < tuple_size; ++i)
+                elements.push_back(getRandomType());
+            return std::make_shared<DataTypeVariant>(elements);
+        }
+        case TypeIndex::Array:
+            return std::make_shared<DataTypeArray>(getRandomType());
+        case TypeIndex::Map:
+            return std::make_shared<DataTypeMap>(getRandomType(), getRandomType());
+        case TypeIndex::LowCardinality:
+            return std::make_shared<DataTypeLowCardinality>(getRandomType());
+        case TypeIndex::Nullable:
+            return std::make_shared<DataTypeNullable>(getRandomType());
+            DISPATCH(Decimal32)
+            DISPATCH(Decimal64)
+            DISPATCH(Decimal128)
+            DISPATCH(Decimal256)
+        case TypeIndex::FixedString:
+            return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20);
+        case TypeIndex::Enum8:
+            return std::make_shared<DataTypeUInt8>();
+        case TypeIndex::Enum16:
+            return std::make_shared<DataTypeUInt16>();
+        case TypeIndex::Dynamic:
+            return std::make_shared<DataTypeDynamic>(fuzz_rand() % 20);
+        default:
+            return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
+    }
+
 #undef DISPATCH
     /// NOLINTEND(bugprone-macro-parentheses)
-
-    if (type_id == TypeIndex::FixedString)
-        return std::make_shared<DataTypeFixedString>(fuzz_rand() % 20);
-
-    if (type_id == TypeIndex::Enum8)
-        return std::make_shared<DataTypeUInt8>();
-
-    if (type_id == TypeIndex::Enum16)
-        return std::make_shared<DataTypeUInt16>();
-
-    return DataTypeFactory::instance().get(String(magic_enum::enum_name(type_id)));
 }
 
 void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
@@ -1650,13 +1674,22 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
+        static const std::unordered_set<String> & cast_functions = {"_CAST", "CAST", "accurateCast", "accurateCastOrNull"};
+        const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
+
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        if (AggregateUtils::isAggregateFunction(*fn))
+        if (nargs == 2 && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
         {
-            const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
+            /// Fuzz casts
+            const auto old_type = DataTypeFactory::instance().tryGet(fn->arguments->children[1]);
+            const auto new_type = old_type ? fuzzDataType(old_type) : getRandomType();
 
+            fn->arguments->children[1] = std::make_shared<ASTLiteral>(new_type->getName());
+        }
+        else if (AggregateUtils::isAggregateFunction(*fn))
+        {
             if (nargs > 0)
             {
                 if (nargs < 3 && fuzz_rand() % 30 == 0)
