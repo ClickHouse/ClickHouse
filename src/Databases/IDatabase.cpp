@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
+
 }
 
 StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
