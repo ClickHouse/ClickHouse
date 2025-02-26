@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/arithmetic-functions
+slug: /sql-reference/functions/arithmetic-functions
 sidebar_position: 5
 sidebar_label: Arithmetic
 ---
@@ -35,7 +35,7 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 
 Overflows are produced the same way as in C++.
 
-## plus
+## plus {#plus}
 
 Calculates the sum of two values `a` and `b`.
 
@@ -49,11 +49,13 @@ It is possible to add an integer and a date or date with time. The former operat
 
 Alias: `a + b` (operator)
 
-## minus
+## minus {#minus}
 
 Calculates the difference of two values `a` and `b`. The result is always signed.
 
 Similar to `plus`, it is possible to subtract an integer from a date or date with time.
+
+Additionally, subtraction between date with time is supported, resulting in the time difference between them.
 
 **Syntax**
 
@@ -63,7 +65,7 @@ minus(a, b)
 
 Alias: `a - b` (operator)
 
-## multiply
+## multiply {#multiply}
 
 Calculates the product of two values `a` and `b`.
 
@@ -75,7 +77,7 @@ multiply(a, b)
 
 Alias: `a * b` (operator)
 
-## divide
+## divide {#divide}
 
 Calculates the quotient of two values `a` and `b`. The result type is always [Float64](../data-types/float.md). Integer division is provided by the `intDiv` function.
 
@@ -89,7 +91,7 @@ divide(a, b)
 
 Alias: `a / b` (operator)
 
-## intDiv
+## intDiv {#intdiv}
 
 Performs an integer division of two values `a` by `b`, i.e. computes the quotient rounded down to the next smallest integer.
 
@@ -130,7 +132,7 @@ Received exception from server (version 23.2.1):
 Code: 153. DB::Exception: Received from localhost:9000. DB::Exception: Cannot perform integer division, because it will produce infinite or too large number: While processing intDiv(1, 0.001) AS res, toTypeName(res). (ILLEGAL_DIVISION)
 ```
 
-## intDivOrZero
+## intDivOrZero {#intdivorzero}
 
 Same as `intDiv` but returns zero when dividing by zero or when dividing a minimal negative number by minus one.
 
@@ -140,7 +142,7 @@ Same as `intDiv` but returns zero when dividing by zero or when dividing a minim
 intDivOrZero(a, b)
 ```
 
-## isFinite
+## isFinite {#isfinite}
 
 Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwise this function returns 0.
 
@@ -150,7 +152,7 @@ Returns 1 if the Float32 or Float64 argument not infinite and not a NaN, otherwi
 isFinite(x)
 ```
 
-## isInfinite
+## isInfinite {#isinfinite}
 
 Returns 1 if the Float32 or Float64 argument is infinite, otherwise this function returns 0. Note that 0 is returned for a NaN.
 
@@ -160,7 +162,7 @@ Returns 1 if the Float32 or Float64 argument is infinite, otherwise this functio
 isInfinite(x)
 ```
 
-## ifNotFinite
+## ifNotFinite {#ifnotfinite}
 
 Checks whether a floating point value is finite.
 
@@ -194,7 +196,7 @@ Result:
 
 You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
-## isNaN
+## isNaN {#isnan}
 
 Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
 
@@ -204,7 +206,7 @@ Returns 1 if the Float32 and Float64 argument is NaN, otherwise this function 0.
 isNaN(x)
 ```
 
-## modulo
+## modulo {#modulo}
 
 Calculates the remainder of the division of two values `a` by `b`.
 
@@ -222,7 +224,7 @@ modulo(a, b)
 
 Alias: `a % b` (operator)
 
-## moduloOrZero
+## moduloOrZero {#moduloorzero}
 
 Like [modulo](#modulo) but returns zero when the divisor is zero.
 
@@ -232,7 +234,7 @@ Like [modulo](#modulo) but returns zero when the divisor is zero.
 moduloOrZero(a, b)
 ```
 
-## positiveModulo(a, b)
+## positiveModulo(a, b) {#positivemoduloa-b}
 
 Like [modulo](#modulo) but always returns a non-negative number.
 
@@ -264,7 +266,7 @@ Result:
 └────────────────────────┘
 ```
 
-## negate
+## negate {#negate}
 
 Negates a value `a`. The result is always signed.
 
@@ -276,7 +278,7 @@ negate(a)
 
 Alias: `-a`
 
-## abs
+## abs {#abs}
 
 Calculates the absolute value of `a`. Has no effect if `a` is of an unsigned type. If `a` is of a signed type, it returns an unsigned number.
 
@@ -286,7 +288,7 @@ Calculates the absolute value of `a`. Has no effect if `a` is of an unsigned typ
 abs(a)
 ```
 
-## gcd
+## gcd {#gcd}
 
 Returns the greatest common divisor of two values `a` and `b`.
 
@@ -298,7 +300,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 gcd(a, b)
 ```
 
-## lcm(a, b)
+## lcm(a, b) {#lcma-b}
 
 Returns the least common multiple of two values `a` and `b`.
 
@@ -310,7 +312,7 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 lcm(a, b)
 ```
 
-## max2
+## max2 {#max2}
 
 Returns the bigger of two values `a` and `b`. The returned value is of type [Float64](../data-types/float.md).
 
@@ -336,7 +338,7 @@ Result:
 └─────────────┘
 ```
 
-## min2
+## min2 {#min2}
 
 Returns the smaller of two values `a` and `b`. The returned value is of type [Float64](../data-types/float.md).
 
@@ -362,7 +364,7 @@ Result:
 └─────────────┘
 ```
 
-## multiplyDecimal
+## multiplyDecimal {#multiplydecimal}
 
 Multiplies two decimals `a` and `b`. The result value will be of type [Decimal256](../data-types/decimal.md).
 
@@ -435,7 +437,7 @@ Received exception from server (version 22.11.1):
 Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow: While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
 ```
 
-## divideDecimal
+## divideDecimal {#dividedecimal}
 
 
 Divides two decimals `a` and `b`. The result value will be of type [Decimal256](../data-types/decimal.md).
@@ -502,7 +504,7 @@ DB::Exception: Decimal result's scale is less than argument's one: While process
 └─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-## byteSwap
+## byteSwap {#byteswap}
 
 Reverses the bytes of an integer, i.e. changes its [endianness](https://en.wikipedia.org/wiki/Endianness).
 

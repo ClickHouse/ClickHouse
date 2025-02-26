@@ -4,6 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
@@ -18,7 +19,6 @@
 #include <IO/copyData.h>
 
 #include <QueryPipeline/BlockIO.h>
-#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
@@ -26,10 +26,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTRenameQuery.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTWatchQuery.h>
@@ -75,18 +72,15 @@
 
 #include <IO/CompressionMethod.h>
 
-#include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
-#include <base/EnumReflection.h>
-#include <base/demangle.h>
+#include <Poco/Net/SocketAddress.h>
 
-#include <chrono>
 #include <memory>
 #include <random>
+
 
 namespace ProfileEvents
 {
@@ -104,6 +98,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
@@ -164,6 +160,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsMap http_response_headers;
+    extern const SettingsBool apply_mutations_on_fly;
 }
 
 namespace ErrorCodes
@@ -221,16 +218,21 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
         if (!comment.empty())
             comment = fmt::format(" (comment: {})", comment);
 
+        String line_info;
+        if (client_info.script_line_number)
+            line_info = fmt::format(" (query {}, line {})", client_info.script_query_number, client_info.script_line_number);
+
         String transaction_info;
         if (auto txn = context->getCurrentTransaction())
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
-        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{} {} (stage: {})",
-            client_info.current_address.toString(),
+        LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
+            client_info.current_address->toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
             comment,
+            line_info,
             toOneLineQuery(query),
             QueryProcessingStage::toString(stage));
 
@@ -276,17 +278,24 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
     message.format_string = elem.exception_format_string;
     message.format_string_args = elem.exception_format_string_args;
 
+    const auto & client_info = context->getClientInfo();
+    String line_info;
+    if (client_info.script_line_number)
+        line_info = fmt::format(" (query {}, line {})", client_info.script_query_number, client_info.script_line_number);
+
     if (elem.stack_trace.empty() || !log_error)
-        message.text = fmt::format("{} (from {}){} (in query: {})", elem.exception,
-                        context->getClientInfo().current_address.toString(),
+        message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
+                        context->getClientInfo().current_address->toString(),
                         comment,
+                        line_info,
                         toOneLineQuery(elem.query));
     else
         message.text = fmt::format(
-            "{} (from {}){} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
+            "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
-            context->getClientInfo().current_address.toString(),
+            context->getClientInfo().current_address->toString(),
             comment,
+            line_info,
             toOneLineQuery(elem.query),
             elem.stack_trace);
 
@@ -389,6 +398,7 @@ QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
     const ContextMutablePtr & context,
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     const ASTPtr & query_ast,
     const QueryPipeline & pipeline,
     const std::unique_ptr<IInterpreter> & interpreter,
@@ -411,7 +421,7 @@ QueryLogElement logQueryStart(
     elem.query = query_for_logging;
     if (settings[Setting::log_formatted_queries])
         elem.formatted_query = queryToString(query_ast);
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast->getQueryKind();
 
     elem.client_info = context->getClientInfo();
@@ -530,7 +540,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCache::Usage query_cache_usage,
+    QueryCacheUsage query_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -592,8 +602,6 @@ void logQueryFinish(
         }
 
         logProcessorProfile(context, query_pipeline.getProcessors());
-
-        logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, std::make_shared<QueryStatusInfo>(info));
     }
 
     if (query_span)
@@ -665,7 +673,7 @@ void logQueryException(
     }
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
-    elem.query_cache_usage = QueryCache::Usage::None;
+    elem.query_cache_usage = QueryCacheUsage::None;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         setExceptionStackTrace(elem);
@@ -697,6 +705,7 @@ void logQueryException(
 
 void logExceptionBeforeStart(
     const String & query_for_logging,
+    UInt64 normalized_query_hash,
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
@@ -724,7 +733,7 @@ void logExceptionBeforeStart(
 
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
-    elem.normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+    elem.normalized_query_hash = normalized_query_hash;
 
     // Log query_kind if ast is valid
     if (ast)
@@ -866,13 +875,14 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
     }
 }
 
-static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
+static BlockIO executeQueryImpl(
     const char * begin,
     const char * end,
     ContextMutablePtr context,
     QueryFlags flags,
     QueryProcessingStage::Enum stage,
-    ReadBuffer * istr)
+    ReadBuffer * istr,
+    ASTPtr & out_ast)
 {
     const bool internal = flags.internal;
 
@@ -917,9 +927,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
 
-    ASTPtr ast;
     String query;
     String query_for_logging;
+    UInt64 normalized_query_hash;
     size_t log_queries_cut_to_length = settings[Setting::log_queries_cut_to_length];
 
     /// Parse the query from string.
@@ -927,20 +937,24 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
+            if (!settings[Setting::allow_experimental_kusto_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
             ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
+            if (!settings[Setting::allow_experimental_prql_dialect])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
 #ifndef NDEBUG
             try
@@ -948,7 +962,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// Verify that AST formatting is consistent:
                 /// If you format AST, parse it back, and format it again, you get the same string.
 
-                String formatted1 = ast->formatWithPossiblyHidingSensitiveData(
+                String formatted1 = out_ast->formatWithPossiblyHidingSensitiveData(
                     /*max_length=*/0,
                     /*one_line=*/true,
                     /*show_secrets=*/true,
@@ -1006,15 +1020,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         const char * query_end = end;
-        if (const auto * insert_query = ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
+        if (const auto * insert_query = out_ast->as<ASTInsertQuery>(); insert_query && insert_query->data)
             query_end = insert_query->data;
 
         bool is_create_parameterized_view = false;
-        if (const auto * create_query = ast->as<ASTCreateQuery>())
+        if (const auto * create_query = out_ast->as<ASTCreateQuery>())
         {
             is_create_parameterized_view = create_query->isParameterizedView();
         }
-        else if (const auto * explain_query = ast->as<ASTExplainQuery>())
+        else if (const auto * explain_query = out_ast->as<ASTExplainQuery>())
         {
             if (!explain_query->children.empty())
                 if (const auto * create_of_explain_query = explain_query->children[0]->as<ASTCreateQuery>())
@@ -1027,9 +1041,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!is_create_parameterized_view && probably_has_params)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
-            visitor.visit(ast);
+            visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
-                query = serializeAST(*ast);
+                query = serializeAST(*out_ast);
             else
                 query.assign(begin, query_end);
         }
@@ -1043,15 +1057,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// MUST go before any modification (except for prepared statements,
         /// since it substitute parameters and without them query does not contain
         /// parameters), to keep query as-is in query_log and server log.
-        if (ast->hasSecretParts())
+        if (out_ast->hasSecretParts())
         {
             /// IAST::formatForLogging() wipes secret parts in AST and then calls wipeSensitiveDataAndCutToLength().
-            query_for_logging = ast->formatForLogging(log_queries_cut_to_length);
+            query_for_logging = out_ast->formatForLogging(log_queries_cut_to_length);
         }
         else
         {
             query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
         }
+
+        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
     }
     catch (...)
     {
@@ -1063,7 +1079,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
-            logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+        {
+            normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
+        }
         throw;
     }
 
@@ -1094,7 +1113,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
             chassert(txn->getState() != MergeTreeTransaction::COMMITTED);
-            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !ast->as<ASTTransactionControl>() && !ast->as<ASTExplainQuery>())
+            if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !out_ast->as<ASTTransactionControl>() && !out_ast->as<ASTExplainQuery>())
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
                     "Cannot execute query because current transaction failed. Expecting ROLLBACK statement");
@@ -1102,18 +1121,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
         /// to allow settings to take effect.
-        InterpreterSetQuery::applySettingsFromQuery(ast, context);
-        validateAnalyzerSettings(ast, settings[Setting::allow_experimental_analyzer]);
+        InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
+        validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
 
         if (settings[Setting::enforce_strict_identifier_format])
         {
             WriteBufferFromOwnString buf;
             IAST::FormatSettings enforce_strict_identifier_format_settings(true);
             enforce_strict_identifier_format_settings.enforce_strict_identifier_format = true;
-            ast->format(buf, enforce_strict_identifier_format_settings);
+            out_ast->format(buf, enforce_strict_identifier_format_settings);
         }
 
-        if (auto * insert_query = ast->as<ASTInsertQuery>())
+        if (auto * insert_query = out_ast->as<ASTInsertQuery>())
             insert_query->tail = istr;
 
         /// There is an option of probabilistic logging of queries.
@@ -1128,7 +1147,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context->setSetting("log_queries_probability", 1.0);
         }
 
-        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(out_ast.get()))
         {
             query_database = query_with_table_output->getDatabase();
             query_table = query_with_table_output->getTable();
@@ -1139,35 +1158,35 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Propagate WITH statement to children ASTSelect.
         if (settings[Setting::enable_global_with_statement])
         {
-            ApplyWithGlobalVisitor::visit(ast);
+            ApplyWithGlobalVisitor::visit(out_ast);
         }
 
         {
             SelectIntersectExceptQueryVisitor::Data data{settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
-            SelectIntersectExceptQueryVisitor{data}.visit(ast);
+            SelectIntersectExceptQueryVisitor{data}.visit(out_ast);
         }
 
         {
             /// Normalize SelectWithUnionQuery
             NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(ast);
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(out_ast);
         }
 
         /// Check the limits.
-        checkASTSizeLimits(*ast, settings);
+        checkASTSizeLimits(*out_ast, settings);
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!internal && !ast->as<ASTShowProcesslistQuery>())
+        if (!internal && !out_ast->as<ASTShowProcesslistQuery>())
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context, start_watch.getStart());
+            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart());
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
         /// Load external tables if they were provided
         context->initializeExternalTablesIfSet();
 
-        auto * insert_query = ast->as<ASTInsertQuery>();
+        auto * insert_query = out_ast->as<ASTInsertQuery>();
         bool async_insert_enabled = settings[Setting::async_insert];
 
         /// Resolve database before trying to use async insert feature - to properly hash the query.
@@ -1196,7 +1215,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
                     auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr();
                     auto pipe = getSourceFromASTInsertQuery(
-                        ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
+                        out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);
                     input_storage.setPipe(std::move(pipe));
                 }
             }
@@ -1264,7 +1283,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            auto result = queue->pushQueryWithInlinedData(ast, context);
+            auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
             {
@@ -1301,8 +1320,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         QueryCachePtr query_cache = context->getQueryCache();
         const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
-            && (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>());
-        QueryCache::Usage query_cache_usage = QueryCache::Usage::None;
+            && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+        QueryCacheUsage query_cache_usage = QueryCacheUsage::None;
 
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
         /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
@@ -1336,14 +1355,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryCache::Key key(ast, context->getCurrentDatabase(), *settings_copy, context->getUserID(), context->getCurrentRoles());
-                    QueryCache::Reader reader = query_cache->createReader(key);
+                    QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+                    QueryCacheReader reader = query_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
                         pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        query_cache_usage = QueryCache::Usage::Read;
+                        query_cache_usage = QueryCacheUsage::Read;
                         return true;
                     }
                 }
@@ -1353,7 +1372,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             if (!get_result_from_query_cache())
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
-                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !ast->as<ASTTransactionControl>())
+                if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !out_ast->as<ASTTransactionControl>())
                 {
                     try
                     {
@@ -1369,13 +1388,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     }
                 }
 
-                interpreter = InterpreterFactory::instance().get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+                interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
                 const auto & query_settings = context->getSettingsRef();
                 if (context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
                     if (!interpreter->supportsTransactions())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", out_ast->getID());
+
+                    if (query_settings[Setting::apply_mutations_on_fly])
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported with enabled setting 'apply_mutations_on_fly'");
                 }
 
                 // InterpreterSelectQueryAnalyzer does not build QueryPlan in the constructor.
@@ -1388,11 +1410,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
+                        if (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
                         {
                             quota->used(QuotaType::QUERY_SELECTS, 1);
                         }
-                        else if (ast->as<ASTInsertQuery>())
+                        else if (out_ast->as<ASTInsertQuery>())
                         {
                             quota->used(QuotaType::QUERY_INSERTS, 1);
                         }
@@ -1421,6 +1443,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(&*interpreter))
                 {
                     create_interpreter->setIsRestoreFromBackup(flags.distributed_backup_restore);
+                    create_interpreter->setInternal(internal);
                 }
 
                 {
@@ -1440,8 +1463,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     {
                         /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 
-                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
-                        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
+                        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(out_ast, context);
+                        const bool ast_contains_system_tables = astContainsSystemTables(out_ast, context);
 
                         const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling
                             = settings[Setting::query_cache_nondeterministic_function_handling];
@@ -1461,7 +1484,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
                         {
                             QueryCache::Key key(
-                                ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
+                                context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
@@ -1476,7 +1500,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                             }
                             else
                             {
-                                auto query_cache_writer = std::make_shared<QueryCache::Writer>(query_cache->createWriter(
+                                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
                                                  key,
                                                  std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                                  settings[Setting::query_cache_squash_partial_results],
@@ -1484,7 +1508,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                                  settings[Setting::query_cache_max_size_in_bytes],
                                                  settings[Setting::query_cache_max_entries]));
                                 res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                                query_cache_usage = QueryCache::Usage::Write;
+                                query_cache_usage = QueryCacheUsage::Write;
                             }
                         }
                     }
@@ -1525,7 +1549,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 query_start_time,
                 context,
                 query_for_logging,
-                ast,
+                normalized_query_hash,
+                out_ast,
                 pipeline,
                 interpreter,
                 internal,
@@ -1535,7 +1560,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
             auto finish_callback = [elem,
                                     context,
-                                    ast,
+                                    out_ast,
                                     query_cache_usage,
                                     internal,
                                     implicit_txn_control,
@@ -1543,19 +1568,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCache::Usage::Write)
+                if (query_cache_usage == QueryCacheUsage::Write)
                     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                     /// partial/garbage results in case of exceptions during query execution.
                     query_pipeline.finalizeWriteInQueryCache();
 
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
+                logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
             };
 
             auto exception_callback =
-                [start_watch, elem, context, ast, internal, my_quota(quota), implicit_txn_control, execute_implicit_tcl_query, query_span](
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_txn_control, execute_implicit_tcl_query, query_span](
                     bool log_error) mutable
             {
                 if (*implicit_txn_control)
@@ -1566,7 +1591,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (my_quota)
                     my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
-                logQueryException(elem, context, start_watch, ast, query_span, internal, log_error);
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
             };
 
             res.finish_callback = std::move(finish_callback);
@@ -1581,12 +1606,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             txn->onException();
 
         if (!internal)
-            logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds());
 
         throw;
     }
 
-    return std::make_tuple(std::move(ast), std::move(res));
+    return res;
 }
 
 
@@ -1597,9 +1622,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryProcessingStage::Enum stage)
 {
     ASTPtr ast;
-    BlockIO res;
-
-    std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr);
+    BlockIO res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
@@ -1670,8 +1693,8 @@ void executeQuery(
 
     /// Set the result details in case of any exception raised during query execution
     SCOPE_EXIT({
-        if (set_result_details == nullptr)
-            /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        /// Either the result_details have been set in the flow below or the caller of this function does not provide this callback
+        if (!set_result_details)
             return;
 
         try
@@ -1689,8 +1712,8 @@ void executeQuery(
 
     ASTPtr ast;
     BlockIO streams;
-    OutputFormatPtr output_format;
     String format_name;
+    OutputFormatPtr output_format;
 
     auto update_format_on_exception_if_needed = [&]()
     {
@@ -1698,7 +1721,11 @@ void executeQuery(
         {
             try
             {
-                format_name = context->getDefaultFormat();
+                const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+                format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
+                    ? getIdentifierName(ast_query_with_output->format_ast)
+                    : context->getDefaultFormat();
+
                 output_format = FormatFactory::instance().getOutputFormat(format_name, ostr, {}, context, output_format_settings);
                 if (output_format && output_format->supportsWritingException())
                 {
@@ -1706,9 +1733,10 @@ void executeQuery(
                     result_details.content_type = output_format->getContentType();
                     result_details.format = format_name;
 
-                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception, {
+                    fiu_do_on(FailPoints::execute_query_calling_empty_set_result_func_on_exception,
+                    {
                         // it will throw std::bad_function_call
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details(result_details);
                     });
 
@@ -1716,12 +1744,12 @@ void executeQuery(
                     {
                         /// reset set_result_details func to avoid calling in SCOPE_EXIT()
                         auto set_result_details_copy = set_result_details;
-                        set_result_details = nullptr;
+                        set_result_details = {};
                         set_result_details_copy(result_details);
                     }
                 }
             }
-            catch (const DB::Exception & e)
+            catch (const Exception & e)
             {
                 /// Ignore this exception and report the original one
                 LOG_WARNING(getLogger("executeQuery"), getExceptionMessageAndPattern(e, true));
@@ -1731,7 +1759,7 @@ void executeQuery(
 
     try
     {
-        std::tie(ast, streams) = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, &istr, ast);
     }
     catch (...)
     {
@@ -1791,6 +1819,9 @@ void executeQuery(
         else if (pipeline.pulling())
         {
             const ASTQueryWithOutput * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get());
+            format_name = ast_query_with_output && ast_query_with_output->format_ast != nullptr
+                ? getIdentifierName(ast_query_with_output->format_ast)
+                : context->getDefaultFormat();
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
@@ -1813,10 +1844,6 @@ void executeQuery(
                     /* compression level = */ static_cast<int>(settings[Setting::output_format_compression_level]),
                     /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
             }
-
-            format_name = ast_query_with_output && (ast_query_with_output->format_ast != nullptr)
-                                    ? getIdentifierName(ast_query_with_output->format_ast)
-                                    : context->getDefaultFormat();
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,

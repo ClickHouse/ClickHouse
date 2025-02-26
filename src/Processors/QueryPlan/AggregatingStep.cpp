@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstddef>
 #include <memory>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -388,6 +389,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
             return processors;
         });
+
+        pipeline.resize(params.max_threads, /* force = */ true);
 
         aggregating = collector.detachProcessors(0);
         return;

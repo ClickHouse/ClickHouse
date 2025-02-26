@@ -333,7 +333,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
         const auto column = decoded_type->createColumn();
         decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-        const auto & [value, type] = column->getValueNameAndType(n);
+        const auto & [value, type] = column->getValueNameAndType(0);
 
         wb << ": " << value;
     }
@@ -1256,7 +1256,7 @@ void ColumnObject::protect()
     shared_data->protect();
 }
 
-void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
+void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
@@ -1268,18 +1268,44 @@ void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
     callback(shared_data);
 }
 
-void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
+void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
     {
         callback(*column);
-        column->forEachSubcolumnRecursively(callback);
+        column->forEachMutableSubcolumnRecursively(callback);
     }
     for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
-        column->forEachSubcolumnRecursively(callback);
+        column->forEachMutableSubcolumnRecursively(callback);
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+    }
+    callback(*shared_data);
+    shared_data->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
+{
+    for (const auto & [_, column] : typed_paths)
+        callback(column);
+    for (const auto & [path, column] : dynamic_paths)
+        callback(column);
+
+    callback(shared_data);
+}
+
+void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
+{
+    for (const auto & [_, column] : typed_paths)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);

@@ -63,17 +63,19 @@ RowInputFormatWithNamesAndTypes<FormatReaderImpl>::RowInputFormatWithNamesAndTyp
     bool with_types_,
     const FormatSettings & format_settings_,
     std::unique_ptr<FormatReaderImpl> format_reader_,
-    bool try_detect_header_)
+    bool try_detect_header_,
+    bool allow_variable_number_of_columns_)
     : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
     , format_settings(format_settings_)
     , data_types(header_.getDataTypes())
-    , is_binary(is_binary_)
     , with_names(with_names_)
     , with_types(with_types_)
-    , try_detect_header(try_detect_header_)
     , format_reader(std::move(format_reader_))
+    , is_binary(is_binary_)
+    , try_detect_header(try_detect_header_)
+    , allow_variable_number_of_columns(allow_variable_number_of_columns_)
 {
-    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
+    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
 }
 
 template <typename FormatReaderImpl>
@@ -237,53 +239,76 @@ bool RowInputFormatWithNamesAndTypes<FormatReaderImpl>::readRow(MutableColumns &
     format_reader->skipRowStartDelimiter();
 
     ext.read_columns.resize(data_types.size());
-    size_t file_column = 0;
-    for (; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
+    if (allow_variable_number_of_columns)
     {
-        if (format_reader->allowVariableNumberOfColumns() && format_reader->checkForEndOfRow())
+        size_t file_column = 0;
+        for (; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
         {
-            while (file_column < column_mapping->column_indexes_for_input_fields.size())
+            if (format_reader->checkForEndOfRow())
             {
-                const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
-                if (rem_column_index)
+                while (file_column < column_mapping->column_indexes_for_input_fields.size())
                 {
-                    if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(data_types[*rem_column_index]))
-                        throw Exception(
-                            ErrorCodes::TYPE_MISMATCH,
-                            "Cannot insert NULL value into a column type '{}' at index {}",
-                            data_types[*rem_column_index]->getName(),
-                            *rem_column_index);
-                    columns[*rem_column_index]->insertDefault();
+                    const auto & rem_column_index = column_mapping->column_indexes_for_input_fields[file_column];
+                    if (rem_column_index)
+                    {
+                        if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(data_types[*rem_column_index]))
+                            throw Exception(
+                                ErrorCodes::TYPE_MISMATCH,
+                                "Cannot insert NULL value into a column type '{}' at index {}",
+                                data_types[*rem_column_index]->getName(),
+                                *rem_column_index);
+                        columns[*rem_column_index]->insertDefault();
+                    }
+                    ++file_column;
                 }
-                ++file_column;
+                break;
             }
-            break;
+
+            if (file_column != 0)
+                format_reader->skipFieldDelimiter();
+
+            const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
+            const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
+            if (column_index)
+                ext.read_columns[*column_index] = format_reader->readField(
+                    *columns[*column_index],
+                    data_types[*column_index],
+                    serializations[*column_index],
+                    is_last_file_column,
+                    column_mapping->names_of_columns[file_column]);
+            else
+                format_reader->skipField(file_column);
         }
 
-        if (file_column != 0)
-            format_reader->skipFieldDelimiter();
-
-        const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
-        const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
-        if (column_index)
-            ext.read_columns[*column_index] = format_reader->readField(
-                *columns[*column_index],
-                data_types[*column_index],
-                serializations[*column_index],
-                is_last_file_column,
-                column_mapping->names_of_columns[file_column]);
-        else
-            format_reader->skipField(file_column);
-    }
-
-    if (format_reader->allowVariableNumberOfColumns() && !format_reader->checkForEndOfRow())
-    {
-        do
+        if (!format_reader->checkForEndOfRow())
         {
-            format_reader->skipFieldDelimiter();
-            format_reader->skipField(file_column++);
+            do
+            {
+                format_reader->skipFieldDelimiter();
+                format_reader->skipField(file_column++);
+            }
+            while (!format_reader->checkForEndOfRow());
         }
-        while (!format_reader->checkForEndOfRow());
+    }
+    else
+    {
+        for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
+        {
+            if (file_column != 0)
+                format_reader->skipFieldDelimiter();
+
+            const auto & column_index = column_mapping->column_indexes_for_input_fields[file_column];
+            const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
+            if (column_index)
+                ext.read_columns[*column_index] = format_reader->readField(
+                    *columns[*column_index],
+                    data_types[*column_index],
+                    serializations[*column_index],
+                    is_last_file_column,
+                    column_mapping->names_of_columns[file_column]);
+            else
+                format_reader->skipField(file_column);
+        }
     }
 
     format_reader->skipRowEndDelimiter();
@@ -613,4 +638,3 @@ template class RowInputFormatWithNamesAndTypes<CustomSeparatedFormatReader>;
 template class RowInputFormatWithNamesAndTypes<BinaryFormatReader<true>>;
 template class RowInputFormatWithNamesAndTypes<BinaryFormatReader<false>>;
 }
-

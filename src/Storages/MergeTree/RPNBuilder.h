@@ -2,8 +2,7 @@
 
 #include <Core/Block.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/Set.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -32,10 +31,7 @@ public:
     }
 
     /// Get query context settings
-    const Settings & getSettings() const
-    {
-        return query_context->getSettingsRef();
-    }
+    const Settings & getSettings() const;
 
     /** Get block with constants.
       * Valid only for AST tree.

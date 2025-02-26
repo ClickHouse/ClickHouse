@@ -616,6 +616,10 @@
     M(736, ICEBERG_CATALOG_ERROR) \
     M(737, GOOGLE_CLOUD_ERROR) \
     M(738, PART_IS_LOCKED) \
+    M(739, BUZZHOUSE) \
+    M(740, POTENTIALLY_BROKEN_DATA_PART) \
+    M(741, TABLE_UUID_MISMATCH) \
+    M(742, DELTA_KERNEL_ERROR) \
 \
     M(900, DISTRIBUTED_CACHE_ERROR) \
     M(901, CANNOT_USE_DISTRIBUTED_CACHE) \
@@ -625,7 +629,8 @@
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-    /* See END */
+    M(1003, SSH_EXCEPTION) \
+/* See END */
 
 #ifdef APPLY_FOR_EXTERNAL_ERROR_CODES
     #define APPLY_FOR_ERROR_CODES(M) APPLY_FOR_BUILTIN_ERROR_CODES(M) APPLY_FOR_EXTERNAL_ERROR_CODES(M)
@@ -641,7 +646,7 @@ namespace ErrorCodes
     APPLY_FOR_ERROR_CODES(M)
 #undef M
 
-    constexpr ErrorCode END = 1002;
+    constexpr ErrorCode END = 1003;
     ErrorPairHolder values[END + 1]{};
 
     struct ErrorCodesNames
@@ -679,7 +684,7 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
-    void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
+    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
         {
@@ -688,22 +693,46 @@ namespace ErrorCodes
             error_code = end() - 1;
         }
 
-        values[error_code].increment(remote, message, trace);
+        return values[error_code].increment(remote, message, trace);
     }
 
-    void ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace)
+    void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & message)
+    {
+        if (error_code < 0 || error_code >= end())
+        {
+            /// For everything outside the range, use END.
+            /// (end() is the pointer pass the end, while END is the last value that has an element in values array).
+            error_code = end() - 1;
+        }
+
+        values[error_code].extendedMessage(remote, error_index, message);
+    }
+
+    size_t ErrorPairHolder::increment(bool remote, const std::string & message, const FramePointers & trace)
     {
         const auto now = std::chrono::system_clock::now();
 
         std::lock_guard lock(mutex);
-
         auto & error = remote ? value.remote : value.local;
 
-        ++error.count;
+        size_t error_index = error.count++;
         error.message = message;
         error.trace = trace;
         error.error_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
+        return error_index;
     }
+
+    void ErrorPairHolder::extendedMessage(bool remote, size_t error_index, const std::string & new_message)
+    {
+        std::lock_guard lock(mutex);
+        auto & error = remote ? value.remote : value.local;
+
+        /// This function is supposed to extend the current message.
+        if ((error.count == error_index + 1) && new_message.starts_with(error.message))
+            error.message = new_message;
+    }
+
     ErrorPair ErrorPairHolder::get()
     {
         std::lock_guard lock(mutex);

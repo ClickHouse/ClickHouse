@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/merges
+description: "System table containing information about merges and part mutations currently in process for tables in the MergeTree family."
+slug: /operations/system-tables/merges
+title: "merges"
+keywords: ["system table", "merges"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# merges
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

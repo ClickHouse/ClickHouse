@@ -1,12 +1,12 @@
-#include <Access/Common/AccessEntityType.h>
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessEntityType.h>
 #include <Backups/BackupCoordinationStage.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Backups/IBackupCoordination.h>
-#include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -18,8 +18,11 @@
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
+#include <base/sort.h>
 #include <Common/escapeForFileName.h>
-#include <Core/Settings.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/intExp2.h>
+#include <Common/quoteString.h>
 
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>

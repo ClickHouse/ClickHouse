@@ -96,6 +96,12 @@ struct ObjectStorageQueueTableMetadata
         return settings_names.contains(name);
     }
 
+    size_t getBucketsNum() const
+    {
+        if (buckets)
+            return buckets;
+        return processing_threads_num;
+    }
 private:
     void checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const;
 };

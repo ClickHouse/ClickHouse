@@ -28,6 +28,14 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ColumnPtr variant;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<SerializationVariantElement::DeserializeBinaryBulkStateVariantElement>();
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
+        new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void SerializationVariantElement::enumerateStreams(
@@ -312,7 +320,7 @@ DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const D
     return make_nullable ? makeNullableOrLowCardinalityNullableSafe(prev) : prev;
 }
 
-SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev) const
+SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationVariantElement>(prev, variant_element_name, global_variant_discriminator);
 }

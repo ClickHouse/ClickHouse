@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DDLTask.h>
 #include <Processors/ISource.h>
@@ -40,6 +41,19 @@ protected:
 
     ZooKeeperRetriesInfo getRetriesInfo() const;
     static std::pair<String, UInt16> parseHostAndPort(const String & host_id);
+    static std::shared_ptr<DataTypeEnum8> getStatusEnum();
+
+    enum class QueryStatus
+    {
+        /// Query is (successfully) finished
+        OK = 0,
+        /// Query is not finished yet, but replica is currently executing it
+        IN_PROGRESS = 1,
+        /// Replica is not available or busy with previous queries. It will process query asynchronously
+        QUEUED = 2,
+        /// Query is timed out or the replica is offline
+        UNFINISHED = 3,
+    };
 
     String node_path;
     String replicas_path;

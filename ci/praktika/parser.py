@@ -51,6 +51,7 @@ class WorkflowYaml:
     secret_names_gh: List[str]
     enable_cache: bool
     cron_schedules: List[str]
+    dispatch_inputs: List[Workflow.Config.InputConfig]
 
 
 class WorkflowConfigParser:
@@ -77,6 +78,7 @@ class WorkflowConfigParser:
             artifact_to_config={},
             enable_cache=False,
             cron_schedules=config.cron_schedules,
+            dispatch_inputs=config.inputs,
         )
 
     def parse(self):
