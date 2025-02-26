@@ -144,7 +144,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load()
 
                     /// Load the list of files inside the directory
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
-                    size_t prefix_length = full_remote_path.string().size() + 1; /// randomlygenerated/
+                    size_t prefix_length = remote_path.string().size() + 1; /// randomlygenerated/
                     for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
@@ -300,7 +300,6 @@ std::optional<uint64_t> MetadataStorageFromPlainRewritableObjectStorage::getFile
     auto fs_path = fs::path(path);
     auto dir = fs_path.parent_path();
     auto filename = fs_path.filename();
-
     if (auto remote = path_map->getRemotePathInfoIfExists(dir))
         if (auto it = remote->files.find(filename); it != remote->files.end())
             return it->second;

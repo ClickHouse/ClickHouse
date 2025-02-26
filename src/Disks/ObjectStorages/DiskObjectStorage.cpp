@@ -1,5 +1,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/checkStackSize.h>
@@ -7,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Disks/ObjectStorages/DiskObjectStorageRemoteMetadataRestoreHelper.h>
@@ -19,7 +21,6 @@
 #include <Interpreters/Context.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
-
 
 namespace DB
 {
