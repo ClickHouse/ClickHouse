@@ -4,6 +4,8 @@ sidebar_position: 36
 sidebar_label: SYSTEM
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # SYSTEM Statements
 
 ## RELOAD EMBEDDED DICTIONARIES
@@ -85,7 +87,7 @@ RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 ## DROP DNS CACHE
 
-Clears ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
+Clears ClickHouse's internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
 
 For more convenient (automatic) cache management, see disable_internal_dns_cache, dns_cache_max_entries, dns_cache_update_period parameters.
 
@@ -126,13 +128,13 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 ## DROP UNCOMPRESSED CACHE
 
 Clears the uncompressed data cache.
-The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [use_uncompressed_cache](../../operations/settings/settings.md#setting-use_uncompressed_cache).
-Its size can be configured using the server-level setting [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size).
+The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
+Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
 
 ## DROP COMPILED EXPRESSION CACHE
 
 Clears the compiled expression cache.
-The compiled expression cache is enabled/disabled with the query/user/profile-level setting [compile_expressions](../../operations/settings/settings.md#compile-expressions).
+The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](../../operations/settings/settings.md#compile_expressions).
 
 ## DROP QUERY CACHE
 
@@ -146,7 +148,7 @@ If a tag is specified, only query cache entries with the specified tag are delet
 
 ## DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
 
-Clears cache for schemas loaded from [format_schema_path](../../operations/server-configuration-parameters/settings.md#format_schema_path).
+Clears cache for schemas loaded from [`format_schema_path`](../../operations/server-configuration-parameters/settings.md#format_schema_path).
 
 Supported formats:
 
@@ -183,6 +185,8 @@ SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
 
 ## SHUTDOWN
 
+<CloudNotSupportedBadge/>
+
 Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
 
 ## KILL
@@ -191,7 +195,7 @@ Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
 
 ## Managing Distributed Tables
 
-ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [START DISTRIBUTED SENDS](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [distributed_foreground_insert](../../operations/settings/settings.md#distributed_foreground_insert) setting.
+ClickHouse can manage [distributed](../../engines/table-engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), and [`START DISTRIBUTED SENDS`](#start-distributed-sends) queries. You can also synchronously insert distributed data with the [`distributed_foreground_insert`](../../operations/settings/settings.md#distributed_foreground_insert) setting.
 
 ### STOP DISTRIBUTED SENDS
 
@@ -200,6 +204,10 @@ Disables background data distribution when inserting data into distributed table
 ``` sql
 SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
 ```
+
+:::note
+In case of [`prefer_localhost_replica`](../../operations/settings/settings.md#prefer_localhost_replica) is enabled (the default), the data to local shard will be inserted anyway.
+:::
 
 ### FLUSH DISTRIBUTED
 
@@ -255,6 +263,8 @@ ClickHouse can manage background processes in [MergeTree](../../engines/table-en
 
 ### STOP MERGES
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background merges for tables in the MergeTree family:
 
 ``` sql
@@ -266,6 +276,8 @@ SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]mer
 :::
 
 ### START MERGES
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background merges for tables in the MergeTree family:
 
@@ -331,6 +343,8 @@ ClickHouse can manage background replication related processes in [ReplicatedMer
 
 ### STOP FETCHES
 
+<CloudNotSupportedBadge/>
+
 Provides possibility to stop background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.
 
@@ -339,6 +353,8 @@ SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family
 ```
 
 ### START FETCHES
+
+<CloudNotSupportedBadge/>
 
 Provides possibility to start background fetches for inserted parts for tables in the `ReplicatedMergeTree` family:
 Always returns `Ok.` regardless of the table engine and even if table or database does not exist.

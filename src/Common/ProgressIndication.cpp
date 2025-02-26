@@ -133,7 +133,7 @@ void ProgressIndication::writeProgress(WriteBufferFromFileDescriptor & message, 
 
     const char * indicator = indicators[increment % 8];
 
-    size_t terminal_width = getTerminalWidth(in_fd, err_fd);
+    auto [terminal_width, terminal_height] = getTerminalSize(in_fd, err_fd);
 
     if (!written_progress_chars)
     {

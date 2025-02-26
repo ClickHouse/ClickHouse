@@ -1155,7 +1155,13 @@ private:
 
         calculateMinMaxFlags();
 
-        auto new_flags = function(flags, min_flags_with_children, max_flags_with_children, level, grant_option);
+        auto new_flags = function(
+            flags,
+            min_flags_with_children,
+            max_flags_with_children,
+            level,
+            grant_option,
+            isLeaf() || wildcard_grant);
 
         if (new_flags != flags)
         {

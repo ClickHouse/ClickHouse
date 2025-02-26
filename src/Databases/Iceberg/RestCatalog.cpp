@@ -18,7 +18,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 
-#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
@@ -32,11 +32,6 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_CATALOG_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-}
-
-namespace DB::Setting
-{
-    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
 }
 
 namespace Iceberg

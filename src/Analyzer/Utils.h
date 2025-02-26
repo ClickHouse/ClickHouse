@@ -12,6 +12,7 @@ namespace DB
 {
 
 class FunctionNode;
+struct IdentifierResolveScope;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
@@ -39,6 +40,11 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node);
 
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
+
+/* Returns true, if coulmn source is not registered in scopes that appear
+ * before nearest query scope.
+ */
+bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
 
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
@@ -158,6 +164,23 @@ QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTyp
   * Specified context will be copied and used as query context.
   */
 QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+
+/** Does a node or its children have a dependency on column
+  * NOT from a specific table expression.
+  */
+bool hasUnknownColumn(
+    const QueryTreeNodePtr & node,
+    QueryTreeNodePtr table_expression);
+
+/** Suppose we have a table x with columns a, c, d and
+  * a an expression like x.a > 2 AND y.b > 3 AND x.c + 1 == x.d
+  * This method will remove the part y.b > 3 from it since it depends
+  * on unknown columns from a different table.
+  */
+void removeExpressionsThatDoNotDependOnTableIdentifiers(
+    QueryTreeNodePtr & expression,
+    const QueryTreeNodePtr & replacement_table_expression,
+    const ContextPtr & context);
 
 
 }

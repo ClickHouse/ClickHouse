@@ -12,14 +12,15 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
-#include <Analyzer/Utils.h>
+#include <Analyzer/Identifier.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 
@@ -71,23 +72,47 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
 }
 
-String getSubcolumnNameForElement(const Field & value, const DataTypeTuple & data_type_tuple)
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
 {
+    const auto & names = data_type_tuple.getElementNames();
+    const auto & types = data_type_tuple.getElements();
+
     if (value.getType() == Field::Types::String)
-        return value.safeGet<const String &>();
+    {
+        const auto & name = value.safeGet<const String &>();
+        auto pos = data_type_tuple.tryGetPositionByName(name);
+
+        if (!pos)
+            return {};
+
+        return NameAndTypePair{name, types[*pos]};
+    }
 
     if (value.getType() == Field::Types::UInt64)
-        return data_type_tuple.getNameByPosition(value.safeGet<UInt64>());
+    {
+        size_t index = value.safeGet<UInt64>();
 
-    return "";
+        if (index == 0 || index > types.size())
+            return {};
+
+        return NameAndTypePair{names[index - 1], types[index - 1]};
+    }
+
+    return {};
 }
 
-String getSubcolumnNameForElement(const Field & value, const DataTypeVariant &)
+std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeVariant & data_type_variant)
 {
-    if (value.getType() == Field::Types::String)
-        return value.safeGet<const String &>();
+    if (value.getType() != Field::Types::String)
+        return {};
 
-    return "";
+    const auto & name = value.safeGet<const String &>();
+    auto discr = data_type_variant.tryGetVariantDiscriminator(name);
+
+    if (!discr)
+        return {};
+
+    return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
 }
 
 template <typename DataType>
@@ -105,12 +130,12 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     const auto & data_type_concrete = assert_cast<const DataType &>(*ctx.column.type);
-    auto subcolumn_name = getSubcolumnNameForElement(second_argument_constant_node->getValue(), data_type_concrete);
+    auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), data_type_concrete);
 
-    if (subcolumn_name.empty())
+    if (!subcolumn)
         return;
 
-    NameAndTypePair column{ctx.column.name + "." + subcolumn_name, function_node.getResultType()};
+    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
 
@@ -362,7 +387,10 @@ private:
     void enterImpl(const TableNode & table_node)
     {
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-        if (processed_tables.emplace(table_name).second)
+
+        /// If table occurs in query several times (e.g., in subquery), process only once
+        /// because we collect only static properties of the table, which are the same for each occurrence.
+        if (!processed_tables.emplace(table_name).second)
             return;
 
         auto add_key_columns = [&](const auto & key_columns)

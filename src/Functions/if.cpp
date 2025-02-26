@@ -11,6 +11,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>

@@ -120,7 +120,7 @@ private:
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
     };
 
 protected:

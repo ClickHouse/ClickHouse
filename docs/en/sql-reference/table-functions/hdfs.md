@@ -4,6 +4,9 @@ sidebar_position: 80
 sidebar_label: hdfs
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # hdfs
 
 Creates a table from files in HDFS. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) ones.
@@ -55,12 +58,12 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 
 1.  Suppose that we have several files with following URIs on HDFS:
 
-- ‘hdfs://hdfs1:9000/some_dir/some_file_1’
-- ‘hdfs://hdfs1:9000/some_dir/some_file_2’
-- ‘hdfs://hdfs1:9000/some_dir/some_file_3’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_1’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_2’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+- 'hdfs://hdfs1:9000/some_dir/some_file_1'
+- 'hdfs://hdfs1:9000/some_dir/some_file_2'
+- 'hdfs://hdfs1:9000/some_dir/some_file_3'
+- 'hdfs://hdfs1:9000/another_dir/some_file_1'
+- 'hdfs://hdfs1:9000/another_dir/some_file_2'
+- 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 2.  Query the amount of rows in these files:
 
@@ -95,8 +98,8 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns
 
-- `_path` — Path to the file. Type: `LowCardinalty(String)`.
-- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
@@ -109,7 +112,6 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
-SET use_hive_partitioning = 1;
 SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 

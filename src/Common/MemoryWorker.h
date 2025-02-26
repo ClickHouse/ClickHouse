@@ -4,6 +4,8 @@
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
 
+#include <filesystem>
+
 namespace DB
 {
 

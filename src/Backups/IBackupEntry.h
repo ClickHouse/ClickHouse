@@ -31,7 +31,7 @@ public:
 
     /// Returns a partial checksum, i.e. the checksum calculated for a prefix part of the data.
     /// Can return nullopt if the partial checksum is too difficult to calculate.
-    virtual std::optional<UInt128> getPartialChecksum(size_t /* prefix_length */, const ReadSettings &) const { return {}; }
+    virtual std::optional<UInt128> getPartialChecksum(UInt64 /* limit */, const ReadSettings &) const { return {}; }
 
     /// Returns a read buffer for reading the data.
     virtual std::unique_ptr<SeekableReadBuffer> getReadBuffer(const ReadSettings & read_settings) const = 0;

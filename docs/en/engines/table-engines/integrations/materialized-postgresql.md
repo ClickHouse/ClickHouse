@@ -3,8 +3,17 @@ slug: /en/engines/table-engines/integrations/materialized-postgresql
 sidebar_position: 130
 sidebar_label: MaterializedPostgreSQL
 ---
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# [experimental] MaterializedPostgreSQL
+# MaterializedPostgreSQL
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::note
+ClickHouse Cloud users are recommended to use [ClickPipes](/docs/en/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+:::
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 

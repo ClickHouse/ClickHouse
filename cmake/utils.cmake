@@ -25,7 +25,7 @@ function(get_target_filename target outvar)
     get_target_property(prop_archive_outname "${target}" ARCHIVE_OUTPUT_NAME)
     get_target_property(prop_library_outname "${target}" LIBRARY_OUTPUT_NAME)
     get_target_property(prop_runtime_outname "${target}" RUNTIME_OUTPUT_NAME)
-    # message("prop_archive_outname: ${prop_archive_outname}")    
+    # message("prop_archive_outname: ${prop_archive_outname}")
     # message("prop_library_outname: ${prop_library_outname}")
     # message("prop_runtime_outname: ${prop_runtime_outname}")
     if(DEFINED CMAKE_BUILD_TYPE)
@@ -121,3 +121,45 @@ function(get_target_property_list target outvar)
     endforeach()
     set(${outvar} ${${outvar}} PARENT_SCOPE)
 endfunction()
+
+# --------------------------------------------------------------------------------------------------
+# Clang-tidy only requires compilation, linking is superfluous. CMake unfortunately has no way to
+# suppress linking. As a workaround, we set custom launchers clang-tidy builds which create empty
+# files during linking to trick CMake. The only situation where this doesn't work are intermediate
+# code-generating binaries like protoc, llvm-tlbgen and their dependencies. These can be build/linked
+# as usual using disable_dummy_launchers_if_needed and enable_dummy_launchers_if_needed.
+
+macro(disable_dummy_launchers_if_needed)
+    if(ENABLE_DUMMY_LAUNCHERS AND USING_DUMMY_LAUNCHERS)
+        set(CMAKE_CXX_COMPILER_LAUNCHER ${ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER})
+        set(CMAKE_C_COMPILER_LAUNCHER ${ORIGINAL_CMAKE_C_COMPILER_LAUNCHER})
+        set(CMAKE_CXX_LINKER_LAUNCHER ${ORIGINAL_CMAKE_CXX_LINKER_LAUNCHER})
+        set(CMAKE_C_LINKER_LAUNCHER ${ORIGINAL_CMAKE_C_LINKER_LAUNCHER})
+        set(LINKER_NAME ${ORIGINAL_LINKER_NAME})
+
+        set(USING_DUMMY_LAUNCHERS 0)
+
+        include(${CMAKE_SOURCE_DIR}/cmake/tools.cmake) # include to set the real launchers for all tools
+    endif()
+endmacro()
+
+macro(enable_dummy_launchers_if_needed)
+    if(ENABLE_DUMMY_LAUNCHERS AND NOT USING_DUMMY_LAUNCHERS)
+        set(ORIGINAL_CMAKE_CXX_COMPILER_LAUNCHER ${CMAKE_CXX_COMPILER_LAUNCHER})
+        set(ORIGINAL_CMAKE_C_COMPILER_LAUNCHER ${CMAKE_C_COMPILER_LAUNCHER})
+        set(ORIGINAL_CMAKE_CXX_LINKER_LAUNCHER ${CMAKE_CXX_LINKER_LAUNCHER})
+        set(ORIGINAL_CMAKE_C_LINKER_LAUNCHER ${CMAKE_C_LINKER_LAUNCHER})
+        set(ORIGINAL_LINKER_NAME ${LINKER_NAME})
+
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+        set(CMAKE_C_COMPILER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+        set(CMAKE_CXX_LINKER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+        set(CMAKE_C_LINKER_LAUNCHER "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+        set(LINKER_NAME "${CMAKE_SOURCE_DIR}/cmake/dummy_compiler_linker.sh")
+
+        set(USING_DUMMY_LAUNCHERS 1)
+
+        include(${CMAKE_SOURCE_DIR}/cmake/tools.cmake) # include to set the dummy launchers for all tools
+    endif()
+endmacro()
+# --------------------------------------------------------------------------------------------------

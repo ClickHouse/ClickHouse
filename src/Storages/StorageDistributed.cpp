@@ -164,6 +164,7 @@ namespace Setting
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace DistributedSetting
@@ -317,7 +318,10 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards + num_local_shards) * settings[Setting::max_parallel_replicas];
+    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
+        ? settings[Setting::max_parallel_replicas] : 1;
+
+    return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
 
 }
@@ -1083,7 +1087,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
         interpreter.buildQueryPlan(plan);
     }
 
-    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
+    plan.optimize(QueryPlanOptimizationSettings(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());
@@ -1984,6 +1988,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
+        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
 

@@ -217,6 +217,7 @@ public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
+        String shard_name;
         UInt32 weight = 1;
         Addresses local_addresses;
         /// nullptr if there are no remote addresses
@@ -298,6 +299,7 @@ private:
         Addresses addresses,
         bool treat_local_as_remote,
         UInt32 current_shard_num,
+        String current_shard_name = "",
         UInt32 weight = 1,
         ShardInfoInsertPathForInternalReplication insert_paths = {},
         bool internal_replication = false);

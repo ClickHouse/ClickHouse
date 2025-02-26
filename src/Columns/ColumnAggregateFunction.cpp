@@ -1,4 +1,6 @@
+#include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -171,7 +173,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     };
 
     callback(*res);
-    res->forEachSubcolumnRecursively(callback);
+    res->forEachMutableSubcolumnRecursively(callback);
 
     for (auto * val : data)
         func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
@@ -470,6 +472,19 @@ Field ColumnAggregateFunction::operator[](size_t n) const
 void ColumnAggregateFunction::get(size_t n, Field & res) const
 {
     res = operator[](n);
+}
+
+std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
+{
+    String state;
+    {
+        WriteBufferFromOwnString buffer;
+        func->serialize(data[n], buffer, version);
+        WriteBufferFromString wb(state);
+        writeQuoted(buffer.str(), wb);
+    }
+
+    return {state, DataTypeFactory::instance().get(type_string)};
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const

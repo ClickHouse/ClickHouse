@@ -63,7 +63,7 @@ private:
     using Replicas = std::vector<PoolHolderPtr>;
     using ReplicasWithPriority = std::map<size_t, Replicas>;
 
-    static auto connectionReistablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout);
+    static auto connectionReestablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout);
 
     ReplicasWithPriority replicas_with_priority;
     size_t pool_wait_timeout;

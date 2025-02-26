@@ -71,40 +71,42 @@ ASTPtr ASTStorage::clone() const
 
 void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
+    auto modified_frame{frame};
     if (engine)
     {
+        modified_frame.create_engine_name = engine->name;
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ENGINE" << (s.hilite ? hilite_none : "") << " = ";
-        engine->format(ostr, s, state, frame);
+        engine->format(ostr, s, state, modified_frame);
     }
     if (partition_by)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PARTITION BY " << (s.hilite ? hilite_none : "");
-        partition_by->format(ostr, s, state, frame);
+        partition_by->format(ostr, s, state, modified_frame);
     }
     if (primary_key)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PRIMARY KEY " << (s.hilite ? hilite_none : "");
-        primary_key->format(ostr, s, state, frame);
+        primary_key->format(ostr, s, state, modified_frame);
     }
     if (order_by)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORDER BY " << (s.hilite ? hilite_none : "");
-        order_by->format(ostr, s, state, frame);
+        order_by->format(ostr, s, state, modified_frame);
     }
     if (sample_by)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
-        sample_by->format(ostr, s, state, frame);
+        sample_by->format(ostr, s, state, modified_frame);
     }
     if (ttl_table)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "TTL " << (s.hilite ? hilite_none : "");
-        ttl_table->format(ostr, s, state, frame);
+        ttl_table->format(ostr, s, state, modified_frame);
     }
     if (settings)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings->format(ostr, s, state, frame);
+        settings->format(ostr, s, state, modified_frame);
     }
 }
 
@@ -241,6 +243,8 @@ ASTPtr ASTCreateQuery::clone() const
 
     if (columns_list)
         res->set(res->columns_list, columns_list->clone());
+    if (aliases_list)
+        res->set(res->aliases_list, aliases_list->clone());
     if (storage)
         res->set(res->storage, storage->clone());
     if (select)
@@ -458,8 +462,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
         {
             frame.expression_list_always_start_on_new_line = true;
             ostr << (settings.one_line ? " (" : "\n(");
-            FormatStateStacked frame_nested = frame;
-            columns_list->format(ostr, settings, state, frame_nested);
+            columns_list->format(ostr, settings, state, frame);
             ostr << (settings.one_line ? ")" : "\n)");
             frame.expression_list_always_start_on_new_line = false;
         }
@@ -475,19 +478,26 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (columns_list && !columns_list->empty() && !as_table_function)
     {
         ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
-        columns_list->format(ostr, settings, state, frame_nested);
+        columns_list->format(ostr, settings, state, frame);
+        ostr << (settings.one_line ? ")" : "\n)");
+    }
+
+    frame.expression_list_always_start_on_new_line = true;
+
+    if (is_ordinary_view && aliases_list && !as_table_function)
+    {
+        ostr << (settings.one_line ? " (" : "\n(");
+        aliases_list->format(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 
     if (dictionary_attributes_list)
     {
         ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
         if (settings.one_line)
-            dictionary_attributes_list->format(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->format(ostr, settings, state, frame);
         else
-            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 

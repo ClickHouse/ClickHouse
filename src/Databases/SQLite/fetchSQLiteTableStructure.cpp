@@ -53,7 +53,7 @@ static DataTypePtr convertSQLiteDataType(String type)
 std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connection, const String & sqlite_table_name)
 {
     auto columns = NamesAndTypesList();
-    auto query = fmt::format("pragma table_info({});", quoteString(sqlite_table_name));
+    auto query = fmt::format("pragma table_info({});", quoteStringSQLite(sqlite_table_name));
 
     auto callback_get_data = [](void * res, int col_num, char ** data_by_col, char ** col_names) -> int
     {

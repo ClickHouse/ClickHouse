@@ -27,6 +27,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
+#include <fstream>
+
 #if USE_SSL
 #include <format>
 #include <IO/BufferWithOwnMemory.h>

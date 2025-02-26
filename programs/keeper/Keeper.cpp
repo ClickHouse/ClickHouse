@@ -11,6 +11,8 @@
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>

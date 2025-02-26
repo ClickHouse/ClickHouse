@@ -83,7 +83,7 @@ Enable logging for the table via the table setting `enable_logging_to_s3queue_lo
 
 Introspection capabilities are the same as the [S3Queue table engine](/docs/en/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
-1. Use the `system.s3queue` for the in-memory state of the queue. Later versions of ClickHouse may introduce a dedicated `azurequeue` table.
+1. Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
   ```xml
@@ -148,5 +148,3 @@ exception:
 1 row in set. Elapsed: 0.002 sec.
 
 ```
-
-

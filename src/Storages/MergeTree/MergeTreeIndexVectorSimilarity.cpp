@@ -8,6 +8,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
@@ -17,6 +18,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+
+#include <ranges>
 
 namespace ProfileEvents
 {
@@ -33,7 +36,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_limit_for_ann_queries;
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace ServerSetting
@@ -51,11 +54,6 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace Setting
-{
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace
@@ -93,17 +91,9 @@ String joinByComma(const T & t)
     }
     else if constexpr (is_unordered_map<T>)
     {
-        String joined_keys;
-        for (const auto & [k, _] : t)
-        {
-            if (!joined_keys.empty())
-                joined_keys += ", ";
-            joined_keys += k;
-        }
-        return joined_keys;
+        auto keys = std::views::keys(t);
+        return fmt::format("{}", fmt::join(keys, ", "));
     }
-    /// TODO once our libcxx is recent enough, replace above by
-    ///      return fmt::format("{}", fmt::join(std::views::keys(t)), ", "));
     std::unreachable();
 }
 
@@ -182,6 +172,13 @@ String USearchIndexWithSerialization::Statistics::toString() const
             max_level, connectivity, size, capacity, ReadableSize(memory_usage), bytes_per_vector, scalar_words, nodes, edges, max_edges);
 
 }
+
+size_t USearchIndexWithSerialization::memoryUsageBytes() const
+{
+    /// Memory consumption is extremely high, asked in Discord: https://discord.com/channels/1063947616615923875/1064496121520590878/1309266814299144223
+    return Base::memory_usage();
+}
+
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,
@@ -295,16 +292,9 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row, ThreadGroupPtr thread_group)
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "VectorSimIndex");
+    auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-
         /// add is thread-safe
         auto result = index->add(key, &column_array_data_float_data[column_array_offsets[row - 1]]);
         if (!result)
@@ -322,11 +312,10 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     for (size_t row = 0; row < rows; ++row)
     {
         auto key = static_cast<USearchIndex::vector_key_t>(index_size + row);
-        auto task = [group = CurrentThread::getGroup(), &add_vector_to_index, key, row] { add_vector_to_index(key, row, group); };
-        thread_pool.scheduleOrThrowOnError(task);
+        runner([&add_vector_to_index, key, row] { add_vector_to_index(key, row); });
     }
 
-    thread_pool.wait();
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 }
@@ -389,8 +378,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     if (WhichDataType(nested_type_index).isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (WhichDataType(nested_type_index).isFloat64())
@@ -408,7 +397,6 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
     ContextPtr context)
     : parameters(parameters_)
     , metric_kind(metric_kind_)
-    , max_limit_for_ann_queries(context->getSettingsRef()[Setting::max_limit_for_ann_queries])
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
     if (expansion_search == 0)
@@ -428,11 +416,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
         ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
         || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));
 
-    /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
-    if (distance_function_in_query_and_distance_function_in_index_match && (parameters->limit <= max_limit_for_ann_queries))
-        return false;
-
-    return true;
+    return !distance_function_in_query_and_distance_function_in_index_match;
 }
 
 std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
@@ -585,7 +569,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (!data_type_array)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
     TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
-    if (!WhichDataType(nested_type_index).isFloat())
+    if (!WhichDataType(nested_type_index).isNativeFloat())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
 }
 

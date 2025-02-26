@@ -1,4 +1,3 @@
-#include <Storages/StorageMaterializedMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
@@ -39,13 +38,6 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         String database_name = storage->getStorageID().getDatabaseName();
         String table_name = storage->getStorageID().getTableName();
         String engine_name = storage->getName();
-#if USE_MYSQL
-        if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
-        {
-            auto nested = proxy->getNested();
-            storage.swap(nested);
-        }
-#endif
         if (!dynamic_cast<MergeTreeData *>(storage.get()))
             continue;
 

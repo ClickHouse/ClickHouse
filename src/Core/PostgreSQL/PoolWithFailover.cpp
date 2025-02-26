@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace postgres
 {
 
-auto PoolWithFailover::connectionReistablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout)
+auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, size_t pool_wait_timeout)
 {
     return [weak_pool = pool, pool_wait_timeout](UInt64 interval_milliseconds)
     {
@@ -41,7 +41,7 @@ auto PoolWithFailover::connectionReistablisher(std::weak_ptr<PoolHolder> pool, s
 
             if (!connection_available)
             {
-                LOG_WARNING(logger, "Reistablishing connection to {} has failed: unable to fetch connection within the timeout.", connection->getInfoForLog());
+                LOG_WARNING(logger, "Reestablishing connection to {} has failed: unable to fetch connection within the timeout.", connection->getInfoForLog());
                 return true;
             }
 
@@ -53,26 +53,26 @@ auto PoolWithFailover::connectionReistablisher(std::weak_ptr<PoolHolder> pool, s
 
                 connection->connect();
                 shared_pool->online = true;
-                LOG_DEBUG(logger, "Reistablishing connection to {} has succeeded.", connection->getInfoForLog());
+                LOG_INFO(logger, "Reestablishing connection to {} has succeeded.", connection->getInfoForLog());
             }
             catch (const pqxx::broken_connection & pqxx_error)
             {
                 if (interval_milliseconds >= 1000)
-                    LOG_ERROR(logger, "Reistablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), pqxx_error.what());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
             catch (const Poco::Exception & e)
             {
                 if (interval_milliseconds >= 1000)
-                    LOG_ERROR(logger, "Reistablishing connection to {} has failed: {}", connection->getInfoForLog(), e.displayText());
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed: {}", connection->getInfoForLog(), e.displayText());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
             catch (...)
             {
                 if (interval_milliseconds >= 1000)
-                    LOG_ERROR(logger, "Reistablishing connection to {} has failed.", connection->getInfoForLog());
+                    LOG_WARNING(logger, "Reestablishing connection to {} has failed.", connection->getInfoForLog());
                 shared_pool->online = false;
                 shared_pool->pool->returnObject(std::move(connection));
             }
@@ -111,7 +111,7 @@ PoolWithFailover::PoolWithFailover(
                 connection_attempt_timeout_);
             replicas_with_priority[priority].emplace_back(std::make_shared<PoolHolder>(connection_info, pool_size));
             if (bg_reconnect)
-                DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
+                DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[priority].back()), pool_wait_timeout));
         }
     }
 }
@@ -145,7 +145,7 @@ PoolWithFailover::PoolWithFailover(
             connection_attempt_timeout_);
         replicas_with_priority[0].emplace_back(std::make_shared<PoolHolder>(connection_string, pool_size));
         if (bg_reconnect)
-            DB::ReplicasReconnector::instance().add(connectionReistablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));
+            DB::ReplicasReconnector::instance().add(connectionReestablisher(std::weak_ptr(replicas_with_priority[0].back()), pool_wait_timeout));
     }
 }
 

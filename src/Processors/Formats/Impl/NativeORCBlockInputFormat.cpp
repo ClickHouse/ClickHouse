@@ -6,6 +6,7 @@
 #    include <Columns/ColumnMap.h>
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
+#    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnsCommon.h>
 #    include <Columns/ColumnsDateTime.h>
 #    include <Columns/ColumnsNumber.h>
@@ -586,7 +587,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped));
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped), format_settings);
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -1175,7 +1176,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     }
 
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header);
+        return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
 }
 
@@ -1284,7 +1285,7 @@ readColumnWithNumericData(const orc::ColumnVectorBatch * orc_column, const orc::
     const auto * orc_int_column = dynamic_cast<const BatchType *>(orc_column);
     column_data.insert_assume_reserved(orc_int_column->data.data(), orc_int_column->data.data() + orc_int_column->numElements);
 
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 template <typename NumericType, typename BatchType, typename VectorType = ColumnVector<NumericType>>
@@ -1300,7 +1301,7 @@ readColumnWithNumericDataCast(const orc::ColumnVectorBatch * orc_column, const o
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
         column_data.push_back(static_cast<NumericType>(orc_int_column->data[i]));
 
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 template <bool fixed_string>
@@ -1414,7 +1415,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
         internal_column = call_by_type(UInt32());
     if (!internal_column)
         internal_column = call_by_type(UInt64());
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName
@@ -1471,7 +1472,7 @@ readColumnWithStringData(const orc::ColumnVectorBatch * orc_column, const orc::T
             column_offsets[i] = curr_offset;
         }
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName
@@ -1492,7 +1493,7 @@ readColumnWithFixedStringData(const orc::ColumnVectorBatch * orc_column, const o
             column_chars_t.resize_fill(column_chars_t.size() + fixed_len);
     }
 
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 
@@ -1552,7 +1553,7 @@ readIPv6ColumnFromBinaryData(const orc::ColumnVectorBatch * orc_column, const or
             ipv6_column.insertDefault();
     }
 
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 static ColumnWithTypeAndName
@@ -1568,7 +1569,7 @@ readIPv4ColumnWithInt32Data(const orc::ColumnVectorBatch * orc_column, const orc
     for (size_t i = 0; i < orc_int_column->numElements; ++i)
         column_data.push_back(static_cast<UInt32>(orc_int_column->data[i]));
 
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 template <typename ColumnType>
@@ -1665,7 +1666,7 @@ readColumnWithTimestampData(const orc::ColumnVectorBatch * orc_column, const orc
         decimal64.value = orc_ts_column->data[i] * multiplier + orc_ts_column->nanoseconds[i];
         column_data.emplace_back(std::move(decimal64));
     }
-    return {std::move(internal_column), std::move(internal_type), column_name};
+    return {std::move(internal_column), internal_type, column_name};
 }
 
 ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
@@ -1689,7 +1690,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         auto nullmap_column = readByteMapFromORCColumn(orc_column);
         auto nullable_type = std::make_shared<DataTypeNullable>(std::move(nested_column.type));
         auto nullable_column = ColumnNullable::create(nested_column.column, nullmap_column);
-        return {std::move(nullable_column), std::move(nullable_type), column_name};
+        return {nullable_column, nullable_type, column_name};
     }
 
     switch (orc_type->getKind())
@@ -1830,7 +1831,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             auto offsets_column = readOffsetsFromORCListColumn(orc_map_column);
             auto map_column = ColumnMap::create(key_column.column, value_column.column, offsets_column);
             auto map_type = std::make_shared<DataTypeMap>(key_column.type, value_column.type);
-            return {std::move(map_column), std::move(map_type), column_name};
+            return {map_column, map_type, column_name};
         }
         case orc::LIST: {
             DataTypePtr nested_type_hint;
@@ -1860,7 +1861,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             {
                 array_type = std::make_shared<DataTypeArray>(nested_column.type);
             }
-            return {std::move(array_column), array_type, column_name};
+            return {array_column, array_type, column_name};
         }
         case orc::STRUCT: {
             Columns tuple_elements;
@@ -1895,9 +1896,13 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
                 tuple_names.emplace_back(std::move(element.name));
             }
 
-            auto tuple_column = ColumnTuple::create(std::move(tuple_elements));
+            ColumnPtr tuple_column;
+            if (tuple_elements.empty())
+                tuple_column = ColumnTuple::create(orc_column->numElements);
+            else
+                tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
-            return {std::move(tuple_column), std::move(tuple_type), column_name};
+            return {tuple_column, tuple_type, column_name};
         }
         default:
             throw Exception(

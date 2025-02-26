@@ -166,8 +166,8 @@ QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipelin
     pipelines.reserve(1 + subqueries.size());
     pipelines.push_back(std::move(pipeline));
 
-    auto plan_settings = QueryPlanOptimizationSettings::fromContext(context);
-    auto pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+    QueryPlanOptimizationSettings plan_settings(context);
+    BuildQueryPipelineSettings pipeline_settings(context);
 
     for (auto & future_set : subqueries)
     {
@@ -198,7 +198,7 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         if (!plan)
             continue;
 
-        plan->optimize(QueryPlanOptimizationSettings::fromContext(step.context));
+        plan->optimize(QueryPlanOptimizationSettings(step.context));
 
         plans.emplace_back(std::move(plan));
     }

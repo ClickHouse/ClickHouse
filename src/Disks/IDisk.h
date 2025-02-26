@@ -1,24 +1,27 @@
 #pragma once
 
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
 
 #include <memory>
-#include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
+#include <optional>
 #include <sys/stat.h>
+
+#include "config.h"
 
 
 namespace fs = std::filesystem;
@@ -32,15 +35,15 @@ namespace Poco
     }
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric IDiskCopierThreads;
-    extern const Metric IDiskCopierThreadsActive;
-    extern const Metric IDiskCopierThreadsScheduled;
-}
-
 namespace DB
 {
+
+#if USE_AWS_S3
+namespace S3
+{
+class Client;
+}
+#endif
 
 namespace ErrorCodes
 {
@@ -66,6 +69,8 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 
 class DiskObjectStorage;
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
+
+using ObjectAttributes = std::map<std::string, std::string>;
 
 /**
  * Provide interface for reservation.
@@ -112,23 +117,9 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IDisk : public Space
 {
 public:
-    /// Default constructor.
-    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-        : name(name_)
-        , copying_thread_pool(
-              CurrentMetrics::IDiskCopierThreads,
-              CurrentMetrics::IDiskCopierThreadsActive,
-              CurrentMetrics::IDiskCopierThreadsScheduled,
-              config.getUInt(config_prefix + ".thread_pool_size", 16))
-    {
-    }
-
-    explicit IDisk(const String & name_)
-        : name(name_)
-        , copying_thread_pool(
-              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
-    {
-    }
+    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    explicit IDisk(const String & name_);
+    ~IDisk() override;
 
     /// This is a disk.
     bool isDisk() const override { return true; }
@@ -297,6 +288,9 @@ public:
     /// E.g. for DiskLocal it's the absolute path to the file and for DiskObjectStorage it's
     /// StoredObject::remote_path for each stored object combined with the name of the objects' namespace.
     virtual Strings getBlobPath(const String & path) const = 0;
+
+    /// Returns whether the blob paths this disk uses are randomly generated.
+    virtual bool areBlobPathsRandom() const = 0;
 
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
@@ -586,7 +580,7 @@ protected:
     virtual void checkAccessImpl(const String & path);
 
 private:
-    ThreadPool copying_thread_pool;
+    std::unique_ptr<ThreadPool> copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
 

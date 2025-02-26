@@ -4,9 +4,9 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Core/QueryLogElementType.h>
-#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/Cache/QueryCacheUsage.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <IO/AsyncReadCounters.h>
 #include <Parsers/IAST.h>
@@ -104,7 +104,7 @@ struct QueryLogElement
 
     TransactionID tid;
 
-    QueryCache::Usage query_cache_usage = QueryCache::Usage::Unknown;
+    QueryCacheUsage query_cache_usage = QueryCacheUsage::Unknown;
 
     static std::string name() { return "QueryLog"; }
 

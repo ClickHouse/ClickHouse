@@ -5,6 +5,9 @@ sidebar_label: azureBlobStorage
 keywords: [azure blob storage]
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # azureBlobStorage Table Function
 
 Provides a table-like interface to select/insert files in [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). This table function is similar to the [s3 function](../../sql-reference/table-functions/s3.md).
@@ -71,8 +74,8 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file. Type: `LowCardinalty(String)`.
-- `_file` — Name of the file. Type: `LowCardinalty(String)`.
+- `_path` — Path to the file. Type: `LowCardinality(String)`.
+- `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the file size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
@@ -89,6 +92,37 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
-SET use_hive_partitioning = 1;
 SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
+```
+
+## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
+
+A Shared Access Signature (SAS) is a URI that grants restricted access to an Azure Storage container or file. Use it to provide time-limited access to storage account resources without sharing your storage account key. More details [here](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature).
+
+The `azureBlobStorage` function supports Shared Access Signatures (SAS).
+
+A [Blob SAS token](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers) contains all the information needed to authenticate the request, including the target blob, permissions, and validity period. To construct a blob URL, append the SAS token to the blob service endpoint. For example, if the endpoint is `https://clickhousedocstest.blob.core.windows.net/`, the request becomes:
+
+```sql
+SELECT count()
+FROM azureBlobStorage('BlobEndpoint=https://clickhousedocstest.blob.core.windows.net/;SharedAccessSignature=sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
+
+┌─count()─┐
+│      10 │
+└─────────┘
+
+1 row in set. Elapsed: 0.425 sec.
+```
+
+Alternatively, users can use the generated [Blob SAS URL](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers):
+
+```sql
+SELECT count() 
+FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
+
+┌─count()─┐
+│      10 │
+└─────────┘
+
+1 row in set. Elapsed: 0.153 sec.
 ```

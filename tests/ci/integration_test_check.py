@@ -5,6 +5,7 @@ import csv
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -158,12 +159,16 @@ def main():
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
-    if "RUN_BY_HASH_NUM" in os.environ:
-        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-    else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
+    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+
+    match = re.search(r"\(.*?\)", check_name)
+    options = match.group(0)[1:-1].split(",") if match else []
+    for option in options:
+        if "/" in option:
+            run_by_hash_num = int(option.split("/")[0]) - 1
+            run_by_hash_total = int(option.split("/")[1])
+            break
 
     is_flaky_check = "flaky" in check_name
 

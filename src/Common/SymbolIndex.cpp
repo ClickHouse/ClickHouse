@@ -496,12 +496,11 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 
 String SymbolIndex::getBuildIDHex() const
 {
-    String build_id_binary = getBuildID();
     String build_id_hex;
-    build_id_hex.resize(build_id_binary.size() * 2);
+    build_id_hex.resize(data.build_id.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : build_id_binary)
+    for (auto c : data.build_id)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;

@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -22,6 +24,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -1410,10 +1413,8 @@ template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit DynamicNode(
-        size_t max_dynamic_paths_for_object_ = DataTypeObject::DEFAULT_MAX_SEPARATELY_STORED_PATHS,
-        size_t max_dynamic_types_for_object_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
-        :  max_dynamic_paths_for_object(max_dynamic_paths_for_object_), max_dynamic_types_for_object(max_dynamic_types_for_object_)
+    explicit DynamicNode(DataTypePtr object_type_ = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON))
+        :  object_type(std::move(object_type_))
     {
     }
 
@@ -1503,7 +1504,7 @@ public:
         auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
         if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
-            type = makeNullableRecursively(type);
+            type = makeNullableRecursively(type, format_settings);
         return type;
     }
 
@@ -1582,14 +1583,11 @@ private:
                 return std::make_shared<DataTypeTuple>(types);
             }
             case ElementType::OBJECT:
-            {
-                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
-            }
+                return object_type;
         }
     }
 
-    size_t max_dynamic_paths_for_object;
-    size_t max_dynamic_types_for_object;
+    DataTypePtr object_type;
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
@@ -1603,13 +1601,10 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        size_t max_dynamic_paths_,
-        size_t max_dynamic_types_)
+        const DataTypePtr & type_of_nested_objects)
         : typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
-        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(
-              max_dynamic_paths_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
-              max_dynamic_types_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR))
+        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
         , dynamic_serialization(std::make_shared<SerializationDynamic>())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
@@ -1639,7 +1634,7 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1695,7 +1690,8 @@ private:
         const FormatSettings & format_settings,
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
-        String & error) const
+        String & error,
+        bool is_root) const
     {
         if (shouldSkipPath(current_path))
             return true;
@@ -1705,10 +1701,10 @@ private:
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
-                if (!path.empty())
+                if (!is_root)
                     path.append(".");
                 path += key;
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
                     return false;
             }
 
@@ -1983,8 +1979,7 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getMaxDynamicPaths(),
-                        object_type.getMaxDynamicTypes());
+                        object_type.getTypeOfNestedObjects());
             }
         }
         default:

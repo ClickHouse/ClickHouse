@@ -14,7 +14,6 @@ from github.Commit import Commit
 from github.CommitStatus import CommitStatus
 from github.GithubException import GithubException
 from github.GithubObject import NotSet
-from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI
@@ -158,7 +157,7 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     # to reduce number of parameters, the Github is constructed on the fly
     gh = Github()
     gh.__requester = commit._requester  # type:ignore #pylint:disable=protected-access
-    repo = get_repo(gh)
+    # repo = get_repo(gh)
     statuses = sorted(get_commit_filtered_statuses(commit), key=lambda x: x.context)
     statuses = [
         status
@@ -188,27 +187,28 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
 
     # We update the report in generate_status_comment function, so do it each
     # run, even in the release PRs and normal pushes
-    comment_body = generate_status_comment(pr_info, statuses)
-    # We post the comment only to normal and backport PRs
-    if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
-        return
-
-    comment_service_header = comment_body.split("\n", 1)[0]
-    comment = None  # type: Optional[IssueComment]
-    pr = repo.get_pull(pr_info.number)
-    for ic in pr.get_issue_comments():
-        if ic.body.startswith(comment_service_header):
-            comment = ic
-            break
-
-    if comment is None:
-        pr.create_issue_comment(comment_body)
-        return
-
-    if comment.body == comment_body:
-        logging.info("The status comment is already updated, no needs to change it")
-        return
-    comment.edit(comment_body)
+    # TODO: uncomment if needed
+    # comment_body = generate_status_comment(pr_info, statuses)
+    # # We post the comment only to normal and backport PRs
+    # if pr_info.number == 0 or pr_info.labels.intersection({"release", "release-lts"}):
+    #     return
+    #
+    # comment_service_header = comment_body.split("\n", 1)[0]
+    # comment = None  # type: Optional[IssueComment]
+    # pr = repo.get_pull(pr_info.number)
+    # for ic in pr.get_issue_comments():
+    #     if ic.body.startswith(comment_service_header):
+    #         comment = ic
+    #         break
+    #
+    # if comment is None:
+    #     pr.create_issue_comment(comment_body)
+    #     return
+    #
+    # if comment.body == comment_body:
+    #     logging.info("The status comment is already updated, no needs to change it")
+    #     return
+    # comment.edit(comment_body)
 
 
 def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
@@ -236,6 +236,9 @@ def generate_status_comment(pr_info: PRInfo, statuses: CommitStatuses) -> str:
 
         if cd is None or cd == CHECK_DESCRIPTIONS[-1]:
             # This is the case for either non-found description or a fallback
+            if status.context == "PR":
+                # skip praktika's status
+                continue
             cd = CheckDescription(
                 status.context,
                 CHECK_DESCRIPTIONS[-1].description,
@@ -306,6 +309,8 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     test_results = []  # type: TestResults
     for status in statuses:
         log_urls = []
+        if status.context == "PR":
+            continue
         if status.target_url is not None:
             log_urls.append(status.target_url)
         raw_logs = status.description or None
@@ -462,7 +467,6 @@ def set_mergeable_check(
 def trigger_mergeable_check(
     commit: Commit,
     statuses: CommitStatuses,
-    set_from_sync: bool = False,
     workflow_failed: bool = False,
 ) -> StatusType:
     """calculate and update CI.StatusNames.MERGEABLE"""
@@ -502,12 +506,7 @@ def trigger_mergeable_check(
 
     description = format_description(description)
 
-    if set_from_sync:
-        # update Mergeable Check from sync WF only if its status already present or its new status is FAILURE
-        #   to avoid false-positives
-        if mergeable_status or state == FAILURE:
-            set_mergeable_check(commit, description, state)
-    elif mergeable_status is None or mergeable_status.description != description:
+    if mergeable_status is None or mergeable_status.description != description:
         set_mergeable_check(commit, description, state)
 
     return state
@@ -536,11 +535,6 @@ def update_upstream_sync_status(
         "",
         description,
         CI.StatusNames.SYNC,
-    )
-    trigger_mergeable_check(
-        last_synced_upstream_commit,
-        get_commit_filtered_statuses(last_synced_upstream_commit),
-        set_from_sync=True,
     )
 
 
@@ -717,7 +711,7 @@ CHECK_DESCRIPTIONS = [
     ),
     CheckDescription(
         "ClickBench",
-        "Runs [ClickBench](https://github.com/ClickHouse/ClickBench/) with instant-attach table",
+        'Runs <a href="https://github.com/ClickHouse/ClickBench/">ClickBench</a> with instant-attach table',
         lambda x: x.startswith("ClickBench"),
     ),
     CheckDescription(

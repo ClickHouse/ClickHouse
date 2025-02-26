@@ -136,7 +136,13 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             if (is_global_with_parameter && is_global_with_parameter == access_and_columns.size())
             {
                 ASTPtr parameter_ast;
-                if (!ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                // *[.*]
+                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
+                {
+                    ParserToken{TokenType::Dot}.ignore(pos, expected);
+                    ParserToken{TokenType::Asterisk}.ignore(pos, expected);
+                }
+                else
                 {
                     if (ParserIdentifier{}.parse(pos, parameter_ast, expected))
                         parameter = getIdentifierName(parameter_ast);
@@ -152,7 +158,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
 
             for (auto & [access_flags, columns] : access_and_columns)
             {
-                if (wildcard && !columns.empty())
+                if ((wildcard || table_name.empty()) && !columns.empty())
                     return false;
 
                 AccessRightsElement element;

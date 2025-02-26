@@ -15,7 +15,7 @@ SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 
 Sets default roles to a user.
 
-Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn’t granted to a user, ClickHouse throws an exception.
+Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn't granted to a user, ClickHouse throws an exception.
 
 ``` sql
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]

@@ -57,6 +57,7 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsUInt64 min_insert_block_size_bytes;
@@ -83,6 +84,13 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
 }
+
+enum class ExecuteTTLType : uint8_t
+{
+    NONE = 0,
+    NORMAL = 1,
+    RECALCULATE= 2,
+};
 
 namespace MutationHelpers
 {
@@ -133,6 +141,7 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
+    bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -142,6 +151,7 @@ static void splitAndModifyMutationCommands(
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
+        NameSet ignored_columns;
 
         for (const auto & command : commands)
         {
@@ -167,6 +177,15 @@ static void splitAndModifyMutationCommands(
                 for_interpreter.push_back(command);
                 for (const auto & [column_name, expr] : command.column_to_update_expression)
                     mutated_columns.emplace(column_name);
+
+                if (command.type == MutationCommand::Type::MATERIALIZE_TTL && suitable_for_ttl_optimization)
+                {
+                    for (const auto & col : part_columns)
+                    {
+                        if (!mutated_columns.contains(col.name))
+                            ignored_columns.emplace(col.name);
+                    }
+                }
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
@@ -229,7 +248,7 @@ static void splitAndModifyMutationCommands(
         {
             if (!mutated_columns.contains(column.name))
             {
-                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name))
+                if (!metadata_snapshot->getColumns().has(column.name) && !part->storage.getVirtualsPtr()->has(column.name) && !ignored_columns.contains(column.name))
                 {
                     /// We cannot add the column because there's no such column in table.
                     /// It's okay if the column was dropped. It may also absent in dropped_columns
@@ -1217,7 +1236,6 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
     do
     {
         Block cur_block;
-        Block projection_header;
 
         if (!ctx->checkOperationIsNotCanceled() || !ctx->mutating_executor->pull(cur_block))
         {
@@ -1399,8 +1417,7 @@ private:
 
     void prepare()
     {
-        if (ctx->new_data_part->isStoredOnDisk())
-            ctx->new_data_part->getDataPartStorage().createDirectories();
+        ctx->new_data_part->getDataPartStorage().createDirectories();
 
         /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
         /// (which is locked in data.getTotalActiveSizeInBytes())
@@ -1943,6 +1960,88 @@ private:
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
 };
 
+/*
+ * Decorator that'll drop expired parts by replacing them with empty ones.
+ * Main use case (only use case for now) is to decorate `MutateSomePartColumnsTask`,
+ * which is used to recalculate TTL. If the part is expired, this class will replace it with
+ * an empty one.
+ *
+ * Triggered when `ttl_only_drop_parts` is set and the only TTL is rows TTL.
+ * */
+class ExecutableTaskDropTTLExpiredPartsDecorator : public IExecutableTask
+{
+public:
+    explicit ExecutableTaskDropTTLExpiredPartsDecorator(
+        std::unique_ptr<IExecutableTask> executable_task_,
+        MutationContextPtr ctx_
+        )
+        : executable_task(std::move(executable_task_)), ctx(ctx_) {}
+
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+
+    bool executeStep() override
+    {
+        switch (state)
+        {
+            case State::NEED_EXECUTE:
+            {
+                if (executable_task->executeStep())
+                    return true;
+
+                if (isRowsMaxTTLExpired())
+                    replacePartWithEmpty();
+
+                state = State::SUCCESS;
+                return true;
+            }
+            case State::SUCCESS:
+            {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    void cancel() noexcept override
+    {
+        executable_task->cancel();
+    }
+
+private:
+    enum class State
+    {
+        NEED_EXECUTE,
+
+        SUCCESS
+    };
+
+    State state{State::NEED_EXECUTE};
+
+    std::unique_ptr<IExecutableTask> executable_task;
+    MutationContextPtr ctx;
+
+    bool isRowsMaxTTLExpired() const
+    {
+        const auto ttl = ctx->new_data_part->ttl_infos.table_ttl;
+        return ttl.max && ttl.max <= ctx->time_of_mutation;
+    }
+
+    void replacePartWithEmpty()
+    {
+        MergeTreePartInfo part_info = ctx->new_data_part->info;
+        part_info.level += 1;
+
+        MergeTreePartition partition = ctx->new_data_part->partition;
+        std::string part_name = ctx->new_data_part->getNewName(part_info);
+
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->txn);
+        ctx->new_data_part = std::move(mutable_empty_part);
+    }
+};
+
 MutateTask::MutateTask(
     FutureMergedMutatedPartPtr future_part_,
     StorageMetadataPtr metadata_snapshot_,
@@ -2127,8 +2226,7 @@ bool MutateTask::prepare()
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))
             ctx->commands_for_part.emplace_back(command);
 
-    if (ctx->source_part->isStoredOnDisk() && !isStorageTouchedByMutations(
-        ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
+    if (!isStorageTouchedByMutations(ctx->source_part, mutations_snapshot, ctx->metadata_snapshot, ctx->commands_for_part, context_for_reading))
     {
         NameSet files_to_copy_instead_of_hardlinks;
         auto settings_ptr = ctx->data->getSettings();
@@ -2186,6 +2284,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("max_streams_for_merge_tree_reading", Field(0));
     context_for_reading->setSetting("read_from_filesystem_cache_if_exists_otherwise_bypass_cache", 1);
 
+    bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part,
         ctx->metadata_snapshot,
@@ -2193,6 +2292,7 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
+        suitable_for_ttl_optimization,
         ctx->log);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
@@ -2301,7 +2401,12 @@ bool MutateTask::prepare()
         /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
-        task = std::make_unique<MutateAllPartColumnsTask>(ctx);
+        bool drop_expired_parts = suitable_for_ttl_optimization && !(*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+        if (drop_expired_parts)
+            task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateAllPartColumnsTask>(ctx), ctx);
+        else
+            task = std::make_unique<MutateAllPartColumnsTask>(ctx);
+
         ProfileEvents::increment(ProfileEvents::MutationAllPartColumns);
     }
     else /// TODO: check that we modify only non-key columns in this case.
@@ -2361,7 +2466,12 @@ bool MutateTask::prepare()
         /// Keeper has to be asked with unlock request to release the references to the blobs
         ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
 
-        task = std::make_unique<MutateSomePartColumnsTask>(ctx);
+        bool drop_expired_parts = suitable_for_ttl_optimization && !(*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+        if (drop_expired_parts)
+            task = std::make_unique<ExecutableTaskDropTTLExpiredPartsDecorator>(std::make_unique<MutateSomePartColumnsTask>(ctx), ctx);
+        else
+            task = std::make_unique<MutateSomePartColumnsTask>(ctx);
+
         ProfileEvents::increment(ProfileEvents::MutationSomePartColumns);
     }
 

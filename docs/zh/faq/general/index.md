@@ -24,4 +24,4 @@ sidebar_label: General
 !!! info "没找到您需要的内容?"
     请查阅 [其他 F.A.Q. 类别](../../faq/index.md) 或者从左侧导航栏浏览其他文档
 
-{## [原始文档](https://clickhouse.com/docs/en/faq/general/) ##}
+[原始文档](/docs/en/faq/general/)

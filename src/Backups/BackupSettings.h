@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -82,6 +83,9 @@ struct BackupSettings
     /// this is whether the backup will contain information to grant the role to the corresponding user again.
     bool write_access_entities_dependents = true;
 
+    /// Is it allowed to use blob paths to calculate checksums of backup entries?
+    bool allow_checksums_from_remote_paths = true;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
@@ -98,8 +102,8 @@ struct BackupSettings
     /// UUID of the backup. If it's not set it will be generated randomly.
     std::optional<UUID> backup_uuid;
 
-    /// The maximum read speed in bytes per second for a backup. Zero means unlimited.
-    std::optional<UInt64> max_backup_bandwidth;
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
 
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

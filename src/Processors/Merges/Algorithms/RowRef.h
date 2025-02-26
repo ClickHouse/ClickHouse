@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Chunk.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/SortCursor.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -159,6 +159,31 @@ struct RowRef
         return true;
     }
 
+    static size_t checkEqualsFirstNonEqual(size_t size, size_t offset, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
+    {
+        if (size > 0 && 0 != lhs[offset]->compareAt(lhs_row, rhs_row, *rhs[offset], 1))
+            return offset;
+
+        for (size_t col_number = 0; col_number < size; ++col_number)
+        {
+            if (col_number == offset)
+                continue;
+
+            auto & cur_column = lhs[col_number];
+            auto & other_column = rhs[col_number];
+
+            if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
+                return col_number;
+        }
+
+        return size;
+    }
+
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRef & other) const
+    {
+        return checkEqualsFirstNonEqual(num_columns, offset, sort_columns, row_num, other.sort_columns, other.row_num);
+    }
+
     bool hasEqualSortColumnsWith(const RowRef & other) const
     {
         return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
@@ -211,6 +236,12 @@ struct RowRefWithOwnedChunk
         sort_columns = &owned_chunk->sort_columns;
         current_cursor = cursor.impl;
         source_stream_index = cursor.impl->order;
+    }
+
+
+    size_t firstNonEqualSortColumnsWith(size_t offset, const RowRefWithOwnedChunk & other) const
+    {
+        return RowRef::checkEqualsFirstNonEqual(sort_columns->size(), offset, sort_columns->data(), row_num, other.sort_columns->data(), other.row_num);
     }
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other) const

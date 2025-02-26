@@ -35,6 +35,9 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
     if (!table_join.getClauses().empty())
         description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
 
+    if (const auto & mixed_expression = table_join.getMixedJoinExpression())
+        description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
+
     return description;
 }
 
@@ -139,7 +142,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform([&](const Block & header)
-                                     { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
     }
 
     return joined_pipeline;
@@ -242,7 +245,7 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         default_totals = true;
     }
 
-    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
+    auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {

@@ -198,8 +198,8 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 
 ## 仮想カラム {#virtual-columns}
 
-- `_path` — ファイルへのパス。型：`LowCardinalty(String)`。
-- `_file` — ファイル名。型：`LowCardinalty(String)`。
+- `_path` — ファイルへのパス。型：`LowCardinality(String)`。
+- `_file` — ファイル名。型：`LowCardinality(String)`。
 - `_size` — バイト単位のファイルサイズ。型：`Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` になります。
 - `_time` — ファイルの最終更新時刻。型：`Nullable(DateTime)`。時間が不明な場合、値は`NULL`になります。
 

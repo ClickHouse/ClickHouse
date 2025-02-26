@@ -252,7 +252,8 @@ protected:
     size_t nextimpl_working_buffer_offset = 0;
 
 private:
-    /** Read the next data and fill a buffer with it.
+    /** Read the next data and fill a buffer with it. It should also account for `nextimpl_working_buffer_offset` out parameter if set
+      * so that after this value is applied to `pos` (see next() method) buffer still contains available data.
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */

@@ -25,8 +25,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/IPartMetadataManager.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 
 
 namespace zkutil
@@ -52,6 +50,9 @@ class MergeTreeTransaction;
 struct MergeTreeReadTaskInfo;
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
 
+class PrimaryIndexCache;
+using PrimaryIndexCachePtr = std::shared_ptr<PrimaryIndexCache>;
+
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
@@ -60,7 +61,9 @@ enum class DataPartRemovalState : uint8_t
     NOT_REACHED_REMOVAL_TIME,
     HAS_SKIPPED_MUTATION_PARENT,
     EMPTY_PART_COVERS_OTHER_PARTS,
-    REMOVED,
+    REMOVE,
+    REMOVE_ROLLBACKED,
+    REMOVE_RETRY,
 };
 
 /// Description of the data part.
@@ -85,8 +88,6 @@ public:
 
     using Type = MergeTreeDataPartType;
 
-    using uint128 = IPartMetadataManager::uint128;
-
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
         const String & name_,
@@ -107,7 +108,6 @@ public:
         const ValueSizeMap & avg_value_size_hints_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_) const = 0;
 
-    virtual bool isStoredOnDisk() const = 0;
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
     virtual bool isStoredOnRemoteDiskWithZeroCopySupport() const = 0;
@@ -154,6 +154,7 @@ public:
     const NamesAndTypesList & getColumns() const { return columns; }
     const ColumnsDescription & getColumnsDescription() const { return columns_description; }
     const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const { return columns_description_with_collected_nested; }
+    StorageMetadataPtr getMetadataSnapshot() const;
 
     NameAndTypePair getColumn(const String & name) const;
     std::optional<NameAndTypePair> tryGetColumn(const String & column_name) const;
@@ -168,9 +169,6 @@ public:
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
-
-    /// Throws an exception if part is not stored in on-disk format.
-    void assertOnDisk() const;
 
     void remove();
 
@@ -227,7 +225,7 @@ public:
     /// Compute part block id for zero level part. Otherwise throws an exception.
     /// If token is not empty, block id is calculated based on it instead of block data
     UInt128 getPartBlockIDHash() const;
-    String getZeroLevelPartBlockID(std::string_view token) const;
+    String getNewPartBlockID(std::string_view token) const;
 
     void setName(const String & new_name);
 
@@ -309,7 +307,7 @@ public:
     void setState(MergeTreeDataPartState new_state) const;
     ALWAYS_INLINE MergeTreeDataPartState getState() const { return state; }
 
-    static constexpr std::string_view stateString(MergeTreeDataPartState state) { return magic_enum::enum_name(state); }
+    static std::string_view stateString(MergeTreeDataPartState state);
     constexpr std::string_view stateString() const { return stateString(state); }
 
     String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
@@ -354,11 +352,11 @@ public:
         {
         }
 
-        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
+        void load(const IMergeTreeDataPart & part);
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        [[nodiscard]] WrittenFiles store(const MergeTreeData & data, IDataPartStorage & part_storage, Checksums & checksums) const;
+        [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums) const;
         [[nodiscard]] WrittenFiles store(const Names & column_names, const DataTypes & data_types, IDataPartStorage & part_storage, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
@@ -381,6 +379,10 @@ public:
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
     int32_t metadata_version;
+
+    /// The number of temporary projection block.
+    /// It is set while rebuilding projections in merges or mutations.
+    std::optional<UInt64> temp_projection_block_number;
 
     IndexPtr getIndex() const;
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
@@ -579,6 +581,10 @@ public:
     /// This one is about removing file with version of part's metadata (columns, pk and so on)
     void removeMetadataVersion();
 
+    /// Read a file associated to a part
+    std::unique_ptr<ReadBuffer> readFile(const String & file_name) const;
+    std::unique_ptr<ReadBuffer> readFileIfExists(const String & file_name) const;
+
     static std::optional<String> getStreamNameOrHash(
         const String & name,
         const IMergeTreeDataPart::Checksums & checksums);
@@ -647,8 +653,6 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    mutable PartMetadataManagerPtr metadata_manager;
-
     void removeIfNeeded() noexcept;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
@@ -668,8 +672,6 @@ protected:
     /// storage storage, excluding files in the second returned argument.
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
-
-    void initializePartMetadataManager();
 
     void initializeIndexGranularityInfo();
 
@@ -749,6 +751,9 @@ private:
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
     void checkConsistencyBase() const;
+
+    /// Returns the name of projection for projection part, empty string for regular part.
+    String getProjectionName() const;
 
     /// This ugly flag is needed for debug assertions only
     mutable bool part_is_probably_removed_from_disk = false;
