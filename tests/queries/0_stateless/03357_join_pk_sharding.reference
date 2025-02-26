@@ -156,12 +156,10 @@ Expression ((Project names + Projection))
           Join
           Algorithm: ConcurrentHashJoin
           Clauses: [(__table1.d) = (__table2.a)]
-            Expression
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.tab_l)
-            Expression
-              Expression (Change column names to column identifiers)
-                ReadFromMergeTree (default.tab_m)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.tab_l)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.tab_m)
       Expression
         Expression (Change column names to column identifiers)
           ReadFromMergeTree (default.tab_r)

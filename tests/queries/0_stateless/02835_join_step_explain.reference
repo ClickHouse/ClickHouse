@@ -31,6 +31,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Expression (Change column names to column identifiers)
       Header: __table1.id UInt64
               __table1.value_1 String
