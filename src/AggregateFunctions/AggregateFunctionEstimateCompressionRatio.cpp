@@ -140,8 +140,8 @@ public:
         createBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
-        ISerialization::Kind serialization_kind = column->isSparse() ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
-        SerializationPtr type_serialization_ptr = type_ptr->getSerialization(serialization_kind);
+        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
+        SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
         type_serialization_ptr->serializeBinary(*column, row_num, *data(place).compressed_buf, {});
     }
@@ -173,8 +173,8 @@ public:
         createBuffersIfNeeded(place);
 
         DataTypePtr type_ptr = argument_types[0];
-        ISerialization::Kind serialization_kind = column->isSparse() ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
-        SerializationPtr type_serialization_ptr = type_ptr->getSerialization(serialization_kind);
+        SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
+        SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
         WriteBufferPtr compressed_buffer = data(place).compressed_buf;
 
