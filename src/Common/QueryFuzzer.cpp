@@ -1675,12 +1675,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * fn = typeid_cast<ASTFunction *>(ast.get()))
     {
         static const std::unordered_set<String> & cast_functions = {"_CAST", "CAST", "accurateCast", "accurateCastOrNull"};
-        const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
 
         fuzzColumnLikeExpressionList(fn->arguments.get());
         fuzzColumnLikeExpressionList(fn->parameters.get());
 
-        if (nargs == 2 && fn->arguments->children[1] && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
+        /// fuzzColumnLikeExpressionList may remove arguments
+        const size_t nargs = fn->arguments ? fn->arguments->children.size() : 0;
+
+        if (nargs == 2 && fuzz_rand() % 30 == 0 && cast_functions.contains(fn->name))
         {
             /// Fuzz casts
             const auto old_type = DataTypeFactory::instance().tryGet(fn->arguments->children[1]);
