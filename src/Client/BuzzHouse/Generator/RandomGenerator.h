@@ -261,9 +261,6 @@ public:
         , changes_behavior(cb)
     {
     }
-
-    constexpr CHSetting(const CHSetting & rhs) = default;
-    constexpr CHSetting(CHSetting && rhs) = default;
 };
 
 }
