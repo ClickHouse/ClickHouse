@@ -3352,7 +3352,7 @@ message RefreshableView {
 
 message CreateMatViewTo {
     required ExprSchemaTable est = 1;
-    optional ColumnPathList col_list = 2;
+    repeated ColumnDef col_list = 2;
 }
 
 message CreateView {

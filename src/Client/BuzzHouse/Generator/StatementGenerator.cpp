@@ -234,8 +234,9 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         {
             CreateMatViewTo * cmvt = cv->mutable_to();
             ExprSchemaTable * to_est = cmvt->mutable_est();
-            const SQLTable & t = has_with_cols ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(table_to_lambda)).get()
-                                               : rg.pickValueRandomlyFromMap(this->tables);
+            SQLTable & t = const_cast<SQLTable &>(
+                has_with_cols ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(table_to_lambda)).get()
+                              : rg.pickValueRandomlyFromMap(this->tables));
 
             if (t.db)
             {
@@ -244,15 +245,24 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             to_est->mutable_table()->set_table("t" + std::to_string(t.tname));
             if (has_with_cols && rg.nextBool())
             {
-                ColumnPathList * clist = cmvt->mutable_col_list();
-
-                flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
-                std::shuffle(entries.begin(), entries.end(), rg.generator);
+                for (const auto & col : t.cols)
+                {
+                    if (col.second.canBeInserted())
+                    {
+                        filtered_columns.emplace_back(std::ref<const SQLColumn>(col.second));
+                    }
+                }
+                if (rg.nextBool())
+                {
+                    std::shuffle(filtered_columns.begin(), filtered_columns.end(), rg.generator);
+                }
                 for (size_t i = 0; i < next.ncols; i++)
                 {
-                    columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
+                    SQLColumn col = filtered_columns[i].get();
+
+                    addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, fc.type_mask, col, cmvt->add_col_list());
                 }
-                entries.clear();
+                filtered_columns.clear();
             }
         }
         if (!replace && (next.is_refreshable = rg.nextBool()))

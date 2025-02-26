@@ -3349,10 +3349,17 @@ CONV_FN(CreateView, create_view)
 
             ret += " TO ";
             ExprSchemaTableToString(ret, cmvt.est());
-            if (cmvt.has_col_list())
+            if (cmvt.col_list_size())
             {
                 ret += "(";
-                ColumnPathListToString(ret, 0, cmvt.col_list());
+                for (int i = 0; i < cmvt.col_list_size(); i++)
+                {
+                    if (i != 0)
+                    {
+                        ret += ",";
+                    }
+                    ColumnDefToString(ret, cmvt.col_list(i));
+                }
                 ret += ")";
             }
         }
