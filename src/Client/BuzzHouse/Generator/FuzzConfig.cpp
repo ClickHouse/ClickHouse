@@ -215,7 +215,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             std::to_string(min_nested_rows),
             std::to_string(max_nested_rows));
     }
-    for (const auto & [_, entry] : metrics)
+    for (const auto & entry : std::views::values(metrics))
     {
         measure_performance |= entry.enabled;
     }

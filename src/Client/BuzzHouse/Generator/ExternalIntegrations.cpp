@@ -719,7 +719,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((etp = dynamic_cast<EnumType *>(tp)))
     {
-        const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
+        const EnumValue & nvalue = rg.pickRandomly(etp->values);
 
         if constexpr (is_document<T>)
         {
@@ -931,7 +931,7 @@ void MongoDBIntegration::documentAppendAnyValue(
         }
         else
         {
-            documentAppendAnyValue(rg, cname, document, rg.pickRandomlyFromVector(vtp->subtypes));
+            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes));
         }
     }
     else

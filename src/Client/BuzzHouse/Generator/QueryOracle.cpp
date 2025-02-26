@@ -184,7 +184,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
-    OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
+    OutFormat outf = rg.pickRandomly(out_in);
 
     /// Remove the file if exists
     if (!std::filesystem::remove(nfile, ec) && ec)
@@ -300,7 +300,7 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     nsettings.clear();
     for (uint32_t i = 0; i < nsets; i++)
     {
-        const String & setting = rg.pickKeyRandomlyFromMap(queryOracleSettings);
+        const String & setting = rg.pickRandomly(queryOracleSettings);
         const CHSetting & chs = queryOracleSettings.at(setting);
         SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
 
@@ -320,8 +320,8 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
         }
         else
         {
-            setv->set_value(rg.pickRandomlyFromSet(chs.oracle_values));
-            nsettings.push_back(rg.pickRandomlyFromSet(chs.oracle_values));
+            setv->set_value(rg.pickRandomly(chs.oracle_values));
+            nsettings.push_back(rg.pickRandomly(chs.oracle_values));
         }
         can_test_query_success &= !chs.changes_behavior;
     }

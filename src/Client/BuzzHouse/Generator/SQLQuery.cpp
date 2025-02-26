@@ -359,7 +359,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     {
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
         if (t.db)
         {
@@ -374,7 +374,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     {
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
-        const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
         if (v.db)
         {
@@ -396,7 +396,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 
         if (remote_table && nopt2 < (remote_table + 1))
         {
-            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
             setTableRemote(rg, true, t, jtf->mutable_tfunc());
             addTableRelation(rg, true, name, t);
@@ -404,7 +404,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
             RemoteFunc * rfunc = jtf->mutable_tfunc()->mutable_remote();
-            const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
+            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
             rfunc->set_address(fc.getConnectionHostAndPort());
             rfunc->set_rdatabase("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
@@ -510,7 +510,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         SQLRelation rel(name);
         JoinedTable * jt = tos->mutable_joined_table();
         ExprSchemaTable * est = jt->mutable_est();
-        const auto & ntable = rg.pickKeyRandomlyFromMap(systemTables);
+        const auto & ntable = rg.pickRandomly(systemTables);
         const auto & tentries = systemTables.at(ntable);
 
         est->mutable_database()->set_database("system");
@@ -553,10 +553,10 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
         const uint32_t nopt2 = ndist(rg.generator);
 
         cdf->set_cname(static_cast<ClusterFunc_CName>((rg.nextRandomUInt32() % static_cast<uint32_t>(ClusterFunc::CName_MAX)) + 1));
-        cdf->set_ccluster(rg.pickRandomlyFromVector(fc.clusters));
+        cdf->set_ccluster(rg.pickRandomly(fc.clusters));
         if (remote_table && nopt2 < (remote_table + 1))
         {
-            const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
             cdf->set_cdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
             cdf->set_ctable("t" + std::to_string(t.tname));
@@ -564,14 +564,14 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
             {
                 /// Optional sharding key
                 flatTableColumnPath(to_remote_entries, t, [](const SQLColumn &) { return true; });
-                cdf->set_sharding_key(rg.pickRandomlyFromVector(this->remote_entries).getBottomName());
+                cdf->set_sharding_key(rg.pickRandomly(this->remote_entries).getBottomName());
                 this->remote_entries.clear();
             }
             addTableRelation(rg, false, name, t);
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
-            const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
+            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
             cdf->set_cdatabase("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
             cdf->set_ctable("v" + std::to_string(v.tname));
@@ -595,7 +595,7 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
 
 void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
 {
-    const SQLRelation * rel1 = &rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
+    const SQLRelation * rel1 = &rg.pickRandomly(this->levels[this->current_level].rels);
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
 
     if (rel1->name == rel2->name)
@@ -613,8 +613,8 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
         rg.nextSmallNumber() < 9
             ? BinaryOperator::BINOP_EQ
             : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEEQGR)) + 1));
-    const SQLRelationCol & col1 = rg.pickRandomlyFromVector(rel1->cols);
-    const SQLRelationCol & col2 = rg.pickRandomlyFromVector(rel2->cols);
+    const SQLRelationCol & col1 = rg.pickRandomly(rel1->cols);
+    const SQLRelationCol & col2 = rg.pickRandomly(rel2->cols);
     Expr * expr1 = bexpr->mutable_lhs();
     Expr * expr2 = bexpr->mutable_rhs();
     ExprSchemaTableColumn * estc1 = expr1->mutable_comp_expr()->mutable_expr_stc();
@@ -647,7 +647,7 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         if (allow_using && rg.nextSmallNumber() < 3)
         {
             /// Using clause
-            const SQLRelation & rel1 = rg.pickRandomlyFromVector(this->levels[this->current_level].rels);
+            const SQLRelation & rel1 = rg.pickRandomly(this->levels[this->current_level].rels);
             const SQLRelation & rel2 = this->levels[this->current_level].rels.back();
             std::vector<DB::Strings> cols1;
             std::vector<DB::Strings> cols2;
@@ -725,7 +725,7 @@ void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<Gr
 {
     if (rg.nextSmallNumber() < 3)
     {
-        refColumn(rg, rg.pickRandomlyFromVector(available_cols), expr);
+        refColumn(rg, rg.pickRandomly(available_cols), expr);
     }
     else
     {
@@ -735,7 +735,7 @@ void StatementGenerator::addWhereSide(RandomGenerator & rg, const std::vector<Gr
 
 void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<GroupCol> & available_cols, Expr * expr)
 {
-    const GroupCol & gcol = rg.pickRandomlyFromVector(available_cols);
+    const GroupCol & gcol = rg.pickRandomly(available_cols);
     const uint32_t noption = rg.nextLargeNumber();
 
     if (noption < 761)
@@ -1166,7 +1166,7 @@ void StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nc
                 }
                 if (!this->fc.collations.empty() && rg.nextSmallNumber() < 3)
                 {
-                    eot->set_collation(rg.pickRandomlyFromVector(this->fc.collations));
+                    eot->set_collation(rg.pickRandomly(this->fc.collations));
                 }
                 if (this->fc.test_with_fill && rg.nextSmallNumber() < 2)
                 {

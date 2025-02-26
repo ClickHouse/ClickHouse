@@ -767,7 +767,7 @@ bool Client::buzzHouse()
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
                     const BuzzHouse::SQLTable & t
-                        = rg.pickRandomlyFromVector(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
+                        = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
 
                     /// Test in and out formats
                     full_query2.resize(0);

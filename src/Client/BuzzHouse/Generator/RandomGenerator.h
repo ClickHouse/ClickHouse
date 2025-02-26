@@ -194,29 +194,17 @@ public:
         return d(generator);
     }
 
-    template <typename T>
-    const T & pickRandomlyFromVector(const std::vector<T> & vals)
+    template <typename Container>
+    const auto & pickRandomly(const Container & container)
     {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        return vals[d(generator)];
-    }
-
-    template <typename T>
-    const T & pickRandomlyFromSet(const std::unordered_set<T> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
+        std::uniform_int_distribution<size_t> d{0, container.size() - 1};
+        auto it = container.begin();
         std::advance(it, d(generator));
-        return *it;
-    }
 
-    template <typename K, typename V>
-    const K & pickKeyRandomlyFromMap(const std::unordered_map<K, V> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(generator));
-        return it->first;
+        if constexpr (requires { it->first; })
+            return it->first;
+        else
+            return *it;
     }
 
     template <typename K, typename V>
@@ -226,15 +214,6 @@ public:
         auto it = vals.begin();
         std::advance(it, d(generator));
         return it->second;
-    }
-
-    template <typename K, typename V>
-    std::tuple<K, V> pickPairRandomlyFromMap(const std::unordered_map<K, V> & vals)
-    {
-        std::uniform_int_distribution<size_t> d{0, vals.size() - 1};
-        auto it = vals.begin();
-        std::advance(it, d(generator));
-        return std::make_tuple(it->first, it->second);
     }
 
     String nextJSONCol();

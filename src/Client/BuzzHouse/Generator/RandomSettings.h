@@ -61,7 +61,7 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             [](RandomGenerator & rg)
             {
                 const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
-                return rg.pickRandomlyFromVector(choices);
+                return rg.pickRandomly(choices);
             },
             {},
             false)}};
@@ -72,7 +72,7 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
