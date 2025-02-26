@@ -199,7 +199,7 @@ public:
         };
 
         RPNElement();
-        RPNElement(Function function_);
+        explicit RPNElement(Function function_);
         RPNElement(Function function_, size_t key_column_);
         RPNElement(Function function_, size_t key_column_, const Range & range_);
 
