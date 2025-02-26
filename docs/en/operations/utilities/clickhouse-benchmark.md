@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-benchmark
+slug: /operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: clickhouse-benchmark
 ---
@@ -59,7 +59,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
 - `--help` — Shows the help message.
 
-If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
+If you want to apply some [settings](../../operations/settings/overview) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
 
 ## Output {#clickhouse-benchmark-output}
 

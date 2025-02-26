@@ -1,8 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/annindexes
+slug: /engines/table-engines/mergetree-family/annindexes
 sidebar_label: Vector Similarity Indexes
 description: Approximate Nearest Neighbor Search with Vector Similarity Indexes
 keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
+title: "Approximate Nearest Neighbor Search with Vector Similarity Indexes"
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -102,7 +103,7 @@ ORDER BY id;
 ```
 
 All arrays must have same length. To avoid errors, you can use a
-[CONSTRAINT](/docs/en/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
+[CONSTRAINT](/docs/sql-reference/statements/create/table.md#constraints), for example, `CONSTRAINT constraint_name_1 CHECK
 length(vectors) = 256`. Empty `Arrays` and unspecified `Array` values in INSERT statements (i.e. default values) are not supported as well.
 
 Vector similarity indexes are based on the [USearch library](https://github.com/unum-cloud/usearch), which implements the [HNSW
@@ -151,7 +152,7 @@ using server setting [skipping_index_cache_size](../../../operations/server-conf
 **Restrictions**: Approximate vector search algorithms require a limit, hence queries without `LIMIT` clause cannot utilize vector
 similarity indexes. The limit must also be smaller than setting `max_limit_for_ann_queries` (default: 100).
 
-**Differences to Regular Skip Indexes** Similar to regular [skip indexes](/docs/en/optimize/skipping-indexes), vector
+**Differences to Regular Skip Indexes** Similar to regular [skip indexes](/docs/optimize/skipping-indexes), vector
 similarity indexes are constructed over granules and each indexed block consists of `GRANULARITY = [N]`-many granules (`[N]` = 1 by default
 for normal skip indexes). For example, if the primary index granularity of the table is 8192 (setting `index_granularity = 8192`) and
 `GRANULARITY = 2`, then each indexed block will contain 16384 rows. However, data structures and algorithms for approximate neighborhood

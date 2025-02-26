@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/caches
+slug: /operations/caches
 sidebar_position: 65
 sidebar_label: Caches
 title: "Cache Types"

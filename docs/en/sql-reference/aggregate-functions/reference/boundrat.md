@@ -1,7 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/boundingRatio
+slug: /sql-reference/aggregate-functions/reference/boundingRatio
 sidebar_position: 114
-title: boundingRatio
+title: "boundingRatio"
+description: "Aggregate function that calculates the slope between the leftmost and rightmost points across a group of values."
 ---
 
 Aggregate function that calculates the slope between the leftmost and rightmost points across a group of values.

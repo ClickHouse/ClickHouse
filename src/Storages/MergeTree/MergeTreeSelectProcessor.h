@@ -84,7 +84,7 @@ public:
 
 private:
     /// Sets up range readers corresponding to data readers
-    void initializeRangeReaders();
+    void initializeReadersChain();
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
@@ -98,8 +98,6 @@ private:
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
-    /// This step is added when the part has lightweight delete mask
-    PrewhereExprStepPtr lightweight_delete_filter_step;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
 
