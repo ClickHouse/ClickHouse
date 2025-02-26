@@ -65,7 +65,8 @@
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding: 10px;
+            padding-left: 15px;
+            padding-right: 15px;
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
@@ -91,8 +92,8 @@
         .key-value-pair {
             display: flex;               /* Enable Flexbox for alignment */
             justify-content: space-between; /* Distribute space between key and value */
-            padding-bottom: 10px;
-            padding-top: 10px;
+            padding-bottom: 15px;
+            padding-top: 15px;
         }
 
         .json-key {
@@ -159,7 +160,6 @@
         #info-content {
             text-align: left;
             padding: 10px;
-            margin-bottom: 20px;
         }
 
         #footer {
@@ -394,7 +394,7 @@
         statusContainer.appendChild(line);
     }
 
-    function addKeyValueToStatus(key, value, options = null, link = null) {
+    function addKeyValueToStatus(key, value, options = null, optionValues = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -411,16 +411,15 @@
             valueElement = document.createElement('select');
             valueElement.className = 'dropdown-value';
 
-            options.forEach(optionValue => {
+            options.forEach((optionTextContent, i) => {
                 const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue;
+                option.value = optionValues?.[i] ?? optionTextContent;
+                option.textContent = optionTextContent;
 
                 // Set the initially selected option
-                if (optionValue === value) {
+                if (option.value === value) {
                     option.selected = true;
                 }
-
                 valueElement.appendChild(option);
             });
 
@@ -1019,14 +1018,21 @@
         }
         // Status and info
         if (PR > 0) {
-            addKeyValueToStatus("PR", PR, null, runtimeCache.prLink);
+            addKeyValueToStatus("PR", PR, null, null, runtimeCache.prLink);
         }
         let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
-        const commitOptions = runtimeCache.commits
-            .map(({ sha, message }) => message ? `${sha.substring(0, 8)}: ${message}` : sha.substring(0, 8))
-            .filter(Boolean);
-        commitOptions.push("latest")
-        addKeyValueToStatus("sha", sha || "latest", commitOptions);
+        const shaSelectorText = [];
+        const shaSelectorValues = [];
+
+        runtimeCache.commits.forEach(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            shaSelectorText.push(message ? `${shortSha}: ${message}` : shortSha);
+            shaSelectorValues.push(sha);
+        });
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+        addKeyValueToStatus("sha", sha || "latest", shaSelectorText, shaSelectorValues);
+
         if (PR > 0) {
             const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
             if (pr_title) addInfoLineToStatus(pr_title);
