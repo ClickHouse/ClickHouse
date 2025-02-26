@@ -17,6 +17,7 @@
 #include <boost/algorithm/hex.hpp>
 
 #include <Access/Common/SSLCertificateSubjects.h>
+#include "Access/Common/AuthenticationType.h"
 #include "config.h"
 
 #if USE_SSL
@@ -131,6 +132,10 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
             setPasswordHashBinary(Util::encodeSHA256(password_), validate);
             return;
 
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            setPasswordHashBinary(Digest(password_.begin(), password_.end()), validate);
+            return;
+
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
             return;
@@ -161,7 +166,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
+    if (type != AuthenticationType::PLAINTEXT_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
@@ -213,6 +218,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'SHA256_PASSWORD' authentication type has length {} "
                                 "but must be exactly 32 bytes.", hash.size());
+            password_hash = hash;
+            return;
+        }
+
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        {
             password_hash = hash;
             return;
         }
@@ -273,7 +284,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
 
 void AuthenticationData::setSalt(String salt_)
 {
-    if (type != AuthenticationType::SHA256_PASSWORD)
+    if (type != AuthenticationType::SHA256_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSalt(): authentication type {} not supported", toString(type));
     salt = std::move(salt_);
 }
@@ -310,6 +321,15 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
+        {
+            node->contains_hash = true;
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+
+            if (!getSalt().empty())
+                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+            break;
+        }
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
         {
             node->contains_hash = true;
             node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));

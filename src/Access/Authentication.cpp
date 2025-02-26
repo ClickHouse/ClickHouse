@@ -10,8 +10,18 @@
 #include <Common/typeid_cast.h>
 #include <Access/Common/SSLCertificateSubjects.h>
 
+#include "base/types.h"
 #include "config.h"
 
+#if USE_SSL
+#   include <openssl/evp.h>
+#   include <openssl/hmac.h>
+#   include <openssl/sha.h>
+#   include <openssl/buffer.h>
+#   include <openssl/rand.h>
+#   include <openssl/bio.h>
+#   include <openssl/err.h>
+#endif
 
 namespace DB
 {
@@ -93,6 +103,118 @@ namespace
     {
         return authentication_method.getType() == AuthenticationType::KERBEROS
             && external_authenticators.checkKerberosCredentials(authentication_method.getKerberosRealm(), *gss_acceptor_context);
+    }
+    
+#if USE_SSL
+    std::vector<uint8_t> pbkdf2SHA256(const std::string& password, const std::vector<uint8_t>& salt, int iterations) {
+        std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
+        PKCS5_PBKDF2_HMAC(
+            password.c_str(),
+            static_cast<Int32>(password.size()),
+            salt.data(),
+            static_cast<Int32>(salt.size()),
+            iterations,
+            EVP_sha256(),
+            SHA256_DIGEST_LENGTH,
+            derived_key.data());
+        return derived_key;
+    }
+    
+    std::vector<uint8_t> hmacSHA256(const std::vector<uint8_t>& key, const std::string& data) {
+        unsigned int len = SHA256_DIGEST_LENGTH;
+        std::vector<uint8_t> result(len);
+        HMAC(
+            EVP_sha256(),
+            key.data(), 
+            static_cast<Int32>(key.size()), 
+            reinterpret_cast<const uint8_t*>(data.data()),
+            data.size(),
+            result.data(),
+            &len);
+        return result;
+    }
+    
+    std::vector<uint8_t> sha256(const std::vector<uint8_t>& data) {
+        std::vector<uint8_t> hash(SHA256_DIGEST_LENGTH);
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        SHA256_Update(&sha256, data.data(), data.size());
+        SHA256_Final(hash.data(), &sha256);
+        return hash;
+    }
+    
+    std::vector<uint8_t> base64Decode(const std::string& encoded) {
+        BIO *bio, *b64;
+        Int32 decodeLen = static_cast<Int32>(encoded.size());
+        std::vector<uint8_t> decoded(decodeLen);
+        
+        bio = BIO_new_mem_buf(encoded.data(), encoded.size());
+        b64 = BIO_new(BIO_f_base64());
+        bio = BIO_push(b64, bio);
+        BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+        Int32 len = BIO_read(bio, decoded.data(), decodeLen);
+        BIO_free_all(bio);
+        decoded.resize(len);
+        return decoded;
+    }
+    
+    std::string base64Encode(const std::vector<uint8_t>& data) {
+        BIO *bio, *b64;
+        BUF_MEM *buffer_ptr;
+        
+        b64 = BIO_new(BIO_f_base64());
+        bio = BIO_new(BIO_s_mem());
+        bio = BIO_push(b64, bio);
+        BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+        BIO_write(bio, data.data(), data.size());
+        BIO_flush(bio);
+        BIO_get_mem_ptr(bio, &buffer_ptr);
+        
+        std::string encoded(buffer_ptr->data, buffer_ptr->length);
+        BIO_free_all(bio);
+        return encoded;
+    }
+#endif
+
+    std::string computeScramSHA256ClientProof(const std::string& password, const std::string& base64_salt, int iterations, const std::string& auth_message) {
+#if USE_SSL
+        auto salt = base64Decode(base64_salt);
+        auto salted_password = pbkdf2SHA256(password, salt, iterations);
+        auto client_key = hmacSHA256(salted_password, "Client Key");
+        auto stored_key = sha256(client_key);
+        auto client_signature = hmacSHA256(stored_key, auth_message);
+        
+        std::vector<uint8_t> client_proof(client_key.size());
+        for (size_t i = 0; i < client_key.size(); ++i) {
+            client_proof[i] = client_key[i] ^ client_signature[i];
+        }
+        
+        return base64Encode(client_proof);
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client proof can be computed only with USE_SSL compile flag.");
+#endif
+    }
+    
+    bool checkScramSHA256Authentication(
+        const ScramSHA256Credentials * scram_sha256_credentials,
+        const AuthenticationData & authentication_method)
+    {
+        const auto & client_proof = scram_sha256_credentials->getClientProof();
+        const auto & auth_message = scram_sha256_credentials->getAuthMessage();
+        const auto & salt = authentication_method.getSalt();
+        const auto & password = authentication_method.getPassword();
+        int iterations = scram_sha256_credentials->getIterations();
+        auto computed_client_proof = computeScramSHA256ClientProof(password, salt, iterations, auth_message);
+
+        if (computed_client_proof.size() != client_proof.size())
+            return false;
+
+        for (size_t i = 0; i < computed_client_proof.size(); ++i)
+        {
+            if (static_cast<UInt8>(computed_client_proof[i]) != static_cast<UInt8>(client_proof[i]))
+                return false;
+        }
+        return true;
     }
 
     bool checkMySQLAuthentication(
@@ -251,6 +373,11 @@ bool Authentication::areCredentialsValid(
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, settings);
+    }
+
+    if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
+    {
+        return checkScramSHA256Authentication(scram_shh256_credentials, authentication_method);
     }
 
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))
