@@ -30,11 +30,6 @@ public:
 
     virtual SinkPtr createSinkForPartition(const String & partition_id) = 0;
 
-    virtual SinkPtr createSinkForHivePartition(const String &)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Hive partition style not implemented for storage {}", getName());
-    }
-
     static void validatePartitionKey(const String & str, bool allow_slash);
 
     static String replaceWildcards(const String & haystack, const String & partition_id);
@@ -51,7 +46,7 @@ private:
     IColumn::Selector chunk_row_index_to_partition_index;
     Arena partition_keys_arena;
 
-    SinkPtr getSinkForPartitionKey(StringRef partition_key, bool hive);
+    SinkPtr getSinkForPartitionKey(StringRef partition_key);
 };
 
 }

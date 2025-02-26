@@ -119,13 +119,13 @@ PartitionedSink::PartitionedSink(
 }
 
 
-SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key, bool hive)
+SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
 {
     auto it = partition_id_to_sink.find(partition_key);
     if (it == partition_id_to_sink.end())
     {
         auto partition_key_str = partition_key.toString();
-        auto sink = hive ? createSinkForHivePartition(partition_key_str) : createSinkForPartition(partition_key_str);
+        auto sink = createSinkForPartition(partition_key_str);
         std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, sink);
     }
 
@@ -184,7 +184,7 @@ void PartitionedSink::consume(Chunk & chunk)
 
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
-        auto sink = getSinkForPartitionKey(partition_key, context->getSettingsRef()[Setting::use_hive_partitioning]);
+        auto sink = getSinkForPartitionKey(partition_key);
         sink->consume(partition_index_to_chunk[partition_index]);
     }
 }
