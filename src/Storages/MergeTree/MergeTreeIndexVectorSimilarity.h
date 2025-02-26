@@ -8,8 +8,7 @@
 #include <Common/Logger.h>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
-#include <Common/TargetSpecific.h>
-#if USE_MULTITARGET_CODE
+#if defined(__x86_64__) || defined(__i386__)
 #include <immintrin.h>
 #endif
 #include <usearch/index_dense.hpp>
