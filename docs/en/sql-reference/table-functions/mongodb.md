@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/mongodb
 sidebar_position: 135
 sidebar_label: mongodb
+title: "mongodb"
+description: "Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server."
 ---
 
-# mongodb
+# mongodb Table Function
 
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 

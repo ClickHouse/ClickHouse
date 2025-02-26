@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/kurtsamp
 sidebar_position: 158
+title: "kurtSamp"
+description: "Computes the sample kurtosis of a sequence."
 ---
 
 # kurtSamp

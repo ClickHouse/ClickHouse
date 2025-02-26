@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/uniqexact
 sidebar_position: 207
+title: "uniqExact"
+description: "Calculates the exact number of different argument values."
 ---
 
 # uniqExact
