@@ -66,7 +66,6 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
-    extern const SettingsBool optimize_distinct_in_order;
 }
 
 namespace DistributedSetting
@@ -495,11 +494,6 @@ static ContextMutablePtr updateSetttingsForParallelReplicas(const ContextPtr & c
         new_context->setSetting("use_hedged_requests", Field{false});
     }
 
-    /// Avoid applying reading in order optimization for distinct
-    /// since it can lead to different parallel replicas modes between local and remote replicas.
-    /// It'll be not necessary as soon as we'll send plan to remote replicas
-    new_context->setSetting("optimize_distinct_in_order", Field{false});
-
     return new_context;
 }
 
@@ -683,7 +677,7 @@ void executeQueryWithParallelReplicas(
         plans.emplace_back(std::move(local_plan));
         plans.emplace_back(std::move(remote_plan));
 
-        auto union_step = std::make_unique<UnionStep>(std::move(input_headers));
+        auto union_step = std::make_unique<UnionStep>(std::move(input_headers), /*max_threadsd*/ 0, /*parallel_replicas*/ true);
         query_plan.unitePlans(std::move(union_step), std::move(plans));
     }
     else

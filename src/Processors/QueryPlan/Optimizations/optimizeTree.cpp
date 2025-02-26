@@ -114,30 +114,24 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     }
 }
 
-bool readingFromParallelReplicas(const QueryPlan::Node * input_node)
+const QueryPlan::Node * findParallelReplicasUnion(const QueryPlan::Node * input_node)
 {
-    std::stack<const QueryPlan::Node*> stack;
-    stack.push(input_node);
-    while (!stack.empty())
+    const QueryPlan::Node * node = input_node;
+    while (node)
     {
-        const auto * node = stack.top();
-        stack.pop();
-
-        IQueryPlanStep * step = node->step.get();
-        while (!node->children.empty())
+        if (const auto * union_step = typeid_cast<const UnionStep *>(node->step.get()))
         {
-            for (const auto * child : node->children | std::views::drop(1))
-                stack.push(child);
-
-            step = node->children.front()->step.get();
-            node = node->children.front();
+            if (union_step->parallelReplicas())
+                return node;
         }
 
-        if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step))
-            return true;
+        if (node->children.empty())
+            break;
+
+        node = node->children.front();
     }
 
-    return false;
+    return nullptr;
 }
 
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
@@ -189,13 +183,13 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
             if (distinct_in_order)
             {
-                /// in case of parallel replicas
-                /// avoid applying reading in order optimization for distinct on local replica
-                /// since it will lead to different parallel replicas modes between local and remote replicas
-                /// (InOrder on local replica and Default on remote)
+                /// if Union step was added for parallel replicas then
+                /// avoid applying in-order optimization for local replica
+                /// since it will lead to different parallel replicas modes
+                /// between local and remote nodes
                 auto * distinct = typeid_cast<DistinctStep *>(frame.node->step.get());
                 if (distinct && !distinct->isPreliminary())
-                    distinct_in_order = !readingFromParallelReplicas(frame.node);
+                    distinct_in_order = findParallelReplicasUnion(frame.node) == nullptr;
 
                 if (distinct_in_order)
                     optimizeDistinctInOrder(*frame.node, nodes);

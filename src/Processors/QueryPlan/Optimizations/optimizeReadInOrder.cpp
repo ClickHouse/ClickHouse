@@ -1103,18 +1103,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
     return {};
 }
 
-bool readingFromParallelReplicas(const QueryPlan::Node * node)
-{
-    IQueryPlanStep * step = node->step.get();
-    while (!node->children.empty())
-    {
-        step = node->children.front()->step.get();
-        node = node->children.front();
-    }
-
-    return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step);
-}
-
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
@@ -1133,21 +1121,20 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     bool apply_virtual_row = false;
 
-    if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
+    if (const auto * union_step = typeid_cast<const UnionStep *>(node.children.front()->step.get()))
     {
         auto & union_node = node.children.front();
 
         bool use_buffering = false;
         const SortDescription * max_sort_descr = nullptr;
 
-        for (const auto * child : union_node->children)
+        if (union_step->parallelReplicas())
         {
             /// in case of parallel replicas
             /// avoid applying read-in-order optimization for local replica
             /// since it will lead to different parallel replicas modes
             /// between local and remote nodes
-            if (readingFromParallelReplicas(child))
-                return;
+            return;
         }
 
         std::vector<InputOrderInfoPtr> infos;
