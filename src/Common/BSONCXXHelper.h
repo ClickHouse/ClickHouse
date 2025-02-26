@@ -5,6 +5,7 @@
 #if USE_MONGODB
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
+#include "Columns/ColumnNullable.h"
 
 namespace DB
 {
@@ -23,13 +24,27 @@ using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type)
+static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type, const bool shouldBeOid)
 {
-    switch (type->getTypeId())
+    if (field.isNull())
+        return bsoncxx::types::b_null{};
+
+    auto type_id = type->getTypeId();
+    if (type->isNullable())
+        type_id = typeid_cast<const DataTypeNullable *>(type.get())->getNestedType()->getTypeId();
+
+    switch (type_id)
     {
+        case TypeIndex::Nothing:
+            return bsoncxx::types::b_null{};
         case TypeIndex::String:
+        {
+            if (shouldBeOid)
+                return bsoncxx::oid(field.safeGet<String>());
             return bsoncxx::types::b_string{field.safeGet<String>()};
-        case TypeIndex::UInt8: {
+        }
+        case TypeIndex::UInt8:
+        {
             if (isBool(type))
                 return bsoncxx::types::b_bool{field.safeGet<UInt8>() != 0};
             return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8>())};
@@ -61,14 +76,14 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         case TypeIndex::UUID:
         {
             uint64_t uuid_numbers[2];
-            if constexpr (std::endian::native == std::endian::big)
-            {
-                uuid_numbers[0] = field.safeGet<UUID>().toUnderType().items[0];
-                uuid_numbers[1] = field.safeGet<UUID>().toUnderType().items[1];
-            } else
+            if constexpr (std::endian::native == std::endian::little)
             {
                 uuid_numbers[0] = std::byteswap(field.safeGet<UUID>().toUnderType().items[0]);
                 uuid_numbers[1] = std::byteswap(field.safeGet<UUID>().toUnderType().items[1]);
+            } else
+            {
+                uuid_numbers[0] = field.safeGet<UUID>().toUnderType().items[0];
+                uuid_numbers[1] = field.safeGet<UUID>().toUnderType().items[1];
             }
             return bsoncxx::types::bson_value::value(reinterpret_cast<const uint8_t*>(&uuid_numbers[0]),
                 16, bsoncxx::binary_sub_type::k_uuid);
@@ -76,15 +91,15 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         case TypeIndex::Tuple:
         {
             auto arr = bsoncxx::v_noabi::builder::basic::array();
-            for (const auto & elem : field.safeGet<Tuple &>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldTryOid));
+            for (const auto & elem : field.safeGet<Tuple>())
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldBeOid));
             return arr.view();
         }
         case TypeIndex::Array:
         {
             auto arr = bsoncxx::v_noabi::builder::basic::array();
-            for (const auto & elem : field.safeGet<Array &>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldTryOid));
+            for (const auto & elem : field.safeGet<Array>())
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldBeOid));
             return arr.view();
         }
         default:

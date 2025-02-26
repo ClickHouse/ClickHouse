@@ -2,6 +2,8 @@
 
 #if USE_MONGODB
 #include <memory>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -98,12 +100,13 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     {
         if (named_collection->has("uri"))
         {
-            validateNamedCollection(*named_collection, {"collection"}, {"uri"});
+            validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
             configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
         }
         else
         {
-            validateNamedCollection(*named_collection, {"host", "port", "user", "password", "database", "collection"}, {"options"});
+            validateNamedCollection(*named_collection, {
+                "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
             if (!user.empty())
@@ -116,18 +119,20 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
                                                           named_collection->getOrDefault<String>("options", "")));
         }
         configuration.collection = named_collection->get<String>("collection");
+        if (named_collection->has("oid_columns"))
+            boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
     }
     else
     {
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        if (engine_args.size() == 5 || engine_args.size() == 6)
+        if (engine_args.size() >= 5 && engine_args.size() <= 7)
         {
             configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "collection");
 
             String options;
-            if (engine_args.size() == 6)
+            if (engine_args.size() >= 6)
                 options = checkAndGetLiteralArgument<String>(engine_args[5], "options");
 
             String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
@@ -141,16 +146,22 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
                                                               parsed_host_port.second,
                                                               checkAndGetLiteralArgument<String>(engine_args[1], "database"),
                                                               options));
+            if (engine_args.size() == 7)
+                boost::split(configuration.oid_fields,
+                    checkAndGetLiteralArgument<String>(engine_args[6], "oid_columns"), boost::is_any_of(","));
         }
-        else if (engine_args.size() == 2)
+        else if (engine_args.size() == 2 || engine_args.size() == 3)
         {
             configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
             configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
+            if (engine_args.size() == 3)
+                boost::split(configuration.oid_fields,
+                    checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));
         }
         else
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Storage MongoDB requires 2 or from to 5 to 6 parameters: "
-                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, 'options']) or MongoDB('uri', 'collection').");
+                                "Incorrect number of arguments. Example usage: "
+                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, 'options'] [, 'oid columns']) or MongoDB('uri', 'collection' [, 'oid columns']).");
     }
 
     configuration.checkHosts(context);
@@ -237,7 +248,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
             if (const auto & const_value = value->as<ConstantNode>())
             {
                 auto func_value = BSONCXXHelper::fieldAsBSONValue(const_value->getValue(), const_value->getResultType(),
-                    column->getColumnName() == "_id");
+                    configuration.isOidColumn(column->getColumnName()));
                 if (func_name == "$in" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
                     func_name = "$eq";
                 if (func_name == "$nin" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)

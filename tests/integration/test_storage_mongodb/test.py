@@ -972,19 +972,17 @@ def test_nulls(started_cluster):
     nulls_mongo_table.drop()
 
 
-def test_id(started_cluster):
+def test_oid(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
     db.command("dropAllUsersFromDatabase")
     db.command("createUser", "root", pwd="clickhouse", roles=["readWrite"])
-    id_mongo_table = db["id_table"]
-    inserted_result = id_mongo_table.insert_many(
+    oid_mongo_table = db["oid_table"]
+    inserted_result = oid_mongo_table.insert_many(
         [
             {"key": "oid1"},
             {"key": "oid2"},
             {"key": "oid3"},
-            {"_id": "test_string_id", "key": "string1"},
-            {"_id": 12345, "key": "int1"},
         ]
     )
     ids = inserted_result.inserted_ids
@@ -992,39 +990,63 @@ def test_id(started_cluster):
     node = started_cluster.instances["node"]
     node.query(
         """
-        CREATE OR REPLACE TABLE id_table(
+        CREATE OR REPLACE TABLE oid_table(
         _id  String,
         key  String
-        ) ENGINE = MongoDB('mongo1:27017', 'test', 'id_table', 'root', 'clickhouse')
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'oid_table', 'root', 'clickhouse')
         """
     )
 
-    assert node.query("SELECT COUNT() FROM id_table") == "5\n"
+    assert node.query(f"SELECT COUNT() FROM oid_table") == "3\n"
 
-    assert node.query(f"SELECT key FROM id_table WHERE _id = '{ids[0]}'") == "oid1\n"
-    assert node.query(f"SELECT * FROM id_table WHERE _id = '{ids[2]}'") == f"{ids[2]}\toid3\n"
-    assert node.query(f"SELECT COUNT() FROM id_table WHERE _id != '{ids[0]}'") == "4\n"
+    assert node.query(f"SELECT _id FROM oid_table WHERE _id = '{str(ids[0])}'") == f"{str(ids[0])}\n"
+    assert node.query(f"SELECT key FROM oid_table WHERE _id = '{str(ids[0])}'") == "oid1\n"
+    assert (node.query(f"SELECT key FROM oid_table WHERE _id != '{str(ids[0])}' ORDER BY key") ==
+            "oid2\noid3\n")
+    assert node.query(f"SELECT key FROM oid_table WHERE _id in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid1\noid2\n"
+    assert node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid3\n"
 
-    assert node.query(f"SELECT key FROM id_table WHERE _id in ('{ids[0]}', '{ids[1]}') ORDER BY key") == "oid1\noid2\n"
-    assert node.query(f"SELECT key FROM id_table WHERE _id in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid1\noid2\n"
-    assert node.query(f"SELECT key FROM id_table WHERE _id in ('{ids[2]}') ORDER BY key") == "oid3\n"
-
-    assert node.query(f"SELECT key FROM id_table WHERE _id in ['test_string_id', '12345'] ORDER BY key") == "string1\n"
-    assert node.query(f"SELECT key FROM id_table WHERE _id = 'test_string_id' ORDER BY key") == "string1\n"
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE _id = 'not-oid'")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE _id != 'not-oid'")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE _id = 1234567")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE _id != 1234567")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id in ['{ids[0]}', 'not-oid']")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', 'not-oid']")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id in ['nope', 'not-oid']")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id not in ['nope', 'not-oid']")
 
     node.query(
         """
-        CREATE OR REPLACE TABLE id_table(
-        _id  Int,
+        CREATE OR REPLACE TABLE oid_table(
+        _id  String,
         key  String
-        ) ENGINE = MongoDB('mongo1:27017', 'test', 'id_table', 'root', 'clickhouse')
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'oid_table', 'root', 'clickhouse', '', 'key')
         """
     )
-    assert node.query(f"SELECT key FROM id_table WHERE _id in [12345, 56789] ORDER BY key") == "int1\n"
-    assert node.query(f"SELECT key FROM id_table WHERE _id = 12345 ORDER BY key") == "int1\n"
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
 
-    node.query("DROP TABLE id_table")
-    id_mongo_table.drop()
+    node.query(
+        """
+        CREATE OR REPLACE TABLE oid_table(
+        _id  String,
+        key  String
+        ) ENGINE = MongoDB('mongodb://mongo1:27017/test', 'oid_table', 'key')
+        """
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
+
+    node.query("DROP TABLE oid_table")
+    oid_mongo_table.drop()
 
 
 def test_uuid(started_cluster):

@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name1 [type1],
     name2 [type2],
     ...
-) ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
+) ENGINE = MongoDB(host:port, database, collection, user, password [, options] [, oid_columns]);
 ```
 
 **Engine Parameters**
@@ -41,6 +41,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 - `options` — MongoDB connection string options (optional parameter).
 
+- `oid_columns` - List of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
+
 :::tip
 If you are using the MongoDB Atlas cloud offering connection url can be obtained from 'Atlas SQL' option.
 Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future releases.
@@ -49,7 +51,7 @@ Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future r
 Also, you can simply pass a URI:
 
 ``` sql
-ENGINE = MongoDB(uri, collection);
+ENGINE = MongoDB(uri, collection [, oid_columns]);
 ```
 
 **Engine Parameters**
@@ -57,6 +59,8 @@ ENGINE = MongoDB(uri, collection);
 - `uri` — MongoDB server's connection URI
 
 - `collection` — Remote collection name.
+
+- `oid_columns` - List of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 
 ## Types mappings
@@ -76,15 +80,28 @@ ENGINE = MongoDB(uri, collection);
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
  
-## OID and _id in WHERE
+### OID
+If you want a `String` to be treated as an `oid` in the WHERE clause, just put column's name in the last argument.
+It may be needed when querying a record by the `_id` column, which is by default has `oid` type in MongoDB.
+If the `_id` field in the table has other type, for example `uuid`, you need to specify empty `oid_columns`, because default value for this parameter is `_id`.
 
-According to the [mapping table](#types-mappings) *oid* can be parsed only to the *String* type, like any other field,
-so there is no way to determine whether the field is *oid* or a *string*, and if the field is *oid*,
-but treated as a *string* in a filter, the condition will always fail.
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('mongodb://user:pass@host/db', 'sample_oid', '_id,another_oid_column');
+```
 
-If *\_id* in a filter is a *String* and has correct format, it will be treated as *oid* in the query, otherwise,
-it will be treated as its original type.
-Other fields that have *oid* type will be successfully parsed to *String*, but shouldn't be used in WHERE clauses.
+or
+
+```sql
+CREATE TABLE sample_oid
+(
+    _id String,
+    another_oid_column String
+) ENGINE = MongoDB('host', 'db', 'sample_oid', 'user', 'pass', '', '_id,another_oid_column');
+```
 
 ## Supported clauses
 
