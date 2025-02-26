@@ -726,7 +726,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
 {
     const size_t funcs_size = CHTableFuncs.size();
-    std::uniform_int_distribution<uint32_t> next_dist(0, funcs_size - 1);
+    std::uniform_int_distribution<size_t> next_dist(0, funcs_size - 1);
     const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
     const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
     uint32_t generated_params = 0;

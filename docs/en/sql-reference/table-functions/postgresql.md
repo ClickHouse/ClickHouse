@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/postgresql
 sidebar_position: 160
 sidebar_label: postgresql
+title: "postgresql"
+description: "Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server."
 ---
 
-# postgresql
+# postgresql Table Function
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
