@@ -89,7 +89,7 @@ public:
     /// removeAllTablesMetadataForTruncateDatabase helps remove any leftover table metadata.
     /// It's used to clean up table metadata after dropping tables in TRUNCATE DATABASE query
     /// It has some additional guard rails in place, but mainly, it only allows query kind ==
-    /// truncate. TRUNCATE DATABASE is special as it tries to drop tables in a database but keep
+    /// drop. TRUNCATE DATABASE is special as it tries to drop tables in a database but keep
     /// the database itself. DatabaseReplicated::dropTable expects a valid Zookeeper transaction
     /// to be present in the current context. To work around this limitation but in a simple way,
     /// this function can be used to clean any additional metadata left in Zookeeper.

@@ -406,17 +406,18 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
 
+    ASTDropQuery query_for_table;
+    query_for_table.kind = query.kind;
+    // For truncate operation on database, drop the tables
+    if (truncate)
+        query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
+
     if (database->shouldBeEmptyOnDetach())
     {
         /// Cancel restarting replicas in that database, wait for remaining RESTART queries to finish.
         /// So it will not startup tables concurrently with the flushAndPrepareForShutdown call below.
         auto restart_replica_lock = DatabaseCatalog::instance().getLockForDropDatabase(database_name);
 
-        ASTDropQuery query_for_table;
-        query_for_table.kind = query.kind;
-        // For truncate operation on database, drop the tables
-        if (truncate)
-            query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
         query_for_table.if_exists = true;
         query_for_table.if_empty = false;
         query_for_table.setDatabase(database_name);
@@ -485,14 +486,14 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// for table context. For DROP DATABASE queries this doesn't really matter, since the DATABASE is erased and table metadata
     /// is eventually cleaned up. However, for TRUNCATE DATABASE operation on a replicated database, clean up the metadata using
     /// the removeAllTablesMetadataForTruncateDatabase function. There are additional guard rails in this method to only allow this
-    /// for TRUNCATE operations only. There might be a better way to do this, but this seems to be the simplest and it makes sense
+    /// for drop table operations only. There might be a better way to do this, but this seems to be the simplest and it makes sense
     /// for the logic to stay inside DatabaseReplicated.
-    const auto db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
+    auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
     if (truncate && db_replicated)
     {
         try
         {
-            db_replicated->removeAllTablesMetadataForTruncateDatabase(query);
+            db_replicated->removeAllTablesMetadataForTruncateDatabase(query_for_table);
         }
         catch (...)
         {

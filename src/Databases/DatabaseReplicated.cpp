@@ -1640,7 +1640,7 @@ void DatabaseReplicated::shutdown()
 
 void DatabaseReplicated::removeAllTablesMetadataForTruncateDatabase(const ASTDropQuery & query)
 {
-    if (query.kind == ASTDropQuery::Kind::Truncate)
+    if (query.kind == ASTDropQuery::Kind::Drop)
     {
         waitDatabaseStarted();
 
