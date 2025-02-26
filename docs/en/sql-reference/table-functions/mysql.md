@@ -2,11 +2,13 @@
 slug: /sql-reference/table-functions/mysql
 sidebar_position: 137
 sidebar_label: mysql
+title: "mysql"
+description: "Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server."
 ---
 
-# mysql
+# mysql Table Function
 
-Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote MySQL server.
+Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server.
 
 **Syntax**
 
