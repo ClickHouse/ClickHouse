@@ -91,7 +91,6 @@ class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMe
 {
 private:
     std::filesystem::path path;
-    size_t size;
     InMemoryDirectoryPathMap & path_map;
     ObjectStoragePtr object_storage;
 
@@ -99,7 +98,7 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
-        const std::string & path_, size_t size_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
+        const std::string & path, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
 
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;

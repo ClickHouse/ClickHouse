@@ -266,8 +266,8 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo(std::un
 }
 
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
-    const std::string & path_, size_t size_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
-    : path(path_), size(size_), path_map(path_map_), object_storage(object_storage_)
+    const std::string & path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_)
+    : path(path_), path_map(path_map_), object_storage(object_storage_)
 {
 }
 
@@ -275,7 +275,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute(std::uniqu
 {
     LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
 
-    if (path_map.addFile(path, size))
+    if (path_map.addFile(path, 0))
     {
         written = true;
     }
@@ -327,7 +327,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
     {
         /// Some paths (e.g., clickhouse_access_check) may not have parent directories.
         LOG_TRACE(
-            getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"),
+            getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"),
             "Parent directory does not exist, skipping path {}",
             path);
     }
