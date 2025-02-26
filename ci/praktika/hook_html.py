@@ -59,10 +59,16 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        if os.environ["DISABLE_CI_MERGE_COMMIT"] == "1":
-            commit_message = Shell.get_output(f"git log -1 --pretty=%s {sha}", verbose=True)
+        # TODO: fetch and store commit message in RunConfig (to be available from every job) and use it here
+        if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
+            commit_message = Shell.get_output(
+                f"git log -1 --pretty=%s {sha}", verbose=True
+            )
         else:
-            commit_message = Shell.get_output(f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'", verbose=True)
+            commit_message = Shell.get_output(
+                f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'",
+                verbose=True,
+            )
         commits.append(GitCommit(sha=sha, message=commit_message))
         commits = commits[
             -20:

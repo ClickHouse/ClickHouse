@@ -1037,8 +1037,8 @@
             const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
             if (pr_title) addInfoLineToStatus(pr_title);
             if (git_branch) addInfoLineToStatus(git_branch);
-            addInfoLineToStatus(current_sha);
         }
+        addInfoLineToStatus(current_sha);
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
