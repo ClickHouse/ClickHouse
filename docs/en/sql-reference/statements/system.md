@@ -41,6 +41,22 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 SELECT name, status FROM system.dictionaries;
 ```
 
+## STOP RELOAD DICTIONARIES {#stop-reload-dictionaries}
+
+``` sql
+SYSTEM STOP RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+Prevents any reloading or initial loading of dictionaries.
+
+## START RELOAD DICTIONARIES {#start-reload-dictionaries}
+
+``` sql
+SYSTEM START RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+Reverses the effect of SYSTEM STOP RELOAD DICTIONARIES, allowing dictionaries to be reloaded.
+
 ## RELOAD MODELS {#reload-models}
 
 :::note
