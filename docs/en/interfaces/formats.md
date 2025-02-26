@@ -339,7 +339,7 @@ See [PrettySpace](/interfaces/formats/Pretty/PrettySpace)
 
 ### PrettySpaceNoEscapes {#prettyspacenoescapes}
 
-See [PrettySpaceNoEscapes](/interfaces/formats/Pretty/PrettySpaceNoEscapes)
+See [PrettySpaceNoEscapes](/interfaces/formats/PrettySpaceNoEscapes)
 
 ### PrettySpaceMonoBlock {#prettyspacemonoblock}
 
