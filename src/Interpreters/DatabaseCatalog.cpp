@@ -1448,8 +1448,10 @@ void DatabaseCatalog::addDependencies(
     if (!new_loading_dependencies.empty())
         loading_dependencies.addDependencies(table_id, new_loading_dependencies);
     if (!new_view_dependencies.empty())
+    {
         for (const auto & new_view_dependency : new_view_dependencies)
             view_dependencies.addDependency(new_view_dependency, table_id);
+    }
 }
 
 void DatabaseCatalog::addDependencies(
@@ -1469,9 +1471,7 @@ void DatabaseCatalog::addDependencies(
     if (!new_view_dependencies.empty())
     {
         for (const auto & new_view_dependency : new_view_dependencies)
-        {
             view_dependencies.addDependency(StorageID{new_view_dependency}, StorageID{table_name});
-        }
     }
     view_dependencies.log();
 }
@@ -1486,8 +1486,10 @@ void DatabaseCatalog::addDependencies(
     loading_dependencies.mergeWith(new_loading_dependencies);
 
     for (auto & table_id : new_view_dependencies.getTables())
+    {
         for (auto & dependency : new_view_dependencies.getDependencies(table_id))
             view_dependencies.addDependency(table_id, dependency);
+    }
 }
 
 std::vector<StorageID> DatabaseCatalog::getReferentialDependencies(const StorageID & table_id) const

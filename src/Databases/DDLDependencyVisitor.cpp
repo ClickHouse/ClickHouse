@@ -148,7 +148,6 @@ namespace
             {
                 if (create.isView())
                 {
-
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();

@@ -110,8 +110,10 @@ LoadTaskPtrs TablesLoader::startupTablesAsync(LoadJobSet startup_after)
     std::unordered_map<String, LoadTaskPtrs> startup_database; /// database name -> all its tables startup tasks
     TablesDependencyGraph all_startup_dependencies("AllStartupMvDependencies");
     all_startup_dependencies = all_loading_dependencies;
-    // all_startup_dependencies.mergeWith(mv_to_dependencies);
 
+    /// CREATE MATERIALIZED VIEW mv TO tgt AS SELECT ... FROM src
+    /// introduces two dependencies:  mv depends on tgt (mv_to_dependencies), src depends on mv (mv_from_dependencies)
+    /// src table must be started up when mv is ready, otherwise we lose data inserted in src
     for (const auto & table_id : mv_to_dependencies.getTables())
     {
         auto storage_id_vector = mv_to_dependencies.getDependencies(table_id);
