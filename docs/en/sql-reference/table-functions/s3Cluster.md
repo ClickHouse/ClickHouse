@@ -8,7 +8,7 @@ description: "An extension to the s3 table function, which allows processing fil
 
 # s3Cluster Table Function
 
-This is an extension to the [s3](/docs/sql-reference/table-functions/s3.md) table function.
+This is an extension to the [s3](sql-reference/table-functions/s3.md) table function.
 
 Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) in parallel with many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in S3 file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
@@ -31,7 +31,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 - `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 - `headers` - Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/docs/sql-reference/table-functions/s3#accessing-requester-pays-buckets) for example of use.
 
-Arguments can also be passed using [named collections](/docs/operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
  - `filename` — appended to the url if specified.
  - `use_environment_credentials` — enabled by default, allows passing extra parameters using environment variables `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`, `AWS_CONTAINER_CREDENTIALS_FULL_URI`, `AWS_CONTAINER_AUTHORIZATION_TOKEN`, `AWS_EC2_METADATA_DISABLED`.
@@ -63,7 +63,7 @@ Count the total amount of rows in all files in the cluster `cluster_simple`:
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-For production use cases, it is recommended to use [named collections](/docs/operations/named-collections.md). Here is the example:
+For production use cases, it is recommended to use [named collections](operations/named-collections.md). Here is the example:
 ``` sql
 
 CREATE NAMED COLLECTION creds AS

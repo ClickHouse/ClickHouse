@@ -1009,18 +1009,18 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, group_by_use_nulls, false, R"(
-Changes the way the [GROUP BY clause](/docs/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+Changes the way the [GROUP BY clause](/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
 When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
 Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
 
 Possible values:
 
 - 0 — The default value for the aggregation key type is used to produce missing values.
-- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/sql-reference/syntax.md) for rows that didn't use it.
+- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/sql-reference/syntax.md) for rows that didn't use it.
 
 See also:
 
-- [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/en/sql-reference/statements/select/group-by.md)
 )", 0) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
@@ -1680,7 +1680,7 @@ Possible values:
 
 **See Also**
 
-- [max_concurrent_queries](/docs/en/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
+- [max_concurrent_queries](/en/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
 )", 0) \
     DECLARE(UInt64, max_concurrent_queries_for_user, 0, R"(
 The maximum number of simultaneously processed queries per user.
@@ -2572,7 +2572,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity.md/#max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -3241,7 +3241,7 @@ Restriction on deleting tables in query time. The value 0 means that you can del
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
@@ -3250,7 +3250,7 @@ Restriction on dropping partitions in query time. The value 0 means that you can
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
 :::
 )", 0) \
     \
