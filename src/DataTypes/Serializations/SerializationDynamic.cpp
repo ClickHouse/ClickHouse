@@ -644,6 +644,8 @@ static void serializeTextImpl(
     /// Check if this row has value in shared variant. In this case we should first deserialize it from binary format.
     if (variant_column.globalDiscriminatorAt(row_num) == dynamic_column.getSharedVariantDiscriminator())
     {
+        if (dynamic_column.getSharedVariant().size() < variant_column.offsetAt(row_num))
+            dynamic_column.checkConsistency();
         auto value = dynamic_column.getSharedVariant().getDataAt(variant_column.offsetAt(row_num));
         ReadBufferFromMemory buf(value.data, value.size);
         auto variant_type = decodeDataType(buf);

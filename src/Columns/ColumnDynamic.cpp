@@ -15,6 +15,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -1419,6 +1420,101 @@ void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map
 void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
     variant_column_ptr->applyNegatedNullMap(null_map);
+}
+
+String ColumnDynamic::VariantInfo::dump() const
+{
+    WriteBufferFromOwnString wb;
+    wb << "Variant type: " << variant_type->getName() << "\n";
+    wb << "Variant name: " << variant_name << "\n";
+    wb << "Variant names: [";
+    bool first = true;
+    for (const auto & name : variant_names)
+    {
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+        wb << name;
+    }
+
+    wb << "]\n";
+
+    wb << "Variant name to global discriminator: {";
+    first = true;
+    for (const auto & [name, discr] : variant_name_to_discriminator)
+    {
+        if (first)
+            first = false;
+        else
+            wb << ", ";
+        wb << name << ": " << discr;
+    }
+    wb << "}\n";
+
+    return wb.str();
+}
+
+void ColumnDynamic::checkConsistency() const
+{
+    /// First check consistency of variant_info.
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*variant_info.variant_type);
+    const auto & variant_types = variant_type.getVariants();
+    if (variant_types.size() != variant_info.variant_names.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant names inside VariantInfo doesn't match number of variants in Variant type: {}", variant_info.dump());
+    if (variant_types.size() != variant_info.variant_name_to_discriminator.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of variant names to discriminators map inside VariantInfo doesn't match number of variants in Variant type: {}", variant_info.dump());
+    for (size_t i = 0; i != variant_types.size(); ++i)
+    {
+        if (variant_info.variant_names[i] != variant_types[i]->getName())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant name ({}) from the type doesn't match variant name from VariantInfo ({}): {}", variant_types[i]->getName(), variant_info.variant_names[i], variant_info.dump());
+        auto it = variant_info.variant_name_to_discriminator.find(variant_info.variant_names[i]);
+        if (it ==  variant_info.variant_name_to_discriminator.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant names to discriminators map doesn't have variant {}: {}", variant_info.variant_names[i], variant_info.dump());
+
+        if (it->second != i)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Discriminator {} of variant {} must be {}: {}", UInt32(it->second), variant_info.variant_names[i], i, variant_info.dump());
+    }
+
+    auto shared_variant_discr = getSharedVariantDiscriminator();
+    if (variant_info.variant_names[shared_variant_discr] != getSharedVariantTypeName())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Shared variant discriminator ({}) points to a different variant ({}): {}", UInt32(shared_variant_discr), variant_info.variant_names[shared_variant_discr], variant_info.dump());
+
+    if (variant_column_ptr != assert_cast<const ColumnVariant *>(variant_column.get()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pointer to column variant is invalid");
+
+    if (variant_types.size() != variant_column_ptr->getNumVariants())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Number of variants in ColumnVariant ({}) doesn't match number of variants from Variant type: {}", variant_column_ptr->getName(), variant_info.dump());
+
+    for (size_t i = 0; i != variant_types.size(); ++i)
+    {
+        if (variant_types[i]->createColumn()->getName() != variant_column_ptr->getVariantByGlobalDiscriminator(i).getName())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Variant column ({}) doesn't match the variant type ({}) at discriminator {}: {}", variant_column_ptr->getVariantByGlobalDiscriminator(i).getName(), variant_types[i]->getName(), i, variant_info.dump());
+    }
+
+    const auto & local_discriminators = variant_column_ptr->getLocalDiscriminators();
+    const auto & offsets = variant_column_ptr->getOffsets();
+    const auto & variants = variant_column_ptr->getVariants();
+    if (local_discriminators.size() != offsets.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of discriminators ({}) doesn't match size of offsets ({})", local_discriminators.size(), offsets.size());
+
+    std::vector<size_t> current_offsets(variants.size(), 0);
+    for (size_t i = 0; i != local_discriminators.size(); ++i)
+    {
+        auto local_discr = local_discriminators[i];
+        if (local_discr != ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            if (current_offsets[local_discr] != offsets[i])
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Offset {} at row {} of variant {} ({}) must be {}: {}", offsets[i], i, UInt32(variant_column_ptr->globalDiscriminatorByLocal(local_discr)), variant_info.variant_names[variant_column_ptr->globalDiscriminatorByLocal(local_discr)], current_offsets[local_discr], variant_info.dump());
+            ++current_offsets[local_discr];
+        }
+    }
+
+    for (size_t i = 0; i != variants.size(); ++i)
+    {
+        if (variants[i]->size() != current_offsets[i])
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size {} of variant {} ({}) must be {}: {}", variants[i]->size(), UInt32(variant_column_ptr->globalDiscriminatorByLocal(i)), variant_info.variant_names[variant_column_ptr->globalDiscriminatorByLocal(i)], current_offsets[i], variant_info.dump());
+    }
 }
 
 }

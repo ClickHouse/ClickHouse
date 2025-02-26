@@ -75,6 +75,8 @@ private:
         /// Mapping (variant name) -> (global discriminator).
         /// It's used during variant extension.
         std::unordered_map<String, UInt8> variant_name_to_discriminator;
+
+        String dump() const;
     };
 
     explicit ColumnDynamic(size_t max_dynamic_types_);
@@ -454,6 +456,8 @@ public:
     String getTypeNameAt(size_t row_num) const;
     DataTypePtr getTypeAt(size_t row_num) const;
     void getAllTypeNamesInto(std::unordered_set<String> & names) const;
+
+    void checkConsistency() const;
 
 private:
     void createVariantInfo(const DataTypePtr & variant_type);
