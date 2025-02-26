@@ -1,6 +1,6 @@
 ---
 description: "Overview of what system tables are and why they are useful."
-slug: /en/operations/system-tables/overview
+slug: /operations/system-tables/overview
 sidebar_position: 52
 sidebar_label: Overview
 title: "System Tables Overview"
