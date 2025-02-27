@@ -1104,6 +1104,11 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"allow_feature_tier",
                 {std::to_string(context->getAccessControl().getAllowTierSettings()), ChangeableWithoutRestart::Yes}},
+
+            {"max_remote_read_network_bandwidth_for_server",
+             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_remote_write_network_bandwidth_for_server",
+             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
