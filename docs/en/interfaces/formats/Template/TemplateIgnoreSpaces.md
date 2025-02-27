@@ -25,7 +25,7 @@ This format is suitable only for input.
 
 ## Example Usage {#example-usage}
 
-The following request can be used for inserting data from its output example of format [JSON](/docs/interfaces/formats/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/interfaces/formats/JSON):
 
 ```sql
 INSERT INTO table_name 

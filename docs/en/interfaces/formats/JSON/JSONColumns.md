@@ -38,5 +38,5 @@ Example:
 
 ## Format Settings {#format-settings}
 
-During import, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/docs/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
-Columns that are not present in the block will be filled with default values (you can use the [`input_format_defaults_for_omitted_fields`](/docs/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+During import, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+Columns that are not present in the block will be filled with default values (you can use the [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)

@@ -8,7 +8,7 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Contains information about and status of [scheduling nodes](/docs/operations/workload-scheduling.md/#hierarchy) residing on the local server.
+Contains information about and status of [scheduling nodes](/operations/workload-scheduling.md/#hierarchy) residing on the local server.
 This table can be used for monitoring. The table contains a row for every scheduling node.
 
 Example:

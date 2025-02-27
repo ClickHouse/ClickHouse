@@ -21,7 +21,7 @@ A full grid of the table is drawn, and each row occupies two lines in the termin
 Each result block is output as a separate table. 
 This is necessary so that blocks can be output without buffering results (buffering would be necessary to pre-calculate the visible width of all the values).
 
-[NULL](/docs/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[NULL](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 ## Example Usage {#example-usage}
 

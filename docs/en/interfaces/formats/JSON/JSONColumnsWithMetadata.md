@@ -62,7 +62,7 @@ Example:
 }
 ```
 
-For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/docs/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
+For the `JSONColumnsWithMetadata` input format, if setting [`input_format_json_validate_types_from_metadata`](/operations/settings/settings-formats.md/#input_format_json_validate_types_from_metadata) is set to `1`,
 the types from metadata in input data will be compared with the types of the corresponding columns from the table.
 
 ## Format Settings {#format-settings}
