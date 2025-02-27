@@ -14,7 +14,7 @@ import SystemLogParameters from '@site/docs/operations/server-configuration-para
 
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/operations/configuration-files).
 
-Other settings are described in the "[Settings](../../operations/settings/overview#session-settings-intro)" section.
+Other settings are described in the "[Settings](/operations/settings/overview)" section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
