@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about session settings for current user."
 slug: /operations/system-tables/settings
-title: "settings"
+title: "system.settings"
 keywords: ["system table", "settings"]
 ---
 
