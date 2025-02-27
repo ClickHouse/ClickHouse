@@ -1702,6 +1702,61 @@ def test_schema_inference(started_cluster, format_version, storage_type):
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_explanation(started_cluster, format_version, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    for format in ["Parquet", "ORC", "Avro"]:
+        TABLE_NAME = (
+            "test_explanation_"
+            + format
+            + "_"
+            + format_version
+            + "_"
+            + storage_type
+            + "_"
+            + get_uuid_str()
+        )
+
+        # Types time, timestamptz, fixed are not supported in Spark.
+        spark.sql(
+            f"CREATE TABLE {TABLE_NAME} (x int) USING iceberg TBLPROPERTIES ('format-version' = '{format_version}', 'write.format.default' = '{format}')"
+        )
+
+        spark.sql(f"insert into {TABLE_NAME} select 42")
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+
+        create_iceberg_table(
+            storage_type, instance, TABLE_NAME, started_cluster, format=format
+        )
+
+        res = instance.query(f"EXPLAIN SELECT * FROM {TABLE_NAME}")
+        res = list(
+            map(
+                lambda x: x.split("\t"),
+                filter(lambda x: len(x) > 0, res.strip().split("\n")),
+            )
+        )
+
+        expected = [
+            [
+                "Expression ((Project names + (Projection + Change column names to column identifiers)))"
+            ],
+            [f"  Iceberg{storage_type.title()}(default.{TABLE_NAME})Source"],
+        ]
+
+        assert res == expected
+
+        # Check that we can parse data
+        instance.query(f"SELECT * FROM {TABLE_NAME}")
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_metadata_file_selection(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -1911,4 +1966,197 @@ def test_filesystem_cache(started_cluster, storage_type):
         instance.query(
             f"SELECT ProfileEvents['S3GetObject'] FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
         )
+    )
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_partition_pruning(started_cluster, storage_type):
+    if is_arm() and storage_type == "hdfs":
+        pytest.skip("Disabled test IcebergHDFS for aarch64")
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME} (
+                tag INT,
+                date DATE,
+                date2 DATE,
+                ts TIMESTAMP,
+                ts2 TIMESTAMP,
+                time_struct struct<a : DATE, b : TIMESTAMP>
+
+            )
+            USING iceberg
+            PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2))
+            OPTIONS('format-version'='2')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+        INSERT INTO {TABLE_NAME} VALUES
+        (1, DATE '2024-01-20', DATE '2024-01-20',
+        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
+        (2, DATE '2024-01-30', DATE '2024-01-30',
+        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00', named_struct('a', DATE '2024-03-20', 'b', TIMESTAMP '2024-03-20 14:00:00')),
+        (1, DATE '2024-02-20', DATE '2024-02-20',
+        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
+        (2, DATE '2025-01-20', DATE '2025-01-20',
+        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00', named_struct('a', DATE '2024-04-30', 'b', TIMESTAMP '2024-04-30 14:00:00'));
+    """
+    )
+
+    creation_expression = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
+    )
+
+    def check_validity_and_get_prunned_files(select_expression):
+        query_id1 = f"{TABLE_NAME}-{uuid.uuid4()}"
+        query_id2 = f"{TABLE_NAME}-{uuid.uuid4()}"
+
+        data1 = instance.query(
+            select_expression,
+            query_id=query_id1,
+            settings={"use_iceberg_partition_pruning": 0},
+        )
+        data1 = list(
+            map(
+                lambda x: x.split("\t"),
+                filter(lambda x: len(x) > 0, data1.strip().split("\n")),
+            )
+        )
+
+        data2 = instance.query(
+            select_expression,
+            query_id=query_id2,
+            settings={"use_iceberg_partition_pruning": 1},
+        )
+        data2 = list(
+            map(
+                lambda x: x.split("\t"),
+                filter(lambda x: len(x) > 0, data2.strip().split("\n")),
+            )
+        )
+
+        assert data1 == data2
+
+        instance.query("SYSTEM FLUSH LOGS")
+
+        print(
+            "Unprunned: ",
+            instance.query(
+                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+            ),
+        )
+        print(
+            "Prunned: ",
+            instance.query(
+                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+            ),
+        )
+
+        assert 0 == int(
+            instance.query(
+                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id1}' AND type = 'QueryFinish'"
+            )
+        )
+        return int(
+            instance.query(
+                f"SELECT ProfileEvents['IcebergPartitionPrunnedFiles'] FROM system.query_log WHERE query_id = '{query_id2}' AND type = 'QueryFinish'"
+            )
+        )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} ORDER BY ALL"
+        )
+        == 0
+    )
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE date <= '2024-01-25' ORDER BY ALL"
+        )
+        == 3
+    )
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE date2 <= '2024-01-25' ORDER BY ALL"
+        )
+        == 1
+    )
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE ts <= timestamp('2024-03-20 14:00:00.000000') ORDER BY ALL"
+        )
+        == 3
+    )
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE ts2 <= timestamp('2024-03-20 14:00:00.000000') ORDER BY ALL"
+        )
+        == 1
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE tag == 1 ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
+        )
+        == 2
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE date3 <= '2024-01-25' ORDER BY ALL"
+        )
+        == 3
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN tag TYPE BIGINT")
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE tag <= 1 ORDER BY ALL"
+        )
+        == 2
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ADD PARTITION FIELD time_struct.a")
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
+        )
+        == 0
+    )
+
+    execute_spark_query(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'))"
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE time_struct.a <= '2024-02-01' ORDER BY ALL"
+        )
+        == 1
     )

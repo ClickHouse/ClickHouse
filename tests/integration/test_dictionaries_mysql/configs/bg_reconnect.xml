@@ -1,3 +1,3 @@
 <clickhouse>
-    <bg_reconnect_mysql_dict_interval>1500</bg_reconnect_mysql_dict_interval>
+    <dictionary_background_reconnect_interval>1500</dictionary_background_reconnect_interval>
 </clickhouse>

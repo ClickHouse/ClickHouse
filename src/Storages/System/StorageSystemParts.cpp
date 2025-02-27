@@ -33,8 +33,12 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
         return "Waiting for covered parts to be removed first";
-    case DB::DataPartRemovalState::REMOVED:
+    case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
+    case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
+        return "Part was selected to be removed but then it had been rolled back. The remove will be retried";
+    case DB::DataPartRemovalState::REMOVE_RETRY:
+        return "Retry to remove part";
     }
 }
 
@@ -161,11 +165,7 @@ void StorageSystemParts::processNextStorage(
         size_t src_index = 0;
         size_t res_index = 0;
         if (columns_mask[src_index++])
-        {
-            WriteBufferFromOwnString out;
-            part->partition.serializeText(*info.data, out, format_settings);
-            columns[res_index++]->insert(out.str());
-        }
+            columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])

@@ -42,7 +42,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
     std::exception_ptr saved_exception;
 
-    bool retryable_error = false;
+    bool need_to_save_exception = true;
     try
     {
         /// We don't have any backoff for failed entries
@@ -58,19 +58,21 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                retryable_error = true;
+                print_exception = false;
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                retryable_error = true;
+                print_exception = false;
+                need_to_save_exception = false;
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                retryable_error = true;
+                print_exception = false;
+                need_to_save_exception = false;
                 storage.cleanup_thread.wakeup();
             }
             else
@@ -93,7 +95,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         saved_exception = std::current_exception();
     }
 
-    if (!retryable_error && saved_exception)
+    if (need_to_save_exception && saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
 
@@ -131,9 +133,6 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         }
     }
 
-    if (retryable_error)
-        print_exception = false;
-
     if (saved_exception)
         std::rethrow_exception(saved_exception);
 
@@ -145,7 +144,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group);
+        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
 
     auto remove_processed_entry = [&] () -> bool
     {

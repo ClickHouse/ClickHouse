@@ -6,6 +6,9 @@
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
+
+#include "SchemaProcessor.h"
 
 namespace Iceberg
 {
@@ -43,10 +46,18 @@ public:
         Int32 format_version_,
         const String & common_path,
         const DB::FormatSettings & format_settings,
-        Int32 schema_id_);
+        Int32 schema_id_,
+        const DB::IcebergSchemaProcessor & schema_processor,
+        Int64 inherited_sequence_number);
 
     Int32 schema_id;
-    std::vector<DataFileEntry> data_files;
+
+
+    // Size - number of supported partition columns
+    std::vector<PartitionColumnInfo> partition_column_infos;
+
+    // Size - number of files
+    std::vector<ManifestFileEntry> files;
 };
 
 }

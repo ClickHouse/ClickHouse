@@ -1,8 +1,8 @@
 ---
-slug: /en/operations/external-authenticators/http
+slug: /operations/external-authenticators/http
 title: "HTTP"
 ---
-import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
+import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 
@@ -74,7 +74,7 @@ Note that HTTP authentication cannot be used alongside with any other authentica
 
 ### Enabling HTTP authentication using SQL {#enabling-http-auth-using-sql}
 
-When [SQL-driven Access Control and Account Management](/docs/en/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'

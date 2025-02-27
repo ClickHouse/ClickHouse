@@ -1,7 +1,9 @@
 ---
 sidebar_label: "Distributed"
 sidebar_position: 10
-slug: /en/engines/table-engines/special/distributed
+title: "Distributed Table Engine"
+description: "Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any."
+slug: /engines/table-engines/special/distributed
 ---
 
 # Distributed Table Engine
@@ -32,21 +34,21 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Distributed Parameters
+### Distributed Parameters {#distributed-parameters}
 
-#### cluster
+#### cluster {#cluster}
 
-`cluster` - the cluster name in the server’s config file
+`cluster` - the cluster name in the server's config file
 
-#### database
+#### database {#database}
 
 `database` - the name of a remote database
 
-#### table
+#### table {#table}
 
 `table` - the name of a remote table
 
-#### sharding_key
+#### sharding_key {#sharding_key}
 
 `sharding_key` - (optionally) sharding key
 
@@ -55,7 +57,7 @@ Specifying the `sharding_key` is necessary for the following:
 - For `INSERTs` into a distributed table (as the table engine needs the `sharding_key` to determine how to split the data). However, if `insert_distributed_one_random_shard` setting is enabled, then `INSERTs` do not need the sharding key.
 - For use with `optimize_skip_unused_shards` as the `sharding_key` is necessary to determine what shards should be queried
 
-#### policy_name
+#### policy_name {#policy_name}
 
 `policy_name` - (optionally) policy name, it will be used to store temporary files for background send
 
@@ -64,49 +66,49 @@ Specifying the `sharding_key` is necessary for the following:
  - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-### Distributed Settings
+### Distributed Settings {#distributed-settings}
 
-#### fsync_after_insert
+#### fsync_after_insert {#fsync_after_insert}
 
 `fsync_after_insert` - do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-#### fsync_directories
+#### fsync_directories {#fsync_directories}
 
 `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).
 
-#### skip_unavailable_shards
+#### skip_unavailable_shards {#skip_unavailable_shards}
 
 `skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard. Default false.
 
-#### bytes_to_throw_insert
+#### bytes_to_throw_insert {#bytes_to_throw_insert}
 
 `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for background INSERT, an exception will be thrown. 0 - do not throw. Default 0.
 
-#### bytes_to_delay_insert
+#### bytes_to_delay_insert {#bytes_to_delay_insert}
 
 `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay. Default 0.
 
-#### max_delay_to_insert
+#### max_delay_to_insert {#max_delay_to_insert}
 
 `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send. Default 60.
 
-#### background_insert_batch
+#### background_insert_batch {#background_insert_batch}
 
 `background_insert_batch` - same as [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)
 
-#### background_insert_split_batch_on_failure
+#### background_insert_split_batch_on_failure {#background_insert_split_batch_on_failure}
 
 `background_insert_split_batch_on_failure` - same as [distributed_background_insert_split_batch_on_failure](../../../operations/settings/settings.md#distributed_background_insert_split_batch_on_failure)
 
-#### background_insert_sleep_time_ms
+#### background_insert_sleep_time_ms {#background_insert_sleep_time_ms}
 
 `background_insert_sleep_time_ms` - same as [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)
 
-#### background_insert_max_sleep_time_ms
+#### background_insert_max_sleep_time_ms {#background_insert_max_sleep_time_ms}
 
 `background_insert_max_sleep_time_ms` - same as [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
 
-#### flush_on_detach
+#### flush_on_detach {#flush_on_detach}
 
 `flush_on_detach` - Flush data to remote nodes on DETACH/DROP/server shutdown. Default true.
 
@@ -163,6 +165,8 @@ Clusters are configured in the [server configuration file](../../../operations/c
         <shard>
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
+            <!-- Optional. The shard name.  Must be non-empty and unique among shards in the cluster. If not specified, will be empty. -->
+            <name>shard_01</name>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
             <internal_replication>false</internal_replication>
             <replica>
@@ -178,6 +182,7 @@ Clusters are configured in the [server configuration file](../../../operations/c
         </shard>
         <shard>
             <weight>2</weight>
+            <name>shard_02</name>
             <internal_replication>false</internal_replication>
             <replica>
                 <host>example01-02-1</host>
@@ -234,14 +239,14 @@ If `internal_replication` is set to `false` (the default), data is written to al
 
 To select the shard that a row of data is sent to, the sharding expression is analyzed, and its remainder is taken from dividing it by the total weight of the shards. The row is sent to the shard that corresponds to the half-interval of the remainders from `prev_weights` to `prev_weights + weight`, where `prev_weights` is the total weight of the shards with the smallest number, and `weight` is the weight of this shard. For example, if there are two shards, and the first has a weight of 9 while the second has a weight of 10, the row will be sent to the first shard for the remainders from the range \[0, 9), and to the second for the remainders from the range \[9, 19).
 
-The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression `rand()` for random distribution of data, or `UserID` for distribution by the remainder from dividing the user’s ID (then the data of a single user will reside on a single shard, which simplifies running `IN` and `JOIN` by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function e.g. `intHash64(UserID)`.
+The sharding expression can be any expression from constants and table columns that returns an integer. For example, you can use the expression `rand()` for random distribution of data, or `UserID` for distribution by the remainder from dividing the user's ID (then the data of a single user will reside on a single shard, which simplifies running `IN` and `JOIN` by users). If one of the columns is not distributed evenly enough, you can wrap it in a hash function e.g. `intHash64(UserID)`.
 
-A simple remainder from the division is a limited solution for sharding and isn’t always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area rather than using entries in `Distributed` tables.
+A simple remainder from the division is a limited solution for sharding and isn't always appropriate. It works for medium and large volumes of data (dozens of servers), but not for very large volumes of data (hundreds of servers or more). In the latter case, use the sharding scheme required by the subject area rather than using entries in `Distributed` tables.
 
 You should be concerned about the sharding scheme in the following cases:
 
 - Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
-- A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into “layers”, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
+- A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
 
 Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting.
 
@@ -257,7 +262,7 @@ To learn more about how distributed `in` and `global in` queries are processed, 
 
 ## Virtual Columns {#virtual-columns}
 
-#### _shard_num
+#### _shard_num {#_shard_num}
 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 

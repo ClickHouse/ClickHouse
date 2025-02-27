@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
 
@@ -36,11 +36,11 @@
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
 #include <Core/Settings.h>
+#include <Core/callOnTypeIndex.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <limits>
 #include <type_traits>
 
 namespace DB
@@ -49,7 +49,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_not_comparable_types_in_comparison_functions;
-    extern const SettingsBool validate_enum_literals_in_opearators;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -647,15 +647,17 @@ struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 struct ComparisonParams
 {
-    bool check_decimal_overflow;
-    bool validate_enum_literals_in_opearators;
-    bool allow_not_comparable_types;
+    bool check_decimal_overflow = false;
+    bool validate_enum_literals_in_operators = false;
+    bool allow_not_comparable_types = false;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
-        , validate_enum_literals_in_opearators(context->getSettingsRef()[Setting::validate_enum_literals_in_opearators])
+        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
         , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
+
+    ComparisonParams() = default;
 };
 
 template <template <typename, typename> class Op, typename Name>
@@ -664,7 +666,7 @@ class FunctionComparison : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(ComparisonParams(context)); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -906,7 +908,7 @@ private:
         {
             if constexpr (!IsOperation<Op>::equals && IsOperation<Op>::not_equals)
                 return false;
-            if (params.validate_enum_literals_in_opearators)
+            if (params.validate_enum_literals_in_operators)
                 return false;
             if (!enum_values || string_value.getType() != Field::Types::String)
                 return false;
@@ -1201,7 +1203,7 @@ public:
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
-            /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
+            /// You can compare the date, datetime, or datetime64 and an enumeration with a constant string.
             || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || ((left.isIPv4() || left.isIPv6()) && (right.isIPv4() || right.isIPv6()))

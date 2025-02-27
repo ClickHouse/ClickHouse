@@ -26,38 +26,41 @@ public:
     using BucketHolder = ObjectStorageQueueOrderedFileMetadata::BucketHolder;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
 
-    struct ObjectStorageQueueObjectInfo : public Source::ObjectInfo
+    struct ObjectStorageQueueObjectInfo : public ObjectInfo
     {
         ObjectStorageQueueObjectInfo(
-            const Source::ObjectInfo & object_info,
+            const ObjectInfo & object_info,
             FileMetadataPtr file_metadata_);
 
         FileMetadataPtr file_metadata;
     };
 
-    class FileIterator : public StorageObjectStorageSource::IIterator
+    class FileIterator : public IObjectIterator, private WithContext
     {
     public:
         FileIterator(
             std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
-            std::unique_ptr<Source::GlobIterator> glob_iterator_,
             ObjectStoragePtr object_storage_,
+            ConfigurationPtr configuration_,
+            const StorageID & storage_id_,
+            size_t list_objects_batch_size_,
+            const ActionsDAG::Node * predicate_,
+            const NamesAndTypesList & virtual_columns_,
+            ContextPtr context_,
+            LoggerPtr logger_,
+            bool enable_hash_ring_filtering_,
             bool file_deletion_on_processed_enabled_,
-            std::atomic<bool> & shutdown_called_,
-            LoggerPtr logger_);
+            std::atomic<bool> & shutdown_called_);
 
         bool isFinished() const;
 
-        /// Note:
-        /// List results in s3 are always returned in UTF-8 binary order.
-        /// (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
-        Source::ObjectInfoPtr nextImpl(size_t processor) override;
+        ObjectInfoPtr next(size_t processor) override;
 
         size_t estimatedKeysCount() override;
 
         /// If the key was taken from iterator via next() call,
         /// we might later want to return it back for retrying.
-        void returnForRetry(Source::ObjectInfoPtr object_info);
+        void returnForRetry(ObjectInfoPtr object_info, FileMetadataPtr file_metadata);
 
         /// Release hold buckets.
         /// In fact, they could be released in destructors of BucketHolder,
@@ -71,8 +74,27 @@ public:
 
         const std::shared_ptr<ObjectStorageQueueMetadata> metadata;
         const ObjectStoragePtr object_storage;
-        const std::unique_ptr<Source::GlobIterator> glob_iterator;
+        const ConfigurationPtr configuration;
+        const NamesAndTypesList virtual_columns;
         const bool file_deletion_on_processed_enabled;
+        const ObjectStorageQueueMode mode;
+        const bool enable_hash_ring_filtering;
+        const StorageID storage_id;
+
+        ObjectStorageIteratorPtr object_storage_iterator;
+        std::unique_ptr<re2::RE2> matcher;
+        ExpressionActionsPtr filter_expr;
+        bool recursive{false};
+
+        Source::ObjectInfos object_infos;
+        std::vector<FileMetadataPtr> file_metadatas;
+        bool is_finished = false;
+        std::mutex next_mutex;
+        size_t index = 0;
+
+        std::pair<ObjectInfoPtr, FileMetadataPtr> next();
+        void filterProcessableFiles(Source::ObjectInfos & objects);
+        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -80,7 +102,7 @@ public:
 
         struct ListedKeys
         {
-            std::deque<Source::ObjectInfoPtr> keys;
+            std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> keys;
             std::optional<Processor> processor;
         };
         /// A cache of keys which were iterated via glob_iterator, but not taken for processing.
@@ -93,9 +115,15 @@ public:
         std::atomic_bool iterator_finished = false;
 
         /// Only for processing without buckets.
-        std::deque<Source::ObjectInfoPtr> objects_to_retry;
+        std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry;
 
-        std::pair<Source::ObjectInfoPtr, ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr> getNextKeyFromAcquiredBucket(size_t processor);
+        struct NextKeyFromBucket
+        {
+            ObjectInfoPtr object_info;
+            FileMetadataPtr file_metadata;
+            ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
+        };
+        NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor);
         bool hasKeysForProcessor(const Processor & processor) const;
     };
 
@@ -113,6 +141,8 @@ public:
         std::atomic<size_t> processed_rows = 0;
         std::atomic<size_t> processed_bytes = 0;
         Stopwatch elapsed_time{CLOCK_MONOTONIC_COARSE};
+
+        std::mutex processed_files_mutex;
     };
     using ProcessingProgressPtr = std::shared_ptr<ProcessingProgress>;
 
@@ -144,9 +174,24 @@ public:
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
-    void commit(bool insert_succeeded, const std::string & exception_message = {});
+    void prepareCommitRequests(
+        Coordination::Requests & requests,
+        bool insert_succeeded,
+        StoredObjects & successful_files,
+        const std::string & exception_message = {});
+
+    /// Do some work after Processed/Failed files were successfully committed to keeper.
+    void finalizeCommit(bool insert_succeeded, const std::string & exception_message = {});
 
 private:
+    Chunk generateImpl();
+    /// Log to system.s3(azure)_queue_log.
+    void appendLogElement(const FileMetadataPtr & file_metadata_, bool processed);
+    /// Commit processed files.
+    /// This method is only used for SELECT query, not for streaming to materialized views.
+    /// Which is defined by passing a flag commit_once_processed.
+    void commit(bool insert_succeeded, const std::string & exception_message = {});
+
     const String name;
     const size_t processor_id;
     const std::shared_ptr<FileIterator> file_iterator;
@@ -158,6 +203,7 @@ private:
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;
+    const ObjectStorageQueueMode mode;
 
     const std::atomic<bool> & shutdown_called;
     const std::atomic<bool> & table_is_being_dropped;
@@ -166,7 +212,6 @@ private:
     const bool commit_once_processed;
 
     LoggerPtr log;
-    Source::ReaderHolder reader;
 
     enum class FileState
     {
@@ -185,13 +230,7 @@ private:
         std::string exception_during_read;
     };
     std::vector<ProcessedFile> processed_files;
-
-    Chunk generateImpl();
-    void applyActionAfterProcessing(const String & path);
-    void appendLogElement(
-        const std::string & filename,
-        ObjectStorageQueueMetadata::FileStatus & file_status_,
-        bool processed);
+    Source::ReaderHolder reader;
 };
 
 }

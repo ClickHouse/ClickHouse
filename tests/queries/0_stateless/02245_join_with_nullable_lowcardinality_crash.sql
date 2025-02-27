@@ -3,11 +3,11 @@ drop table if exists without_nullable;
 
 CREATE TABLE with_nullable
 ( timestamp UInt32,
-  country LowCardinality(Nullable(String)) ) ENGINE = Memory;
+  country LowCardinality(Nullable(String)) ) ENGINE = MergeTree ORDER BY tuple();
 
 CREATE TABLE  without_nullable
 ( timestamp UInt32,
-  country LowCardinality(String)) ENGINE = Memory;
+  country LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
 
 insert into with_nullable values(0,'f'),(0,'usa');
 insert into without_nullable values(0,'usa'),(0,'us2a');

@@ -1,3 +1,4 @@
+#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include "Formats/MarkInCompressedFile.h"

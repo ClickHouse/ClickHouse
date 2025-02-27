@@ -8,7 +8,7 @@ sidebar_label: Набор данных о воздушном движении Op
 
 "Данные в этом наборе получены и отфильтрованы из полного набора данных OpenSky, чтобы проиллюстрировать развитие воздушного движения во время пандемии COVID-19. Набор включает в себя все рейсы, которые видели более 2500 участников сети с 1 января 2019 года. Дополнительные данные будут периодически включаться в набор данных до окончания пандемии COVID-19".
 
-Источник: https://zenodo.org/record/5092942#.YRBCyTpRXYd
+Источник: https://zenodo.org/records/5092942#.YRBCyTpRXYd
 
 Martin Strohmeier, Xavier Olive, Jannis Lübbe, Matthias Schäfer, and Vincent Lenders
 "Crowdsourced air traffic data from the OpenSky Network 2019–2020"
@@ -20,7 +20,7 @@ https://doi.org/10.5194/essd-13-357-2021
 Выполните команду:
 
 ```bash
-wget -O- https://zenodo.org/record/5092942 | grep -oP 'https://zenodo.org/record/5092942/files/flightlist_\d+_\d+\.csv\.gz' | xargs wget
+wget -O- https://zenodo.org/records/5092942 | grep -oE 'https://zenodo.org/records/5092942/files/flightlist_[0-9]+_[0-9]+\.csv\.gz' | xargs wget
 ```
 
 Загрузка займет около 2 минут при хорошем подключении к интернету. Будет загружено 30 файлов общим размером 4,3 ГБ.

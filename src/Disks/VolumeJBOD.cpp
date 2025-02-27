@@ -125,11 +125,14 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
     {
         case VolumeLoadBalancing::ROUND_ROBIN:
         {
-            size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
             size_t disks_num = disks.size();
             for (size_t i = 0; i < disks_num; ++i)
             {
-                size_t index = (start_from + i) % disks_num;
+                size_t start_from = last_used.fetch_add(1u, std::memory_order_acq_rel);
+                size_t index = start_from % disks_num;
+
+                if (disks[index]->isReadOnly())
+                    continue;
 
                 auto reservation = disks[index]->reserve(bytes);
 
@@ -143,21 +146,26 @@ ReservationPtr VolumeJBOD::reserve(UInt64 bytes)
             std::lock_guard lock(mutex);
 
             ReservationPtr reservation;
-            if (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms)
+            for (size_t i = 0; i < disks.size() && !reservation; ++i)
             {
-                disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
-                least_used_update_watch.restart();
+                if (i == 0 && (!least_used_ttl_ms || least_used_update_watch.elapsedMilliseconds() >= least_used_ttl_ms))
+                {
+                    disks_by_size = LeastUsedDisksQueue(disks.begin(), disks.end());
+                    least_used_update_watch.restart();
 
-                DiskWithSize disk = disks_by_size.top();
-                reservation = disk.reserve(bytes);
-            }
-            else
-            {
-                DiskWithSize disk = disks_by_size.top();
-                disks_by_size.pop();
+                    DiskWithSize disk = disks_by_size.top();
+                    if (!disk.disk->isReadOnly())
+                        reservation = disk.reserve(bytes);
+                }
+                else
+                {
+                    DiskWithSize disk = disks_by_size.top();
+                    disks_by_size.pop();
 
-                reservation = disk.reserve(bytes);
-                disks_by_size.push(disk);
+                    if (!disk.disk->isReadOnly())
+                        reservation = disk.reserve(bytes);
+                    disks_by_size.push(disk);
+                }
             }
 
             return reservation;
