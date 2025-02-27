@@ -836,7 +836,7 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
 
 **Returned value**
 
-- The dot product of the two vectors. [Numeric](/docs/native-protocol/columns#numeric-types).
+- The dot product of the two vectors. [Numeric](/native-protocol/columns#numeric-types).
 
 :::note
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/data_types/array/).
+- `array` – [Array](/data_types/array/).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float/).
+Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float).
 
 **Example**
 
@@ -1652,7 +1652,7 @@ arrayDistinct(array)
 
 **Arguments**
 
-- `array` – [Array](/docs/data_types/array/).
+- `array` – [Array](/data_types/array/).
 
 **Returned values**
 

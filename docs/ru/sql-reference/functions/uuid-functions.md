@@ -374,7 +374,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 
 - Временная метка с миллисекундной точностью (1970-01-01 00:00:00.000 в случае UUID не версии 7).
 
-Type: [DateTime64(3)](/docs/ru/sql-reference/data-types/datetime64.md).
+Type: [DateTime64(3)](/ru/sql-reference/data-types/datetime64.md).
 
 **Примеры использования**
 

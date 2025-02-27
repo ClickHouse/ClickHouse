@@ -37,9 +37,9 @@ The root schema of the ingested Avro file must be of type `record`.
 To find the correspondence between table columns and fields of Avro schema, ClickHouse compares their names. 
 This comparison is case-sensitive and unused fields are skipped.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/docs/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the corresponding column type.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the corresponding column type.
 
-While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/docs/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
+While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/operations/settings/settings-formats.md/#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
 ### Selecting Data {#selecting-data}
 
@@ -54,11 +54,11 @@ Column names must:
 - Start with `[A-Za-z_]`
 - Be followed by only `[A-Za-z0-9_]`
 
-Output Avro file compression and sync interval can be configured with settings [`output_format_avro_codec`](/docs/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/docs/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
+Output Avro file compression and sync interval can be configured with settings [`output_format_avro_codec`](/operations/settings/settings-formats.md/#output_format_avro_codec) and [`output_format_avro_sync_interval`](/operations/settings/settings-formats.md/#output_format_avro_sync_interval) respectively.
 
 ### Example Data {#example-data}
 
-Using the ClickHouse [`DESCRIBE`](/docs/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. 
+Using the ClickHouse [`DESCRIBE`](/sql-reference/statements/describe-table) function, you can quickly view the inferred format of an Avro file like the following example. 
 This example includes the URL of a publicly accessible Avro file in the ClickHouse S3 public bucket:
 
 ```sql title="Query"
