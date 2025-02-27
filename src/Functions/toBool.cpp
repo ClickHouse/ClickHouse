@@ -1,5 +1,3 @@
-#include <Columns/IColumn.h>
-#include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
@@ -56,8 +54,9 @@ namespace
                 }
             };
 
-            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {});
-            return func_cast->execute(cast_args, result_type, arguments[0].column->size(), /* dry_run = */ false);
+            FunctionOverloadResolverPtr func_builder_cast = createInternalCastOverloadResolver(CastType::nonAccurate, {});
+            auto func_cast = func_builder_cast->build(cast_args);
+            return func_cast->execute(cast_args, result_type, arguments[0].column->size());
         }
     };
 }

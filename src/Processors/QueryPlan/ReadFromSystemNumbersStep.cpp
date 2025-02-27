@@ -12,19 +12,11 @@
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
-#include <Core/Types.h>
-
+#include "Core/Types.h"
+#include "base/types.h"
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-}
 
 namespace ErrorCodes
 {
@@ -126,23 +118,23 @@ using RangesWithStep = std::vector<RangeWithStep>;
 
 std::optional<RangeWithStep> steppedRangeFromRange(const Range & r, UInt64 step, UInt64 remainder)
 {
-    if ((r.right.safeGet<UInt64>() == 0) && (!r.right_included))
+    if ((r.right.get<UInt64>() == 0) && (!r.right_included))
         return std::nullopt;
-    UInt64 begin = (r.left.safeGet<UInt64>() / step) * step;
+    UInt64 begin = (r.left.get<UInt64>() / step) * step;
     if (begin > std::numeric_limits<UInt64>::max() - remainder)
         return std::nullopt;
     begin += remainder;
 
-    while ((r.left_included <= r.left.safeGet<UInt64>()) && (begin <= r.left.safeGet<UInt64>() - r.left_included))
+    while ((r.left_included <= r.left.get<UInt64>()) && (begin <= r.left.get<UInt64>() - r.left_included))
     {
         if (std::numeric_limits<UInt64>::max() - step < begin)
             return std::nullopt;
         begin += step;
     }
 
-    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.safeGet<UInt64>()))
+    if ((begin >= r.right_included) && (begin - r.right_included >= r.right.get<UInt64>()))
         return std::nullopt;
-    UInt64 right_edge_included = r.right.safeGet<UInt64>() - (1 - r.right_included);
+    UInt64 right_edge_included = r.right.get<UInt64>() - (1 - r.right_included);
     return std::optional{RangeWithStep{begin, step, static_cast<UInt128>(right_edge_included - begin) / step + 1}};
 }
 
@@ -251,8 +243,7 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start;
-        RangesPos end;
+        RangesPos start, end;
         auto block_size = findRanges(start, end, base_block_size);
 
         if (!block_size)
@@ -378,16 +369,18 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
             size -= static_cast<UInt64>(range_size);
             continue;
         }
-        if (range_size == size)
+        else if (range_size == size)
         {
             last_range_idx = i;
             break;
         }
-
-        auto & range = ranges[i];
-        range.size = static_cast<UInt128>(size);
-        last_range_idx = i;
-        break;
+        else
+        {
+            auto & range = ranges[i];
+            range.size = static_cast<UInt128>(size);
+            last_range_idx = i;
+            break;
+        }
     }
 
     /// delete the additional ranges
@@ -405,19 +398,19 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(column_names_),
+        DataStream{.header = storage_snapshot_->getSampleBlockForColumns(column_names_)},
         column_names_,
         query_info_,
         storage_snapshot_,
         context_)
     , column_names{column_names_}
     , storage{std::move(storage_)}
-    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context, false).expression}
+    , key_expression{KeyDescription::parse(column_names[0], storage_snapshot->metadata->columns, context).expression}
     , max_block_size{max_block_size_}
     , num_streams{num_streams_}
     , limit_length_and_offset(InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context))
     , should_pushdown_limit(shouldPushdownLimit(query_info, limit_length_and_offset.first))
-    , query_info_limit(query_info.trivial_limit)
+    , limit(query_info.limit)
     , storage_limits(query_info.storage_limits)
 {
     storage_snapshot->check(column_names);
@@ -432,8 +425,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        assert(output_stream != std::nullopt);
+        pipe = Pipe(std::make_shared<NullSource>(output_stream->header));
     }
 
     /// Add storage limits.
@@ -465,7 +458,8 @@ Pipe ReadFromSystemNumbersStep::makePipe()
     chassert(numbers_storage.step != UInt64{0});
 
     /// Build rpn of query filters
-    KeyCondition condition(filter_actions_dag ? &*filter_actions_dag : nullptr, context, column_names, key_expression);
+    KeyCondition condition(filter_actions_dag, context, column_names, key_expression);
+
 
     if (condition.extractPlainRanges(ranges))
     {
@@ -527,6 +521,7 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 }
             }
         }
+
 
         /// ranges is blank, return a source who has no data
         if (intersected_ranges.empty())
@@ -602,12 +597,12 @@ Pipe ReadFromSystemNumbersStep::makePipe()
             numbers_storage.step,
             step_between_chunks);
 
-        if (end && i == 0)
+        if (numbers_storage.limit && i == 0)
         {
-            UInt64 rows_approx = itemCountInRange(numbers_storage.offset, *end, numbers_storage.step);
-            if (limit > 0 && limit < rows_approx)
-                rows_approx = query_info_limit;
-            source->addTotalRowsApprox(rows_approx);
+            auto rows_appr = itemCountInRange(numbers_storage.offset, *numbers_storage.limit, numbers_storage.step);
+            if (limit > 0 && limit < rows_appr)
+                rows_appr = limit;
+            source->addTotalRowsApprox(rows_appr);
         }
 
         pipe.addSource(std::move(source));
@@ -620,15 +615,15 @@ void ReadFromSystemNumbersStep::checkLimits(size_t rows)
 {
     const auto & settings = context->getSettingsRef();
 
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
+    if (settings.read_overflow_mode == OverflowMode::THROW && settings.max_rows_to_read)
     {
-        const auto limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
+        const auto limits = SizeLimits(settings.max_rows_to_read, 0, settings.read_overflow_mode);
         limits.check(rows, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf])
+    if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
     {
-        const auto leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
+        const auto leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
         leaf_limits.check(rows, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
     }
 }

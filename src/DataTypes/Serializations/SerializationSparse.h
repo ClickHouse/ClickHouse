@@ -43,8 +43,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsDeserializeStatesCache * cache) const override;
+        DeserializeBinaryBulkStatePtr & state) const override;
 
     /// Allows to write ColumnSparse and other columns in sparse serialization.
     void serializeBinaryBulkWithMultipleStreams(
@@ -95,12 +94,9 @@ private:
             : offsets(offsets_), size(size_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
-
-    template <typename Reader>
-    void deserialize(IColumn & column, Reader && reader) const;
 
     SerializationPtr nested;
 };

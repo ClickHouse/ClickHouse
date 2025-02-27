@@ -1,5 +1,5 @@
 set (ENABLE_KRB5_DEFAULT ${ENABLE_LIBRARIES})
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
     message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
     set (ENABLE_KRB5_DEFAULT 0)
 endif ()
@@ -224,7 +224,6 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/prf_rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/krb/s2k_pbkdf2.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/aes.c"
-    "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
     # "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/rc4.c"
     "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/des3.c"
@@ -475,6 +474,14 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/krb5_libinit.c"
 )
 
+if (NOT (ENABLE_OPENSSL OR ENABLE_OPENSSL_DYNAMIC))
+    add_compile_definitions(USE_BORINGSSL=1)
+else()
+    set(ALL_SRCS ${ALL_SRCS}
+        "${KRB5_SOURCE_DIR}/lib/crypto/openssl/enc_provider/camellia.c"
+    )
+endif()
+
 add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/compile_et"
     COMMAND /bin/sh
@@ -572,28 +579,12 @@ endfunction()
 generate_error_tables()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-    if (NOT CMAKE_CROSSCOMPILING)
-        add_custom_command(
-            OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h" "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
-            COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I"${KRB5_SOURCE_DIR}/lib/krb5/ccache" "${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs"
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
-        )
-    else ()
-        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.cin"
-            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
-        )
-        file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.hin"
-            DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
-        )
-        file(RENAME 
-            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.cin"
-            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
-        )
-        file(RENAME 
-            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.hin"
-            "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h"
-        )
-    endif()
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h" "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
+        COMMAND mig -header kcmrpc.h -user kcmrpc.c -sheader /dev/null -server /dev/null -I"${KRB5_SOURCE_DIR}/lib/krb5/ccache" "${KRB5_SOURCE_DIR}/lib/krb5/ccache/kcmrpc.defs"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include_private"
+    )
+
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c")
 endif()
 

@@ -1,24 +1,24 @@
 ---
-slug: /operations/utilities/clickhouse-local
+slug: /en/operations/utilities/clickhouse-local
 sidebar_position: 60
 sidebar_label: clickhouse-local
 ---
 
 # clickhouse-local
 
-## Related Content {#related-content}
+## Related Content
 
 - Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 
-## When to use clickhouse-local vs. ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
+## When to use clickhouse-local vs. ClickHouse
 
-`clickhouse-local` is an easy-to-use version of ClickHouse that is ideal for developers who need to perform fast processing on local and remote files using SQL without having to install a full database server. With `clickhouse-local`, developers can use SQL commands (using the [ClickHouse SQL dialect](../../sql-reference/index.md)) directly from the command line, providing a simple and efficient way to access ClickHouse features without the need for a full ClickHouse installation. One of the main benefits of `clickhouse-local` is that it is already included when installing [clickhouse-client](/docs/integrations/sql-clients/clickhouse-client-local). This means that developers can get started with `clickhouse-local` quickly, without the need for a complex installation process.
+`clickhouse-local` is an easy-to-use version of ClickHouse that is ideal for developers who need to perform fast processing on local and remote files using SQL without having to install a full database server. With `clickhouse-local`, developers can use SQL commands (using the [ClickHouse SQL dialect](../../sql-reference/index.md)) directly from the command line, providing a simple and efficient way to access ClickHouse features without the need for a full ClickHouse installation. One of the main benefits of `clickhouse-local` is that it is already included when installing [clickhouse-client](https://clickhouse.com/docs/en/integrations/sql-clients/clickhouse-client-local). This means that developers can get started with `clickhouse-local` quickly, without the need for a complex installation process.
 
-While `clickhouse-local` is a great tool for development and testing purposes, and for processing files, it is not suitable for serving end users or applications. In these scenarios, it is recommended to use the open-source [ClickHouse](/docs/install). ClickHouse is a powerful OLAP database that is designed to handle large-scale analytical workloads. It provides fast and efficient processing of complex queries on large datasets, making it ideal for use in production environments where high-performance is critical. Additionally, ClickHouse offers a wide range of features such as replication, sharding, and high availability, which are essential for scaling up to handle large datasets and serving applications. If you need to handle larger datasets or serve end users or applications, we recommend using open-source ClickHouse instead of `clickhouse-local`.
+While `clickhouse-local` is a great tool for development and testing purposes, and for processing files, it is not suitable for serving end users or applications. In these scenarios, it is recommended to use the open-source [ClickHouse](https://clickhouse.com/docs/en/install). ClickHouse is a powerful OLAP database that is designed to handle large-scale analytical workloads. It provides fast and efficient processing of complex queries on large datasets, making it ideal for use in production environments where high-performance is critical. Additionally, ClickHouse offers a wide range of features such as replication, sharding, and high availability, which are essential for scaling up to handle large datasets and serving applications. If you need to handle larger datasets or serve end users or applications, we recommend using open-source ClickHouse instead of `clickhouse-local`.
 
-Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local file](#query_data_in_file) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
+Please read the docs below that show example use cases for `clickhouse-local`, such as [querying local CSVs](#query-data-in-a-csv-file-using-sql) or [reading a parquet file in S3](#query-data-in-a-parquet-file-in-aws-s3).
 
-## Download clickhouse-local {#download-clickhouse-local}
+## Download clickhouse-local
 
 `clickhouse-local` is executed using the same `clickhouse` binary that runs the ClickHouse server and `clickhouse-client`. The easiest way to download the latest version is with the following command:
 
@@ -58,7 +58,7 @@ The `file` table function creates a table, and you can use `DESCRIBE` to see the
 ```
 
 :::tip
-You are allowed to use globs in file name (See [glob substitutions](/sql-reference/table-functions/file.md/#globs-in-path)).
+You are allowed to use globs in file name (See [glob substitutions](/docs/en/sql-reference/table-functions/file.md/#globs-in-path)).
 
 Examples:
 
@@ -101,7 +101,7 @@ FROM file('reviews.tsv')"
 Monopoly Junior Board Game	5
 ```
 
-## Query data in a Parquet file in AWS S3 {#query-data-in-a-parquet-file-in-aws-s3}
+## Query data in a Parquet file in AWS S3
 
 If you have a file in S3, use `clickhouse-local` and the `s3` table function to query the file in place (without inserting the data into a ClickHouse table). We have a file named `house_0.parquet` in a public bucket that contains home prices of property sold in the United Kingdom. Let's see how many rows it has:
 
@@ -177,26 +177,6 @@ When you are ready to insert your files into ClickHouse, startup a ClickHouse se
 :::
 
 
-## Format Conversions {#format-conversions}
-
-You can use `clickhouse-local` for converting data between different formats. Example:
-
-``` bash
-$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
-```
-
-Formats are auto-detected from file extensions: 
-
-``` bash
-$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
-```
-
-As a shortcut, you can write it using the `--copy` argument:
-``` bash
-$ clickhouse-local --copy < data.json > data.csv
-```
-
-
 ## Usage {#usage}
 
 By default `clickhouse-local` has access to data of a ClickHouse server on the same host, and it does not depend on the server's configuration. It also supports loading server configuration using `--config-file` argument. For temporary data, a unique temporary data directory is created by default.
@@ -256,10 +236,10 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 Previous example is the same as:
 
 ``` bash
-$ echo -e "1,2\n3,4" | clickhouse-local -n --query "
+$ echo -e "1,2\n3,4" | clickhouse-local --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
-    DROP TABLE table;"
+    DROP TABLE table"
 Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 1   2
 3   4
@@ -280,7 +260,7 @@ $ clickhouse-local --query "
 1	2
 ```
 
-Now let's output memory user for each Unix user:
+Now let’s output memory user for each Unix user:
 
 Query:
 
@@ -307,7 +287,7 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 
 
 
-## Related Content {#related-content-1}
+## Related Content
 
 - [Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 - [Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)

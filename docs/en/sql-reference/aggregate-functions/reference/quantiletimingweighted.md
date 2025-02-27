@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletimingweighted
-sidebar_position: 181
-title: "quantileTimingWeighted"
-description: "With the determined precision computes the quantile of a numeric data sequence according to the weight of each sequence member."
+slug: /en/sql-reference/aggregate-functions/reference/quantiletimingweighted
+sidebar_position: 205
 ---
 
 # quantileTimingWeighted

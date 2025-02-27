@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
 
+#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
@@ -137,18 +138,6 @@ public:
     void setCTEName(std::string cte_name_value)
     {
         cte_name = std::move(cte_name_value);
-    }
-
-    /// Returns true if query node has RECURSIVE WITH, false otherwise
-    bool isRecursiveWith() const
-    {
-        return is_recursive_with;
-    }
-
-    /// Set query node RECURSIVE WITH value
-    void setIsRecursiveWith(bool is_recursive_with_value)
-    {
-        is_recursive_with = is_recursive_with_value;
     }
 
     /// Returns true if query node has DISTINCT, false otherwise
@@ -427,24 +416,6 @@ public:
         return children[window_child_index];
     }
 
-    /// Returns true if query node QUALIFY section is not empty, false otherwise
-    bool hasQualify() const
-    {
-        return getQualify() != nullptr;
-    }
-
-    /// Get QUALIFY section node
-    const QueryTreeNodePtr & getQualify() const
-    {
-        return children[qualify_child_index];
-    }
-
-    /// Get QUALIFY section node
-    QueryTreeNodePtr & getQualify()
-    {
-        return children[qualify_child_index];
-    }
-
     /// Returns true if query node ORDER BY section is not empty, false otherwise
     bool hasOrderBy() const
     {
@@ -601,20 +572,11 @@ public:
         return projection_columns;
     }
 
-    /// Returns true if query node is resolved, false otherwise
-    bool isResolved() const
-    {
-        return !projection_columns.empty();
-    }
-
     /// Resolve query node projection columns
     void resolveProjectionColumns(NamesAndTypes projection_columns_value);
 
-    /// Clear query node projection columns
-    void clearProjectionColumns()
-    {
-        projection_columns.clear();
-    }
+    /// Remove unused projection columns
+    void removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns);
 
     /// Remove unused projection columns
     void removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes);
@@ -625,11 +587,6 @@ public:
     }
 
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
-
-    void setProjectionAliasesToOverride(Names pr_aliases)
-    {
-        projection_aliases_to_override = std::move(pr_aliases);
-    }
 
 protected:
     bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
@@ -643,7 +600,6 @@ protected:
 private:
     bool is_subquery = false;
     bool is_cte = false;
-    bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
     bool is_group_by_with_totals = false;
@@ -655,7 +611,6 @@ private:
 
     std::string cte_name;
     NamesAndTypes projection_columns;
-    Names projection_aliases_to_override;
     ContextMutablePtr context;
     SettingsChanges settings_changes;
 
@@ -667,14 +622,13 @@ private:
     static constexpr size_t group_by_child_index = 5;
     static constexpr size_t having_child_index = 6;
     static constexpr size_t window_child_index = 7;
-    static constexpr size_t qualify_child_index = 8;
-    static constexpr size_t order_by_child_index = 9;
-    static constexpr size_t interpolate_child_index = 10;
-    static constexpr size_t limit_by_limit_child_index = 11;
-    static constexpr size_t limit_by_offset_child_index = 12;
-    static constexpr size_t limit_by_child_index = 13;
-    static constexpr size_t limit_child_index = 14;
-    static constexpr size_t offset_child_index = 15;
+    static constexpr size_t order_by_child_index = 8;
+    static constexpr size_t interpolate_child_index = 9;
+    static constexpr size_t limit_by_limit_child_index = 10;
+    static constexpr size_t limit_by_offset_child_index = 11;
+    static constexpr size_t limit_by_child_index = 12;
+    static constexpr size_t limit_child_index = 13;
+    static constexpr size_t offset_child_index = 14;
     static constexpr size_t children_size = offset_child_index + 1;
 };
 

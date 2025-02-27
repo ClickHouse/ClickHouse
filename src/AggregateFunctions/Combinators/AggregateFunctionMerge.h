@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -99,7 +100,10 @@ public:
         return nested_func->alignOfData();
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override;
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    {
+        nested_func->merge(place, assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num], arena);
+    }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
@@ -109,14 +113,9 @@ public:
     bool isAbleToParallelizeMerge() const override { return nested_func->isAbleToParallelizeMerge(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_func->canOptimizeEqualKeysRanges(); }
 
-    void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, Arena * arena) const override
     {
-        nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
-    }
-
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
-    {
-        nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
+        nested_func->merge(place, rhs, thread_pool, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override

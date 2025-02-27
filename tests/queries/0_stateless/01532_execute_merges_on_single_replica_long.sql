@@ -1,4 +1,4 @@
--- Tags: long, replica, no-replicated-database, no-parallel, no-object-storage
+-- Tags: long, replica, no-replicated-database, no-parallel, no-s3-storage
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 -- Tag no-parallel: static zk path
 
@@ -112,7 +112,7 @@ OPTIMIZE TABLE execute_on_single_replica_r1 FINAL;
 SYSTEM SYNC REPLICA execute_on_single_replica_r1;
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT '****************************';
 SELECT '*** part_log';

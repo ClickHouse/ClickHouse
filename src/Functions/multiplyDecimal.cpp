@@ -15,10 +15,9 @@ namespace
 struct MultiplyDecimalsImpl
 {
     static constexpr auto name = "multiplyDecimal";
-    static constexpr auto suitable_for_short_circuit = false;
 
     template <typename FirstType, typename SecondType>
-    static Decimal256
+    static inline Decimal256
     execute(FirstType a, SecondType b, UInt16 scale_a, UInt16 scale_b, UInt16 result_scale)
     {
         if (a.value == 0 || b.value == 0)

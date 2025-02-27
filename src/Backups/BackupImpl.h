@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Backups/BackupFactory.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
@@ -16,6 +15,8 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -33,18 +34,25 @@ public:
         size_t max_volume_size = 0;
     };
 
-    /// RESTORE
     BackupImpl(
-        BackupFactory::CreateParams params_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
+        const std::optional<BackupInfo> & base_backup_info_,
         std::shared_ptr<IBackupReader> reader_,
-        std::shared_ptr<IBackupReader> lightweight_snapshot_reader_ = nullptr);
+        const ContextPtr & context_,
+        bool use_same_s3_credentials_for_base_backup_);
 
-    /// BACKUP
     BackupImpl(
-        BackupFactory::CreateParams params_,
+        const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupWriter> writer_);
+        const std::optional<BackupInfo> & base_backup_info_,
+        std::shared_ptr<IBackupWriter> writer_,
+        const ContextPtr & context_,
+        bool is_internal_backup_,
+        const std::shared_ptr<IBackupCoordination> & coordination_,
+        const std::optional<UUID> & backup_uuid_,
+        bool deduplicate_files_,
+        bool use_same_s3_credentials_for_base_backup_);
 
     ~BackupImpl() override;
 
@@ -61,7 +69,6 @@ public:
     UInt64 getCompressedSize() const override;
     size_t getNumReadFiles() const override;
     UInt64 getNumReadBytes() const override;
-    bool directoryExists(const String & directory) const override;
     Strings listFiles(const String & directory, bool recursive) const override;
     bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
@@ -69,15 +76,14 @@ public:
     UInt64 getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
+    std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
-    bool setIsCorrupted() noexcept override;
-    bool tryRemoveAllFiles() noexcept override;
+    void tryRemoveAllFiles() override;
 
 private:
     void open();
@@ -105,9 +111,8 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    std::unique_ptr<ReadBufferFromFileBase> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
+    std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
-    const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
     const bool use_archive;
@@ -115,9 +120,8 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
-    /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
-    std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
-    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
+    const ContextPtr context;
+    const bool is_internal_backup;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -125,9 +129,6 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
-    /// object_key -> file name, only used by lightweight snapshot
-    std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
-    std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
     time_t timestamp = 0;
@@ -142,14 +143,15 @@ private:
     int version;
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
-    mutable std::optional<UUID> base_backup_uuid;
+    std::optional<UUID> base_backup_uuid;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
-    bool corrupted = false;
+    bool deduplicate_files = true;
+    bool use_same_s3_credentials_for_base_backup = false;
     const LoggerPtr log;
 };
 

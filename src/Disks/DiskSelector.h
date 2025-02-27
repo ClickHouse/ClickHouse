@@ -3,12 +3,9 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/IDisk.h>
 
-#include <map>
+#include <Poco/Util/AbstractConfiguration.h>
 
-namespace Poco::Util
-{
-    class AbstractConfiguration;
-};
+#include <map>
 
 namespace DB
 {
@@ -23,7 +20,7 @@ class DiskSelector
 public:
     static constexpr auto TMP_INTERNAL_DISK_PREFIX = "__tmp_internal_";
 
-    explicit DiskSelector(std::unordered_set<String> skip_types_ = {}) : skip_types(skip_types_) { }
+    DiskSelector() = default;
     DiskSelector(const DiskSelector & from) = default;
 
     using DiskValidator = std::function<bool(const Poco::Util::AbstractConfiguration & config, const String & disk_config_prefix, const String & disk_name)>;
@@ -46,18 +43,11 @@ public:
 
     void shutdown();
 
-    inline static const String DEFAULT_DISK_NAME = "default";
-    inline static const String LOCAL_DISK_NAME = "local";
-
 private:
     DisksMap disks;
     bool is_initialized = false;
 
     void assertInitialized() const;
-
-    const std::unordered_set<String> skip_types;
-
-    bool throw_away_local_on_update = false;
 };
 
 }

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/alter/constraint
+slug: /en/sql-reference/statements/alter/constraint
 sidebar_position: 43
 sidebar_label: CONSTRAINT
 ---
@@ -9,8 +9,8 @@ sidebar_label: CONSTRAINT
 Constraints could be added or deleted using following syntax:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
-ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT constraint_name;
 ```
 
 See more on [constraints](../../../sql-reference/statements/create/table.md#constraints).
@@ -21,4 +21,4 @@ Queries will add or remove metadata about constraints from table, so they are pr
 Constraint check **will not be executed** on existing data if it was added.
 :::
 
-All changes on replicated tables are broadcast to ZooKeeper and will be applied on other replicas as well.
+All changes on replicated tables are broadcasted to ZooKeeper and will be applied on other replicas as well.

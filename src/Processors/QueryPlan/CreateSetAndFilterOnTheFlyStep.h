@@ -1,6 +1,4 @@
 #pragma once
-
-#include <Core/Joins.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/Transforms/CreateSetAndFilterOnTheFlyTransform.h>
 
@@ -23,7 +21,7 @@ public:
     static CrosswiseConnectionPtr createCrossConnection();
 
     CreateSetAndFilterOnTheFlyStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         const Names & column_names_,
         size_t max_rows_in_set_,
         CrosswiseConnectionPtr crosswise_connection_,
@@ -43,7 +41,7 @@ public:
     void setFiltering(SetWithStatePtr filtering_set_) { filtering_set = filtering_set_; }
 
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     Names column_names;
 

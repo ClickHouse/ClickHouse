@@ -2,13 +2,12 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeMap.h>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/JSONUtils.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -41,11 +40,11 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.safeGet<Map>();
+    const auto & map = field.get<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<Tuple>();
+        const auto & tuple = elem.safeGet<const Tuple>();
         assert(tuple.size() == 2);
         key->serializeBinary(tuple[0], ostr, settings);
         value->serializeBinary(tuple[1], ostr, settings);
@@ -56,15 +55,15 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.max_binary_array_size && size > settings.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large map size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.max_binary_array_size);
     field = Map();
-    Map & map = field.safeGet<Map>();
+    Map & map = field.get<Map &>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {
@@ -306,62 +305,39 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
         WriteBufferFromOwnString str_buf;
         key->serializeText(nested_tuple.getColumn(0), i, str_buf, settings);
 
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', (indent + 1) * 4, ostr);
         writeJSONString(str_buf.str(), ostr, settings);
         writeCString(": ", ostr);
         value->serializeTextJSONPretty(nested_tuple.getColumn(1), i, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    writeChar(' ', indent * 4, ostr);
     writeChar('}', ostr);
 }
 
 
-template <typename ReturnType>
-ReturnType SerializationMap::deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    auto deserialize_nested = [&settings](IColumn & subcolumn, ReadBuffer & buf, const SerializationPtr & subcolumn_serialization) -> ReturnType
-    {
-        if constexpr (std::is_same_v<ReturnType, void>)
+    deserializeTextImpl(column, istr,
+        [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
             if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
                 SerializationNullable::deserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
             else
                 subcolumn_serialization->deserializeTextJSON(subcolumn, buf, settings);
-        }
-        else
-        {
-            if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
-                return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
-            return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
-        }
-    };
-
-    if (settings.json.empty_as_default)
-        return deserializeTextImpl<ReturnType>(column, istr,
-            [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-            {
-                return JSONUtils::deserializeEmpyStringAsDefaultOrNested<ReturnType>(subcolumn, buf,
-                    [&deserialize_nested, &subcolumn_serialization](IColumn & subcolumn_, ReadBuffer & buf_) -> ReturnType
-                    {
-                        return deserialize_nested(subcolumn_, buf_, subcolumn_serialization);
-                    });
-            });
-    return deserializeTextImpl<ReturnType>(
-        column,
-        istr,
-        [&deserialize_nested](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn) -> ReturnType
-        { return deserialize_nested(subcolumn, buf, subcolumn_serialization); });
-}
-
-void SerializationMap::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeTextJSONImpl<void>(column, istr, settings);
+        });
 }
 
 bool SerializationMap::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    return deserializeTextJSONImpl<bool>(column, istr, settings);
+    auto reader = [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
+    {
+        if (settings.null_as_default && !isColumnNullableOrLowCardinalityNullable(subcolumn))
+            return SerializationNullable::tryDeserializeNullAsDefaultOrNestedTextJSON(subcolumn, buf, settings, subcolumn_serialization);
+        return subcolumn_serialization->tryDeserializeTextJSON(subcolumn, buf, settings);
+    };
+
+    return deserializeTextImpl<bool>(column, istr, reader);
 }
 
 void SerializationMap::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -422,8 +398,7 @@ void SerializationMap::enumerateStreams(
     auto next_data = SubstreamData(nested)
         .withType(data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr)
         .withColumn(data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr)
-        .withSerializationInfo(data.serialization_info)
-        .withDeserializeState(data.deserialize_state);
+        .withSerializationInfo(data.serialization_info);
 
     nested->enumerateStreams(settings, callback, next_data);
 }
@@ -445,10 +420,9 @@ void SerializationMap::serializeBinaryBulkStateSuffix(
 
 void SerializationMap::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state,
-    SubstreamsDeserializeStatesCache * cache) const
+    DeserializeBinaryBulkStatePtr & state) const
 {
-    nested->deserializeBinaryBulkStatePrefix(settings, state, cache);
+    nested->deserializeBinaryBulkStatePrefix(settings, state);
 }
 
 

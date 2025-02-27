@@ -1,16 +1,14 @@
 ---
-slug: /engines/table-engines/integrations/hudi
+slug: /en/engines/table-engines/integrations/hudi
 sidebar_position: 86
 sidebar_label: Hudi
-title: "Hudi Table Engine"
-description: "This engine provides a read-only integration with existing Apache Hudi tables in Amazon S3."
 ---
 
 # Hudi Table Engine
 
 This engine provides a read-only integration with existing Apache [Hudi](https://hudi.apache.org/) tables in Amazon S3.
 
-## Create Table {#create-table}
+## Create Table
 
 Note that the Hudi table must already exist in S3, this command does not take DDL parameters to create a new table.
 
@@ -24,7 +22,7 @@ CREATE TABLE hudi_table
 - `url` — Bucket url with the path to an existing Hudi table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
 
-Engine parameters can be specified using [Named Collections](/docs/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/docs/en/operations/named-collections.md).
 
 **Example**
 
@@ -50,6 +48,6 @@ Using named collections:
 CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
 ```
 
-## See also {#see-also}
+## See also
 
-- [hudi table function](/docs/sql-reference/table-functions/hudi.md)
+- [hudi table function](/docs/en/sql-reference/table-functions/hudi.md)

@@ -1,14 +1,14 @@
 ---
-slug: /sql-reference/data-types/ipv4
-sidebar_position: 28
+slug: /en/sql-reference/data-types/ipv4
+sidebar_position: 59
 sidebar_label: IPv4
 ---
 
-## IPv4 {#ipv4}
+## IPv4
 
 IPv4 addresses. Stored in 4 bytes as UInt32.
 
-### Basic Usage {#basic-usage}
+### Basic Usage
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;
@@ -55,18 +55,6 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ┌─toTypeName(from)─┬─hex(from)─┐
 │ IPv4             │ B7F7E83A  │
 └──────────────────┴───────────┘
-```
-
-IPv4 addresses can be directly compared to IPv6 addresses:
-
-```sql
-SELECT toIPv4('127.0.0.1') = toIPv6('::ffff:127.0.0.1');
-```
-
-```text
-┌─equals(toIPv4('127.0.0.1'), toIPv6('::ffff:127.0.0.1'))─┐
-│                                                       1 │
-└─────────────────────────────────────────────────────────┘
 ```
 
 **See Also**

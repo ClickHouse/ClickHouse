@@ -12,16 +12,12 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int VIOLATED_CONSTRAINT;
-    extern const int TYPE_MISMATCH;
-    extern const int BAD_TYPE_OF_FIELD;
 }
 
 namespace
@@ -62,7 +58,7 @@ QueryTreeNodePtr normalizeAtom(const QueryTreeNodePtr & atom, const ContextPtr &
             auto * inverted_function_node = inverted_node->as<FunctionNode>();
             auto function_resolver = FunctionFactory::instance().get(it->second, context);
             auto & arguments = inverted_function_node->getArguments().getNodes();
-            chassert(arguments.size() == 2);
+            assert(arguments.size() == 2);
             std::swap(arguments[0], arguments[1]);
             inverted_function_node->resolveAsFunction(function_resolver);
             return inverted_node;
@@ -92,28 +88,28 @@ std::string functionName(const ASTPtr & node)
     return node->as<ASTFunction &>().name;
 }
 
-std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
+const Field * tryGetConstantValue(const QueryTreeNodePtr & node)
 {
     if (const auto * constant = node->as<ConstantNode>())
-        return constant->getValue();
+        return &constant->getValue();
 
-    return {};
+    return nullptr;
 }
 
-std::optional<Field> tryGetConstantValue(const ASTPtr & node)
+const Field * tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
-        return constant->value;
+        return &constant->value;
 
-    return {};
+    return nullptr;
 }
 
 template <typename Node>
-Field getConstantValue(const Node & node)
+const Field & getConstantValue(const Node & node)
 {
-    const auto constant = tryGetConstantValue(node);
-    chassert(constant);
-    return std::move(*constant);
+    const auto * constant = tryGetConstantValue(node);
+    assert(constant);
+    return *constant;
 }
 
 const auto & getNode(const Analyzer::CNF::AtomicFormula & atom)
@@ -146,52 +142,9 @@ const auto & getArguments(const FunctionNode * function)
     return function->getArguments().getNodes();
 }
 
-bool less(const Field & lhs, const Field & rhs)
-{
-    try
-    {
-        return applyVisitor(FieldVisitorAccurateLess{}, lhs, rhs);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
-                "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
-                "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
-                lhs.getTypeName(),
-                rhs.getTypeName());
-
-        throw;
-    }
-}
-
-bool greater(const Field & lhs, const Field & rhs)
-{
-    return less(rhs, lhs);
-}
-
-bool equals(const Field & lhs, const Field & rhs)
-{
-    try
-    {
-        return applyVisitor(FieldVisitorAccurateEquals{}, lhs, rhs);
-    }
-    catch (const DB::Exception & e)
-    {
-        if (e.code() == ErrorCodes::BAD_TYPE_OF_FIELD)
-            throw Exception(
-                ErrorCodes::TYPE_MISMATCH,
-                "Trying to compare constants of incompatible types ({} and {}), please verify that table constraints are "
-                "defined using correct types, constraints can be ignored by disabling 'optimize_using_constraints'. Constraints for table "
-                "can be modified using 'ALTER TABLE ... ADD/DROP CONSTRAINT' query",
-                lhs.getTypeName(),
-                rhs.getTypeName());
-
-        throw;
-    }
-}
+bool less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess{}, lhs, rhs); }
+bool greater(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess{}, rhs, lhs); }
+bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals{}, lhs, rhs); }
 
 ComparisonGraphCompareResult functionNameToCompareResult(const std::string & name)
 {
@@ -273,11 +226,13 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
 
                 return it->second;
             }
-
-            nodes_graph.node_hash_to_component[Graph::getHash(node)] = nodes_graph.vertices.size();
-            nodes_graph.vertices.push_back(EqualComponent{{node}, std::nullopt});
-            nodes_graph.edges.emplace_back();
-            return nodes_graph.vertices.size() - 1;
+            else
+            {
+                nodes_graph.node_hash_to_component[Graph::getHash(node)] = nodes_graph.vertices.size();
+                nodes_graph.vertices.push_back(EqualComponent{{node}, std::nullopt});
+                nodes_graph.edges.emplace_back();
+                return nodes_graph.vertices.size() - 1;
+            }
         };
 
         const auto * function_node = tryGetFunctionNode(atom);
@@ -354,6 +309,7 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::pathToCompareResult(Path pat
         case Path::GREATER: return inverse ? ComparisonGraphCompareResult::LESS : ComparisonGraphCompareResult::GREATER;
         case Path::GREATER_OR_EQUAL: return inverse ? ComparisonGraphCompareResult::LESS_OR_EQUAL : ComparisonGraphCompareResult::GREATER_OR_EQUAL;
     }
+    UNREACHABLE();
 }
 
 template <ComparisonGraphNodeType Node>
@@ -410,10 +366,11 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 
         return result;
     }
-
-    start = it_left->second;
-    finish = it_right->second;
-
+    else
+    {
+        start = it_left->second;
+        finish = it_right->second;
+    }
 
     if (start == finish)
         return ComparisonGraphCompareResult::EQUAL;
@@ -499,7 +456,8 @@ typename ComparisonGraph<Node>::NodeContainer ComparisonGraph<Node>::getEqual(co
     const auto res = getComponentId(node);
     if (!res)
         return {};
-    return getComponent(res.value());
+    else
+        return getComponent(res.value());
 }
 
 template <ComparisonGraphNodeType Node>
@@ -524,8 +482,10 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
     {
         return index;
     }
-
-    return {};
+    else
+    {
+        return {};
+    }
 }
 
 template <ComparisonGraphNodeType Node>
@@ -549,7 +509,7 @@ bool ComparisonGraph<Node>::EqualComponent::hasConstant() const
 template <ComparisonGraphNodeType Node>
 Node ComparisonGraph<Node>::EqualComponent::getConstant() const
 {
-    chassert(constant_index);
+    assert(constant_index);
     return nodes[*constant_index];
 }
 
@@ -559,7 +519,7 @@ void ComparisonGraph<Node>::EqualComponent::buildConstants()
     constant_index.reset();
     for (size_t i = 0; i < nodes.size(); ++i)
     {
-        if (tryGetConstantValue(nodes[i]))
+        if (tryGetConstantValue(nodes[i]) != nullptr)
         {
             constant_index = i;
             return;
@@ -607,7 +567,7 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
 template <ComparisonGraphNodeType Node>
 std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstUpperBound(const Node & node) const
 {
-    if (const auto constant = tryGetConstantValue(node))
+    if (const auto * constant = tryGetConstantValue(node))
         return std::make_pair(*constant, false);
 
     const auto it = graph.node_hash_to_component.find(Graph::getHash(node));
@@ -625,7 +585,7 @@ std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstUpperBound(
 template <ComparisonGraphNodeType Node>
 std::optional<std::pair<Field, bool>> ComparisonGraph<Node>::getConstLowerBound(const Node & node) const
 {
-    if (const auto constant = tryGetConstantValue(node))
+    if (const auto * constant = tryGetConstantValue(node))
         return std::make_pair(*constant, false);
 
     const auto it = graph.node_hash_to_component.find(Graph::getHash(node));
@@ -726,7 +686,7 @@ typename ComparisonGraph<Node>::Graph ComparisonGraph<Node>::buildGraphFromNodes
     result.edges.resize(component);
     for (const auto & [hash, index] : nodes_graph.node_hash_to_component)
     {
-        chassert(components[index]);
+        assert(components[index]);
         result.node_hash_to_component[hash] = *components[index];
         result.vertices[*components[index]].nodes.insert(
             std::end(result.vertices[*components[index]].nodes),
@@ -754,8 +714,8 @@ typename ComparisonGraph<Node>::Graph ComparisonGraph<Node>::buildGraphFromNodes
         {
             if (v != u && result.vertices[v].hasConstant() && result.vertices[u].hasConstant())
             {
-                const auto left = getConstantValue(result.vertices[v].getConstant());
-                const auto right = getConstantValue(result.vertices[u].getConstant());
+                const auto & left = getConstantValue(result.vertices[v].getConstant());
+                const auto & right = getConstantValue(result.vertices[u].getConstant());
 
                 /// Only GREATER. Equal constant fields = equal literals so it was already considered above.
                 if (greater(left, right))
@@ -789,7 +749,7 @@ std::map<std::pair<size_t, size_t>, typename ComparisonGraph<Node>::Path> Compar
         for (size_t v = 0; v < n; ++v)
             for (size_t u = 0; u < n; ++u)
                 if (results[v][k] != inf && results[k][u] != inf)
-                    results[v][u] = std::min({results[v][u], results[v][k], results[k][u]});
+                    results[v][u] = std::min(results[v][u], std::min(results[v][k], results[k][u]));
 
     std::map<std::pair<size_t, size_t>, Path> path;
     for (size_t v = 0; v < n; ++v)

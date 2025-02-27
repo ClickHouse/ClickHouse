@@ -1,5 +1,5 @@
 ---
-slug: /interfaces/schema-inference
+slug: /en/interfaces/schema-inference
 sidebar_position: 21
 sidebar_label: Schema inference
 title: Automatic schema inference from input data
@@ -13,7 +13,7 @@ can control it.
 
 Schema inference is used when ClickHouse needs to read the data in a specific data format and the structure is unknown.
 
-## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md). {#table-functions-file-s3-url-hdfs-azureblobstorage}
+## Table functions [file](../sql-reference/table-functions/file.md), [s3](../sql-reference/table-functions/s3.md), [url](../sql-reference/table-functions/url.md), [hdfs](../sql-reference/table-functions/hdfs.md), [azureBlobStorage](../sql-reference/table-functions/azureBlobStorage.md).
 
 These table functions have the optional argument `structure` with the structure of input data. If this argument is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -55,7 +55,7 @@ DESCRIBE file('hobbies.jsonl')
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md) {#table-engines-file-s3-url-hdfs-azureblobstorage}
+## Table engines [File](../engines/table-engines/special/file.md), [S3](../engines/table-engines/integrations/s3.md), [URL](../engines/table-engines/special/url.md), [HDFS](../engines/table-engines/integrations/hdfs.md), [azureBlobStorage](../engines/table-engines/integrations/azureBlobStorage.md)
 
 If the list of columns is not specified in `CREATE TABLE` query, the structure of the table will be inferred automatically from the data.
 
@@ -91,7 +91,7 @@ DESCRIBE TABLE hobbies
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-## clickhouse-local {#clickhouse-local}
+## clickhouse-local
 
 `clickhouse-local` has an optional parameter `-S/--structure` with the structure of input data. If this parameter is not specified or set to `auto`, the structure will be inferred from the data.
 
@@ -124,7 +124,7 @@ there is an option to use the structure from the insertion table instead of extr
 It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has an optimized schema, so
 no conversions between types will be performed.
 
-There is a special setting [use_structure_from_insertion_table_in_table_functions](/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
+There is a special setting [use_structure_from_insertion_table_in_table_functions](/docs/en/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
 - 0 - table function will extract the structure from the data.
 - 1 - table function will use the structure from the insertion table.
@@ -359,14 +359,13 @@ DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World
 Dates, DateTimes:
 
 ```sql
-DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}')
+DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00"}')
 ```
 ```response
-┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ date       │ Nullable(Date)          │              │                    │         │                  │                │
-│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
-│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
-└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date     │ Nullable(Date)          │              │                    │         │                  │                │
+│ datetime │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
 Arrays:
@@ -494,7 +493,7 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 
 #### JSON settings {#json-settings}
 
-##### input_format_json_try_infer_numbers_from_strings {#input_format_json_try_infer_numbers_from_strings}
+##### input_format_json_try_infer_numbers_from_strings
 
 Enabling this setting allows inferring numbers from string values.
 
@@ -509,13 +508,13 @@ DESC format(JSONEachRow, $$
                               {"value" : "424242424242"}
                          $$)
 ```
-```response
+```reponse
 ┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(Int64) │              │                    │         │                  │                │
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_try_infer_named_tuples_from_objects {#input_format_json_try_infer_named_tuples_from_objects}
+##### input_format_json_try_infer_named_tuples_from_objects
 
 Enabling this setting allows inferring named Tuples from JSON objects. The resulting named Tuple will contain all elements from all corresponding JSON objects from sample data.
 It can be useful when JSON data is not sparse so the sample of data will contain all possible object keys.
@@ -531,7 +530,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 Result:
 
-```response
+```
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -544,13 +543,13 @@ DESC format(JSONEachRow, '{"array" : [{"a" : 42, "b" : "Hello"}, {}, {"c" : [1,2
 
 Result:
 
-```markdown
+```
 ┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
 └───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects {#input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects}
+##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
 
 Enabling this setting allows to use String type for ambiguous paths during named tuples inference from JSON objects (when `input_format_json_try_infer_named_tuples_from_objects` is enabled) instead of an exception.
 It allows to read JSON objects as named Tuples even if there are ambiguous paths.
@@ -567,7 +566,7 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}
 ```
 Result:
 
-```response
+```text
 Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
 Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
 You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
@@ -582,7 +581,7 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : 
 ```
 
 Result:
-```response
+```text
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -592,7 +591,7 @@ Result:
 └─────────────────────┘
 ```
 
-##### input_format_json_read_objects_as_strings {#input_format_json_read_objects_as_strings}
+##### input_format_json_read_objects_as_strings
 
 Enabling this setting allows reading nested JSON objects as strings.
 This setting can be used to read nested JSON objects without using JSON object type.
@@ -615,7 +614,7 @@ DESC format(JSONEachRow, $$
 ```
 
 
-##### input_format_json_read_numbers_as_strings {#input_format_json_read_numbers_as_strings}
+##### input_format_json_read_numbers_as_strings
 
 Enabling this setting allows reading numeric values as strings.
 
@@ -636,7 +635,7 @@ DESC format(JSONEachRow, $$
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}
+##### input_format_json_read_bools_as_numbers
 
 Enabling this setting allows reading Bool values as numbers.
 
@@ -657,7 +656,7 @@ DESC format(JSONEachRow, $$
 └───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-##### input_format_json_read_bools_as_strings {#input_format_json_read_bools_as_strings}
+##### input_format_json_read_bools_as_strings
 
 Enabling this setting allows reading Bool values as strings.
 
@@ -677,7 +676,7 @@ DESC format(JSONEachRow, $$
 │ value │ Nullable(String) │              │                    │         │                  │                │
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
-##### input_format_json_read_arrays_as_strings {#input_format_json_read_arrays_as_strings}
+##### input_format_json_read_arrays_as_strings
 
 Enabling this setting allows reading JSON array values as strings.
 
@@ -695,7 +694,7 @@ SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow
 └───────────────────────┴─────────────────┴───────────────────────────────────────────┘
 ```
 
-##### input_format_json_infer_incomplete_types_as_strings {#input_format_json_infer_incomplete_types_as_strings}
+##### input_format_json_infer_incomplete_types_as_strings
 
 Enabling this setting allows to use String type for JSON keys that contain only `Null`/`{}`/`[]` in data sample during schema inference.
 In JSON formats any value can be read as String if all corresponding settings are enabled (they are all enabled by default), and we can avoid errors like `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` during schema inference
@@ -710,7 +709,7 @@ SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" :
 ```
 
 Result:
-```markdown
+```
 ┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
 └──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
@@ -760,13 +759,12 @@ DESC format(CSV, 'Hello world!,World hello!')
 Dates, DateTimes:
 
 ```sql
-DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00","2022-01-01 00:00:00.000"')
+DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00"')
 ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
-│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
-│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
@@ -900,7 +898,7 @@ $$)
 
 #### CSV settings {#csv-settings}
 
-##### input_format_csv_try_infer_numbers_from_strings {#input_format_csv_try_infer_numbers_from_strings}
+##### input_format_csv_try_infer_numbers_from_strings
 
 Enabling this setting allows inferring numbers from string values.
 
@@ -910,9 +908,9 @@ This setting is disabled by default.
 
 ```sql
 SET input_format_json_try_infer_numbers_from_strings = 1;
-DESC format(CSV, '42,42.42');
+DESC format(CSV, '"42","42.42"');
 ```
-```response
+```reponse
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
 │ c2   │ Nullable(Float64) │              │                    │         │                  │                │
@@ -958,13 +956,12 @@ DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
 Dates, DateTimes:
 
 ```sql
-DESC format(TSV, '2020-01-01	2020-01-01 00:00:00	2022-01-01 00:00:00.000')
+DESC format(TSV, '2020-01-01	2020-01-01 00:00:00')
 ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
-│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
-│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
@@ -1129,13 +1126,12 @@ DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
 Dates, DateTimes:
 
 ```sql
- DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00', '2022-01-01 00:00:00.000')$$)
- ```
+DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00')$$)
+```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ c1   │ Nullable(Date)          │              │                    │         │                  │                │
-│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
-│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
 └──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
@@ -1283,14 +1279,13 @@ data type for each value according to its escaping rule.
 **Example**
 
 Let's say we have a file `resultset` with the next content:
-```bash
+```
 <result_before_delimiter>
 ${data}<result_after_delimiter>
 ```
 
 And a file `row_format` with the next content:
-
-```text
+```
 <row_before_delimiter>${column_1:CSV}<field_delimiter_1>${column_2:Quoted}<field_delimiter_2>${column_3:JSON}<row_after_delimiter>
 ```
 
@@ -1340,7 +1335,7 @@ Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
 
 ### Settings for text formats {#settings-for-text-formats}
 
-#### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference {#input-format-max-rows-to-read-for-schema-inference}
+#### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference
 
 These settings control the amount of data to be read while schema inference.
 The more rows/bytes are read, the more time is spent on schema inference, but the greater the chance to
@@ -1350,7 +1345,7 @@ Default values:
 -   `25000` for `input_format_max_rows_to_read_for_schema_inference`.
 -   `33554432` (32 Mb) for `input_format_max_bytes_to_read_for_schema_inference`.
 
-#### column_names_for_schema_inference {#column-names-for-schema-inference}
+#### column_names_for_schema_inference
 
 The list of column names to use in schema inference for formats without explicit column names. Specified names will be used instead of default `c1,c2,c3,...`. The format: `column1,column2,column3,...`.
 
@@ -1367,7 +1362,7 @@ DESC format(TSV, 'Hello, World!	42	[1, 2, 3]') settings column_names_for_schema_
 └──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### schema_inference_hints {#schema-inference-hints}
+#### schema_inference_hints
 
 The list of column names and types to use in schema inference instead of automatically determined types. The format: 'column_name1 column_type1, column_name2 column_type2, ...'.
 This setting can be used to specify the types of columns that could not be determined automatically or for optimizing the schema.
@@ -1387,10 +1382,10 @@ DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : nul
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### schema_inference_make_columns_nullable ${#schema-inference-make-columns-nullable}
+#### schema_inference_make_columns_nullable
 
 Controls making inferred types `Nullable` in schema inference for formats without information about nullability.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will be `Nullable` only if `input_format_null_as_default` is disabled and the column contains `NULL` in a sample that is parsed during schema inference.
 
 Enabled by default.
 
@@ -1413,13 +1408,15 @@ DESC format(JSONEachRow, $$
 └─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-SET schema_inference_make_columns_nullable = 'auto';
+SET schema_inference_make_columns_nullable = 0;
+SET input_format_null_as_default = 0;    
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
                          $$)
 ```
 ```response
+
 ┌─name────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ id      │ Int64            │              │                    │         │                  │                │
 │ age     │ Int64            │              │                    │         │                  │                │
@@ -1431,6 +1428,7 @@ DESC format(JSONEachRow, $$
 
 ```sql
 SET schema_inference_make_columns_nullable = 0;
+SET input_format_null_as_default = 1;    
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
@@ -1447,7 +1445,7 @@ DESC format(JSONEachRow, $$
 └─────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_integers {#input-format-try-infer-integers}
+#### input_format_try_infer_integers
 
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats.
 If all numbers in the column from sample data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -1504,10 +1502,10 @@ DESC format(JSONEachRow, $$
 └────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_datetimes {#input-format-try-infer-datetimes}
+#### input_format_try_infer_datetimes
 
-If enabled, ClickHouse will try to infer type `DateTime` or `DateTime64` from string fields in schema inference for text formats.
-If all fields from a column in sample data were successfully parsed as datetimes, the result type will be `DateTime` or `DateTime64(9)` (if any datetime had fractional part),
+If enabled, ClickHouse will try to infer type `DateTime64` from string fields in schema inference for text formats.
+If all fields from a column in sample data were successfully parsed as datetimes, the result type will be `DateTime64(9)`,
 if at least one field was not parsed as datetime, the result type will be `String`.
 
 Enabled by default.
@@ -1515,71 +1513,44 @@ Enabled by default.
 **Examples**
 
 ```sql
-SET input_format_try_infer_datetimes = 0;
+SET input_format_try_infer_datetimes = 0
 DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                                {"datetime" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00.000"}
                          $$)
 ```
 ```response
-┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime   │ Nullable(String) │              │                    │         │                  │                │
-│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
-└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime │ Nullable(String) │              │                    │         │                  │                │
+└──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-SET input_format_try_infer_datetimes = 1;
+SET input_format_try_infer_datetimes = 1
 DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                                {"datetime" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00.000"}
                          $$)
 ```
 ```response
-┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
-│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
-└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name─────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
 DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "unknown", "datetime64" : "unknown"}
+                                {"datetime" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "unknown"}
                          $$)
 ```
 ```response
-┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime   │ Nullable(String) │              │                    │         │                  │                │
-│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
-└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─name─────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime │ Nullable(String) │              │                    │         │                  │                │
+└──────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_datetimes_only_datetime64 {#input-format-try-infer-datetimes-only-datetime64}
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/en/operations/settings/settings-formats.md#date_time_input_format)
 
-If enabled, ClickHouse will always infer `DateTime64(9)` when `input_format_try_infer_datetimes` is enabled even if datetime values don't contain fractional part.
-
-Disabled by default.
-
-**Examples**
-
-```sql
-SET input_format_try_infer_datetimes = 1;
-SET input_format_try_infer_datetimes_only_datetime64 = 1;
-DESC format(JSONEachRow, $$
-                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
-                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
-                         $$)
-```
-
-```response
-┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
-│ datetime   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
-│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
-└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
-```
-
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/operations/settings/settings-formats.md#date_time_input_format)
-
-#### input_format_try_infer_dates {#input-format-try-infer-dates}
+#### input_format_try_infer_dates
 
 If enabled, ClickHouse will try to infer type `Date` from string fields in schema inference for text formats.
 If all fields from a column in sample data were successfully parsed as dates, the result type will be `Date`,
@@ -1625,7 +1596,7 @@ DESC format(JSONEachRow, $$
 └──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-#### input_format_try_infer_exponent_floats {#input-format-try-infer-exponent-floats}
+#### input_format_try_infer_exponent_floats
 
 If enabled, ClickHouse will try to infer floats in exponential form for text formats (except JSON where numbers in exponential form are always inferred).
 
@@ -2021,8 +1992,7 @@ Let's try to use schema inference on these 3 files:
 ```
 
 Result:
-
-```response
+```text
 ┌─name───┬─type─────────────┐
 │ field1 │ Nullable(Int64)  │
 │ field2 │ Nullable(String) │
@@ -2033,7 +2003,7 @@ As we can see, we don't have `field3` from file `data3.jsonl`.
 It happens because ClickHouse first tried to infer schema from file `data1.jsonl`, failed because of only nulls for field `field2`,
 and then tried to infer schema from `data2.jsonl` and succeeded, so data from file `data3.jsonl` wasn't read.
 
-### Union mode {#default-schema-inference-mode-1}
+### Union mode {#default-schema-inference-mode}
 
 In union mode, ClickHouse assumes that files can have different schemas, so it infer schemas of all files and then union them to the common schema. 
 
@@ -2066,8 +2036,7 @@ Let's try to use schema inference on these 3 files:
 ```
 
 Result:
-
-```response
+```text
 ┌─name───┬─type───────────────────┐
 │ field1 │ Nullable(Int64)        │
 │ field2 │ Nullable(String)       │
@@ -2090,7 +2059,7 @@ If data format is not specified and cannot be determined by the file extension, 
 **Examples:**
 
 Let's say we have `data` with the following content:
-```csv
+```
 "a","b"
 1,"Data1"
 2,"Data2"
@@ -2102,7 +2071,7 @@ We can inspect and query this file without specifying format or structure:
 :) desc file(data);
 ```
 
-```repsonse
+```text
 ┌─name─┬─type─────────────┐
 │ a    │ Nullable(Int64)  │
 │ b    │ Nullable(String) │
@@ -2113,7 +2082,7 @@ We can inspect and query this file without specifying format or structure:
 :) select * from file(data);
 ```
 
-```response
+```text
 ┌─a─┬─b─────┐
 │ 1 │ Data1 │
 │ 2 │ Data2 │

@@ -5,6 +5,7 @@
 #include "Sources.h"
 #include "Sinks.h"
 #include <Core/AccurateComparison.h>
+#include <base/range.h>
 #include "GatherUtils.h"
 #include "sliceEqualElements.h"
 #include "sliceHasImplAnyAll.h"
@@ -212,7 +213,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
     };
 
     size_t size_to_reserve = 0;
-    for (size_t i = 0; i < sources_num; ++i)
+    for (auto i : collections::range(0, sources_num))
     {
         const auto & source = array_sources[i];
         is_const[i] = source->isConst();
@@ -232,7 +233,7 @@ void concat(const std::vector<std::unique_ptr<IArraySource>> & array_sources, Si
 
     while (!sink.isEnd())
     {
-        for (size_t i = 0; i < sources_num; ++i)
+        for (auto i : collections::range(0, sources_num))
         {
             const auto & source = array_sources[i];
             if (is_const[i])
@@ -439,6 +440,9 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
     const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
+    bool a_is_short = src_a.getColumnSize() < condition.size();
+    bool b_is_short = src_b.getColumnSize() < condition.size();
+
     while (cond_pos < cond_end)
     {
         if (*cond_pos)
@@ -446,8 +450,10 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
         else
             writeSlice(src_b.getWhole(), sink);
 
-        src_a.next();
-        src_b.next();
+        if (!a_is_short || *cond_pos)
+            src_a.next();
+        if (!b_is_short || !*cond_pos)
+            src_b.next();
 
         ++cond_pos;
         sink.next();
@@ -661,11 +667,13 @@ bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<Second
 }
 
 template <ArraySearchType search_type, typename FirstSource, typename SecondSource>
-void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, UInt8 * result, size_t size)
+void NO_INLINE arrayAllAny(FirstSource && first, SecondSource && second, ColumnUInt8 & result)
 {
-    for (UInt8 * result_end = result + size; result < result_end; ++result)
+    auto size = result.size();
+    auto & data = result.getData();
+    for (auto row : collections::range(0, size))
     {
-        *result = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()));
+        data[row] = static_cast<UInt8>(sliceHas<search_type>(first.getWhole(), second.getWhole()));
         first.next();
         second.next();
     }

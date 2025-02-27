@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
@@ -82,7 +81,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         return rewritten_query.str();
     }
-    if (query.cluster)
+    else if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";
@@ -122,18 +121,9 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.merges)
     {
         WriteBufferFromOwnString rewritten_query;
-        rewritten_query << R"(
-            SELECT
-                table,
-                database,
-                merges.progress > 0 ? round(merges.elapsed * (1 - merges.progress) / merges.progress, 2) : NULL AS estimate_complete,
-                round(elapsed, 2) AS elapsed,
-                round(progress * 100, 2) AS progress,
-                is_mutation,
-                formatReadableSize(total_size_bytes_compressed) AS size_compressed,
-                formatReadableSize(memory_usage) AS memory_usage
-            FROM system.merges
-            )";
+        rewritten_query << "SELECT table, database, round((elapsed * (1 / merges.progress)) - merges.elapsed, 2) AS estimate_complete, round(elapsed,2) elapsed, "
+                           "round(progress*100, 2) AS progress, is_mutation, formatReadableSize(total_size_bytes_compressed) AS size_compressed, "
+                           "formatReadableSize(memory_usage) AS memory_usage FROM system.merges";
 
         if (!query.like.empty())
         {

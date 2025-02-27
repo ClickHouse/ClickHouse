@@ -1,4 +1,4 @@
--- Tags: long, no-object-storage
+-- Tags: long, no-s3-storage
 
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
@@ -6,7 +6,6 @@ set max_threads = 16;
 set allow_aggregate_partitions_independently = 1;
 set force_aggregate_partitions_independently = 1;
 set optimize_use_projections = 0;
-set optimize_trivial_insert_select = 1;
 
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
@@ -57,7 +56,7 @@ select count() from (select throwIf(count() != 2) from t3 group by a);
 select throwIf(count() != 4) from remote('127.0.0.{1,2}', currentDatabase(), t3) group by a format Null;
 
 -- if we happened to switch to external aggregation at some point, merging will happen as usual
-select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki', max_bytes_ratio_before_external_group_by = 0;
+select count() from (select throwIf(count() != 2) from t3 group by a) settings max_bytes_before_external_group_by = '1Ki';
 
 drop table t3;
 

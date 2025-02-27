@@ -49,8 +49,6 @@
 #include <base/bit_cast.h>
 #include <base/unaligned.h>
 
-#include <algorithm>
-
 namespace DB
 {
 
@@ -77,70 +75,52 @@ namespace impl
         ColumnPtr key0;
         ColumnPtr key1;
         bool is_const;
-        const ColumnArray::Offsets * offsets = nullptr;
 
         size_t size() const
         {
             assert(key0 && key1);
             assert(key0->size() == key1->size());
-            if (offsets != nullptr && !offsets->empty())
-                return offsets->back();
             return key0->size();
         }
-
         SipHashKey getKey(size_t i) const
         {
             if (is_const)
                 i = 0;
-            assert(key0->size() == key1->size());
-            if (offsets != nullptr && i > 0)
-            {
-                const auto * const begin = std::upper_bound(offsets->begin(), offsets->end(), i - 1);
-                const auto * upper = std::upper_bound(begin, offsets->end(), i);
-                if (upper != offsets->end())
-                    i = upper - begin;
-            }
             const auto & key0data = assert_cast<const ColumnUInt64 &>(*key0).getData();
             const auto & key1data = assert_cast<const ColumnUInt64 &>(*key1).getData();
-            assert(key0->size() > i);
             return {key0data[i], key1data[i]};
         }
     };
 
     static SipHashKeyColumns parseSipHashKeyColumns(const ColumnWithTypeAndName & key)
     {
-        const auto * col_key = key.column.get();
-
-        bool is_const;
-        const ColumnTuple * col_key_tuple;
-        if (isColumnConst(*col_key))
+        const ColumnTuple * tuple = nullptr;
+        const auto * column = key.column.get();
+        bool is_const = false;
+        if (isColumnConst(*column))
         {
             is_const = true;
-            col_key_tuple = checkAndGetColumnConstData<ColumnTuple>(col_key);
+            tuple = checkAndGetColumnConstData<ColumnTuple>(column);
         }
         else
-        {
-            is_const = false;
-            col_key_tuple = checkAndGetColumn<ColumnTuple>(col_key);
-        }
+            tuple = checkAndGetColumn<ColumnTuple>(column);
+        if (!tuple)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "key must be a tuple");
+        if (tuple->tupleSize() != 2)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "wrong tuple size: key must be a tuple of 2 UInt64");
 
-        if (!col_key_tuple || col_key_tuple->tupleSize() != 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The key must be of type Tuple(UInt64, UInt64)");
+        SipHashKeyColumns ret{tuple->getColumnPtr(0), tuple->getColumnPtr(1), is_const};
+        assert(ret.key0);
+        if (!checkColumn<ColumnUInt64>(*ret.key0))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "first element of the key tuple is not UInt64");
+        assert(ret.key1);
+        if (!checkColumn<ColumnUInt64>(*ret.key1))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "second element of the key tuple is not UInt64");
 
-        SipHashKeyColumns result{.key0 = col_key_tuple->getColumnPtr(0), .key1 = col_key_tuple->getColumnPtr(1), .is_const = is_const};
+        if (ret.size() == 1)
+            ret.is_const = true;
 
-        assert(result.key0);
-        assert(result.key1);
-
-        if (!checkColumn<ColumnUInt64>(*result.key0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 1st element of the key tuple is not of type UInt64");
-        if (!checkColumn<ColumnUInt64>(*result.key1))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 2nd element of the key tuple is not of type UInt64");
-
-        if (result.size() == 1)
-            result.is_const = true;
-
-        return result;
+        return ret;
     }
 }
 
@@ -739,9 +719,9 @@ private:
 
             return col_to;
         }
-
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), Name::name);
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                    arguments[0].column->getName(), Name::name);
     }
 
 public:
@@ -761,11 +741,6 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
@@ -777,35 +752,35 @@ public:
 
         if (which.isUInt8())
             return executeType<UInt8>(arguments);
-        if (which.isUInt16())
+        else if (which.isUInt16())
             return executeType<UInt16>(arguments);
-        if (which.isUInt32())
+        else if (which.isUInt32())
             return executeType<UInt32>(arguments);
-        if (which.isUInt64())
+        else if (which.isUInt64())
             return executeType<UInt64>(arguments);
-        if (which.isInt8())
+        else if (which.isInt8())
             return executeType<Int8>(arguments);
-        if (which.isInt16())
+        else if (which.isInt16())
             return executeType<Int16>(arguments);
-        if (which.isInt32())
+        else if (which.isInt32())
             return executeType<Int32>(arguments);
-        if (which.isInt64())
+        else if (which.isInt64())
             return executeType<Int64>(arguments);
-        if (which.isDate())
+        else if (which.isDate())
             return executeType<UInt16>(arguments);
-        if (which.isDate32())
+        else if (which.isDate32())
             return executeType<Int32>(arguments);
-        if (which.isDateTime())
+        else if (which.isDateTime())
             return executeType<UInt32>(arguments);
-        if (which.isDecimal32())
+        else if (which.isDecimal32())
             return executeType<Decimal32>(arguments);
-        if (which.isDecimal64())
+        else if (which.isDecimal64())
             return executeType<Decimal64>(arguments);
-        if (which.isIPv4())
+        else if (which.isIPv4())
             return executeType<IPv4>(arguments);
-
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-            arguments[0].type->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
+                arguments[0].type->getName(), getName());
     }
 };
 
@@ -1137,15 +1112,7 @@ private:
 
             typename ColumnVector<ToType>::Container vec_temp(nested_size);
             bool nested_is_first = true;
-
-            if constexpr (Keyed)
-            {
-                KeyColumnsType key_cols_tmp{key_cols};
-                key_cols_tmp.offsets = &offsets;
-                executeForArgument(key_cols_tmp, nested_type, nested_column, vec_temp, nested_is_first);
-            }
-            else
-                executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
+            executeForArgument(key_cols, nested_type, nested_column, vec_temp, nested_is_first);
 
             const size_t size = offsets.size();
 
@@ -1195,7 +1162,7 @@ private:
 
         if (icolumn->size() != vec_to.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument column '{}' size {} doesn't match result column size {} of function {}",
-                icolumn->getName(), icolumn->size(), vec_to.size(), getName());
+                    icolumn->getName(), icolumn->size(), vec_to.size(), getName());
 
         if constexpr (Keyed)
             if (key_cols.size() != vec_to.size() && key_cols.size() != 1)
@@ -1234,9 +1201,6 @@ private:
         else executeGeneric<first>(key_cols, icolumn, vec_to);
     }
 
-    /// Return a fixed random-looking magic number when input is empty.
-    static constexpr auto filler = 0xe28dbde7fe22e41c;
-
     void executeForArgument(const KeyColumnsType & key_cols, const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first) const
     {
         /// Flattening of tuples.
@@ -1245,11 +1209,6 @@ private:
             const auto & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
-
-            if (0 == tuple_size && is_first)
-                for (auto & hash : vec_to)
-                    hash = static_cast<ToType>(filler);
-
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(key_cols, tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
@@ -1258,11 +1217,6 @@ private:
             const auto & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
-
-            if (0 == tuple_size && is_first)
-                for (auto & hash : vec_to)
-                    hash = static_cast<ToType>(filler);
-
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 auto tmp = ColumnConst::create(tuple_columns[i], column->size());
@@ -1310,16 +1264,6 @@ public:
             return std::make_shared<DataTypeNumber<ToType>>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
-        {
-            return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
-        }
-        else
-            return std::make_shared<DataTypeNumber<ToType>>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto col_to = ColumnVector<ToType>::create(input_rows_count);
@@ -1334,7 +1278,10 @@ public:
             constexpr size_t first_data_argument = Keyed;
 
             if (arguments.size() <= first_data_argument)
-                vec_to.assign(input_rows_count, static_cast<ToType>(filler));
+            {
+                /// Return a fixed random-looking magic number when input is empty
+                vec_to.assign(input_rows_count, static_cast<ToType>(0xe28dbde7fe22e41c));
+            }
 
             KeyColumnsType key_cols{};
             if constexpr (Keyed)
@@ -1442,14 +1389,14 @@ struct URLHierarchyHashImpl
             ++pos;
 
         /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
-          * (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
-          * For the rest, simply return the full URL as the only element of the hierarchy.
-          */
-        if (pos == begin || pos == end || !(pos + 3 < end && pos[0] == ':' && pos[1] == '/' && pos[2] == '/'))
+        *    (http, file - fit, mailto, magnet - do not fit), and after two slashes there is still something
+        *    For the rest, simply return the full URL as the only element of the hierarchy.
+        */
+        if (pos == begin || pos == end || !(*pos++ == ':' && pos < end && *pos++ == '/' && pos < end && *pos++ == '/' && pos < end))
         {
-            return 0 == level ? end - begin : 0;
+            pos = end;
+            return 0 == level ? pos - begin : 0;
         }
-        pos += 3;
 
         /// The domain for simplicity is everything that after the protocol and the two slashes, until the next slash or before `?` or `#`
         while (pos < end && !(*pos == '/' || *pos == '?' || *pos == '#'))
@@ -1522,12 +1469,8 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
@@ -1535,9 +1478,10 @@ public:
 
         if (arg_count == 1)
             return executeSingleArg(arguments);
-        if (arg_count == 2)
+        else if (arg_count == 2)
             return executeTwoArgs(arguments);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "got into IFunction::execute with unexpected number of arguments");
     }
 
 private:
@@ -1566,18 +1510,23 @@ private:
 
             return col_to;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 
     ColumnPtr executeTwoArgs(const ColumnsWithTypeAndName & arguments) const
     {
         const auto * level_col = arguments.back().column.get();
-        const auto * col_untyped = arguments.front().column.get();
-        size_t size = col_untyped->size();
+        if (!isColumnConst(*level_col))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be an integral constant", getName());
 
+        const auto level = level_col->get64(0);
+
+        const auto * col_untyped = arguments.front().column.get();
         if (const auto * col_from = checkAndGetColumn<ColumnString>(col_untyped))
         {
+            const auto size = col_from->size();
             auto col_to = ColumnUInt64::create(size);
 
             const auto & chars = col_from->getChars();
@@ -1588,7 +1537,7 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 out[i] = URLHierarchyHashImpl::apply(
-                    level_col->getUInt(i),
+                    level,
                     reinterpret_cast<const char *>(&chars[current_offset]),
                     offsets[i] - current_offset - 1);
 
@@ -1597,23 +1546,9 @@ private:
 
             return col_to;
         }
-        if (const auto * col_const_from = checkAndGetColumnConstData<ColumnString>(col_untyped))
-        {
-            auto col_to = ColumnUInt64::create(size);
-            auto & out = col_to->getData();
-
-            const auto & chars = col_const_from->getChars();
-            const auto & offsets = col_const_from->getOffsets();
-
-            for (size_t i = 0; i < size; ++i)
-            {
-                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
-            }
-
-            return col_to;
-        }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
+                arguments[0].column->getName(), getName());
     }
 };
 

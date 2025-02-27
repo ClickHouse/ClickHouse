@@ -14,7 +14,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-constexpr size_t AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE = 0xFFFFFF;
+#define AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE 0xFFFFFF
 
 
 namespace DB
@@ -48,7 +48,7 @@ struct MaxIntersectionsData
     Array value;
 };
 
-enum class AggregateFunctionIntersectionsKind : uint8_t
+enum class AggregateFunctionIntersectionsKind
 {
     Count,
     Position
@@ -87,7 +87,8 @@ public:
     {
         if (kind_ == AggregateFunctionIntersectionsKind::Count)
             return std::make_shared<DataTypeUInt64>();
-        return std::make_shared<DataTypeNumber<PointType>>();
+        else
+            return std::make_shared<DataTypeNumber<PointType>>();
     }
 
     /// MaxIntersectionsData::Allocator uses the arena
@@ -155,9 +156,9 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        Int64 current_intersections{};
-        Int64 max_intersections{};
-        PointType position_of_max_intersections{};
+        Int64 current_intersections = 0;
+        Int64 max_intersections = 0;
+        PointType position_of_max_intersections = 0;
 
         /// const_cast because we will sort the array
         auto & array = this->data(place).value;

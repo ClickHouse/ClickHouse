@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/approxtopk
-sidebar_position: 107
-title: "approx_top_k"
-description: "Returns an array of the approximately most frequent values and their counts in the specified column."
+slug: /en/sql-reference/aggregate-functions/reference/approxtopk
+sidebar_position: 212
 ---
 
 # approx_top_k
@@ -15,7 +13,7 @@ approx_top_k(N)(column)
 approx_top_k(N, reserved)(column)
 ```
 
-This function does not provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren't the most frequent values.
+This function does not provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren’t the most frequent values.
 
 We recommend using the `N < 10` value; performance is reduced with large `N` values. Maximum value of `N = 65536`.
 

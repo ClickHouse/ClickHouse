@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <string_view>
 #include <limits>
+#include <algorithm>
+#include <iterator>
 #include <bit>
 #include <span>
 
@@ -15,23 +18,30 @@
 #include <Common/LocalDate.h>
 #include <Common/LocalDateTime.h>
 #include <Common/transformEndianness.h>
+#include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sort.h>
 #include <base/unit.h>
 
 #include <Core/Types.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/exp10_i32.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
 
+#include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
+
+#include <pcg_random.hpp>
+#include <double-conversion/double-conversion.h>
 
 static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
@@ -52,6 +62,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_IPV6;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
@@ -103,19 +114,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
-    static constexpr size_t size = sizeof(T); /// NOLINT
-
-    /// If the whole value fits in buffer do not call readStrict and copy with
-    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
-    {
-        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.readStrict(reinterpret_cast<char *>(&x), size);
-    }
+    buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x)); /// NOLINT
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -234,7 +233,7 @@ inline bool checkStringCaseInsensitive(const String & s, ReadBuffer & buf)
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf);
 inline void assertStringCaseInsensitive(const String & s, ReadBuffer & buf)
 {
-    assertStringCaseInsensitive(s.c_str(), buf);
+    return assertStringCaseInsensitive(s.c_str(), buf);
 }
 
 /** Check that next character in buf matches first character of s.
@@ -260,20 +259,6 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     char tmp = '0';
     readChar(tmp, buf);
     x = tmp != '0';
-
-    if (!buf.eof() && isAlphaASCII(tmp))
-    {
-        if (tmp == 't' || tmp == 'T')
-        {
-            assertStringCaseInsensitive("rue", buf);
-            x = true;
-        }
-        else if (tmp == 'f' || tmp == 'F')
-        {
-            assertStringCaseInsensitive("alse", buf);
-            x = false;
-        }
-    }
 }
 
 template <typename ReturnType = void>
@@ -316,7 +301,8 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = true;
                 break;
             }
-            [[fallthrough]];
+            else
+                [[fallthrough]];
         }
         case 'F':
         {
@@ -329,7 +315,8 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
                 x = false;
                 break;
             }
-            [[fallthrough]];
+            else
+                [[fallthrough]];
         }
         default:
         {
@@ -343,7 +330,7 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
     return ReturnType(true);
 }
 
-enum class ReadIntTextCheckOverflow : uint8_t
+enum class ReadIntTextCheckOverflow
 {
     DO_NOT_CHECK_OVERFLOW,
     CHECK_OVERFLOW,
@@ -595,12 +582,7 @@ template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
-/// Reads maximum n bytes to string.
-void readString(String & s, ReadBuffer & buf, size_t n);
-
 void readEscapedString(String & s, ReadBuffer & buf);
-
-void readEscapedStringCRLF(String & s, ReadBuffer & buf);
 
 void readQuotedString(String & s, ReadBuffer & buf);
 void readQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
@@ -614,10 +596,9 @@ void readDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 bool tryReadDoubleQuotedString(String & s, ReadBuffer & buf);
 bool tryReadDoubleQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
-void readJSONString(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+void readJSONString(String & s, ReadBuffer & buf);
 
 void readBackQuotedString(String & s, ReadBuffer & buf);
-bool tryReadBackQuotedString(String & s, ReadBuffer & buf);
 void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf);
 
 void readStringUntilEOF(String & s, ReadBuffer & buf);
@@ -628,10 +609,6 @@ void readEscapedStringUntilEOL(String & s, ReadBuffer & buf);
 
 /// Only 0x20 as whitespace character
 void readStringUntilWhitespace(String & s, ReadBuffer & buf);
-void skipStringUntilWhitespace(ReadBuffer & buf);
-
-void readStringUntilAmpersand(String & s, ReadBuffer & buf);
-void readStringUntilEquals(String & s, ReadBuffer & buf);
 
 
 /** Read string in CSV format.
@@ -666,7 +643,7 @@ void readStringInto(Vector & s, ReadBuffer & buf);
 template <typename Vector>
 void readNullTerminated(Vector & s, ReadBuffer & buf);
 
-template <typename Vector, bool support_crlf>
+template <typename Vector>
 void readEscapedStringInto(Vector & s, ReadBuffer & buf);
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -686,12 +663,12 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
-ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::JSON & settings)
+bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 {
-    return readJSONStringInto<Vector, bool>(s, buf, settings);
+    return readJSONStringInto<Vector, bool>(s, buf);
 }
 
 template <bool enable_sql_style_quoting, typename Vector>
@@ -705,10 +682,6 @@ ReturnType readJSONObjectPossiblyInvalid(Vector & s, ReadBuffer & buf);
 
 template <typename Vector, typename ReturnType = void>
 ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf);
-
-/// Similar to readJSONObjectPossiblyInvalid but avoids copying the data if JSON object fits into current read buffer
-/// If copying is unavoidable, it copies data into provided object_buffer and returns string_view to it.
-std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer);
 
 template <typename Vector>
 void readStringUntilWhitespaceInto(Vector & s, ReadBuffer & buf);
@@ -726,28 +699,13 @@ struct NullOutput
 };
 
 template <typename ReturnType>
-ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters);
-
-inline bool isSymbolIn(char symbol, const char * symbols)
-{
-    if (symbols == nullptr)
-        return true;
-
-    const char * pos = symbols;
-    while (*pos)
-    {
-        if (*pos == symbol)
-            return true;
-        ++pos;
-    }
-    return false;
-}
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
 /// In YYYY-MM-DD format.
 /// For convenience, Month and Day parts can have single digit instead of two digits.
 /// Any separators other than '-' are supported.
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -791,9 +749,6 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         }
         else
         {
-            if (!isSymbolIn(pos[-1], allowed_delimiters))
-                return error();
-
             if (!isNumericASCII(pos[0]))
                 return error();
 
@@ -807,9 +762,6 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
                 pos += 2;
 
             if (isNumericASCII(pos[-1]) || !isNumericASCII(pos[0]))
-                return error();
-
-            if (!isSymbolIn(pos[-1], allowed_delimiters))
                 return error();
 
             day = pos[0] - '0';
@@ -826,7 +778,8 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf, const cha
         date = LocalDate(year, month, day);
         return ReturnType(true);
     }
-    return readDateTextFallback<ReturnType>(date, buf, allowed_delimiters);
+    else
+        return readDateTextFallback<ReturnType>(date, buf);
 }
 
 inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
@@ -840,15 +793,15 @@ inline void convertToDayNum(DayNum & date, ExtendedDayNum & from)
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     LocalDate local_date;
 
     if constexpr (throw_exception)
-        readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+        readDateTextImpl<ReturnType>(local_date, buf);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
     ExtendedDayNum ret = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day());
@@ -857,19 +810,19 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
     LocalDate local_date;
 
     if constexpr (throw_exception)
-        readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
-    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+        readDateTextImpl<ReturnType>(local_date, buf);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
     /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
-    date = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch()));
+    date = date_lut.makeDayNum(local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(date_lut.getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
 
@@ -889,19 +842,19 @@ inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTI
     readDateTextImpl<void>(date, buf, date_lut);
 }
 
-inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
 {
-    return readDateTextImpl<bool>(date, buf, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf);
 }
 
-inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone);
 }
 
-inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone);
 }
 
 UUID parseUUID(std::span<const UInt8> src);
@@ -938,22 +891,24 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         uuid = parseUUID({reinterpret_cast<const UInt8 *>(s), size});
         return ReturnType(true);
     }
-
-    s[size] = 0;
-
-    if constexpr (throw_exception)
-    {
-        throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
-    }
     else
     {
-        return ReturnType(false);
+        s[size] = 0;
+
+        if constexpr (throw_exception)
+        {
+            throw Exception(ErrorCodes::CANNOT_PARSE_UUID, "Cannot parse uuid {}", s);
+        }
+        else
+        {
+            return ReturnType(false);
+        }
     }
 }
 
 inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 {
-    readUUIDTextImpl<void>(uuid, buf);
+    return readUUIDTextImpl<void>(uuid, buf);
 }
 
 inline bool tryReadUUIDText(UUID & uuid, ReadBuffer & buf)
@@ -975,7 +930,7 @@ inline ReturnType readIPv4TextImpl(IPv4 & ip, ReadBuffer & buf)
 
 inline void readIPv4Text(IPv4 & ip, ReadBuffer & buf)
 {
-    readIPv4TextImpl<void>(ip, buf);
+    return readIPv4TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv4Text(IPv4 & ip, ReadBuffer & buf)
@@ -997,7 +952,7 @@ inline ReturnType readIPv6TextImpl(IPv6 & ip, ReadBuffer & buf)
 
 inline void readIPv6Text(IPv6 & ip, ReadBuffer & buf)
 {
-    readIPv6TextImpl<void>(ip, buf);
+    return readIPv6TextImpl<void>(ip, buf);
 }
 
 inline bool tryReadIPv6Text(IPv6 & ip, ReadBuffer & buf)
@@ -1009,28 +964,20 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 template <typename T>
-inline T parseWithoutAssertEOF(const char * data, size_t size);
-
-template <typename T>
 inline T parseFromString(std::string_view str)
 {
     return parse<T>(str.data(), str.size());
 }
 
-template <typename T>
-inline T parseFromStringWithoutAssertEOF(std::string_view str)
-{
-    return parseWithoutAssertEOF<T>(str.data(), str.size());
-}
 
 template <typename ReturnType = void, bool dt64_mode = false>
-ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss or YYYY-MM-DD format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
 template <typename ReturnType = void, bool dt64_mode = false>
-inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1063,9 +1010,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 if (!isNumericASCII(s[0]) || !isNumericASCII(s[1]) || !isNumericASCII(s[2]) || !isNumericASCII(s[3])
                     || !isNumericASCII(s[5]) || !isNumericASCII(s[6]) || !isNumericASCII(s[8]) || !isNumericASCII(s[9]))
                     return ReturnType(false);
-
-                if (!isSymbolIn(s[4], allowed_date_delimiters) || !isSymbolIn(s[7], allowed_date_delimiters))
-                    return ReturnType(false);
             }
 
             UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -1084,9 +1028,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 {
                     if (!isNumericASCII(s[11]) || !isNumericASCII(s[12]) || !isNumericASCII(s[14]) || !isNumericASCII(s[15])
                         || !isNumericASCII(s[17]) || !isNumericASCII(s[18]))
-                        return ReturnType(false);
-
-                    if (!isSymbolIn(s[13], allowed_time_delimiters) || !isSymbolIn(s[16], allowed_time_delimiters))
                         return ReturnType(false);
                 }
 
@@ -1107,14 +1048,16 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
 
             return ReturnType(true);
         }
-        /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        else
+            /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
+            return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }
-    return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    else
+        return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut);
 }
 
 template <typename ReturnType>
-inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1128,7 +1071,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         {
             try
             {
-                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+                readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
             }
             catch (const DB::Exception &)
             {
@@ -1138,7 +1081,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut);
             if (!ok && (buf.eof() || *buf.position() != '.'))
                 return ReturnType(false);
         }
@@ -1221,14 +1164,14 @@ inline void readDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer
     readDateTimeTextImpl<void>(datetime64, scale, buf, date_lut);
 }
 
-inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
-    return readDateTimeTextImpl<bool>(datetime, buf, time_zone, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextImpl<bool>(datetime, buf, time_zone);
 }
 
-inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr)
+inline bool tryReadDateTime64Text(DateTime64 & datetime64, UInt32 scale, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
+    return readDateTimeTextImpl<bool>(datetime64, scale, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -1434,9 +1377,7 @@ inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, 
 inline bool tryReadText(IPv4 & x, ReadBuffer & buf) { return tryReadIPv4Text(x, buf); }
 inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, buf); }
 
-template <typename T>
-requires is_floating_point<T>
-inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(is_floating_point auto & x, ReadBuffer & buf) { readFloatText(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 
@@ -1732,8 +1673,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf, bool one_line = false)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
-bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const FormatSettings::JSON & settings);
+void skipJSONField(ReadBuffer & buf, StringRef name_of_field);
+bool trySkipJSONField(ReadBuffer & buf, StringRef name_of_field);
 
 
 /** Read serialized exception.
@@ -1763,18 +1704,6 @@ inline T parse(const char * data, size_t size)
     T res;
     ReadBufferFromMemory buf(data, size);
     readText(res, buf);
-    assertEOF(buf);
-    return res;
-}
-
-/// This function is used in one place (parseRemoteDescriptionForExternalDataba)
-/// where we need to preserve backward compatibility.
-template <typename T>
-inline T parseWithoutAssertEOF(const char * data, size_t size)
-{
-    T res;
-    ReadBufferFromMemory buf(data, size);
-    readText(res, buf);
     return res;
 }
 
@@ -1782,9 +1711,7 @@ template <typename T>
 inline bool tryParse(T & res, const char * data, size_t size)
 {
     ReadBufferFromMemory buf(data, size);
-    if (!tryReadText(res, buf))
-        return false;
-    return buf.eof();
+    return tryReadText(res, buf);
 }
 
 template <typename T>
@@ -1942,7 +1869,25 @@ bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * &
 /// row_after_delimiter and row_between_delimiter).
 void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
 
-void readParsedValueIntoString(String & s, ReadBuffer & buf, std::function<void(ReadBuffer &)> parse_func);
+struct PcgDeserializer
+{
+    static void deserializePcg32(pcg32_fast & rng, ReadBuffer & buf)
+    {
+        decltype(rng.state_) multiplier, increment, state;
+        readText(multiplier, buf);
+        assertChar(' ', buf);
+        readText(increment, buf);
+        assertChar(' ', buf);
+        readText(state, buf);
+
+        if (multiplier != rng.multiplier())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect multiplier in pcg32: expected {}, got {}", rng.multiplier(), multiplier);
+        if (increment != rng.increment())
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect increment in pcg32: expected {}, got {}", rng.increment(), increment);
+
+        rng.state_ = state;
+    }
+};
 
 template <typename ReturnType = void, typename Vector>
 ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf);
@@ -1950,11 +1895,10 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf);
 void readQuotedField(String & s, ReadBuffer & buf);
 bool tryReadQuotedField(String & s, ReadBuffer & buf);
 
-void readJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
-bool tryReadJSONField(String & s, ReadBuffer & buf, const FormatSettings::JSON & settings);
+void readJSONField(String & s, ReadBuffer & buf);
+bool tryReadJSONField(String & s, ReadBuffer & buf);
 
 void readTSVField(String & s, ReadBuffer & buf);
-void readTSVFieldCRLF(String & s, ReadBuffer & buf);
 
 /** Parse the escape sequence, which can be simple (one character after backslash) or more complex (multiple characters).
   * It is assumed that the cursor is located on the `\` symbol

@@ -1,22 +1,20 @@
 #pragma once
 
 #include <cstring>
+#include <cassert>
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
+#include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
 
-#include <base/defines.h>
-
 
 class Collator;
-class SipHash;
+
 
 namespace DB
 {
@@ -31,8 +29,6 @@ public:
     using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
 
-    static constexpr size_t min_size_to_compress = 4096;
-
 private:
     friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
 
@@ -46,11 +42,7 @@ private:
     size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t ALWAYS_INLINE sizeAt(ssize_t i) const
-    {
-        chassert(offsets[i] > offsets[i - 1]);
-        return offsets[i] - offsets[i - 1];
-    }
+    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
     struct ComparatorBase;
 
@@ -87,7 +79,7 @@ public:
 
     size_t byteSizeAt(size_t n) const override
     {
-        chassert(n < size());
+        assert(n < size());
         return sizeAt(n) + sizeof(offsets[0]);
     }
 
@@ -102,38 +94,31 @@ public:
 
     Field operator[](size_t n) const override
     {
-        chassert(n < size());
+        assert(n < size());
         return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
-        chassert(n < size());
+        assert(n < size());
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
-    }
-
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        WriteBufferFromOwnString wb;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1}, wb);
-        return {wb.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        chassert(n < size());
+        assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
     }
 
     bool isDefaultAt(size_t n) const override
     {
-        chassert(n < size());
+        assert(n < size());
         return sizeAt(n) == 1;
     }
 
     void insert(const Field & x) override
     {
-        const String & s = x.safeGet<String>();
+        const String & s = x.get<const String &>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -152,11 +137,7 @@ public:
         return true;
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override
-#else
-    void doInsertFrom(const IColumn & src_, size_t n) override
-#endif
     {
         const ColumnString & src = assert_cast<const ColumnString &>(src_);
         const size_t size_to_append = src.offsets[n] - src.offsets[n - 1];  /// -1th index is Ok, see PaddedPODArray.
@@ -179,11 +160,7 @@ public:
         }
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
 
     void insertData(const char * pos, size_t length) override
     {
@@ -204,10 +181,6 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -217,17 +190,24 @@ public:
 
     const char * skipSerializedInArena(const char * pos) const override;
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValue(size_t n, SipHash & hash) const override
+    {
+        size_t string_size = sizeAt(n);
+        size_t offset = offsetAt(n);
+
+        hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
+        hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    }
 
     WeakHash32 getWeakHash32() const override;
 
-    void updateHashFast(SipHash & hash) const override;
+    void updateHashFast(SipHash & hash) const override
+    {
+        hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
+        hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
+    }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
@@ -253,11 +233,7 @@ public:
             offsets.push_back(offsets.back() + 1);
     }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
-#else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
-#endif
     {
         const ColumnString & rhs = assert_cast<const ColumnString &>(rhs_);
         return memcmpSmallAllowOverflow15(chars.data() + offsetAt(n), sizeAt(n) - 1, rhs.chars.data() + rhs.offsetAt(m), rhs.sizeAt(m) - 1);
@@ -279,15 +255,11 @@ public:
     void updatePermutationWithCollation(const Collator & collator, IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int, Permutation & res, EqualRanges & equal_ranges) const override;
 
-    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
-
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
-    size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
 
     void getExtremes(Field & min, Field & max) const override;

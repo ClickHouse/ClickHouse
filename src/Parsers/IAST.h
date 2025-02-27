@@ -6,8 +6,7 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-
-#include <city.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <set>
@@ -67,7 +66,7 @@ public:
     /** Set the alias. */
     virtual void setAlias(const String & /*to*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {}", getColumnName());
     }
 
     /** Get the text that identifies this element. */
@@ -121,12 +120,12 @@ public:
         if (!child)
             return;
 
-        T * cast = dynamic_cast<T *>(child.get());
-        if (!cast)
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         children.push_back(child);
-        field = cast;
+        field = casted;
     }
 
     template <typename T>
@@ -135,8 +134,8 @@ public:
         if (!child)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
 
-        T * cast = dynamic_cast<T *>(child.get());
-        if (!cast)
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         for (ASTPtr & current_child : children)
@@ -144,7 +143,7 @@ public:
             if (current_child.get() == field)
             {
                 current_child = child;
-                field = cast;
+                field = casted;
                 return;
             }
         }
@@ -194,39 +193,47 @@ public:
     /// Format settings.
     struct FormatSettings
     {
+        WriteBuffer & ostr;
         bool one_line;
         bool hilite;
-        IdentifierQuotingRule identifier_quoting_rule;
+        bool always_quote_identifiers;
         IdentifierQuotingStyle identifier_quoting_style;
         bool show_secrets; /// Show secret parts of the AST (e.g. passwords, encryption keys).
         char nl_or_ws; /// Newline or whitespace.
         LiteralEscapingStyle literal_escaping_style;
-        bool print_pretty_type_names;
-        bool enforce_strict_identifier_format;
 
         explicit FormatSettings(
+            WriteBuffer & ostr_,
             bool one_line_,
             bool hilite_ = false,
-            IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
+            bool always_quote_identifiers_ = false,
             IdentifierQuotingStyle identifier_quoting_style_ = IdentifierQuotingStyle::Backticks,
             bool show_secrets_ = true,
-            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
-            bool print_pretty_type_names_ = false,
-            bool enforce_strict_identifier_format_ = false)
-            : one_line(one_line_)
+            LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular)
+            : ostr(ostr_)
+            , one_line(one_line_)
             , hilite(hilite_)
-            , identifier_quoting_rule(identifier_quoting_rule_)
+            , always_quote_identifiers(always_quote_identifiers_)
             , identifier_quoting_style(identifier_quoting_style_)
             , show_secrets(show_secrets_)
             , nl_or_ws(one_line ? ' ' : '\n')
             , literal_escaping_style(literal_escaping_style_)
-            , print_pretty_type_names(print_pretty_type_names_)
-            , enforce_strict_identifier_format(enforce_strict_identifier_format_)
         {
         }
 
-        void writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const;
-        void checkIdentifier(const String & name) const;
+        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
+            : ostr(ostr_)
+            , one_line(other.one_line)
+            , hilite(other.hilite)
+            , always_quote_identifiers(other.always_quote_identifiers)
+            , identifier_quoting_style(other.identifier_quoting_style)
+            , show_secrets(other.show_secrets)
+            , nl_or_ws(other.nl_or_ws)
+            , literal_escaping_style(other.literal_escaping_style)
+        {
+        }
+
+        void writeIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -244,88 +251,44 @@ public:
     /// The state that is copied when each node is formatted. For example, nesting level.
     struct FormatStateStacked
     {
-        UInt16 indent = 0;
+        UInt8 indent = 0;
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
         bool surround_each_list_element_with_parens = false;
-        bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
-        std::string create_engine_name;
         const IAST * current_select = nullptr;
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const
+    void format(const FormatSettings & settings) const
     {
         FormatState state;
-        formatImpl(ostr, settings, state, FormatStateStacked());
+        formatImpl(settings, state, FormatStateStacked());
     }
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        formatImpl(ostr, settings, state, std::move(frame));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
-    /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
-    struct FormattingBuffer
-    {
-        WriteBuffer & ostr;
-        const FormatSettings & settings;
-        FormatState & state;
-        FormatStateStacked frame;
-    };
+    // Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
+    // You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
+    String formatWithPossiblyHidingSensitiveData(size_t max_length, bool one_line, bool show_secrets) const;
 
-    void format(FormattingBuffer out) const
-    {
-        formatImpl(out.ostr, out.settings, out.state, out.frame);
-    }
-
-    /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
-    /// You can use Interpreters/formatWithPossiblyHidingSecrets.h for convenience.
-    String formatWithPossiblyHidingSensitiveData(
-        size_t max_length,
-        bool one_line,
-        bool show_secrets,
-        bool print_pretty_type_names,
-        IdentifierQuotingRule identifier_quoting_rule,
-        IdentifierQuotingStyle identifier_quoting_style) const;
-
-    /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
-      * behaviour is due to the fact such functions are called from Client which knows nothing about
-      * access rights and settings. Moreover, the only use case for displaying secrets are backups,
-      * and backup tools use only direct input and ignore logs and error messages.
-      */
+    /*
+     * formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
+     * behaviour is due to the fact such functions are called from Client which knows nothing about
+     * access rights and settings. Moreover, the only use case for displaying secrets are backups,
+     * and backup tools use only direct input and ignore logs and error messages.
+     */
     String formatForLogging(size_t max_length = 0) const
     {
-        return formatWithPossiblyHidingSensitiveData(
-            /*max_length=*/max_length,
-            /*one_line=*/true,
-            /*show_secrets=*/false,
-            /*print_pretty_type_names=*/false,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(max_length, true, false);
     }
 
     String formatForErrorMessage() const
     {
-        return formatWithPossiblyHidingSensitiveData(
-            /*max_length=*/0,
-            /*one_line=*/true,
-            /*show_secrets=*/false,
-            /*print_pretty_type_names=*/false,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-    }
-
-    String formatForAnything() const
-    {
-        return formatWithPossiblyHidingSensitiveData(
-            /*max_length=*/0,
-            /*one_line=*/true,
-            /*show_secrets=*/true,
-            /*print_pretty_type_names=*/false,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+        return formatWithPossiblyHidingSensitiveData(0, true, false);
     }
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
@@ -363,8 +326,7 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
-        AsyncInsertFlush,
-        ParallelWithQuery,
+        AsyncInsertFlush
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
@@ -379,16 +341,6 @@ public:
     static const char * hilite_none;
 
 protected:
-    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-    }
-
-    virtual void formatImpl(FormattingBuffer /*out*/) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
-    }
-
     bool childrenHaveSecretParts() const;
 
     /// Some AST classes have naked pointers to children elements as members.

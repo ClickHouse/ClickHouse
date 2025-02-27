@@ -1,6 +1,6 @@
 #pragma once
-
 #include <Core/SortDescription.h>
+
 
 namespace DB
 {
@@ -15,28 +15,16 @@ bool equals(const Field & lhs, const Field & rhs);
  */
 class FillingRow
 {
-    /// finds last value <= to
-    std::optional<Field> doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to);
-
-    bool hasSomeConstraints(size_t pos) const;
-    bool isConstraintsSatisfied(size_t pos) const;
-
 public:
     explicit FillingRow(const SortDescription & sort_description);
 
     /// Generates next row according to fill 'from', 'to' and 'step' values.
-    /// Returns true if filling values should be inserted into result set
-    bool next(const FillingRow & next_original_row, bool& value_changed);
+    /// Return pair of boolean
+    /// apply - true if filling values should be inserted into result set
+    /// value_changed - true if filling row value was changed
+    std::pair<bool, bool> next(const FillingRow & to_row);
 
-    /// Returns true if need to generate some prefix for to_row
-    bool shift(const FillingRow & next_original_row, bool& value_changed);
-
-    bool hasSomeConstraints() const;
-    bool isConstraintsSatisfied() const;
-
-    void initUsingFrom(size_t from_pos = 0);
-    void initUsingTo(size_t from_pos = 0);
-    void updateConstraintsWithStalenessRow(const Columns& base_row, size_t row_ind);
+    void initFromDefaults(size_t from_pos = 0);
 
     Field & operator[](size_t index) { return row[index]; }
     const Field & operator[](size_t index) const { return row[index]; }
@@ -54,7 +42,6 @@ public:
 
 private:
     Row row;
-    Row constraints;
     SortDescription sort_description;
 };
 

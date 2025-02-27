@@ -128,16 +128,16 @@ struct ToValidUTF8Impl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
-        ColumnString::Offsets & res_offsets,
-        size_t input_rows_count)
+        ColumnString::Offsets & res_offsets)
     {
+        const size_t offsets_size = offsets.size();
         /// It can be larger than that, but we believe it is unlikely to happen.
         res_data.resize(data.size());
-        res_offsets.resize(input_rows_count);
+        res_offsets.resize(offsets_size);
 
         size_t prev_offset = 0;
         WriteBufferFromVector<ColumnString::Chars> write_buffer(res_data);
-        for (size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < offsets_size; ++i)
         {
             const char * haystack_data = reinterpret_cast<const char *>(&data[prev_offset]);
             const size_t haystack_size = offsets[i] - prev_offset - 1;
@@ -149,7 +149,7 @@ struct ToValidUTF8Impl
         write_buffer.finalize();
     }
 
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &, size_t)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column of type FixedString is not supported by toValidUTF8 function");
     }

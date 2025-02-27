@@ -1,4 +1,4 @@
--- Tags: no-object-storage, no-random-settings, no-parallel
+-- Tags: no-s3-storage, no-random-settings
 
 SET use_uncompressed_cache = 0;
 
@@ -10,7 +10,7 @@ INSERT INTO t_arr VALUES ([1]) ([]) ([1, 2, 3]) ([1, 2]);
 SYSTEM DROP MARK CACHE;
 SELECT a.size0 FROM t_arr;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
@@ -27,7 +27,7 @@ SELECT t.s FROM t_tup;
 SYSTEM DROP MARK CACHE;
 SELECT t.u FROM t_tup;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
@@ -41,13 +41,14 @@ INSERT INTO t_nul VALUES (1) (NULL) (2) (NULL);
 SYSTEM DROP MARK CACHE;
 SELECT n.null FROM t_nul;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
     AND current_database = currentDatabase();
 
 SELECT '====map====';
+SET allow_experimental_map_type = 1;
 DROP TABLE IF EXISTS t_map;
 CREATE TABLE t_map (m Map(String, UInt32)) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_map VALUES (map('a', 1, 'b', 2)) (map('a', 3, 'c', 4)), (map('b', 5, 'c', 6));
@@ -59,7 +60,7 @@ SELECT m.keys FROM t_map;
 SYSTEM DROP MARK CACHE;
 SELECT m.values FROM t_map;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['FileOpen']
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))

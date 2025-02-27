@@ -1,25 +1,23 @@
 ---
-description: "System table containing information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row."
-slug: /operations/system-tables/moves
-title: "moves"
-keywords: ["system table", "moves"]
+slug: /en/operations/system-tables/moves
 ---
+# moves
 
-The table contains information about in-progress [data part moves](/sql-reference/statements/alter/partition#move-partitionpart) of [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) tables. Each data part movement is represented by a single row.
+The table contains information about in-progress [data part moves](/docs/en/sql-reference/statements/alter/partition#move-partitionpart) of [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) tables. Each data part movement is represented by a single row.
 
 Columns:
 
-- `database` ([String](/sql-reference/data-types/string.md)) — Name of the database.
+- `database` ([String](/docs/en/sql-reference/data-types/string.md)) — Name of the database.
 
-- `table` ([String](/sql-reference/data-types/string.md)) — Name of the table containing moving data part.
+- `table` ([String](/docs/en/sql-reference/data-types/string.md)) — Name of the table containing moving data part.
 
 - `elapsed` ([Float64](../../sql-reference/data-types/float.md)) — Time elapsed (in seconds) since data part movement started.
 
-- `target_disk_name` ([String](disks.md)) — Name of [disk](/docs/operations/system-tables/disks/) to which the data part is moving.
+- `target_disk_name` ([String](disks.md)) — Name of [disk](/docs/en/operations/system-tables/disks/) to which the data part is moving.
 
-- `target_disk_path` ([String](disks.md)) — Path to the mount point of the [disk](/docs/operations/system-tables/disks/) in the file system.
+- `target_disk_path` ([String](disks.md)) — Path to the mount point of the [disk](/docs/en/operations/system-tables/disks/) in the file system.
 
-- `part_name` ([String](/sql-reference/data-types/string.md)) — Name of the data part being moved.
+- `part_name` ([String](/docs/en/sql-reference/data-types/string.md)) — Name of the data part being moved.
 
 - `part_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Data part size.
 
@@ -39,6 +37,6 @@ SELECT * FROM system.moves
 
 **See Also**
 
-- [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) table engine
-- [Using Multiple Block Devices for Data Storage](/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
-- [ALTER TABLE ... MOVE PART](/docs/sql-reference/statements/alter/partition#move-partitionpart) command
+- [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md) table engine
+- [Using Multiple Block Devices for Data Storage](/docs/en/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
+- [ALTER TABLE ... MOVE PART](/docs/en/sql-reference/statements/alter/partition#move-partitionpart) command

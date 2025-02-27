@@ -1,10 +1,10 @@
 ---
-slug: /sql-reference/data-types/fixedstring
-sidebar_position: 10
+slug: /en/sql-reference/data-types/fixedstring
+sidebar_position: 45
 sidebar_label: FixedString(N)
 ---
 
-# FixedString(N)
+# FixedString
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 
@@ -21,8 +21,8 @@ The `FixedString` type is efficient when data has the length of precisely `N` by
 Examples of the values that can be efficiently stored in `FixedString`-typed columns:
 
 - The binary representation of IP addresses (`FixedString(16)` for IPv6).
-- Language codes (ru_RU, en_US ... ).
-- Currency codes (USD, RUB ... ).
+- Language codes (ru_RU, en_US … ).
+- Currency codes (USD, RUB … ).
 - Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
 
 To store UUID values, use the [UUID](../../sql-reference/data-types/uuid.md) data type.
@@ -34,7 +34,7 @@ When inserting the data, ClickHouse:
 
 When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
 
-Let's consider the following table with the single `FixedString(2)` column:
+Let’s consider the following table with the single `FixedString(2)` column:
 
 ``` text
 ┌─name──┐

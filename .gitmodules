@@ -1,15 +1,12 @@
 # Please do not use 'branch = ...' tags with submodule entries. Such tags make updating submodules a
 # little bit more convenient but they do *not* specify the tracked submodule branch. Thus, they are
 # more confusing than useful.
-[submodule "contrib/jwt-cpp"]
-	path = contrib/jwt-cpp
-	url = https://github.com/Thalhammer/jwt-cpp
 [submodule "contrib/zstd"]
 	path = contrib/zstd
 	url = https://github.com/facebook/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/lz4/lz4
+	url = https://github.com/ClickHouse/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -25,6 +22,9 @@
 [submodule "contrib/capnproto"]
 	path = contrib/capnproto
 	url = https://github.com/ClickHouse/capnproto
+[submodule "contrib/double-conversion"]
+	path = contrib/double-conversion
+	url = https://github.com/google/double-conversion
 [submodule "contrib/re2"]
 	path = contrib/re2
 	url = https://github.com/google/re2
@@ -34,6 +34,9 @@
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc
+[submodule "contrib/unixodbc"]
+	path = contrib/unixodbc
+	url = https://github.com/ClickHouse/UnixODBC
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -91,13 +94,13 @@
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/ClickHouse/aws-sdk-cpp
-[submodule "contrib/aws-c-event-stream"]
+[submodule "aws-c-event-stream"]
 	path = contrib/aws-c-event-stream
 	url = https://github.com/awslabs/aws-c-event-stream
-[submodule "contrib/aws-c-common"]
+[submodule "aws-c-common"]
 	path = contrib/aws-c-common
 	url = https://github.com/awslabs/aws-c-common.git
-[submodule "contrib/aws-checksums"]
+[submodule "aws-checksums"]
 	path = contrib/aws-checksums
 	url = https://github.com/awslabs/aws-checksums
 [submodule "contrib/curl"]
@@ -108,7 +111,7 @@
 	url = https://github.com/ClickHouse/icudata
 [submodule "contrib/icu"]
 	path = contrib/icu
-	url = https://github.com/ClickHouse/icu
+	url = https://github.com/unicode-org/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
 	url = https://github.com/ClickHouse/flatbuffers
@@ -124,7 +127,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/anrieff/libcpuid
+	url = https://github.com/ClickHouse/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap
@@ -163,16 +166,25 @@
 	url = https://github.com/xz-mirror/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/ClickHouse/abseil-cpp.git
+	url = https://github.com/abseil/abseil-cpp
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse/dragonbox
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
+[submodule "contrib/libpq"]
+	path = contrib/libpq
+	url = https://github.com/ClickHouse/libpq
+[submodule "contrib/boringssl"]
+	path = contrib/boringssl
+	url = https://github.com/ClickHouse/boringssl
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
+[submodule "contrib/nanodbc"]
+	path = contrib/nanodbc
+	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/apache/datasketches-cpp
@@ -224,12 +236,15 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/annoy"]
+	path = contrib/annoy
+	url = https://github.com/ClickHouse/annoy
 [submodule "contrib/qpl"]
 	path = contrib/qpl
 	url = https://github.com/intel/qpl
 [submodule "contrib/idxd-config"]
 	path = contrib/idxd-config
-	url = https://github.com/ClickHouse/idxd-config.git
+	url = https://github.com/intel/idxd-config
 [submodule "contrib/QAT-ZSTD-Plugin"]
 	path = contrib/QAT-ZSTD-Plugin
 	url = https://github.com/intel/QAT-ZSTD-Plugin
@@ -250,7 +265,7 @@
 	url = https://github.com/ClickHouse/llvm-project
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
-	url = https://github.com/ClickHouse/corrosion
+	url = https://github.com/corrosion-rs/corrosion
 [submodule "contrib/libssh"]
 	path = contrib/libssh
 	url = https://github.com/ClickHouse/libssh.git
@@ -263,6 +278,9 @@
 [submodule "contrib/crc32-s390x"]
 	path = contrib/crc32-s390x
 	url = https://github.com/linux-on-ibm-z/crc32-s390x
+[submodule "contrib/openssl"]
+	path = contrib/openssl
+	url = https://github.com/openssl/openssl
 [submodule "contrib/google-benchmark"]
 	path = contrib/google-benchmark
 	url = https://github.com/google/benchmark
@@ -329,13 +347,16 @@
 	url = https://github.com/graphitemaster/incbin.git
 [submodule "contrib/usearch"]
 	path = contrib/usearch
-	url = https://github.com/ClickHouse/usearch.git
+	url = https://github.com/unum-cloud/usearch.git
 [submodule "contrib/SimSIMD"]
 	path = contrib/SimSIMD
-	url = https://github.com/ClickHouse/SimSIMD.git
+	url = https://github.com/ashvardanian/SimSIMD.git
 [submodule "contrib/FP16"]
 	path = contrib/FP16
 	url = https://github.com/Maratyszcza/FP16.git
+[submodule "contrib/robin-map"]
+	path = contrib/robin-map
+	url = https://github.com/Tessil/robin-map.git
 [submodule "contrib/aklomp-base64"]
 	path = contrib/aklomp-base64
 	url = https://github.com/aklomp/base64.git
@@ -348,30 +369,6 @@
 [submodule "contrib/idna"]
 	path = contrib/idna
 	url = https://github.com/ada-url/idna.git
-[submodule "contrib/google-cloud-cpp"]
-	path = contrib/google-cloud-cpp
-	url = https://github.com/ClickHouse/google-cloud-cpp.git
 [submodule "contrib/rust_vendor"]
 	path = contrib/rust_vendor
 	url = https://github.com/ClickHouse/rust_vendor.git
-[submodule "contrib/openssl"]
-	path = contrib/openssl
-	url = https://github.com/ClickHouse/openssl.git
-[submodule "contrib/double-conversion"]
-	path = contrib/double-conversion
-	url = https://github.com/ClickHouse/double-conversion.git
-[submodule "contrib/mongo-cxx-driver"]
-	path = contrib/mongo-cxx-driver
-	url = https://github.com/ClickHouse/mongo-cxx-driver.git
-[submodule "contrib/mongo-c-driver"]
-	path = contrib/mongo-c-driver
-	url = https://github.com/ClickHouse/mongo-c-driver.git
-[submodule "contrib/numactl"]
-	path = contrib/numactl
-	url = https://github.com/ClickHouse/numactl.git
-[submodule "contrib/postgres"]
-	path = contrib/postgres
-	url = https://github.com/ClickHouse/postgres.git
-[submodule "contrib/delta-kernel-rs"]
-	path = contrib/delta-kernel-rs
-	url = https://github.com/ClickHouse/delta-kernel-rs.git

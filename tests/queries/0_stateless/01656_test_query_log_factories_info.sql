@@ -20,11 +20,11 @@ FROM numbers(100);
 SELECT repeat('aa', number)
 FROM numbers(10e3)
 SETTINGS max_memory_usage=4e6, max_block_size=100
-FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
+FORMAT Null; -- { serverError 241 }
 
 SELECT '';
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 
 SELECT arraySort(used_aggregate_functions)
 FROM system.query_log WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND (query LIKE '%toDate(\'2000-12-05\')%')
@@ -61,7 +61,7 @@ SELECT '';
 DROP database IF EXISTS test_query_log_factories_info1;
 CREATE database test_query_log_factories_info1 ENGINE=Atomic;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT used_database_engines
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query LIKE '%database test_query_log_factories_info%')
@@ -70,7 +70,7 @@ SELECT '';
 
 CREATE OR REPLACE TABLE test_query_log_factories_info1.memory_table (id BIGINT, date DATETIME) ENGINE=Memory();
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT arraySort(used_data_type_families), used_storages
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type == 'QueryFinish' AND (query LIKE '%TABLE test%')

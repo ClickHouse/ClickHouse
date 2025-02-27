@@ -2,6 +2,7 @@
 
 #if defined(OS_LINUX)
 
+#include <mutex>
 #include <atomic>
 #include <Common/Fiber.h>
 #include <Common/TimerDescriptor.h>
@@ -25,14 +26,9 @@ class RemoteQueryExecutor;
 class RemoteQueryExecutorReadContext : public AsyncTaskExecutor
 {
 public:
-    explicit RemoteQueryExecutorReadContext(
-        RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_);
+    explicit RemoteQueryExecutorReadContext(RemoteQueryExecutor & executor_, bool suspend_when_query_sent_ = false);
 
     ~RemoteQueryExecutorReadContext() override;
-
-    /// returns true if packet or packet has been read
-    /// packet type is read separately if read_packet_type_separately is true
-    bool read();
 
     bool isInProgress() const { return is_in_progress.load(std::memory_order_relaxed); }
 
@@ -42,15 +38,7 @@ public:
 
     int getFileDescriptor() const { return epoll.getFileDescriptor(); }
 
-    Packet getPacket();
-
-    UInt64 getPacketType() const;
-
-    bool hasReadTillPacketType() const { return has_read_packet_part == PacketPart::Type; }
-
-    bool hasReadPacket() const { return has_read_packet_part == PacketPart::Body; }
-
-    bool readPacketTypeSeparately() const { return read_packet_type_separately; }
+    Packet getPacket() { return std::move(packet); }
 
 private:
     bool checkTimeout(bool blocking = false);
@@ -72,19 +60,7 @@ private:
         void run(AsyncCallback async_callback, SuspendCallback suspend_callback) override;
     };
 
-    /// true if no data has been received on the latest attempt to read
     std::atomic_bool is_in_progress = false;
-
-    enum class PacketPart : uint8_t
-    {
-        None = 0,
-        Type = 1,
-        Body = 2
-    };
-    /// depending on read_packet_type_separately, possible value transitions are
-    /// None -> Type -> Body -> None
-    /// None -> Body -> None
-    std::atomic<PacketPart> has_read_packet_part = PacketPart::None;
     Packet packet;
 
     RemoteQueryExecutor & executor;
@@ -94,7 +70,7 @@ private:
     /// * timer is a timerfd descriptor to manually check socket timeout
     /// * pipe_fd is a pipe we use to cancel query and socket polling by executor.
     /// We put those descriptors into our own epoll which is used by external executor.
-    TimerDescriptor timer;
+    TimerDescriptor timer{CLOCK_MONOTONIC, 0};
     Poco::Timespan timeout;
     AsyncEventTimeoutType timeout_type;
     std::atomic_bool is_timer_alarmed = false;
@@ -107,7 +83,6 @@ private:
     std::string connection_fd_description;
     bool suspend_when_query_sent = false;
     bool is_query_sent = false;
-    const bool read_packet_type_separately = false;
 };
 
 }

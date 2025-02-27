@@ -5,9 +5,9 @@
 #include <variant>
 #include <optional>
 
-#include <Core/Block_fwd.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -228,7 +228,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    void getItemsShortCircuitImpl(
+    size_t getItemsShortCircuitImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
         ValueSetter && set_value,
@@ -244,7 +244,7 @@ private:
         DefaultValueExtractor & default_value_extractor) const;
 
     template <typename AttributeType, bool is_nullable, typename ValueSetter>
-    void getItemsShortCircuitImpl(
+    size_t getItemsShortCircuitImpl(
         const Attribute & attribute,
         const KeyIndexToElementIndex & key_index_to_element_index,
         ValueSetter && set_value,

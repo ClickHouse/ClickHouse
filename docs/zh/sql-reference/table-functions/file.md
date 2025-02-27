@@ -114,7 +114,7 @@ FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 
 **示例**
 
-从名为 `file000`, `file001`, ... , `file999`的文件中查询数据:
+从名为 `file000`, `file001`, … , `file999`的文件中查询数据:
 
 ``` sql
 SELECT count(*)
@@ -128,4 +128,4 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 **另请参阅**
 
--   [虚拟列](/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](https://clickhouse.com/docs/en/operations/table_engines/#table_engines-virtual_columns)

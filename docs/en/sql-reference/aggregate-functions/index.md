@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/aggregate-functions/
+slug: /en/sql-reference/aggregate-functions/
 sidebar_label: Aggregate Functions
 sidebar_position: 33
 ---
@@ -14,11 +14,11 @@ ClickHouse also supports:
 - [Combinators](../../sql-reference/aggregate-functions/combinators.md#aggregate_functions_combinators), which change the behavior of aggregate functions.
 
 
-## NULL Processing {#null-processing}
+## NULL Processing
 
 During aggregation, all `NULL` arguments are skipped. If the aggregation has several arguments it will ignore any row in which one or more of them are NULL.
 
-There is an exception to this rule, which are the functions [`first_value`](../../sql-reference/aggregate-functions/reference/first_value.md), [`last_value`](../../sql-reference/aggregate-functions/reference/last_value.md) and their aliases (`any` and `anyLast` respectively) when followed by the modifier `RESPECT NULLS`. For example, `FIRST_VALUE(b) RESPECT NULLS`.
+There is an exception to this rule, which are the functions [`first_value`](../../sql-reference/aggregate-functions/reference/first_value.md), [`last_value`](../../sql-reference/aggregate-functions/reference/last_value.md) and their aliases when followed by the modifier `RESPECT NULLS`: `FIRST_VALUE(b) RESPECT NULLS`.
 
 **Examples:**
 
@@ -34,7 +34,7 @@ Consider this table:
 └───┴──────┘
 ```
 
-Let's say you need to total the values in the `y` column:
+Let’s say you need to total the values in the `y` column:
 
 ``` sql
 SELECT sum(y) FROM t_null_big
@@ -75,7 +75,7 @@ FROM t_null_big
 └────────────────────┴─────────────────────┘
 ```
 
-Also you can use [Tuple](sql-reference/data-types/tuple.md) to work around NULL skipping behavior. A `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
+Also you can use [Tuple](/docs/en/sql-reference/data-types/tuple.md) to work around NULL skipping behavior. The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value.
 
 ```sql
 SELECT
@@ -110,7 +110,7 @@ GROUP BY v
 └──────┴─────────┴──────────┘
 ```
 
-And here is an example of first_value with `RESPECT NULLS` where we can see that NULL inputs are respected and it will return the first value read, whether it's NULL or not:
+And here is an example of of first_value with `RESPECT NULLS` where we can see that NULL inputs are respected and it will return the first value read, whether it's NULL or not:
 
 ```sql
 SELECT

@@ -5,7 +5,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
 
 #include <Dictionaries/IDictionary.h>
 
@@ -125,7 +127,7 @@ namespace detail
             auto hierarchy_key = keys[i];
             size_t current_hierarchy_depth = 0;
 
-            bool is_key_valid = is_key_valid_func(hierarchy_key);
+            bool is_key_valid = std::forward<IsKeyValidFunc>(is_key_valid_func)(hierarchy_key);
 
             if (!is_key_valid)
             {
@@ -165,7 +167,7 @@ namespace detail
                 elements.emplace_back(hierarchy_key);
                 ++current_hierarchy_depth;
 
-                std::optional<UInt64> parent_key = get_parent_key_func(hierarchy_key);
+                std::optional<UInt64> parent_key = std::forward<GetParentKeyFunc>(get_parent_key_func)(hierarchy_key);
 
                 if (!parent_key.has_value())
                     break;

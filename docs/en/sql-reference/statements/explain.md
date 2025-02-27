@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/explain
+slug: /en/sql-reference/statements/explain
 sidebar_position: 39
 sidebar_label: EXPLAIN
 title: "EXPLAIN Statement"
@@ -55,7 +55,7 @@ Union
                   ReadFromStorage (SystemNumbers)
 ```
 
-## EXPLAIN Types {#explain-types}
+## EXPLAIN Types
 
 - `AST` — Abstract syntax tree.
 - `SYNTAX` — Query text after AST-level optimizations.
@@ -63,7 +63,7 @@ Union
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
 
-### EXPLAIN AST {#explain-ast}
+### EXPLAIN AST
 
 Dump query AST. Supports all types of queries, not only `SELECT`.
 
@@ -97,7 +97,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX {#explain-syntax}
+### EXPLAIN SYNTAX
 
 Returns query after syntax optimizations.
 
@@ -123,7 +123,7 @@ FROM
 CROSS JOIN system.numbers AS c
 ```
 
-### EXPLAIN QUERY TREE {#explain-query-tree}
+### EXPLAIN QUERY TREE
 
 Settings:
 
@@ -136,7 +136,7 @@ Example:
 EXPLAIN QUERY TREE SELECT id, value FROM test_table;
 ```
 
-```sql
+```
 QUERY id: 0
   PROJECTION COLUMNS
     id UInt64
@@ -149,7 +149,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN {#explain-plan}
+### EXPLAIN PLAN
 
 Dump query plan steps.
 
@@ -160,8 +160,6 @@ Settings:
 - `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
 - `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
-
-When `json=1` step names will contain an additional suffix with unique step identifier.
 
 Example:
 
@@ -196,25 +194,30 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
   {
     "Plan": {
       "Node Type": "Union",
-      "Node Id": "Union_10",
       "Plans": [
         {
           "Node Type": "Expression",
-          "Node Id": "Expression_13",
           "Plans": [
             {
-              "Node Type": "ReadFromStorage",
-              "Node Id": "ReadFromStorage_0"
+              "Node Type": "SettingQuotaAndLimits",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromStorage"
+                }
+              ]
             }
           ]
         },
         {
           "Node Type": "Expression",
-          "Node Id": "Expression_16",
           "Plans": [
             {
-              "Node Type": "ReadFromStorage",
-              "Node Id": "ReadFromStorage_4"
+              "Node Type": "SettingQuotaAndLimits",
+              "Plans": [
+                {
+                  "Node Type": "ReadFromStorage"
+                }
+              ]
             }
           ]
         }
@@ -246,7 +249,6 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
   {
     "Plan": {
       "Node Type": "Expression",
-      "Node Id": "Expression_5",
       "Header": [
         {
           "Name": "1",
@@ -259,12 +261,22 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
       ],
       "Plans": [
         {
-          "Node Type": "ReadFromStorage",
-          "Node Id": "ReadFromStorage_0",
+          "Node Type": "SettingQuotaAndLimits",
           "Header": [
             {
               "Name": "dummy",
               "Type": "UInt8"
+            }
+          ],
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Header": [
+                {
+                  "Name": "dummy",
+                  "Type": "UInt8"
+                }
+              ]
             }
           ]
         }
@@ -339,31 +351,17 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
   {
     "Plan": {
       "Node Type": "Expression",
-      "Node Id": "Expression_5",
       "Expression": {
-        "Inputs": [
-          {
-            "Name": "dummy",
-            "Type": "UInt8"
-          }
-        ],
+        "Inputs": [],
         "Actions": [
           {
-            "Node Type": "INPUT",
+            "Node Type": "Column",
             "Result Type": "UInt8",
-            "Result Name": "dummy",
-            "Arguments": [0],
-            "Removed Arguments": [0],
-            "Result": 0
-          },
-          {
-            "Node Type": "COLUMN",
-            "Result Type": "UInt8",
-            "Result Name": "1",
+            "Result Type": "Column",
             "Column": "Const(UInt8)",
             "Arguments": [],
             "Removed Arguments": [],
-            "Result": 1
+            "Result": 0
           }
         ],
         "Outputs": [
@@ -372,12 +370,17 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
             "Type": "UInt8"
           }
         ],
-        "Positions": [1]
+        "Positions": [0],
+        "Project Input": true
       },
       "Plans": [
         {
-          "Node Type": "ReadFromStorage",
-          "Node Id": "ReadFromStorage_0"
+          "Node Type": "SettingQuotaAndLimits",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage"
+            }
+          ]
         }
       ]
     }
@@ -385,15 +388,13 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-### EXPLAIN PIPELINE {#explain-pipeline}
+### EXPLAIN PIPELINE
 
 Settings:
 
 - `header` — Prints header for each output port. Default: 0.
 - `graph` — Prints a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
 - `compact` — Prints graph in compact mode if `graph` setting is enabled. Default: 1.
-
-When `compact=0` and `graph=1` processor names will contain an additional suffix with unique processor identifier.
 
 Example:
 
@@ -416,7 +417,7 @@ ExpressionTransform
             (ReadFromStorage)
             NumbersRange × 2 0 → 1
 ```
-### EXPLAIN ESTIMATE {#explain-estimate}
+### EXPLAIN ESTIMATE
 
 Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
 
@@ -444,7 +445,7 @@ Result:
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+### EXPLAIN TABLE OVERRIDE
 
 Shows the result of a table override on a table schema accessed through a table function.
 Also does some validation, throwing an exception if the override would have caused some kind of failure.

@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int EMPTY_DATA_PASSED;
-    extern const int TYPE_MISMATCH;
 }
 
 
@@ -84,9 +83,8 @@ JSONColumnsBlockInputFormatBase::JSONColumnsBlockInputFormatBase(
     , fields(header_.getNamesAndTypes())
     , serializations(header_.getSerializations())
     , reader(std::move(reader_))
-    , block_missing_values(getPort().getHeader().columns())
 {
-    name_to_index = getNamesToIndexesMap(getPort().getHeader());
+    name_to_index = getPort().getHeader().getNamesToIndexesMap();
 }
 
 size_t JSONColumnsBlockInputFormatBase::readColumn(
@@ -136,7 +134,7 @@ Chunk JSONColumnsBlockInputFormatBase::read()
         {
             do
             {
-                skipJSONField(*in, "skip_field", format_settings.json);
+                skipJSONField(*in, "skip_field");
                 ++num_rows;
             } while (!reader->checkColumnEndOrSkipFieldDelimiter());
         }
@@ -196,8 +194,6 @@ Chunk JSONColumnsBlockInputFormatBase::read()
     {
         if (!seen_columns[i])
         {
-            if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(fields[i].type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", fields[i].name, fields[i].type->getName());
             columns[i]->insertManyDefaults(rows);
             if (format_settings.defaults_for_omitted_fields)
                 block_missing_values.setBits(i, rows);
@@ -330,7 +326,7 @@ DataTypePtr JSONColumnsSchemaReaderBase::readColumnAndGetDataType(const String &
             break;
         }
 
-        readJSONField(field, in, format_settings.json);
+        readJSONField(field, in);
         DataTypePtr field_type = tryInferDataTypeForSingleJSONField(field, format_settings, &inference_info);
         chooseResultColumnType(*this, column_type, field_type, nullptr, column_name, rows_read);
         ++rows_read;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -35,8 +36,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state,
-        SubstreamsDeserializeStatesCache * cache) const override;
+        DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#include <Common/SharedMutex.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
+#include <map>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include <optional>
 #include <unordered_map>
@@ -42,21 +42,17 @@ struct ProtocolServerMetrics
 {
     String port_name;
     size_t current_threads;
-    size_t rejected_connections;
 };
 
-/** Periodically (by default, each second)
-  * calculates and updates some metrics,
-  * that are not updated automatically (so, need to be asynchronously calculated).
+/** Periodically (by default, each minute, starting at 30 seconds offset)
+  *  calculates and updates some metrics,
+  *  that are not updated automatically (so, need to be asynchronously calculated).
   *
-  * This includes both general process metrics (like memory usage)
-  * and common OS-related metrics (like total memory usage on the server).
+  * This includes both ClickHouse-related metrics (like memory usage of ClickHouse process)
+  *  and common OS-related metrics (like total memory usage on the server).
   *
   * All the values are either gauge type (like the total number of tables, the current memory usage).
   * Or delta-counters representing some accumulation during the interval of time.
-  *
-  * Server and Keeper specific metrics are contained inside
-  * ServerAsynchronousMetrics and KeeperAsynchronousMetrics respectively.
   */
 class AsynchronousMetrics
 {
@@ -68,10 +64,8 @@ public:
     using ProtocolServerMetricsFunc = std::function<std::vector<ProtocolServerMetrics>()>;
 
     AsynchronousMetrics(
-        unsigned update_period_seconds,
-        const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
-        bool update_jemalloc_epoch_,
-        bool update_rss_);
+        int update_period_seconds,
+        const ProtocolServerMetricsFunc & protocol_server_metrics_func_);
 
     virtual ~AsynchronousMetrics();
 
@@ -101,7 +95,6 @@ private:
     std::condition_variable wait_cond;
     bool quit TSA_GUARDED_BY(thread_mutex) = false;
 
-    /// Protects all raw data and serializes multiple updates.
     mutable std::mutex data_mutex;
 
     /// Some values are incremental and we have to calculate the difference.
@@ -109,22 +102,11 @@ private:
     bool first_run TSA_GUARDED_BY(data_mutex) = true;
     TimePoint previous_update_time TSA_GUARDED_BY(data_mutex);
 
-    /// Protects saved values.
-    mutable SharedMutex values_mutex;
-    /// Values store the result of the last update prepared for reading.
-    AsynchronousMetricValues values TSA_GUARDED_BY(values_mutex);
+    AsynchronousMetricValues values TSA_GUARDED_BY(data_mutex);
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
     MemoryStatisticsOS memory_stat TSA_GUARDED_BY(data_mutex);
 #endif
-
-    [[maybe_unused]] const bool update_jemalloc_epoch;
-    [[maybe_unused]] const bool update_rss;
-
-    Int64 prev_cpu_wait_microseconds = 0;
-    Int64 prev_cpu_virtual_time_microseconds = 0;
-
-    double getCPUOverloadMetric();
 
 #if defined(OS_LINUX)
     std::optional<ReadBufferFromFilePRead> meminfo TSA_GUARDED_BY(data_mutex);
@@ -140,8 +122,6 @@ private:
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_period TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_cfs_quota TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> cgroupcpu_max TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpu_stat TSA_GUARDED_BY(data_mutex);
-    std::optional<ReadBufferFromFilePRead> cgroupcpuacct_stat TSA_GUARDED_BY(data_mutex);
 
     std::optional<ReadBufferFromFilePRead> vm_max_map_count TSA_GUARDED_BY(data_mutex);
     std::optional<ReadBufferFromFilePRead> vm_maps TSA_GUARDED_BY(data_mutex);
@@ -237,16 +217,6 @@ private:
     void openBlockDevices();
     void openSensorsChips();
     void openEDAC();
-
-    void applyCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values, const std::string & cpu_suffix, const ProcStatValuesCPU & delta_values, double multiplier);
-
-    void applyNormalizedCPUMetricsUpdate(
-        AsynchronousMetricValues & new_values,
-        double num_cpus_to_normalize,
-        const ProcStatValuesCPU & delta_values_all_cpus,
-        double multiplier);
-
 #endif
 
     void run();

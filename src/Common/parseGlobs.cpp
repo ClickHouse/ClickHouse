@@ -18,21 +18,6 @@ namespace ErrorCodes
 static const re2::RE2 range_regex(R"({([\d]+\.\.[\d]+)})"); /// regexp for {M..N}, where M and N - non-negative integers
 static const re2::RE2 enum_regex(R"({([^{}*,]+[^{}*]*[^{}*,])})"); /// regexp for {expr1,expr2,expr3}, expr's should be without "{", "}", "*" and ","
 
-bool containsRangeGlob(const std::string & input)
-{
-    return RE2::PartialMatch(input, range_regex);
-}
-
-bool containsOnlyEnumGlobs(const std::string & input)
-{
-    return input.find_first_of("*?") == String::npos && !containsRangeGlob(input);
-}
-
-bool hasExactlyOneBracketsExpansion(const std::string & input)
-{
-    return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
-}
-
 
 /* Transforms string from grep-wildcard-syntax ("{N..M}", "{a,b,c}" as in remote table function and "*", "?") to perl-regexp for using re2 library for matching
  * with such steps:
@@ -92,7 +77,6 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             size_t range_end_width = buffer.size() - buffer.find_last_of('.') - 1;
             bool leading_zeros = buffer[0] == '0';
             size_t output_width = 0;
-
             if (range_begin > range_end) /// Descending Sequence {20..15} {9..01}
             {
                 std::swap(range_begin,range_end);
@@ -136,7 +120,6 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         else
             break;
     }
-
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
     WriteBufferFromOwnString buf_final_processing;

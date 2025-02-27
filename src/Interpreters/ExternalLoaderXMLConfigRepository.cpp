@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Poco/Glob.h>
@@ -85,9 +85,9 @@ bool ExternalLoaderXMLConfigRepository::exists(const std::string & definition_en
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderXMLConfigRepository::load(
-    const std::string & config_file_path)
+    const std::string & config_file)
 {
-    ConfigProcessor config_processor{config_file_path};
+    ConfigProcessor config_processor{config_file};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
     config_processor.savePreprocessedConfig(preprocessed, app_path);
     return preprocessed.configuration;

@@ -1,11 +1,8 @@
 #pragma once
-
-#include <Core/Block.h>
-#include <Core/Block_fwd.h>
-#include <Interpreters/Aggregator.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/Aggregator.h>
 
 namespace DB
 {
@@ -20,7 +17,7 @@ class AggregatingStep : public ITransformingStep
 {
 public:
     AggregatingStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
@@ -50,7 +47,6 @@ public:
     const Aggregator::Params & getParams() const { return params; }
 
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
-    bool isGroupByUseNulls() const { return group_by_use_nulls; }
 
     bool inOrder() const { return !sort_description_for_merging.empty(); }
     bool explicitSortingRequired() const { return explicit_sorting_required_for_aggregation_in_order; }
@@ -59,33 +55,24 @@ public:
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
 
-    const SortDescription & getSortDescription() const override;
-
     bool canUseProjection() const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
-    void requestOnlyMergeForAggregateProjection(const Header & input_header);
+    void requestOnlyMergeForAggregateProjection(const DataStream & input_stream);
     /// When we apply aggregate projection (which is partial), this step should be replaced to AggregatingProjection.
     /// Argument input_stream would be the second input (from projection).
-    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const Header & input_header) const;
+    std::unique_ptr<AggregatingProjectionStep> convertToAggregatingProjection(const DataStream & input_stream) const;
 
-    static ActionsDAG makeCreatingMissingKeysForGroupingSetDAG(
+    static ActionsDAGPtr makeCreatingMissingKeysForGroupingSetDAG(
         const Block & in_header,
         const Block & out_header,
         const GroupingSetsParamsList & grouping_sets_params,
         UInt64 group,
         bool group_by_use_nulls);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
-    void serialize(Serialization & ctx) const override;
-
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
-    void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
-
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;
@@ -122,7 +109,7 @@ class AggregatingProjectionStep : public IQueryPlanStep
 {
 public:
     AggregatingProjectionStep(
-        Blocks input_headers_,
+        DataStreams input_streams_,
         Aggregator::Params params_,
         bool final_,
         size_t merge_threads_,
@@ -130,11 +117,9 @@ public:
     );
 
     String getName() const override { return "AggregatingProjection"; }
-    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
+    QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
 private:
-    void updateOutputHeader() override;
-
     Aggregator::Params params;
     bool final;
     size_t merge_threads;

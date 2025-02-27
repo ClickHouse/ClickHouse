@@ -1,6 +1,6 @@
 ---
-slug: /sql-reference/data-types/enum
-sidebar_position: 20
+slug: /en/sql-reference/data-types/enum
+sidebar_position: 50
 sidebar_label: Enum
 ---
 
@@ -17,7 +17,7 @@ ClickHouse supports:
 
 ClickHouse automatically chooses the type of `Enum` when data is inserted. You can also use `Enum8` or `Enum16` types to be sure in the size of storage.
 
-## Usage Examples {#usage-examples}
+## Usage Examples
 
 Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
@@ -121,7 +121,7 @@ SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 └─────────────────────────────────────────────────────┘
 ```
 
-## General Rules and Usage {#general-rules-and-usage}
+## General Rules and Usage
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
@@ -156,7 +156,7 @@ Enum values cannot be compared with numbers. Enums can be compared to a constant
 Most numeric and string operations are not defined for Enum values, e.g. adding a number to an Enum or concatenating a string to an Enum.
 However, the Enum has a natural `toString` function that returns its string value.
 
-Enum values are also convertible to numeric types using the `toT` function, where T is a numeric type. When T corresponds to the enum's underlying numeric type, this conversion is zero-cost.
+Enum values are also convertible to numeric types using the `toT` function, where T is a numeric type. When T corresponds to the enum’s underlying numeric type, this conversion is zero-cost.
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.

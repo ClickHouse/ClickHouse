@@ -1,147 +1,13 @@
 ---
-slug: /operations/settings/merge-tree-settings
+slug: /en/operations/settings/merge-tree-settings
 title: "MergeTree tables settings"
-description: "Settings for MergeTree which are in `system.merge_tree_settings`"
 ---
 
-System table `system.merge_tree_settings` shows the globally set MergeTree settings.
+The values of `merge_tree` settings (for all MergeTree tables) can be viewed in the table `system.merge_tree_settings`, they can be overridden in `config.xml` in the `merge_tree` section, or set in the `SETTINGS` section of each table.
 
-MergeTree settings can be set in the `merge_tree` section of the server config file, or specified for each `MergeTree` table individually in
-the `SETTINGS` clause of the `CREATE TABLE` statement.
+These are example overrides for `max_suspicious_broken_parts`:
 
-Example for customizing setting `max_suspicious_broken_parts`:
-
-Configure the default for all `MergeTree` tables in the server configuration file:
-
-``` text
-<merge_tree>
-    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
-</merge_tree>
-```
-
-Set for a particular table:
-
-``` sql
-CREATE TABLE tab
-(
-    `A` Int64
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS max_suspicious_broken_parts = 500;
-```
-
-Change the settings for a particular table using `ALTER TABLE ... MODIFY SETTING`:
-
-```sql
-ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
-
--- reset to global default (value from system.merge_tree_settings)
-ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
-```
-## allow_nullable_key {#allow_nullable_key}
-
-Allow Nullable types as primary keys.
-
-Default value: 0.
-
-## index_granularity {#index_granularity}
-
-Maximum number of data rows between the marks of an index.
-
-Default value: 8192.
-
-## index_granularity_bytes {#index_granularity_bytes}
-
-Maximum size of data granules in bytes.
-
-Default value: 10485760 (ca. 10 MiB).
-
-To restrict the granule size only by number of rows, set to 0 (not recommended).
-
-## min_index_granularity_bytes {#min_index_granularity_bytes}
-
-Min allowed size of data granules in bytes.
-
-Default value: 1024b.
-
-To provide a safeguard against accidentally creating tables with very low index_granularity_bytes.
-
-## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
-
-Enables or disables transitioning to control the granule size with the `index_granularity_bytes` setting. Before version 19.11, there was only the `index_granularity` setting for restricting granule size. The `index_granularity_bytes` setting improves ClickHouse performance when selecting data from tables with big rows (tens and hundreds of megabytes). If you have tables with big rows, you can enable this setting for the tables to improve the efficiency of `SELECT` queries.
-
-## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
-
-Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper stores less data. For details, see [here](../server-configuration-parameters/settings.md/#server-settings-use_minimalistic_part_header_in_zookeeper).
-
-## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
-
-The minimum data volume for merge operation that is required for using direct I/O access to the storage disk.
-When merging data parts, ClickHouse calculates the total storage volume of all the data to be merged.
-If the volume exceeds `min_merge_bytes_to_use_direct_io` bytes, ClickHouse reads and writes the data to the storage disk using the direct I/O interface (`O_DIRECT` option).
-If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
-
-Default value: `10 * 1024 * 1024 * 1024` bytes.
-
-## ttl_only_drop_parts {#ttl_only_drop_parts}
-
-Controls whether data parts are fully dropped in MergeTree tables when all rows in that part have expired according to their `TTL` settings.
-
-When `ttl_only_drop_parts` is disabled (by default), only the rows that have expired based on their TTL settings are removed.
-
-When `ttl_only_drop_parts` is enabled, the entire part is dropped if all rows in that part have expired according to their `TTL` settings.
-
-Default value: 0.
-
-## merge_with_ttl_timeout {#merge_with_ttl_timeout}
-
-Minimum delay in seconds before repeating a merge with delete TTL.
-
-Default value: `14400` seconds (4 hours).
-
-## merge_with_recompression_ttl_timeout {#merge_with_recompression_ttl_timeout}
-
-Minimum delay in seconds before repeating a merge with recompression TTL.
-
-Default value: `14400` seconds (4 hours).
-
-## write_final_mark {#write_final_mark}
-
-Enables or disables writing the final index mark at the end of data part (after the last byte).
-
-Default value: 1.
-
-Don't change or bad things will happen.
-
-## storage_policy {#storage_policy}
-
-Storage policy.
-
-## min_bytes_for_wide_part {#min_bytes_for_wide_part}
-
-Minimum number of bytes/rows in a data part that can be stored in `Wide` format.
-You can set one, both or none of these settings.
-
-## max_compress_block_size {#max_compress_block_size}
-
-Maximum size of blocks of uncompressed data before compressing for writing to a table.
-You can also specify this setting in the global settings (see [max_compress_block_size](/docs/operations/settings/settings.md/#max-compress-block-size) setting).
-The value specified when table is created overrides the global value for this setting.
-
-## min_compress_block_size {#min_compress_block_size}
-
-Minimum size of blocks of uncompressed data required for compression when writing the next mark.
-You can also specify this setting in the global settings (see [min_compress_block_size](/docs/operations/settings/settings.md/#min-compress-block-size) setting).
-The value specified when table is created overrides the global value for this setting.
-
-## max_merge_selecting_sleep_ms {#max_merge_selecting_sleep_ms}
-
-Maximum time to wait before trying to select parts to merge again after no parts were selected. A lower setting will trigger selecting tasks in `background_schedule_pool` frequently which results in a large amount of requests to zookeeper in large-scale clusters.
-
-Default value: `60000`
-
-## max_suspicious_broken_parts {#max_suspicious_broken_parts}
+## max_suspicious_broken_parts
 
 If the number of broken parts in a single partition exceeds the `max_suspicious_broken_parts` value, automatic deletion is denied.
 
@@ -150,6 +16,37 @@ Possible values:
 - Any positive integer.
 
 Default value: 100.
+
+Override example in `config.xml`:
+
+``` text
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+An example to set in `SETTINGS` for a particular table:
+
+``` sql
+CREATE TABLE foo
+(
+    `A` Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS max_suspicious_broken_parts = 500;
+```
+
+An example of changing the settings for a specific table with the `ALTER TABLE ... MODIFY SETTING` command:
+
+``` sql
+ALTER TABLE foo
+    MODIFY SETTING max_suspicious_broken_parts = 100;
+
+-- reset to default (use value from system.merge_tree_settings)
+ALTER TABLE foo
+    RESET SETTING max_suspicious_broken_parts;
+```
 
 ## parts_to_throw_insert {#parts-to-throw-insert}
 
@@ -176,7 +73,7 @@ Possible values:
 
 Default value: 1000.
 
-ClickHouse artificially executes `INSERT` longer (adds 'sleep') so that the background merge process can merge parts faster than they are added.
+ClickHouse artificially executes `INSERT` longer (adds ‘sleep’) so that the background merge process can merge parts faster than they are added.
 
 ## inactive_parts_to_throw_insert {#inactive-parts-to-throw-insert}
 
@@ -326,7 +223,7 @@ Default value: false.
 
 A block bearing multiple async inserts will generate multiple hash sums. When some of the inserts are duplicated, keeper will only return one duplicated hash sum in one RPC, which will cause unnecessary RPC retries. This cache will watch the hash sums path in Keeper. If updates are watched in the Keeper, the cache will update as soon as possible, so that we are able to filter the duplicated inserts in the memory.
 
-## async_block_ids_cache_min_update_interval_ms {#async_block_ids_cache_min_update_interval_ms}
+## async_block_ids_cache_min_update_interval_ms
 
 The minimum interval (in milliseconds) to update the `use_async_block_ids_cache`
 
@@ -338,7 +235,7 @@ Default value: 100.
 
 Normally, the `use_async_block_ids_cache` updates as soon as there are updates in the watching keeper path. However, the cache updates might be too frequent and become a heavy burden. This minimum interval prevents the cache from updating too fast. Note that if we set this value too long, the block with duplicated inserts will have a longer retry time.
 
-## max_replicated_logs_to_keep {#max_replicated_logs_to_keep}
+## max_replicated_logs_to_keep
 
 How many records may be in the ClickHouse Keeper log if there is inactive replica. An inactive replica becomes lost when when this number exceed.
 
@@ -348,7 +245,7 @@ Possible values:
 
 Default value: 1000
 
-## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
+## min_replicated_logs_to_keep
 
 Keep about this number of last records in ZooKeeper log, even if they are obsolete. It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning.
 
@@ -358,7 +255,7 @@ Possible values:
 
 Default value: 10
 
-## prefer_fetch_merged_part_time_threshold {#prefer_fetch_merged_part_time_threshold}
+## prefer_fetch_merged_part_time_threshold
 
 If the time passed since a replication log (ClickHouse Keeper or ZooKeeper) entry creation exceeds this threshold, and the sum of the size of parts is greater than `prefer_fetch_merged_part_size_threshold`, then prefer fetching merged part from a replica instead of doing merge locally. This is to speed up very long merges.
 
@@ -368,7 +265,7 @@ Possible values:
 
 Default value: 3600
 
-## prefer_fetch_merged_part_size_threshold {#prefer_fetch_merged_part_size_threshold}
+## prefer_fetch_merged_part_size_threshold
 
 If the sum of the size of parts exceeds this threshold and the time since a replication log entry creation is greater than `prefer_fetch_merged_part_time_threshold`, then prefer fetching merged part from a replica instead of doing merge locally. This is to speed up very long merges.
 
@@ -378,7 +275,7 @@ Possible values:
 
 Default value: 10,737,418,240
 
-## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
+## execute_merges_on_single_replica_time_threshold
 
 When this setting has a value greater than zero, only a single replica starts the merge immediately, and other replicas wait up to that amount of time to download the result instead of doing merges locally. If the chosen replica doesn't finish the merge during that amount of time, fallback to standard behavior happens.
 
@@ -388,9 +285,9 @@ Possible values:
 
 Default value: 0 (seconds)
 
-## remote_fs_execute_merges_on_single_replica_time_threshold {#remote_fs_execute_merges_on_single_replica_time_threshold}
+## remote_fs_execute_merges_on_single_replica_time_threshold
 
-When this setting has a value greater than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
+When this setting has a value greater than than zero only a single replica starts the merge immediately if merged part on shared storage and `allow_remote_fs_zero_copy_replication` is enabled.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -402,9 +299,7 @@ Possible values:
 
 Default value: 10800
 
-## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
-
-Timeout (in seconds) before starting merge with recompression. During this time ClickHouse tries to fetch recompressed part from replica which assigned this merge with recompression.
+## try_fetch_recompressed_part_timeout
 
 Recompression works slow in most cases, so we don't start merge with recompression until this timeout and trying to fetch recompressed part from replica which assigned this merge with recompression.
 
@@ -414,7 +309,7 @@ Possible values:
 
 Default value: 7200
 
-## always_fetch_merged_part {#always_fetch_merged_part}
+## always_fetch_merged_part
 
 If true, this replica never merges parts and always downloads merged parts from other replicas.
 
@@ -424,7 +319,7 @@ Possible values:
 
 Default value: false
 
-## max_suspicious_broken_parts {#max_suspicious_broken_parts-1}
+## max_suspicious_broken_parts
 
 Max broken parts, if more - deny automatic deletion.
 
@@ -434,7 +329,7 @@ Possible values:
 
 Default value: 100
 
-## max_suspicious_broken_parts_bytes {#max_suspicious_broken_parts_bytes}
+## max_suspicious_broken_parts_bytes
 
 
 Max size of all broken parts, if more - deny automatic deletion.
@@ -445,7 +340,7 @@ Possible values:
 
 Default value: 1,073,741,824
 
-## max_files_to_modify_in_alter_columns {#max_files_to_modify_in_alter_columns}
+## max_files_to_modify_in_alter_columns
 
 Do not apply ALTER if number of files for modification(deletion, addition) is greater than this setting.
 
@@ -455,7 +350,7 @@ Possible values:
 
 Default value: 75
 
-## max_files_to_remove_in_alter_columns {#max_files_to_remove_in_alter_columns}
+## max_files_to_remove_in_alter_columns
 
 Do not apply ALTER, if the number of files for deletion is greater than this setting.
 
@@ -465,7 +360,7 @@ Possible values:
 
 Default value: 50
 
-## replicated_max_ratio_of_wrong_parts {#replicated_max_ratio_of_wrong_parts}
+## replicated_max_ratio_of_wrong_parts
 
 If the ratio of wrong parts to total number of parts is less than this - allow to start.
 
@@ -475,7 +370,7 @@ Possible values:
 
 Default value: 0.5
 
-## replicated_max_parallel_fetches_for_host {#replicated_max_parallel_fetches_for_host}
+## replicated_max_parallel_fetches_for_host
 
 Limit parallel fetches from endpoint (actually pool size).
 
@@ -485,7 +380,7 @@ Possible values:
 
 Default value: 15
 
-## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout-1}
+## replicated_fetches_http_connection_timeout
 
 HTTP connection timeout for part fetch requests. Inherited from default profile `http_connection_timeout` if not set explicitly.
 
@@ -495,7 +390,7 @@ Possible values:
 
 Default value: Inherited from default profile `http_connection_timeout` if not set explicitly.
 
-## replicated_can_become_leader {#replicated_can_become_leader}
+## replicated_can_become_leader
 
 If true, replicated tables replicas on this node will try to acquire leadership.
 
@@ -505,7 +400,7 @@ Possible values:
 
 Default value: true
 
-## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
+## zookeeper_session_expiration_check_period
 
 ZooKeeper session expiration check period, in seconds.
 
@@ -515,7 +410,7 @@ Possible values:
 
 Default value: 60
 
-## detach_old_local_parts_when_cloning_replica {#detach_old_local_parts_when_cloning_replica}
+## detach_old_local_parts_when_cloning_replica
 
 Do not remove old local parts when repairing lost replica.
 
@@ -621,7 +516,7 @@ The default `dirty_expire_centisecs` value (a Linux kernel setting) is 30 second
 ## max_bytes_to_merge_at_max_space_in_pool {#max-bytes-to-merge-at-max-space-in-pool}
 
 The maximum total parts size (in bytes) to be merged into one part, if there are enough resources available.
-Corresponds roughly to the maximum possible part size created by an automatic background merge.
+`max_bytes_to_merge_at_max_space_in_pool` -- roughly corresponds to the maximum possible part size created by an automatic background merge.
 
 Possible values:
 
@@ -629,10 +524,9 @@ Possible values:
 
 Default value: 161061273600 (150 GB).
 
-The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there are enough free resources in the pool, it starts background merges.
-Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
+The merge scheduler periodically analyzes the sizes and number of parts in partitions, and if there is enough free resources in the pool, it starts background merges. Merges occur until the total size of the source parts is larger than `max_bytes_to_merge_at_max_space_in_pool`.
 
-Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` (only the free disk space is taken into account).
+Merges initiated by [OPTIMIZE FINAL](../../sql-reference/statements/optimize.md) ignore `max_bytes_to_merge_at_max_space_in_pool` and merge parts only taking into account available resources (free disk's space) until one part remains in the partition.
 
 ## max_bytes_to_merge_at_min_space_in_pool {#max-bytes-to-merge-at-min-space-in-pool}
 
@@ -683,7 +577,7 @@ Default value: 20
 
 **Usage**
 
-The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+The value of the `number_of_free_entries_in_pool_to_execute_mutation` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
 ## max_part_loading_threads {#max-part-loading-threads}
 
@@ -709,13 +603,9 @@ Possible values:
 
 Default value: -1 (unlimited).
 
-You can also specify a query complexity setting [max_partitions_to_read](query-complexity#max-partitions-to-read) at a query / session / profile level.
-
 ## min_age_to_force_merge_seconds {#min_age_to_force_merge_seconds}
 
 Merge parts if every part in the range is older than the value of `min_age_to_force_merge_seconds`.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 
@@ -726,18 +616,6 @@ Default value: 0 — Disabled.
 ## min_age_to_force_merge_on_partition_only {#min_age_to_force_merge_on_partition_only}
 
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire partition and not on subset.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see `enable_max_bytes_limit_for_min_age_to_force_merge`).
-
-Possible values:
-
-- true, false
-
-Default value: false
-
-## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
-
-If settings `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only` should respect setting `max_bytes_to_merge_at_max_space_in_pool`.
 
 Possible values:
 
@@ -755,7 +633,7 @@ Possible values:
 
 Default value: 25
 
-The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
+The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/docs/en/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/docs/en/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
@@ -974,7 +852,17 @@ If the file name for column is too long (more than `max_file_name_length` bytes)
 
 The maximal length of the file name to keep it as is without hashing. Takes effect only if setting `replace_long_file_name_to_hash` is enabled. The value of this setting does not include the length of file extension. So, it is recommended to set it below the maximum filename length (usually 255 bytes) with some gap to avoid filesystem errors. Default value: 127.
 
-## allow_experimental_block_number_column {#allow_experimental_block_number_column}
+## clean_deleted_rows
+
+Enable/disable automatic deletion of rows flagged as `is_deleted` when perform `OPTIMIZE ... FINAL` on a table using the ReplacingMergeTree engine. When disabled, the `CLEANUP` keyword has to be added to the `OPTIMIZE ... FINAL` to have the same behaviour.
+
+Possible values:
+
+- `Always` or `Never`.
+
+Default value: `Never`
+
+## allow_experimental_block_number_column
 
 Persists virtual column `_block_number` on merges.
 
@@ -1007,201 +895,3 @@ Default value: false
 **See Also**
 
 - [exclude_deleted_rows_for_part_size_in_merge](#exclude_deleted_rows_for_part_size_in_merge) setting
-
-## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization}
-
-Enables compact mode for binary serialization of discriminators in Variant data type.
-This mode allows to use significantly less memory for storing discriminators in parts when there is mostly one variant or a lot of NULL values.
-
-Default value: true
-
-## merge_workload {#merge_workload}
-
-Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for background merges of this table. If not specified (empty string), then server setting `merge_workload` is used instead.
-
-Default value: an empty string
-
-**See Also**
-- [Workload Scheduling](/docs/operations/workload-scheduling.md)
-
-## mutation_workload {#mutation_workload}
-
-Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for background mutations of this table. If not specified (empty string), then server setting `mutation_workload` is used instead.
-
-Default value: an empty string
-
-**See Also**
-- [Workload Scheduling](/docs/operations/workload-scheduling.md)
-
-### optimize_row_order {#optimize_row_order}
-
-Controls if the row order should be optimized during inserts to improve the compressability of the newly inserted table part.
-
-Only has an effect for ordinary MergeTree-engine tables. Does nothing for specialized MergeTree engine tables (e.g. CollapsingMergeTree).
-
-MergeTree tables are (optionally) compressed using [compression codecs](../../sql-reference/statements/create/table.md#column_compression_codec).
-Generic compression codecs such as LZ4 and ZSTD achieve maximum compression rates if the data exposes patterns.
-Long runs of the same value typically compress very well.
-
-If this setting is enabled, ClickHouse attempts to store the data in newly inserted parts in a row order that minimizes the number of equal-value runs across the columns of the new table part.
-In other words, a small number of equal-value runs mean that individual runs are long and compress well.
-
-Finding the optimal row order is computationally infeasible (NP hard).
-Therefore, ClickHouse uses a heuristics to quickly find a row order which still improves compression rates over the original row order.
-
-<details markdown="1">
-
-<summary>Heuristics for finding a row order</summary>
-
-It is generally possible to shuffle the rows of a table (or table part) freely as SQL considers the same table (table part) in different row order equivalent.
-
-This freedom of shuffling rows is restricted when a primary key is defined for the table.
-In ClickHouse, a primary key `C1, C2, ..., CN` enforces that the table rows are sorted by columns `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
-As a result, rows can only be shuffled within "equivalence classes" of row, i.e. rows which have the same values in their primary key columns.
-The intuition is that primary keys with high-cardinality, e.g. primary keys involving a `DateTime64` timestamp column, lead to many small equivalence classes.
-Likewise, tables with a low-cardinality primary key, create few and large equivalence classes.
-A table with no primary key represents the extreme case of a single equivalence class which spans all rows.
-
-The fewer and the larger the equivalence classes are, the higher the degree of freedom when re-shuffling rows.
-
-The heuristics applied to find the best row order within each equivalence class is suggested by D. Lemire, O. Kaser in [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002) and based on sorting the rows within each equivalence class by ascending cardinality of the non-primary key columns.
-It performs three steps:
-1. Find all equivalence classes based on the row values in primary key columns.
-2. For each equivalence class, calculate (usually estimate) the cardinalities of the non-primary-key columns.
-3. For each equivalence class, sort the rows in order of ascending non-primary-key column cardinality.
-
-</details>
-
-If enabled, insert operations incur additional CPU costs to analyze and optimize the row order of the new data.
-INSERTs are expected to take 30-50% longer depending on the data characteristics.
-Compression rates of LZ4 or ZSTD improve on average by 20-40%.
-
-This setting works best for tables with no primary key or a low-cardinality primary key, i.e. a table with only few distinct primary key values.
-High-cardinality primary keys, e.g. involving timestamp columns of type `DateTime64`, are not expected to benefit from this setting.
-
-## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
-
-By default, lightweight delete `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. So the default value would be `throw`.
-However, this option can change the behavior. With the value either `drop` or `rebuild`, deletes will work with projections. `drop` would delete the projection so it might be fast in the current query as projection gets deleted but slow in future queries as no projection attached.
-`rebuild` would rebuild the projection which might affect the performance of the current query, but might speedup for future queries. A good thing is that these options would only work in the part level,
-which means projections in the part that don't get touched would stay intact instead of triggering any action like drop or rebuild.
-
-Possible values:
-
-- throw, drop, rebuild
-
-Default value: throw
-
-## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
-
-Whether to allow create projection for the table with non-classic MergeTree, that is not (Replicated, Shared) MergeTree. Ignore option is purely for compatibility which might result in incorrect answer. Otherwise, if allowed, what is the action when merge projections, either drop or rebuild. So classic MergeTree would ignore this setting.
-It also controls `OPTIMIZE DEDUPLICATE` as well, but has effect on all MergeTree family members. Similar to the option `lightweight_mutation_projection_mode`, it is also part level.
-
-Possible values:
-
-- ignore, throw, drop, rebuild
-
-Default value: throw
-
-## min_free_disk_bytes_to_perform_insert {#min_free_disk_bytes_to_perform_insert}
-
-The minimum number of bytes that should be free in disk space in order to insert data. If the number of available free bytes is less than `min_free_disk_bytes_to_perform_insert` then an exception is thrown and the insert is not executed. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) number of bytes is specified
-
-Possible values:
-
-- Any positive integer.
-
-Default value: 0 bytes.
-
-Note that if both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## min_free_disk_ratio_to_perform_insert {#min_free_disk_ratio_to_perform_insert}
-
-The minimum free to total disk space ratio to perform an `INSERT`. Must be a floating point value between 0 and 1. Note that this setting:
-- takes into account the `keep_free_space_bytes` setting.
-- does not take into account the amount of data that will be written by the `INSERT` operation.
-- is only checked if a positive (non-zero) ratio is specified
-
-Possible values:
-
-- Float, 0.0 - 1.0
-
-Default value: 0.0
-
-Note that if both `min_free_disk_ratio_to_perform_insert` and `min_free_disk_bytes_to_perform_insert` are specified, ClickHouse will count on the value that will allow to perform inserts on a bigger amount of free memory.
-
-## allow_experimental_reverse_key {#allow_experimental_reverse_key}
-
-Enables support for descending sort order in MergeTree sorting keys. This setting is particularly useful for time series analysis and Top-N queries, allowing data to be stored in reverse chronological order to optimize query performance.
-
-With `allow_experimental_reverse_key` enabled, you can define descending sort orders within the `ORDER BY` clause of a MergeTree table. This enables the use of more efficient `ReadInOrder` optimizations instead of `ReadInReverseOrder` for descending queries.
-
-**Example**
-
-```sql
-CREATE TABLE example
-(
-    time DateTime,
-    key Int32,
-    value String
-) ENGINE = MergeTree
-ORDER BY (time DESC, key)  -- Descending order on 'time' field
-SETTINGS allow_experimental_reverse_key = 1;
-
-SELECT * FROM example WHERE key = 'xxx' ORDER BY time DESC LIMIT 10;
-```
-
-By using `ORDER BY time DESC` in the query, `ReadInOrder` is applied.
-
-**Default Value:** false
-
-## cache_populated_by_fetch {#cache_populated_by_fetch}
-
-:::note
-This setting applies only to ClickHouse Cloud.
-:::
-
-When `cache_populated_by_fetch` is disabled (the default setting), new data parts are loaded into the cache only when a query is run that requires those parts.
-
-If enabled, `cache_populated_by_fetch` will instead cause all nodes to load new data parts from storage into their cache without requiring a query to trigger such an action.
-
-Default value: false
-
-**See Also**
-
-- [ignore_cold_parts_seconds](settings.md/#ignore_cold_parts_seconds)
-- [prefer_warmed_unmerged_parts_seconds](settings.md/#prefer_warmed_unmerged_parts_seconds)
-- [cache_warmer_threads](settings.md/#cache_warmer_threads)
-
-## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
-
-If true, adds an implicit constraint for the `sign` column of a CollapsingMergeTree or VersionedCollapsingMergeTree table to allow only valid values (`1` and `-1`).
-
-Default value: false
-
-## add_minmax_index_for_numeric_columns {#add_minmax_index_for_numeric_columns}
-
-When enabled, min-max (skipping) indices are added for all numeric columns of the table.
-
-Default value: false.
-
-## add_minmax_index_for_string_columns {#add_minmax_index_for_string_columns}
-
-When enabled, min-max (skipping) indices are added for all string columns of the table.
-
-Default value: false.
-
-## materialize_skip_indexes_on_merge {#materialize_skip_indexes_on_merge}
-
-When enabled, merges build and store skip indices for new parts.
-
-Default: true
-
-## assign_part_uuids {#assign_part_uuids}
-
-When enabled, unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.
-
-Default: 0.

@@ -78,7 +78,7 @@ Upd: сделали по-другому: теперь всё безопасно.
 
 ## LEFT ONLY JOIN
 
-## + Функции makeDate, makeDateTime.
+## Функции makeDate, makeDateTime.
 
 `makeDate(year, month, day)`
 `makeDateTime(year, month, day, hour, minute, second, [timezone])`
@@ -96,6 +96,10 @@ Upd: сделали по-другому: теперь всё безопасно.
 ## Функция rowNumberForKey.
 
 Возвращает инкрементальное число для повторно встречающихся значений key.
+
+## Агрегатная функция groupConcat.
+
+`groupConcat(x, ',')` - собрать из переданных значений x строку, разделённую запятыми.
 
 ## Функции DATE_ADD, DATE_SUB как синонимы для совместимости с SQL.
 
@@ -137,7 +141,7 @@ position с конца строки.
 
 ## Возможность использовать ALIAS столбцы при INSERT.
 
-https://clickhouse.com/docs/query_language/create/#create-table
+https://clickhouse.com/docs/en/query_language/create/#create-table
 
 `INSERT INTO table (column1, column2, ...)`
 
@@ -179,17 +183,17 @@ world │ 123 │
 
 ## Работоспособность внешних данных на время сессии.
 
-https://clickhouse.com/docs/operations/table_engines/external_data/
+https://clickhouse.com/docs/en/operations/table_engines/external_data/
 
 Не работает, если открыть clickhouse-client в интерактивном режиме и делать несколько запросов.
 
-## Настройка для возможности получить частичный результат при cancel-е.
+## + Настройка для возможности получить частичный результат при cancel-е.
 
 Хотим по Ctrl+C получить те данные, которые успели обработаться.
 
 ## Раскрытие кортежей в функциях высшего порядка.
 
-## + Табличная функция loop.
+## Табличная функция loop.
 
 `SELECT * FROM loop(database, table)`
 

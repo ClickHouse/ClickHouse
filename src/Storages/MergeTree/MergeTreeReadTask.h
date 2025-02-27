@@ -7,8 +7,6 @@
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/MergeTreeReadersChain.h>
-#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 
 namespace DB
 {
@@ -25,7 +23,7 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 using VirtualFields = std::unordered_map<String, Field>;
 
 
-enum class MergeTreeReadType : uint8_t
+enum class MergeTreeReadType
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
     /// If num_streams == 1, will read without pool, in order specified in parts.
@@ -52,13 +50,10 @@ struct MergeTreeReadTaskColumns
     std::vector<NamesAndTypesList> pre_columns;
 
     String dump() const;
-    void moveAllColumnsFromPrewhere();
 };
 
 struct MergeTreeReadTaskInfo
 {
-    bool hasLightweightDelete() const;
-
     /// Data part which should be read while performing this task
     DataPartPtr data_part;
     /// Parent part of the projection part
@@ -67,19 +62,12 @@ struct MergeTreeReadTaskInfo
     size_t part_index_in_query;
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
-    /// Prewhere steps that should be applied to execute on-fly mutations for part.
-    PrewhereExprSteps mutation_steps;
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
     /// Shared initialized size predictor. It is copied for each new task.
     MergeTreeBlockSizePredictorPtr shared_size_predictor;
-    /// Shared constant fields for virtual columns.
+    /// TODO: comment
     VirtualFields const_virtual_fields;
-    /// The amount of data to read per task based on size of the queried columns.
-    size_t min_marks_per_task = 0;
-    size_t approx_size_of_mark = 0;
-    /// Cache of the columns prefixes for this part.
-    DeserializationPrefixesCachePtr deserialization_prefixes_cache{};
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -105,11 +93,22 @@ public:
         std::vector<MergeTreeReaderPtr> prewhere;
     };
 
+    struct RangeReaders
+    {
+        /// Used to save current range processing status
+        MergeTreeRangeReader main;
+
+        /// Range readers for multiple filtering steps: row level security, PREWHERE etc.
+        /// NOTE: we take references to elements and push_back new elements, that's why it is a deque but not a vector
+        std::deque<MergeTreeRangeReader> prewhere;
+    };
+
     struct BlockSizeParams
     {
         UInt64 max_block_size_rows = DEFAULT_BLOCK_SIZE;
         UInt64 preferred_block_size_bytes = 1000000;
         UInt64 preferred_max_column_in_block_size_bytes = 0;
+        UInt64 min_marks_to_read = 0;
         double min_filtration_ratio = 0.00001;
     };
 
@@ -126,25 +125,25 @@ public:
         MergeTreeReadTaskInfoPtr info_,
         Readers readers_,
         MarkRanges mark_ranges_,
-        const BlockSizeParams & block_size_params_,
+
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
-    void initializeReadersChain(const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+    void initializeRangeReaders(const PrewhereExprInfo & prewhere_actions);
 
-    BlockAndProgress read();
-    bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
+    BlockAndProgress read(const BlockSizeParams & params);
+    bool isFinished() const { return mark_ranges.empty() && range_readers.main.isCurrentRangeFinished(); }
 
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
-    const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
+    const MergeTreeRangeReader & getMainRangeReader() const { return range_readers.main; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
     Readers releaseReaders() { return std::move(readers); }
 
     static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
-    static MergeTreeReadersChain createReadersChain(const Readers & readers, const PrewhereExprInfo & prewhere_actions, ReadStepsPerformanceCounters & read_steps_performance_counters);
+    static RangeReaders createRangeReaders(const Readers & readers, const PrewhereExprInfo & prewhere_actions);
 
 private:
-    UInt64 estimateNumRows() const;
+    UInt64 estimateNumRows(const BlockSizeParams & params) const;
 
     /// Shared information required for reading.
     MergeTreeReadTaskInfoPtr info;
@@ -153,13 +152,11 @@ private:
     /// May be reused and released to the next task.
     Readers readers;
 
-    /// Range readers chain to read mark_ranges from data_part
-    MergeTreeReadersChain readers_chain;
+    /// Range readers to read mark_ranges from data_part
+    RangeReaders range_readers;
 
     /// Ranges to read from data_part
     MarkRanges mark_ranges;
-
-    BlockSizeParams block_size_params;
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;

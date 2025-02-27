@@ -43,7 +43,7 @@ namespace Net
         /// Sets the following default values:
         ///   - timeout:              60 seconds
         ///   - keepAlive:            true
-        ///   - maxKeepAliveRequests: 100
+        ///   - maxKeepAliveRequests: 0
         ///   - keepAliveTimeout:     15 seconds
 
         void setServerName(const std::string & serverName);
@@ -87,12 +87,12 @@ namespace Net
         const Poco::Timespan & getKeepAliveTimeout() const;
         /// Returns the connection timeout for HTTP connections.
 
-        void setMaxKeepAliveRequests(size_t maxKeepAliveRequests);
+        void setMaxKeepAliveRequests(int maxKeepAliveRequests);
         /// Specifies the maximum number of requests allowed
         /// during a persistent connection. 0 means unlimited
         /// connections.
 
-        size_t getMaxKeepAliveRequests() const;
+        int getMaxKeepAliveRequests() const;
         /// Returns the maximum number of requests allowed
         /// during a persistent connection, or 0 if
         /// unlimited connections are allowed.
@@ -106,7 +106,7 @@ namespace Net
         std::string _softwareVersion;
         Poco::Timespan _timeout;
         bool _keepAlive;
-        size_t _maxKeepAliveRequests;
+        int _maxKeepAliveRequests;
         Poco::Timespan _keepAliveTimeout;
     };
 
@@ -138,7 +138,7 @@ namespace Net
     }
 
 
-    inline size_t HTTPServerParams::getMaxKeepAliveRequests() const
+    inline int HTTPServerParams::getMaxKeepAliveRequests() const
     {
         return _maxKeepAliveRequests;
     }

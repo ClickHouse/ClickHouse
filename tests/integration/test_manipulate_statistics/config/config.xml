@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <allow_experimental_statistics>1</allow_experimental_statistics>
-        </default>
-    </profiles>
-</clickhouse>

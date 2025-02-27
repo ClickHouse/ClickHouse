@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 
 namespace DB
 {

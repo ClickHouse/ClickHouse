@@ -69,7 +69,7 @@ struct AggregateFunctionSumData
         size_t count = end - start;
         const auto * end_ptr = ptr + count;
 
-        if constexpr (is_floating_point<T>)
+        if constexpr (std::is_floating_point_v<T>)
         {
             /// Compiler cannot unroll this loop, do it manually.
             /// (at least for floats, most likely due to the lack of -fassociative-math)
@@ -83,7 +83,7 @@ struct AggregateFunctionSumData
             while (ptr < unrolled_end)
             {
                 for (size_t i = 0; i < unroll_count; ++i)
-                    Impl::add(partial_sums[i], T(ptr[i]));
+                    Impl::add(partial_sums[i], ptr[i]);
                 ptr += unroll_count;
             }
 
@@ -95,7 +95,7 @@ struct AggregateFunctionSumData
         T local_sum{};
         while (ptr < end_ptr)
         {
-            Impl::add(local_sum, T(*ptr));
+            Impl::add(local_sum, *ptr);
             ++ptr;
         }
         Impl::add(sum, local_sum);
@@ -193,11 +193,12 @@ struct AggregateFunctionSumData
             Impl::add(sum, local_sum);
             return;
         }
-        else if constexpr (is_floating_point<T> && (sizeof(Value) == 4 || sizeof(Value) == 8))
+        else if constexpr (std::is_floating_point_v<T>)
         {
-            /// For floating point we use a similar trick as above, except that now we reinterpret the floating point number as an unsigned
+            /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
             /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
-            using EquivalentInteger = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
+            static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
+            using equivalent_integer = typename std::conditional_t<sizeof(Value) == 4, UInt32, UInt64>;
 
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
@@ -208,11 +209,11 @@ struct AggregateFunctionSumData
             {
                 for (size_t i = 0; i < unroll_count; ++i)
                 {
-                    EquivalentInteger value;
-                    memcpy(&value, &ptr[i], sizeof(Value));
+                    equivalent_integer value;
+                    std::memcpy(&value, &ptr[i], sizeof(Value));
                     value &= (!condition_map[i] != add_if_zero) - 1;
                     Value d;
-                    memcpy(&d, &value, sizeof(Value));
+                    std::memcpy(&d, &value, sizeof(Value));
                     Impl::add(partial_sums[i], d);
                 }
                 ptr += unroll_count;
@@ -227,7 +228,7 @@ struct AggregateFunctionSumData
         while (ptr < end_ptr)
         {
             if (!*condition_map == add_if_zero)
-                Impl::add(local_sum, T(*ptr));
+                Impl::add(local_sum, *ptr);
             ++ptr;
             ++condition_map;
         }
@@ -305,7 +306,7 @@ struct AggregateFunctionSumData
 template <typename T>
 struct AggregateFunctionSumKahanData
 {
-    static_assert(is_floating_point<T>,
+    static_assert(std::is_floating_point_v<T>,
         "It doesn't make sense to use Kahan Summation algorithm for non floating point types");
 
     T sum{};
@@ -462,6 +463,7 @@ public:
             return "sumWithOverflow";
         else if constexpr (Type == AggregateFunctionTypeSumKahan)
             return "sumKahan";
+        UNREACHABLE();
     }
 
     explicit AggregateFunctionSum(const DataTypes & argument_types_)
@@ -488,7 +490,10 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
-        this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
+        if constexpr (is_big_int_v<T>)
+            this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
+        else
+            this->data(place).add(column.getData()[row_num]);
     }
 
     void addBatchSinglePlace(

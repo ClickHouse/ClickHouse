@@ -5,7 +5,6 @@
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
-#include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/Utils.h>
@@ -13,7 +12,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/Cluster.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -37,13 +35,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
-    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
-    extern const SettingsBool prefer_localhost_replica;
-}
 
 namespace ErrorCodes
 {
@@ -76,7 +67,7 @@ ASTPtr rewriteSelectQuery(
     // are written into the query context and will be sent by the query pipeline.
     select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
 
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    if (!context->getSettingsRef().allow_experimental_analyzer)
     {
         if (table_function_ptr)
             select_query.addTableFunction(table_function_ptr);
@@ -170,25 +161,23 @@ void SelectStreamFactory::createForShardImpl(
             query_ast, header, context, processed_stage, shard_info.shard_num, shard_count, has_missing_objects));
     };
 
-    // If lazy is true, a lazy pipe will be created. It will try to use the local replica and, if not possible, will use DelayedSource for reading from remote replica.
-    auto emplace_remote_stream = [&](bool lazy = false)
+    auto emplace_remote_stream = [&](bool lazy = false, time_t local_delay = 0)
     {
         Block shard_header;
-        PlannerContextPtr planner_context;
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
+        if (context->getSettingsRef().allow_experimental_analyzer)
+            shard_header = InterpreterSelectQueryAnalyzer::getSampleBlock(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         else
             shard_header = header;
 
         remote_shards.emplace_back(Shard{
             .query = query_ast,
             .query_tree = query_tree,
-            .planner_context = planner_context,
             .main_table = main_table,
             .header = shard_header,
             .has_missing_objects = has_missing_objects,
             .shard_info = shard_info,
             .lazy = lazy,
+            .local_delay = local_delay,
             .shard_filter_generator = std::move(shard_filter_generator),
         });
     };
@@ -197,14 +186,14 @@ void SelectStreamFactory::createForShardImpl(
 
     fiu_do_on(FailPoints::use_delayed_remote_source,
     {
-        emplace_remote_stream(/*lazy=*/true);
+        emplace_remote_stream(/*lazy=*/true, /*local_delay=*/999999);
         return;
     });
 
     // prefer_localhost_replica is not effective in case of parallel replicas
     // (1) prefer_localhost_replica is about choosing one replica on a shard
     // (2) parallel replica coordinator has own logic to choose replicas to read from
-    if (settings[Setting::prefer_localhost_replica] && shard_info.isLocal() && !parallel_replicas_enabled)
+    if (settings.prefer_localhost_replica && shard_info.isLocal() && !parallel_replicas_enabled)
     {
         StoragePtr main_table_storage;
 
@@ -245,7 +234,7 @@ void SelectStreamFactory::createForShardImpl(
             return;
         }
 
-        const UInt64 max_allowed_delay = settings[Setting::max_replica_delay_for_distributed_queries];
+        const UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
         {
@@ -265,7 +254,7 @@ void SelectStreamFactory::createForShardImpl(
         ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"), "Local replica of shard {} is stale (delay: {}s.)", shard_info.shard_num, local_delay);
 
-        if (!settings[Setting::fallback_to_stale_replicas_for_distributed_queries])
+        if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
             if (shard_info.hasRemoteConnections())
             {
@@ -273,12 +262,9 @@ void SelectStreamFactory::createForShardImpl(
                 emplace_remote_stream();
                 return;
             }
-            throw Exception(
-                ErrorCodes::ALL_REPLICAS_ARE_STALE,
-                "Local replica of shard {} is stale (delay: "
-                "{}s.), but no other replica configured",
-                shard_info.shard_num,
-                toString(local_delay));
+            else
+                throw Exception(ErrorCodes::ALL_REPLICAS_ARE_STALE, "Local replica of shard {} is stale (delay: "
+                    "{}s.), but no other replica configured", shard_info.shard_num, toString(local_delay));
         }
 
         if (!shard_info.hasRemoteConnections())
@@ -290,7 +276,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Try our luck with remote replicas, but if they are stale too, then fallback to local replica.
         /// Do it lazily to avoid connecting in the main thread.
-        emplace_remote_stream(true /* lazy */);
+        emplace_remote_stream(true /* lazy */, local_delay);
     }
     else
         emplace_remote_stream();

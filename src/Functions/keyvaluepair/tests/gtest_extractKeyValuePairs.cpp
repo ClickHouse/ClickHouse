@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 #include <initializer_list>
+#include <Core/iostream_debug_helpers.h>
 
 
 namespace
@@ -40,6 +41,23 @@ std::string PrintMap(const auto & keys, const auto & values)
     return std::move(buff.str());
 }
 
+template <typename T>
+struct Dump
+{
+    const T & value;
+
+    friend std::ostream & operator<<(std::ostream & ostr, const Dump & d)
+    {
+        return dumpValue(ostr, d.value);
+    }
+};
+
+template <typename T>
+auto print_with_dump(const T & value)
+{
+    return Dump<T>{value};
+}
+
 }
 
 struct KeyValuePairExtractorTestParam
@@ -64,7 +82,9 @@ TEST_P(extractKVPairKeyValuePairExtractorTest, Match)
     auto values = ColumnString::create();
 
     auto pairs_found = kv_parser->extract(input, keys, values);
-    ASSERT_EQ(expected.size(), pairs_found);
+    ASSERT_EQ(expected.size(), pairs_found)
+            << "\texpected: " << print_with_dump(expected) << "\n"
+            << "\tactual  : " << print_with_dump(*ToColumnMap(keys, values));
 
     size_t i = 0;
     for (const auto & expected_kv : expected)

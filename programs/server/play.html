@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
     <title>ClickHouse Query</title>
 
     <!-- Code Style:
@@ -14,7 +14,7 @@
     (CSS and JavaScript must be embedded directly to the page. No external fonts or images should be loaded).
     This UI should look as lightweight, clean and fast as possible.
     All UI elements must be aligned in pixel-perfect way.
-    There should not be any animations except the progress bar.
+    There should not be any animations.
     No unexpected changes in positions of elements while the page is loading.
     Navigation by keyboard should work.
     64-bit numbers must display correctly.
@@ -26,75 +26,50 @@
     1. Support readonly servers.
     Check if readonly = 1 (with SELECT FROM system.settings) to avoid sending settings. It can be done once on address/credentials change.
     It can be done in background, e.g. wait 100 ms after address/credentials change and do the check.
-    Also, it can provide visual indication that credentials are correct.
-
-    Nice to have:
-    - resizable columns
-    - display totals
-    - show/hide the editor
-    - check for readonly
-    - query caching
-    - downloads in any format
-    - history navigation
-    - short links by saving in a special table
-    - sharing by creating a short-living user
-    - notebook mode
+    Also it can provide visual indication that credentials are correct.
 
     -->
 
     <style>
         :root {
-            --background-color-rotate: 215;
-            --background-color: oklch(96% 0.0296 var(--background-color-rotate));
+            --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
             --element-background-color: #FFF;
-            --element-color-ok: #080;
-            --element-background-color-fail: #FEE;
-            --bar-color: #FF8; /* Light bar in background of table cells. */
-            --border-color: #CCC;
+            --bar-color: #F8F4F0; /* Light bar in background of table cells. */
+            --border-color: #EEE;
             --shadow-color: rgba(0, 0, 0, 0.1);
-            --button-color: #FF0;
+            --button-color: #FFAA00; /* Orange on light-cyan is especially good. */
             --text-color: #000;
-            --text-color-active: #000;
-            --button-active-color: #FE0;
-            --button-active-text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
             --misc-text-color: #888;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
-            --table-header-color: #EEE;
-            --table-hover-filter: brightness(0.9);
+            --table-header-color: #F8F8F8;
+            --table-hover-color: #FFF8EF;
+            --null-color: #A88;
             --link-color: #06D;
-            --logo-color: #FFF;
-            --border-color-selected: #F80;
-            --menu-toggle-color: #000;
-
-            --progress-color: #0C4;
-            --progress: 0%;
+            --logo-color: #CEE;
+            --logo-color-active: #BDD;
         }
 
         [data-theme="dark"] {
-            --background-color-rotate: 250;
-            --background-color: oklch(15% 0.0296 var(--background-color-rotate));
-            --element-background-color: #000;
-            --element-color-ok: #8F8;
-            --element-background-color-fail: #300;
-            --bar-color: #320;
-            --border-color: #444;
-            --shadow-color: rgba(0, 0, 0, 0.1);
+            --background-color: #000;
+            --element-background-color: #102030;
+            --bar-color: #182838;
+            --border-color: #111;
+            --shadow-color: rgba(255, 255, 255, 0.1);
             --text-color: #CCC;
-            --text-color-active: #FFF;
-            --button-color: rgb(250 255 105);
+            --button-color: #FFAA00;
             --button-text-color: #000;
-            --button-active-color: #FE0;
-            --button-active-text-color: #000;
+            --button-active-color: #F00;
+            --button-active-text-color: #FFF;
             --misc-text-color: #888;
             --error-color: #400;
             --table-header-color: #102020;
-            --table-hover-filter: contrast(0.9) brightness(2);
+            --table-hover-color: #003333;
+            --null-color: #A88;
             --link-color: #4BDAF7;
-            --logo-color: #444;
-            --border-color-selected: #FF0;
-            --menu-toggle-color: #FF0;
-
-            --progress-color: #FF0;
+            --logo-color: #222;
+            --logo-color-active: #333;
         }
 
         *
@@ -117,153 +92,14 @@
         html
         {
             /* The fonts that have full support for hinting. */
-            font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
         }
 
         body
         {
-            position: relative;
-            display: grid;
-            grid-template-columns: auto 1fr;
-            grid-template-areas: "menu main";
-        }
-
-        #menu
-        {
-            padding: 0.25rem;
-            grid-area: menu;
-            position: relative;
-            background: var(--table-header-color);
-            border-right: 1px solid var(--border-color);
-            display: grid;
-            grid-template-rows: auto 1fr auto;
-            grid-template-areas: "databases-icon" "contents" "github-icon";
-        }
-
-        #main
-        {
-            overflow: auto;
-        }
-
-        .menu-icon
-        {
-            width: 2.25em;
-            cursor: pointer;
-            user-select: none;
-            fill: var(--menu-toggle-color);
-        }
-
-        .menu-icon:hover
-        {
-            transform: translate(1px, 1px);
-        }
-
-        #databases-icon
-        {
-            grid-area: databases-icon;
-        }
-
-        #databases
-        {
-            grid-area: contents;
-        }
-
-        #github-icon
-        {
-            grid-area: github-icon;
-        }
-
-        #github-icon-light, #github-icon-dark
-        {
-            display: none;
-        }
-
-        [data-theme="light"] #github-icon-light, [data-theme="dark"] #github-icon-dark
-        {
-            display: block;
-        }
-
-        .database button
-        {
-            cursor: pointer;
-            background: transparent;
-            font-size: 100%;
-            padding: 0;
-            user-select: none;
-            color: var(--text-color);
-            border-bottom: 1px dashed var(--text-color);
-        }
-
-        .database button:hover
-        {
-            color: var(--button-text-color);
-            background-color: var(--button-color);
-        }
-
-        .database button:focus
-        {
-            color: var(--button-text-color);
-            background-color: var(--button-color);
-        }
-
-        .no-tables
-        {
-            color: var(--misc-text-color);
-        }
-
-        .tables
-        {
-            padding-left: 1rem;
-        }
-
-        .current
-        {
-            font-weight: bold;
-        }
-
-        .table
-        {
-            background-position: bottom;
-            background-size: 100% 2px;
-            background-repeat: no-repeat;
-        }
-
-        .table-addendum
-        {
-            position: absolute;
-            z-index: 1;
-            display: none;
-            white-space: pre;
-            transform: translate(0.25rem, calc(-50% + 0.5em));
-            color: var(--element-background-color);
-            background: var(--text-color);
-            border: 1px solid var(--border-color);
-            border-radius: 0.5rem;
-            padding: 0.25rem;
-            margin-left: 0.25rem;
-        }
-
-        .table-addendum::before {
-            content: " ";
-            position: absolute;
-            top: 50%;
-            transform: translate(-110%, -50%);
-            line-height: 0;
-            border-width: 0.5rem;
-            border-style: solid;
-            border-color: transparent var(--text-color) transparent transparent;
-        }
-
-        .table:hover .table-addendum
-        {
-            display: inline-block;
-        }
-
-        #main
-        {
-            grid-area: main;
+            /* This element will show scroll-bar on overflow, and the scroll-bar will be outside of the padding. */
             padding: 0.5rem;
         }
 
@@ -286,6 +122,12 @@
         {
             /* Prefer fonts that have full hinting info. This is important for non-retina displays.
                Also I personally dislike "Ubuntu" font due to the similarity of 'r' and 'г' (it looks very ignorant). */
+            font-family: Liberation Mono, DejaVu Sans Mono, MonoLisa, Consolas, monospace;
+        }
+
+        .monospace-table
+        {
+            /* Liberation is worse than DejaVu for block drawing characters. */
             font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
         }
 
@@ -303,22 +145,12 @@
             background-color: var(--element-background-color);
         }
 
-        input:focus, textarea:focus
-        {
-            color: var(--text-color-active);
-        }
-
         #query
         {
-            display: block;
             /* Make enough space for even big queries. */
             height: 20vh;
             /* Keeps query text-area's width full screen even when user adjusting the width of the query box. */
-            width: 100%;
             min-width: 100%;
-            max-width: 100%;
-            margin-top: -1px; /* To compensate the border. */
-            contain: strict; /* Less input lag even if the table is large. */
         }
 
         #inputs
@@ -331,42 +163,29 @@
             width: 70%;
         }
 
-        #user, #password
+        #user
         {
-            width: calc(15% + 1px);
-            margin-left: -1px;
+            width: 15%;
         }
 
-        input.ok
+        #password
         {
-            color: var(--element-color-ok);
-        }
-
-        input.fail
-        {
-            background-color: var(--element-background-color-fail);
+            width: 15%;
         }
 
         #run_div
         {
-            margin-top: 0.5rem;
-            display: grid;
-            place-items: center;
-            gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto;
-            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
+            margin-top: 1rem;
         }
 
         #run
         {
-            grid-area: run;
-            user-select: none;
             color: var(--button-text-color);
             background-color: var(--button-color);
             padding: 0.25rem 1rem;
             cursor: pointer;
             font-weight: bold;
-            font-size: 100%; /* Otherwise button element will have a lower font size. */
+            font-size: 100%; /* Otherwise button element will have lower font size. */
         }
 
         #run:hover, #run:focus
@@ -375,86 +194,39 @@
             background-color: var(--button-active-color);
         }
 
-        #hint
-        {
-            grid-area: hint;
-            color: var(--misc-text-color);
-        }
-
-        #hourglass
-        {
-            grid-area: hourglass;
-            display: none;
-            font-size: 110%;
-            color: #888;
-            animation: hourglass-animation 2s linear infinite;
-        }
-
-        #check-mark
-        {
-            grid-area: hourglass;
-            display: none;
-            font-size: 110%;
-            color: #080;
-        }
-
         #stats
         {
-            grid-area: progress-text;
+            float: right;
             color: var(--misc-text-color);
-        }
-
-        #stats b
-        {
-            color: var(--progress-color);
-        }
-
-        #progress
-        {
-            display: none;
-            width: 100%;
-            color: var(--misc-text-color);
-
-            grid-area: progress-bar;
-            background: linear-gradient(to right,
-                transparent 0%,
-                var(--progress-color) var(--progress),
-                transparent var(--progress));
-        }
-
-        #theme
-        {
-            grid-area: theme;
         }
 
         #toggle-light, #toggle-dark
         {
+            float: right;
+            padding-right: 0.5rem;
             cursor: pointer;
-            user-select: none;
         }
 
-        [data-theme="light"] #toggle-light, [data-theme="dark"] #toggle-dark
+        .hint
         {
-            display: none;
+            color: var(--misc-text-color);
         }
 
         #data_div
         {
             margin-top: 1rem;
-            background-color: var(--element-background-color);
         }
 
         #data-table
         {
             width: 100%;
+            border-collapse: collapse;
             border-spacing: 0;
-            background-color: var(--element-background-color);
         }
 
         /* Will be displayed when user specified custom format. */
         #data-unparsed
         {
-            width: fit-content;
             background-color: var(--element-background-color);
             margin-top: 0rem;
             padding: 0.25rem 0.5rem;
@@ -475,11 +247,6 @@
             vertical-align: top;
         }
 
-        td u
-        {
-            text-decoration-color: var(--misc-text-color);
-        }
-
         .right
         {
             text-align: right;
@@ -487,42 +254,21 @@
 
         th
         {
-            position: sticky;
-            top: -0.5rem;
             padding: 0.25rem 0.5rem;
             text-align: center;
             background-color: var(--table-header-color);
             border: 1px solid var(--border-color);
         }
 
-        .type-hint
-        {
-            display: none;
-            position: absolute;
-            user-select: none;
-            right: 0;
-            top: -1.25em;
-            font-size: 75%;
-            font-weight: normal;
-            color: var(--misc-text-color);
-            z-index: 1;
-            background: var(--element-background-color);
-        }
-
-        th:hover .type-hint
-        {
-            display: inline-block;
-        }
-
         /* The row under mouse pointer is highlight for better legibility. */
+        tr:hover, tr:hover td
+        {
+            background-color: var(--table-hover-color);
+        }
+
         tr:hover
         {
-            filter: var(--table-hover-filter);
-        }
-
-        .tr-selected
-        {
-            filter: var(--table-hover-filter);
+            box-shadow: 0 0 1rem rgba(0, 0, 0, 0.1);
         }
 
         #error
@@ -533,11 +279,21 @@
             display: none;
         }
 
+        /* When mouse pointer is over table cell, will display full text (with wrap) instead of cut.
+         * We also keep it for some time on mouseout for "hysteresis" effect.
+         */
+        td.left:hover, .td-hover-hysteresis
+        {
+            white-space: pre-wrap;
+            max-width: none;
+        }
+
         .td-selected
         {
             white-space: pre-wrap;
             max-width: none;
-            outline: 2px solid var(--border-color-selected);
+            background-color: var(--table-hover-color);
+            border: 2px solid var(--border-color);
         }
 
         td.transposed
@@ -568,12 +324,39 @@
             font-family: Liberation Sans, DejaVu Sans, sans-serif;
         }
 
+        /* The style for SQL NULL */
+        .null
+        {
+            color: var(--null-color);
+        }
+
         @keyframes hourglass-animation {
-            0% { transform: none; }
-            25% { transform: rotate(180deg); }
-            50% { transform: rotate(180deg); }
-            75% { transform: rotate(360deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(-180deg);
+            }
+            50% {
+                transform: rotate(-180deg);
+            }
+            100% {
+                transform: none;
+            }
+        }
+
+        #hourglass
+        {
+            display: none;
+            margin-left: 1rem;
+            font-size: 110%;
+            color: #888;
+            animation: hourglass-animation 1s linear infinite;
+        }
+
+        #check-mark
+        {
+            display: none;
+            padding-left: 1rem;
+            font-size: 110%;
+            color: #080;
         }
 
         a, a:visited
@@ -585,7 +368,6 @@
         #graph
         {
             display: none;
-            margin: auto;
         }
 
         /* This is for graph in svg */
@@ -599,7 +381,6 @@
         {
             fill: var(--element-background-color);
             filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
-            stroke: var(--border-color);
         }
 
         .edgePath path
@@ -619,10 +400,21 @@
 
         #cloud-logo
         {
-            color: transparent;
-            text-shadow: 0 0 0 var(--logo-color);
+            color: var(--background-color);
+            text-shadow: 0rem 0rem 2rem var(--logo-color);
             font-size: 10vw;
             display: block;
+        }
+
+        #logo:hover
+        {
+            fill: var(--logo-color-active);
+            color: var(--logo-color-active);
+        }
+
+        #cloud-logo:hover
+        {
+            filter: brightness(150%);
         }
 
         #logo-container
@@ -634,37 +426,10 @@
 
         #chart
         {
-            border: 1px solid var(--border-color);
             background-color: var(--element-background-color);
             filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
             display: none;
             height: 70vh;
-        }
-
-        #url_status
-        {
-            position: absolute;
-            display: inline-block;
-            font-size: 11pt;
-            padding: 0.25rem;
-            transform: translateX(-100%);
-            color: transparent;
-            user-select: none;
-        }
-
-        #url_status.ok
-        {
-            color: #0F0;
-        }
-
-        #url_status.fail
-        {
-            color: #F00;
-        }
-
-        #server_info
-        {
-            color: var(--misc-text-color);
         }
 
         /* This is for charts (uPlot), Copyright (c) 2022 Leon Sorokin, MIT License, https://github.com/leeoniya/uPlot/ */
@@ -695,1225 +460,704 @@
 </head>
 
 <body>
-    <div id="menu">
-        <div id="databases-icon" class="menu-icon">
-            <svg id="databases-toggle" viewBox="0 0 9 9"><path d="M0,0 h1 v8 h-1 z"/><path d="M2,0 h1 v8 h-1 z"/><path d="M4,0 h1 v8 h-1 z"/><path d="M6,0 h1 v8 h-1 z"/><path d="M8,3.25 h1 v1.5 h-1 z"/></svg>
+    <div id="controls">
+        <div id="inputs">
+            <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
         </div>
-        <div id="databases"></div>
-        <!-- https://github.com/logos -->
-        <div id="github-icon" class="menu-icon">
-            <a href="https://github.com/ClickHouse/ClickHouse/">
-                <svg id="github-icon-light" viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" fill="#24292f"/></svg>
-                <svg id="github-icon-dark" viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" fill="#fff"/></svg>
-            </a>
+        <div id="query_div">
+            <textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea>
+        </div>
+        <div id="run_div">
+            <button class="shadow" id="run">Run</button>
+            <span class="hint">&nbsp;(Ctrl/Cmd+Enter)</span>
+            <span id="hourglass">⧗</span>
+            <span id="check-mark">✔</span>
+            <span id="stats"></span>
+            <span id="toggle-dark">🌑</span><span id="toggle-light">🌞</span>
         </div>
     </div>
-    <div id="main">
-        <div id="controls">
-            <div id="inputs">
-                <input spellcheck="false" class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><span id="url_status"><span id="server_info"></span>●</span><input spellcheck="false" class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
-            </div>
-            <div id="query_div"><textarea autofocus spellcheck="false" data-gramm="false" class="monospace shadow" id="query"></textarea></div>
-            <div id="run_div">
-                <button class="shadow" id="run">Run</button>
-                <div id="hint">&nbsp;(Ctrl/Cmd+Enter)</div>
-                <div id="hourglass">⧗</div>
-                <div id="check-mark">✔</div>
-                <div id="progress"></div>
-                <div id="stats"></div>
-                <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
-            </div>
-        </div>
-        <div id="data_div">
-            <table class="monospace shadow" id="data-table"></table>
-            <pre class="monospace shadow" id="data-unparsed"></pre>
-        </div>
-        <div id="chart"></div>
-        <svg id="graph" fill="none"></svg>
-        <p id="error" class="monospace shadow">
-        </p>
-        <p id="logo-container">
-            <a href="https://clickhouse.com/">
-            <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg"><title>Powered by ClickHouse</title><g transform="translate(21, 0)"><path d="M9.76,20.95 C8.43,20.97 7.11,20.73 5.87,20.26 C4.72,19.80 3.67,19.11 2.81,18.22 C1.90,17.32 1.20,16.25 0.74,15.07 C-0.24,12.29 -0.24,9.27 0.74,6.49 C1.67,4.07 3.61,2.16 6.08,1.26 C7.35,0.79 8.71,0.55 10.07,0.57 C11.16,0.54 12.24,0.67 13.30,0.93 C14.15,1.16 14.98,1.47 15.78,1.87 L15.03,4.17 C14.33,3.70 13.57,3.32 12.78,3.03 C11.83,2.71 10.83,2.56 9.82,2.58 C7.96,2.56 6.18,3.35 4.96,4.74 C4.30,5.50 3.79,6.38 3.47,7.33 C3.08,8.46 2.89,9.65 2.91,10.85 C2.90,12.02 3.07,13.18 3.43,14.29 C3.73,15.23 4.21,16.09 4.86,16.84 C5.46,17.52 6.21,18.06 7.05,18.41 C7.95,18.78 8.92,18.96 9.90,18.96 C10.80,18.96 11.68,18.82 12.53,18.55 C13.34,18.27 14.12,17.91 14.85,17.47 L15.57,19.20 C14.87,19.72 14.09,20.13 13.25,20.40 C12.13,20.78 10.95,20.97 9.76,20.95 L9.76,20.95 Z"></path><polygon points="21.20 0 21.20 20.67 18.73 20.67 18.73 0 21.20 0"></polygon><path d="M26.51,4.15 C26.09,4.18 25.68,4.03 25.38,3.74 C25.08,3.46 24.92,3.05 24.94,2.64 C24.92,2.23 25.07,1.83 25.35,1.52 C25.99,0.92 26.99,0.92 27.63,1.52 C27.92,1.82 28.07,2.23 28.06,2.64 C28.07,3.05 27.92,3.44 27.63,3.72 C27.33,4.01 26.93,4.16 26.51,4.15 L26.51,4.15 Z M27.75,6.31 L27.75,20.56 L25.31,20.56 L25.31,6.31 L27.77,6.31 L27.75,6.31 Z"></path><path d="M38.20,20.95 C37.23,20.96 36.27,20.78 35.36,20.44 C34.50,20.12 33.72,19.62 33.07,18.98 C32.40,18.30 31.88,17.51 31.54,16.63 C30.78,14.61 30.78,12.39 31.54,10.36 C31.89,9.48 32.43,8.68 33.11,8.02 C33.80,7.36 34.62,6.85 35.53,6.53 C36.46,6.19 37.45,6.02 38.44,6.02 C39.23,6.02 40.02,6.11 40.78,6.29 C41.40,6.43 41.99,6.67 42.52,7.00 L41.73,9.14 C41.23,8.76 40.68,8.44 40.10,8.18 C39.49,7.95 38.85,7.84 38.20,7.86 C37.57,7.85 36.95,7.97 36.38,8.20 C35.80,8.44 35.28,8.80 34.87,9.26 C34.42,9.77 34.07,10.36 33.85,10.99 C33.58,11.78 33.45,12.61 33.46,13.44 C33.36,14.92 33.85,16.38 34.83,17.51 C35.81,18.45 37.15,18.94 38.53,18.87 C39.72,18.85 40.89,18.48 41.88,17.81 L42.44,19.61 C41.88,20.02 41.26,20.33 40.60,20.52 C39.82,20.79 39.01,20.93 38.20,20.95 L38.20,20.95 Z"></path><path d="M47.94,0 L47.94,20.67 L45.44,20.67 L45.44,0 L47.94,0 Z M54.35,20.67 L48.27,13.01 L54.27,6.33 L56.83,6.33 L50.90,12.72 L57.24,20.67 L54.35,20.67 L54.35,20.67 Z"></path><polygon points="73.11 11.87 62.77 11.87 62.77 20.65 60.10 20.65 60.10 0.85 62.77 0.85 62.77 9.89 73.11 9.89 73.11 0.85 75.78 0.85 75.78 20.67 73.11 20.67"></polygon><path d="M86.30,20.95 C85.38,20.95 84.47,20.78 83.61,20.44 C82.78,20.12 82.01,19.63 81.38,19.00 C80.72,18.32 80.21,17.53 79.87,16.65 C79.12,14.60 79.12,12.35 79.87,10.30 C80.21,9.43 80.72,8.64 81.38,7.98 C82.02,7.35 82.78,6.86 83.61,6.53 C84.47,6.20 85.38,6.02 86.30,6.02 C87.23,6.02 88.15,6.20 89.01,6.53 C89.86,6.86 90.62,7.35 91.27,7.98 C91.94,8.64 92.47,9.43 92.82,10.30 C93.59,12.35 93.59,14.60 92.82,16.65 C92.50,17.52 92.00,18.32 91.37,19.00 C90.73,19.63 89.96,20.12 89.12,20.44 C88.22,20.79 87.27,20.96 86.30,20.95 Z M86.30,19.10 C86.88,19.10 87.46,18.99 88.00,18.79 C88.56,18.59 89.07,18.25 89.47,17.81 C89.93,17.31 90.28,16.71 90.50,16.06 C90.78,15.23 90.91,14.35 90.89,13.48 C90.92,12.60 90.78,11.72 90.50,10.89 C90.28,10.25 89.93,9.66 89.47,9.16 C89.07,8.72 88.56,8.39 88.00,8.18 C87.46,7.98 86.88,7.88 86.30,7.88 C85.74,7.88 85.18,7.98 84.65,8.18 C84.10,8.39 83.61,8.73 83.22,9.16 C82.77,9.66 82.42,10.25 82.21,10.89 C81.94,11.73 81.81,12.60 81.84,13.48 C81.81,14.35 81.94,15.23 82.21,16.06 C82.42,16.71 82.76,17.31 83.22,17.81 C83.61,18.25 84.10,18.58 84.65,18.79 C85.18,18.99 85.74,19.10 86.30,19.10 L86.30,19.10 Z"></path><path d="M104.21,20.12 C103.26,20.71 102.14,21.00 101.01,20.95 C99.79,21.00 98.61,20.56 97.74,19.73 C96.83,18.70 96.38,17.34 96.50,15.98 L96.50,6.31 L98.98,6.31 L98.98,15.98 C98.97,16.47 99.04,16.95 99.19,17.41 C99.30,17.76 99.50,18.07 99.77,18.32 C100.01,18.55 100.31,18.72 100.64,18.81 C100.99,18.91 101.35,18.96 101.71,18.96 C102.65,19.00 103.58,18.73 104.34,18.18 C105.05,17.63 105.63,16.94 106.03,16.14 L106.03,6.31 L108.49,6.31 L108.49,20.56 L106.32,20.56 L106.10,18.00 L106.10,18.00 C105.68,18.86 105.03,19.60 104.21,20.12 L104.21,20.12 Z"></path><path d="M116.42,20.95 C115.80,20.99 115.17,20.99 114.55,20.95 C114.09,20.89 113.62,20.80 113.17,20.69 C112.81,20.60 112.46,20.48 112.11,20.34 C111.83,20.22 111.55,20.07 111.29,19.91 L112.09,17.88 C112.27,18.02 112.47,18.15 112.67,18.26 C112.97,18.43 113.28,18.57 113.60,18.69 C114.01,18.85 114.43,18.97 114.86,19.06 C115.38,19.16 115.90,19.20 116.42,19.20 C117.26,19.26 118.09,19.04 118.79,18.59 C119.33,18.19 119.63,17.56 119.60,16.90 C119.62,16.34 119.38,15.80 118.94,15.45 C118.24,14.98 117.47,14.63 116.64,14.43 L114.86,13.84 C114.33,13.66 113.82,13.39 113.36,13.07 C112.91,12.76 112.55,12.35 112.28,11.89 C111.99,11.34 111.84,10.72 111.87,10.10 C111.79,8.92 112.33,7.79 113.29,7.10 C114.46,6.39 115.83,6.05 117.20,6.13 C118.07,6.11 118.94,6.19 119.79,6.37 C120.38,6.49 120.97,6.68 121.52,6.92 L120.95,8.96 C120.47,8.73 119.99,8.52 119.50,8.34 C118.79,8.11 118.05,8.00 117.31,8.02 C116.53,7.98 115.76,8.13 115.05,8.45 C114.47,8.75 114.14,9.37 114.20,10.01 C114.20,10.33 114.29,10.63 114.47,10.89 C114.66,11.15 114.90,11.36 115.18,11.52 C115.50,11.72 115.85,11.87 116.21,11.99 L117.45,12.36 L119.13,12.91 C119.66,13.10 120.16,13.36 120.61,13.70 C121.60,14.41 122.15,15.56 122.08,16.76 C122.12,17.46 121.95,18.17 121.61,18.79 C121.30,19.33 120.86,19.79 120.35,20.14 C119.80,20.50 119.19,20.76 118.55,20.91 C117.84,21.01 117.13,21.02 116.42,20.95 Z"></path><path d="M136.37,19.42 C135.76,19.91 135.06,20.28 134.31,20.50 C133.39,20.80 132.43,20.95 131.47,20.93 C129.48,21.04 127.53,20.30 126.14,18.89 C124.81,17.36 124.15,15.38 124.28,13.38 C124.26,12.31 124.43,11.26 124.79,10.26 C125.11,9.39 125.59,8.60 126.22,7.92 C126.79,7.29 127.50,6.79 128.29,6.45 C129.13,6.11 130.03,5.94 130.93,5.94 C131.84,5.93 132.74,6.10 133.58,6.45 C134.35,6.77 135.02,7.28 135.53,7.94 C136.06,8.66 136.42,9.50 136.56,10.38 C136.75,11.50 136.75,12.64 136.56,13.76 L126.72,13.76 C126.83,17.17 128.46,18.87 131.62,18.87 C132.38,18.89 133.13,18.77 133.85,18.53 C134.49,18.30 135.10,18.00 135.67,17.63 L136.37,19.42 Z M131.02,7.73 C130.01,7.72 129.05,8.12 128.35,8.83 C127.52,9.75 127.03,10.91 126.94,12.13 L134.33,12.13 C134.53,10.97 134.25,9.78 133.56,8.81 C132.93,8.09 131.99,7.69 131.02,7.73 Z"></path></g></svg>
-            </a>
-            <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
-        </p>
+    <div id="data_div">
+        <table class="monospace-table shadow" id="data-table"></table>
+        <pre class="monospace-table shadow" id="data-unparsed"></pre>
     </div>
+    <div id="chart"></div>
+    <svg id="graph" fill="none"></svg>
+    <p id="error" class="monospace shadow">
+    </p>
+    <p id="logo-container">
+        <a href="https://clickhouse.com/">
+        <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+            <title>Powered by ClickHouse</title>
+            <g transform="translate(21, 0)">
+                <path d="M9.76370444,20.9560972 C8.43447886,20.9735251 7.11430823,20.7384252 5.875478,20.2636703 C4.72047444,19.8054437 3.67723122,19.1113387 2.81453379,18.2271205 C1.90927726,17.3283139 1.2048111,16.2531042 0.746328237,15.0704684 C-0.248776079,12.2964995 -0.248776079,9.27056268 0.746328237,6.4965938 C1.67159165,4.07354026 3.61800681,2.16434552 6.08229856,1.26266086 C7.35832383,0.792264319 8.71148185,0.557532775 10.0739353,0.570233938 C11.1612577,0.548839362 12.2465336,0.672146838 13.3003359,0.936812899 C14.1575307,1.16603291 14.9890302,1.47989577 15.7821826,1.8736258 L15.0376286,4.17492705 C14.334754,3.70811103 13.5779913,3.32526638 12.7832845,3.03445917 C11.8308864,2.71897047 10.8304102,2.56740693 9.82575061,2.58641822 C7.96245266,2.56886976 6.1853824,3.35817309 4.96546756,4.74516099 C4.30442786,5.50472232 3.79877758,6.38298172 3.47635956,7.33157921 C3.08814385,8.46618422 2.89929764,9.65767851 2.91794407,10.8548103 C2.90195973,12.0219322 3.07653544,13.184001 3.43499545,14.2965795 C3.73382292,15.2302331 4.21899806,16.0957206 4.86205728,16.8422667 C5.46077204,17.5238868 6.21094713,18.0604846 7.05435517,18.41041 C7.95798877,18.7824827 8.9290709,18.969569 9.90847883,18.9602785 C10.8005951,18.9648543 11.68759,18.827308 12.5350999,18.5529685 C13.3447055,18.2769814 14.1214074,17.9150606 14.8514901,17.4735971 L15.575362,19.2046644 C14.8756447,19.7279796 14.0929921,20.1339593 13.2589718,20.4062288 C12.1346344,20.7859604 10.952228,20.9719742 9.76370444,20.9560972 L9.76370444,20.9560972 Z" id="Path"></path>
+                <polygon id="Path" points="21.2008811 0 21.2008811 20.6709803 18.7397165 20.6709803 18.7397165 0 21.2008811 0"></polygon>
+                <path d="M26.5161694,4.15456155 C26.0981094,4.18404053 25.6871808,4.03620327 25.3868859,3.74828616 C25.0865909,3.46036905 24.9255529,3.05981554 24.9443332,2.64751471 C24.9293499,2.23543398 25.0776822,1.83376364 25.3579743,1.52741233 C25.9917593,0.922143971 26.9992154,0.922143971 27.6330004,1.52741233 C27.9227354,1.82938962 28.0789406,2.23223687 28.0673236,2.64751471 C28.0795295,3.0508229 27.9224226,3.44126169 27.6330004,3.7268861 C27.3352303,4.0129939 26.9320049,4.16740365 26.5161694,4.15456155 L26.5161694,4.15456155 Z M27.7570927,6.31330432 L27.7570927,20.5691528 L25.3166102,20.5691528 L25.3166102,6.31330432 L27.7777748,6.31330432 L27.7570927,6.31330432 Z" id="Shape"></path>
+                <path d="M38.2015308,20.9561849 C37.2331788,20.9606473 36.2723959,20.7880054 35.3680892,20.4469598 C34.5040176,20.1277138 33.7207114,19.6274001 33.072381,18.9806439 C32.4086321,18.3083453 31.8882536,17.5120269 31.5419089,16.6386117 C30.789066,14.6134632 30.789066,12.3911868 31.5419089,10.3660384 C31.8953146,9.48650873 32.4305899,8.68894988 33.1137451,8.02400613 C33.8006138,7.36063917 34.6265105,6.85322326 35.5335456,6.53732479 C36.4665869,6.19626518 37.4544707,6.0237894 38.4497154,6.02818735 C39.2367736,6.02254268 40.0215928,6.11144966 40.7867877,6.29293882 C41.402916,6.43127907 41.9904819,6.67235105 42.5240804,7.00573124 L41.7381623,9.14410851 C41.2326995,8.76428196 40.6844527,8.44310218 40.1042799,8.18693012 C39.4990142,7.95244732 38.8516533,7.84158602 38.2015308,7.86108215 C37.5775701,7.85677667 36.958946,7.97445444 36.3815099,8.20729561 C35.8033669,8.44328317 35.2871426,8.80537627 34.8717198,9.2663015 C34.4220004,9.77237252 34.0776687,10.3605404 33.8582991,10.9973688 C33.5836299,11.7832018 33.4506403,12.6102801 33.4653401,13.4412285 C33.3646964,14.9221144 33.8543791,16.3832889 34.8303557,17.5143281 C35.8193073,18.4542588 37.1597853,18.9483223 38.5324437,18.8788165 C39.7296588,18.8515966 40.8932941,18.483801 41.8829366,17.8198106 L42.4413521,19.6119744 C41.8863529,20.0201826 41.2635134,20.3302813 40.6006492,20.5284218 C39.8277327,20.7904738 39.0186907,20.9346965 38.2015308,20.9561849 L38.2015308,20.9561849 Z" id="Path"></path>
+                <path d="M47.9427789,0 L47.9427789,20.6709803 L45.4402502,20.6709803 L45.4402502,0 L47.9427789,0 Z M54.3542161,20.6709803 L48.2736918,13.0135531 L54.2714879,6.33366982 L56.8360628,6.33366982 L50.9003129,12.7284361 L57.2497039,20.6709803 L54.3542161,20.6709803 L54.3542161,20.6709803 Z" id="Shape"></path>
+                <polygon id="Path" points="73.1128405 11.8730852 62.7718127 11.8730852 62.7718127 20.6506148 60.1038276 20.6506148 60.1038276 0.855350908 62.7718127 0.855350908 62.7718127 9.89763193 73.1128405 9.89763193 73.1128405 0.855350908 75.7808256 0.855350908 75.7808256 20.6709803 73.1128405 20.6709803"></polygon>
+                <path d="M86.3079919,20.9560972 C85.38699,20.956828 84.4743522,20.7840259 83.6193247,20.4469598 C82.7801539,20.1243214 82.0191689,19.6317014 81.3856627,19.0010094 C80.7288968,18.3272298 80.2155719,17.5309446 79.8758726,16.6589772 C79.1241518,14.6056391 79.1241518,12.35828 79.8758726,10.3049419 C80.2139667,9.43820628 80.7276537,8.64828849 81.3856627,7.98327514 C82.0210949,7.3549028 82.7815529,6.86262399 83.6193247,6.53732479 C84.4743522,6.20025867 85.38699,6.0274377 86.3079919,6.02818492 C87.235663,6.02783377 88.154999,6.20059422 89.0173412,6.53732479 C89.8608646,6.86326706 90.6279639,7.35528929 91.2716852,7.98327514 C91.9432058,8.64563226 92.4709473,9.43552137 92.8228394,10.3049419 C93.5941835,12.3548594 93.5941835,14.6090597 92.8228394,16.6589772 C92.5001582,17.5252355 92.0083217,18.3208853 91.3750955,19.0010094 C90.7336187,19.6317283 89.9659063,20.1241438 89.1207514,20.4469598 C88.2261198,20.7965781 87.270406,20.9695718 86.3079919,20.9560972 Z M86.3079919,19.1028369 C86.8871906,19.1004754 87.4613802,18.9970483 88.0039204,18.7973545 C88.5665616,18.5933999 89.0704796,18.2579374 89.4723464,17.8198106 C89.93364,17.3107661 90.2854168,16.714971 90.5064492,16.0683778 C90.7858877,15.2345245 90.9187812,14.3598326 90.8994082,13.4819595 C90.921252,12.6039337 90.7882958,11.7288286 90.5064492,10.8955413 C90.2829062,10.2561715 89.9312542,9.66751308 89.4723464,9.16447401 C89.0704796,8.72634722 88.5665616,8.39088465 88.0039204,8.18693012 C87.4613802,7.98723626 86.8871906,7.88380922 86.3079919,7.88144765 C85.7421967,7.88338153 85.1815027,7.98690253 84.6534274,8.18693012 C84.1067964,8.39867016 83.6180769,8.73344525 83.2263656,9.16447401 C82.771108,9.66662382 82.426093,10.2559587 82.2129449,10.8955413 C81.9432303,11.7312023 81.817401,12.6054092 81.8406679,13.4819595 C81.8197008,14.3583785 81.9454766,15.2322137 82.2129449,16.0683778 C82.4234966,16.7151843 82.7686424,17.3116787 83.2263656,17.8198106 C83.6175627,18.2514112 84.1064306,18.586288 84.6534274,18.7973545 C85.1815027,18.9973821 85.7421967,19.1009031 86.3079919,19.1028369 L86.3079919,19.1028369 Z" id="Shape"></path>
+                <path d="M104.218652,20.1211118 C103.261113,20.713834 102.142858,21.0051032 101.012933,20.9560972 C99.7999523,21.0051122 98.6193584,20.5636475 97.7451686,19.7341674 C96.8353108,18.7009502 96.3878256,17.3496664 96.5042453,15.9869158 L96.5042453,6.31330432 L98.9860919,6.31330432 L98.9860919,15.9869158 C98.9742754,16.4701161 99.0441695,16.9518863 99.1929125,17.4125006 C99.3056456,17.7606047 99.5046708,18.0755709 99.77201,18.328948 C100.016574,18.5594167 100.314849,18.7272509 100.640656,18.81772 C100.990271,18.9161408 101.352523,18.9641592 101.716123,18.9602785 C102.655549,19.0038445 103.582007,18.7308795 104.342744,18.1863895 C105.051689,17.6370184 105.630443,16.9420231 106.038673,16.1498398 L106.038673,6.31330432 L108.499837,6.31330432 L108.499837,20.5691528 L106.328222,20.5691528 L106.100719,18.0031001 L106.100719,18.0031001 C105.687922,18.8692089 105.035644,19.6032598 104.218652,20.1211118 L104.218652,20.1211118 Z" id="Path"></path>
+                <path d="M116.421065,20.9560972 C115.801233,20.9950241 115.179512,20.9950241 114.55968,20.9560972 C114.092617,20.8964402 113.62981,20.8080164 113.173982,20.6913458 C112.813228,20.605003 112.460411,20.4891975 112.119197,20.3451323 C111.834495,20.2200141 111.558175,20.0771664 111.291915,19.9174568 L112.098515,17.8809071 C112.279343,18.026767 112.473161,18.156273 112.677613,18.2678515 C112.976636,18.4329534 113.287727,18.5759069 113.608305,18.695527 C114.017173,18.8537321 114.439319,18.9763932 114.869911,19.0621059 C115.380772,19.1609067 115.900459,19.2086684 116.421065,19.2046644 C117.260254,19.2611102 118.095255,19.0466179 118.799501,18.5936995 C119.330358,18.1920161 119.630919,17.5621502 119.606101,16.9033632 C119.629117,16.3456326 119.383876,15.8098319 118.944275,15.4574128 C118.248621,14.9827695 117.47054,14.6376468 116.648567,14.4391379 L114.869911,13.8485385 C114.332933,13.6600961 113.82489,13.3996834 113.36012,13.0746496 C112.918371,12.7629353 112.551287,12.3597625 112.284654,11.8934507 C111.990937,11.3416153 111.84837,10.7239217 111.871013,10.1012869 C111.7928,8.92823263 112.331666,7.79778562 113.298074,7.10755873 C114.467654,6.39295223 115.832855,6.05154147 117.206983,6.13001484 C118.07528,6.11663174 118.942387,6.19859987 119.79224,6.37440081 C120.389496,6.49652839 120.971868,6.68085438 121.529532,6.92426925 L120.950435,8.96081903 C120.479952,8.73041885 119.996597,8.52643737 119.502691,8.3498541 C118.797193,8.1146398 118.054965,8.00432014 117.310393,8.02400613 C116.535101,7.9880419 115.762277,8.13465573 115.056049,8.45168159 C114.47936,8.75940804 114.145458,9.37689414 114.208085,10.0198249 C114.202,10.3323024 114.296078,10.6387208 114.476951,10.8955413 C114.663996,11.1520366 114.903538,11.3670997 115.180141,11.5268718 C115.506126,11.720303 115.852962,11.8774057 116.214244,11.9952782 L117.455167,12.3618572 L119.130414,12.9117256 C119.664383,13.1015363 120.166356,13.3692768 120.619522,13.70598 C121.602378,14.4140087 122.154912,15.5634667 122.087948,16.7608047 C122.121004,17.4696719 121.956505,18.1739382 121.612261,18.7973545 C121.300726,19.3338382 120.869299,19.7934828 120.350655,20.1414773 C119.804193,20.5059941 119.194247,20.7683295 118.551316,20.9153662 C117.845409,21.0123699 117.130265,21.0260437 116.421065,20.9560972 Z" id="Path"></path>
+                <path d="M136.379248,19.4286849 C135.765636,19.9144267 135.063746,20.2807344 134.311043,20.5080563 C133.397586,20.8060079 132.439751,20.9505822 131.477601,20.9357317 C129.484022,21.0457076 127.539179,20.3034303 126.141631,18.899182 C124.819952,17.3656124 124.152831,15.3875844 124.280246,13.3801321 C124.263071,12.3194805 124.438164,11.2643153 124.797297,10.2642109 C125.111353,9.39844373 125.596363,8.60246478 126.224359,7.92217864 C126.799559,7.29363386 127.504769,6.79365416 128.292565,6.4558628 C129.13245,6.11650376 130.03203,5.94349361 130.939868,5.94672536 C131.84844,5.93569173 132.749586,6.10900306 133.587171,6.4558628 C134.355957,6.77570775 135.026242,7.28828126 135.531284,7.94254414 C136.069381,8.66407624 136.423989,9.5021104 136.565387,10.3864039 C136.756685,11.5054228 136.756685,12.6480576 136.565387,13.7670765 L126.720728,13.7670765 C126.831033,17.1749031 128.464915,18.8788165 131.622376,18.8788165 C132.38185,18.8941966 133.138087,18.7769813 133.856038,18.532603 C134.495821,18.304128 135.106567,18.0034291 135.676058,17.6365211 L136.379248,19.4286849 Z M131.022596,7.73888916 C130.017668,7.7293132 129.052936,8.12697327 128.354611,8.83862604 C127.526752,9.75405949 127.031943,10.9148261 126.948231,12.1378367 L134.331725,12.1378367 C134.534684,10.9751452 134.259342,9.78072052 133.566489,8.81826055 C132.931983,8.09270485 131.993938,7.6946933 131.022596,7.73888916 Z" id="Shape"></path>
+            </g>
+        </svg>
+        </a>
+        <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
+    </p>
 </body>
 
 <script type="text/javascript">
 
-/// Incremental request number. When response is received,
-/// if its request number does not equal to the current request number, response will be ignored.
-/// This is to avoid race conditions.
-let request_num = 0;
+    /// Incremental request number. When response is received,
+    /// if its request number does not equal to the current request number, response will be ignored.
+    /// This is to avoid race conditions.
+    let request_num = 0;
 
-/// Save query in history only if it is different.
-let previous_query = '';
+    /// Save query in history only if it is different.
+    let previous_query = '';
 
-/// Start of the last query
-let last_query_start = 0;
+    const current_url = new URL(window.location);
+    const opened_locally = location.protocol == 'file:';
 
-const current_url = new URL(window.location);
-const opened_locally = location.protocol == 'file:';
-
-/// Run query instantly after page is loaded if the run parameter is present.
-const run_immediately = current_url.searchParams.has("run");
-
-let url_elem = document.getElementById('url');
-let user_elem = document.getElementById('user');
-let password_elem = document.getElementById('password');
-
-const server_address = current_url.searchParams.get('url');
-if (server_address) {
-    url_elem.value = server_address;
-} else if (!opened_locally) {
-    /// Substitute the address of the server where the page is served.
-    url_elem.value = location.origin;
-}
-
-/// Substitute username if it's specified in the query string
-const user_from_url = current_url.searchParams.get('user');
-if (user_from_url) {
-    user_elem.value = user_from_url;
-}
-
-const pass_from_url = current_url.searchParams.get('password');
-if (pass_from_url) {
-    password_elem.value = pass_from_url;
-    /// Browsers don't allow manipulating history for the 'file:' protocol.
-    if (!opened_locally) {
-        let replaced_pass = current_url.searchParams;
-        replaced_pass.delete('password');
-        window.history.replaceState(null, '',
-            window.location.origin + window.location.pathname + '?'
-            + replaced_pass.toString() + window.location.hash);
+    const server_address = current_url.searchParams.get('url');
+    if (server_address) {
+        document.getElementById('url').value = server_address;
+    } else if (!opened_locally) {
+        /// Substitute the address of the server where the page is served.
+        document.getElementById('url').value = location.origin;
     }
-}
 
-async function ping(url) {
-    try {
-        let response = await fetch(new URL(url).origin + "?query", { method: 'OPTIONS', headers: { 'Authorization': 'never' } });
-        return response.ok;
-    } catch (e) {
-        return false;
+    /// Substitute user name if it's specified in the query string
+    const user_from_url = current_url.searchParams.get('user');
+    if (user_from_url) {
+        document.getElementById('user').value = user_from_url;
     }
-}
 
-let ping_request_num = 0;
-function checkURL() {
-    ++ping_request_num;
-    const current_ping_request_num = ping_request_num;
-    let elem = document.getElementById('url_status');
-    elem.className = '';
-    document.getElementById('server_info').innerText = '';
-    ping(url_elem.value).then(status => {
-        if (current_ping_request_num == ping_request_num) {
-            elem.className = status ? 'ok' : 'fail';
-            if (status) {
-                checkCredentials();
-            }
+    const pass_from_url = current_url.searchParams.get('password');
+    if (pass_from_url) {
+        document.getElementById('password').value = pass_from_url;
+	/// Browsers don't allow manipulating history for the 'file:' protocol.
+        if (!opened_locally) {
+            let replaced_pass = current_url.searchParams;
+            replaced_pass.delete('password');
+            window.history.replaceState(null, '',
+                window.location.origin + window.location.pathname + '?'
+                + replaced_pass.toString() + window.location.hash);
         }
-    });
-};
-
-url_elem.addEventListener('input', checkURL);
-checkURL();
-
-async function getServerStatus(server_address, user, password) {
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSONEachRow';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    try {
-        let response = await fetch(url, { method: "POST", body: "SELECT version() AS v, uptime() AS t", headers: { 'Authorization': 'never' } });
-        if (!response.ok) return false;
-        json = await response.json();
-        return json;
-    } catch (e) {
-        return false;
     }
-}
 
-let load_databases_request_num = 0;
-async function loadDatabases(server_address, user, password) {
-    ++load_databases_request_num;
-    const current_load_databases_request_num = load_databases_request_num;
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSON';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
+    function postImpl(posted_request_num, query)
+    {
+        const user = document.getElementById('user').value;
+        const password = document.getElementById('password').value;
 
-    let response = await fetch(url, {
-        method: "POST",
-        body: `SELECT database, database = currentDatabase() AS current
-            FROM system.databases WHERE database != 'INFORMATION_SCHEMA'
-            ORDER BY
-                database = 'information_schema',
-                database = 'system',
-                database != 'default',
-                database`,
-        headers: { 'Authorization': 'never' } });
-    if (!response.ok) return false;
-    json = await response.json();
+        const server_address = document.getElementById('url').value;
 
-    if (current_load_databases_request_num != load_databases_request_num) return false;
+        var url = server_address +
+            (server_address.indexOf('?') >= 0 ? '&' : '?') +
+            /// Ask server to allow cross-domain requests.
+            'add_http_cors_header=1' +
+            '&default_format=JSONCompact' +
+            /// Safety settings to prevent results that browser cannot display.
+            '&max_result_rows=1000&max_result_bytes=10000000&result_overflow_mode=break';
 
-    let databases_elem = document.getElementById('databases');
-    while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
+        // If play.html is opened locally, append username and password to the URL parameter to avoid CORS issue.
+        if (opened_locally) {
+            url += '&user=' + encodeURIComponent(user) +
+            '&password=' + encodeURIComponent(password)
+        }
 
-    for (let elem of json.data) {
-        let database = document.createElement('div');
-        database.className = 'database';
-        let database_link = document.createElement('button');
-        if (elem.current) database_link.className = 'current';
-        database_link.append(elem.database);
-        database.appendChild(database_link);
-        let tables = document.createElement('div');
-        tables.className = 'tables';
-        database.appendChild(tables);
-        databases_elem.appendChild(database);
+        const xhr = new XMLHttpRequest;
 
-        database_link.addEventListener('click', e => {
-            if (!database.dataset['opened']) {
-                loadTables(server_address, user, password, elem.database, database).then(() => database.dataset['opened'] = 1);
+        xhr.open('POST', url, true);
+        // If play.html is open normally, use Basic auth to prevent username and password being exposed in URL parameters
+        if (!opened_locally) {
+            xhr.setRequestHeader("Authorization", "Basic " + btoa(user+":"+password));
+        }
+        xhr.onreadystatechange = function()
+        {
+            if (posted_request_num != request_num) {
+                return;
+            } else if (this.readyState === XMLHttpRequest.DONE) {
+                renderResponse(this.status, this.response);
+
+                /// The query is saved in browser history (in state JSON object)
+                /// as well as in URL fragment identifier.
+                if (query != previous_query) {
+                    const state = {
+                        query: query,
+                        status: this.status,
+                        response: this.response.length > 100000 ? null : this.response  /// Lower than the browser's limit.
+                    };
+                    const title = "ClickHouse Query: " + query;
+
+                    let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
+                    if (server_address != location.origin) {
+                        /// Save server's address in URL if it's not identical to the address of the play UI.
+                        history_url += '&url=' + encodeURIComponent(server_address);
+                    }
+                    history_url += '#' + window.btoa(query);
+
+                    if (previous_query == '') {
+                        history.replaceState(state, title, history_url);
+                    } else {
+                        history.pushState(state, title, history_url);
+                    }
+                    document.title = title;
+                    previous_query = query;
+                }
             } else {
-                delete database.dataset['opened'];
-                while (tables.firstChild) tables.removeChild(tables.firstChild);
-            }
-        });
-    }
-}
-
-let load_tables_request_num = 0;
-async function loadTables(server_address, user, password, database, container) {
-    ++load_tables_request_num;
-    const current_load_tables_request_num = load_tables_request_num;
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSON';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    url += '&param_database=' + encodeURIComponent(database);
-
-    let response = await fetch(url, {
-        method: "POST",
-        body: `SELECT table, engine, total_rows, total_bytes FROM system.tables WHERE database = {database:String}
-            ORDER BY table LIKE '.inner%', table`,
-        headers: { 'Authorization': 'never' } });
-    if (!response.ok) return false;
-    json = await response.json();
-
-    if (current_load_tables_request_num != load_tables_request_num) return false;
-
-    container.parentElement.querySelector('.current').classList.remove('current');
-    container.firstChild.classList.add('current');
-    let tables_elem = container.querySelector('.tables');
-    while (tables_elem.firstChild) tables_elem.removeChild(tables_elem.firstChild);
-
-    let max_total_bytes = Math.max(...json.data.map(elem => +elem.total_bytes));
-
-    for (let elem of json.data) {
-        let table = document.createElement('div');
-        table.className = 'table';
-        let table_link = document.createElement('button');
-        table_link.append(elem.table);
-
-        if (max_total_bytes && +elem.total_bytes) {
-            const percent = Number(100 * +elem.total_bytes / max_total_bytes).toFixed(2);
-            table.style.backgroundImage = `linear-gradient(to right,
-                var(--progress-color) 0%,
-                var(--progress-color) ${percent}%,
-                transparent ${percent}%)`;
-        }
-
-        let table_addendum = document.createElement('span');
-        table_addendum.className = 'table-addendum';
-
-        let addendum = '';
-        if (+elem.total_bytes) addendum += formatReadableBytes(elem.total_bytes) + '\n';
-        if (+elem.total_rows) addendum += formatReadableRows(elem.total_rows) + ' rows\n';
-        addendum += elem.engine;
-        table_addendum.append(addendum);
-
-        table.appendChild(table_link);
-        table.appendChild(table_addendum);
-        tables_elem.appendChild(table);
-
-        table.addEventListener('click', e => {
-            const value = `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`;
-            if (query_area.value == value) {
-                /// Double click will run the query.
-                post();
-            } else {
-                query_area.value = value;
-            }
-        });
-    }
-
-    if (json.data.length == 0) {
-        let table = document.createElement('div');
-        table.className = 'no-tables';
-        table.append('no tables');
-        tables_elem.append(table);
-    }
-}
-
-let databases_toggle = document.getElementById('databases-toggle');
-databases_toggle.addEventListener('click', e => {
-    if (!databases_toggle.dataset['opened']) {
-        loadDatabases(url_elem.value, user_elem.value, password_elem.value).then(() => databases_toggle.dataset['opened'] = 1);
-    } else {
-        delete databases_toggle.dataset['opened'];
-        let databases_elem = document.getElementById('databases');
-        while (databases_elem.firstChild) databases_elem.removeChild(databases_elem.firstChild);
-    }
-});
-
-function formatUptime(t) {
-    if (t < 60) { return t + " sec" }
-    if (t < 3600) { return Number(t / 60).toFixed() + " min" }
-    if (t < 86400) { return Number(t / 3600).toFixed() + " hr" }
-    const days = Number(t / 86400).toFixed();
-    return days + " day" + (days > 1 ? 's' : '');
-}
-
-let check_credentials_request_num = 0;
-function checkCredentials() {
-    ++check_credentials_request_num;
-    const current_check_credentials_request_num = check_credentials_request_num;
-    getServerStatus(url_elem.value, user_elem.value, password_elem.value).then(json => {
-        if (current_check_credentials_request_num == check_credentials_request_num) {
-            if (json) {
-                [user_elem, password_elem].forEach(e => { e.classList.remove('fail'); e.classList.add('ok'); });
-                document.getElementById('server_info').innerText = `v${json.v}, uptime ${formatUptime(json.t)} `;
-            } else {
-                [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.add('fail'); });
+                //console.log(this);
             }
         }
-    });
-}
 
-user_elem.addEventListener('input', checkCredentials);
-password_elem.addEventListener('input', checkCredentials);
+        document.getElementById('check-mark').style.display = 'none';
+        document.getElementById('hourglass').style.display = 'inline-block';
 
-
-function queryToColor(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash = hash & hash;
+        xhr.send(query);
     }
 
-    /// Limited range to avoid violet colors.
-    return 50 + Math.abs(hash % 200);
-}
-
-
-let row_idx = 0;
-let elapsed_ns = 0;
-let incomplete_result = false;
-let is_explain_graph = false;
-let explain_graph = '';
-let column_is_number = {};
-let extremes = {};
-let header = {};
-
-const default_format = 'JSONStringsEachRowWithProgress';
-
-let controller = null;
-async function postImpl(posted_request_num, query)
-{
-    const user = user_elem.value;
-    const password = password_elem.value;
-    const server_address = url_elem.value;
-    let url = server_address +
-        (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        /// Ask server to allow cross-domain requests.
-        'add_http_cors_header=1';
-    if (user) url += '&user=' + encodeURIComponent(user);
-    if (password) url += '&password=' + encodeURIComponent(password);
-    url += '&default_format=' + default_format + '&enable_http_compression=1';
-
-    /// Extremes only if the format is likely to be unchanged. This is imprecise.
-    if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
-
-    last_query_start = performance.now();
-
-    document.getElementById('check-mark').style.display = 'none';
-    document.getElementById('hourglass').style.display = 'inline-block';
-
-    clear();
-
-    let is_table = false;
-    let is_raw = false;
-    let is_chart = false;
-    let is_error = false;
-
-    let response, reply, format;
-    reply = '';
-    try {
-        controller = new AbortController();
-        response = await fetch(url, { method: "POST", body: query, signal: controller.signal,
-            headers: { 'Authorization': 'never' } });
-
-        format = response.headers.get('X-ClickHouse-Format') ?? default_format;
-
-        if (!response.ok) {
-            is_error = true;
-            reply = await response.text();
-            if (posted_request_num != request_num) { return; }
-
-            let has_exception = false;
-            for (line of reply.split('\n')) {
-                if (line.startsWith(`{"exception":`)) {
-                    update(JSON.parse(line));
-                    has_exception = true;
-                    break;
-                }
-            }
-            if (!has_exception) {
-                renderError(reply);
-            }
-
-            document.getElementById('hourglass').style.display = 'none';
-            document.documentElement.style.setProperty('--progress', '0');
-            return;
-        } else if (format == default_format) {
-            is_table = true;
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (posted_request_num != request_num) { return; }
-                if (done) break;
-
-                let new_content = decoder.decode(value, { stream: true });
-                buffer += new_content;
-                reply += new_content;
-
-                let lines = buffer.split('\n');
-                let fragment = document.createDocumentFragment();
-
-                let cont = true;
-                for (line of lines.slice(0, -1)) {
-                    const data = JSON.parse(line);
-                    cont = update(data, fragment);
-                    if (!cont) { break; }
-                }
-
-                if (fragment.hasChildNodes()) {
-                    document.getElementById('tbody').appendChild(fragment);
-                }
-
-                if (!cont)
-                {
-                    controller.abort();
-                    break;
-                }
-                buffer = lines[lines.length - 1];
-            }
-        } else if (format == 'JSONCompactColumns') {
-            is_chart = true;
-            reply = await response.text();
-            if (posted_request_num != request_num) { return; }
-            renderChart(JSON.parse(reply));
-        } else {
-            is_raw = true;
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                let new_content = decoder.decode(value, { stream: true });
-                reply += new_content;
-
-                if (posted_request_num != request_num) { return; }
-                updateRaw(new_content);
-            }
-        }
-    } catch (e) {
-        if (posted_request_num != request_num) { return; }
-
-        console.log(e);
-        if (e instanceof TypeError) {
-            reply = "Network error";
-        } else if (e.name === 'AbortError') {
-            reply = "Query was cancelled";
-        } else {
-            reply = e.toString();
-        }
-        renderError(reply);
+    function renderResponse(status, response) {
         document.getElementById('hourglass').style.display = 'none';
-        document.documentElement.style.setProperty('--progress', '0');
-        return;
-    }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
-    }
+        if (status === 200) {
+            let json;
+            try { json = JSON.parse(response); } catch (e) {}
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) {
-        elapsed_ns = 1e6 * (performance.now() - last_query_start);
-    }
-
-    updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
-
-    if (posted_request_num != request_num) { return; }
-
-    /// The query is saved in browser history (in a state JSON object)
-    /// as well as in URL fragment identifier.
-    if (query != previous_query) {
-        const state = {
-            query: query,
-            format: format,
-            ok: response.ok,
-            data: reply.length > 100000 ? null : reply, /// Lower than the browser's limit.
-            elapsed_ns: elapsed_ns,
-        };
-        const title = "ClickHouse Query: " + query;
-
-        let history_url = window.location.pathname + '?user=' + encodeURIComponent(user);
-        if (run_immediately) {
-            history_url += "&run=1";
-        }
-        if (server_address != location.origin) {
-            /// Save server's address in URL if it's not identical to the address of the play UI.
-            history_url += '&url=' + encodeURIComponent(server_address);
-        }
-        history_url += '#' + window.btoa(query);
-
-        if (previous_query == '') {
-            history.replaceState(state, title, history_url);
+            if (json !== undefined && json.statistics !== undefined) {
+                renderResult(json);
+            } else if (Array.isArray(json) && json.length == 2 &&
+                Array.isArray(json[0]) && Array.isArray(json[1]) && json[0].length > 1 && json[0].length == json[1].length) {
+                /// If user requested FORMAT JSONCompactColumns, we will render it as a chart.
+                renderChart(json);
+            } else {
+                renderUnparsedResult(response);
+            }
+            document.getElementById('check-mark').style.display = 'inline';
         } else {
-            history.pushState(state, title, history_url);
+            /// TODO: Proper rendering of network errors.
+            renderError(response);
         }
-        document.title = title;
-        previous_query = query;
     }
-}
 
-async function restoreFromHistory(state) {
-    clear();
-    query_area.value = state.query;
+    let query_area = document.getElementById('query');
 
-    if (!state.data) return;
+    window.onpopstate = function(event) {
+        if (!event.state) {
+            return;
+        }
+        query_area.value = event.state.query;
+        if (!event.state.response) {
+            clear();
+            return;
+        }
+        renderResponse(event.state.status, event.state.response);
+    };
 
-    let is_table = false;
-    let is_raw = false;
-    let is_chart = false;
-    let is_error = false;
+    if (window.location.hash) {
+        query_area.value = window.atob(window.location.hash.substr(1));
+    }
 
-    let format = state.format;
+    function post()
+    {
+        ++request_num;
+        let query = query_area.value;
+        postImpl(request_num, query);
+    }
 
-    if (!state.ok) {
-        is_error = true;
+    document.getElementById('run').onclick = function()
+    {
+        post();
+    }
 
-        let has_exception = false;
-        for (line of state.data.split('\n')) {
-            if (line.startsWith(`{"exception":`)) {
-                update(JSON.parse(line));
-                has_exception = true;
+    document.onkeydown = function(event)
+    {
+        /// Firefox has code 13 for Enter and Chromium has code 10.
+        if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
+            post();
+        }
+    }
+
+    /// Pressing Tab in textarea will increase indentation.
+    /// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
+
+    let user_prefers_tab_navigation = false;
+
+    [...document.querySelectorAll('input')].map(elem => {
+        elem.onkeydown = (e) => {
+            if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
+        };
+    });
+
+    query_area.onkeydown = (e) => {
+        if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
+            let elem = e.target;
+            let selection_start = elem.selectionStart;
+            let selection_end = elem.selectionEnd;
+
+            elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
+            elem.selectionStart = selection_start + 4;
+            elem.selectionEnd = selection_start + 4;
+
+            e.preventDefault();
+            return false;
+        } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
+            // If the user presses Enter, and the previous line starts with spaces,
+            // then we will insert the same number of spaces.
+            const elem = e.target;
+            if (elem.selectionStart !== elem.selectionEnd) {
+                // If there is a selection, then we will not insert spaces.
+                return;
+            }
+            const cursor_pos = elem.selectionStart;
+
+            const elem_value = elem.value;
+            const text_before_cursor = elem_value.substring(0, cursor_pos);
+            const text_after_cursor = elem_value.substring(cursor_pos);
+            const prev_lines = text_before_cursor.split('\n');
+            const prev_line = prev_lines.pop();
+            const lead_spaces = prev_line.match(/^\s*/)[0];
+            if (!lead_spaces) {
+                return;
+            }
+
+            // Add leading spaces to the current line.
+            elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
+            elem.selectionStart = cursor_pos + lead_spaces.length + 1;
+            elem.selectionEnd = elem.selectionStart;
+
+            e.preventDefault();
+            return false;
+        }
+    };
+
+    function clearElement(id)
+    {
+        let elem = document.getElementById(id);
+        while (elem.firstChild) {
+            elem.removeChild(elem.lastChild);
+        }
+        elem.style.display = 'none';
+    }
+
+    function clear()
+    {
+        clearElement('data-table');
+        clearElement('graph');
+        clearElement('chart');
+        clearElement('data-unparsed');
+        clearElement('error');
+
+        document.getElementById('check-mark').display = 'none';
+        document.getElementById('hourglass').display = 'none';
+        document.getElementById('stats').innerText = '';
+        document.getElementById('logo-container').style.display = 'block';
+    }
+
+    function formatReadable(number = 0, decimals = 2, units = []) {
+        const k = 1000;
+        const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
+        const unit = units[i];
+        const dm = unit ? decimals : 0;
+        return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
+    }
+
+    function formatReadableBytes(bytes) {
+        const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
+
+        return formatReadable(bytes, 2, units);
+    }
+
+    function formatReadableRows(rows) {
+        const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
+
+        return formatReadable(rows, 2, units);
+    }
+
+    function renderResult(response)
+    {
+        clear();
+
+        let stats = document.getElementById('stats');
+        const seconds = response.statistics.elapsed.toFixed(3);
+        const rows = response.statistics.rows_read;
+        const bytes = response.statistics.bytes_read;
+        const formatted_bytes = formatReadableBytes(bytes);
+        const formatted_rows = formatReadableRows(rows);
+        stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
+
+        /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1 or EXPLAIN AST graph = 1
+        if (response.data.length > 3 && query_area.value.match(/^\s*EXPLAIN/i) && typeof(response.data[0][0]) === "string" && response.data[0][0].startsWith("digraph")) {
+            renderGraph(response);
+        } else {
+            renderTable(response);
+        }
+    }
+
+    function renderCell(cell, col_idx, settings)
+    {
+        let td = document.createElement('td');
+
+        let is_null = (cell === null);
+        let is_link = false;
+
+        /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
+        let text;
+        if (is_null) {
+            text = 'ᴺᵁᴸᴸ';
+        } else if (typeof(cell) === 'object') {
+            text = JSON.stringify(cell);
+        } else {
+            text = cell;
+
+            /// If it looks like URL, create a link. This is for convenience.
+            if (typeof(cell) == 'string' && cell.match(/^https?:\/\/\S+$/)) {
+                is_link = true;
+            }
+        }
+
+        let node = document.createTextNode(text);
+        if (is_link) {
+            let link = document.createElement('a');
+            link.appendChild(node);
+            link.href = text;
+            link.setAttribute('target', '_blank');
+            node = link;
+        }
+
+        if (settings.is_transposed) {
+            td.className = 'left transposed';
+        } else {
+            td.className = settings.column_is_number[col_idx] ? 'right' : 'left';
+        }
+        if (is_null) {
+            td.className += ' null';
+        }
+
+        /// If it's a number, render bar in background.
+        if (!settings.is_transposed && settings.column_need_render_bars[col_idx] && text > 0) {
+            const ratio = 100 * text / settings.column_maximums[col_idx];
+
+            let div = document.createElement('div');
+
+            div.style.width = '100%';
+            div.style.background = `linear-gradient(to right,
+                var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                transparent ${ratio}%, transparent 100%)`;
+
+            div.appendChild(node);
+            node = div;
+        }
+
+        td.appendChild(node);
+        return td;
+    }
+
+    function renderTableTransposed(response)
+    {
+        let tbody = document.createElement('tbody');
+        for (let col_idx in response.meta) {
+            let tr = document.createElement('tr');
+            {
+                let th = document.createElement('th');
+                th.className = 'right';
+                th.style.width = '0';
+                th.appendChild(document.createTextNode(response.meta[col_idx].name));
+                tr.appendChild(th);
+            }
+            for (let row_idx in response.data)
+            {
+                let cell = response.data[row_idx][col_idx];
+                const td = renderCell(cell, col_idx, {is_transposed: true});
+                tr.appendChild(td);
+            }
+            if (response.data.length == 0 && col_idx == 0)
+            {
+                /// If result is empty, show this fact with a style.
+                let td = document.createElement('td');
+                td.rowSpan = response.meta.length;
+                td.className = 'empty-result';
+                let div = document.createElement('div');
+                div.appendChild(document.createTextNode("empty result"));
+                div.className = 'empty-result';
+                td.appendChild(div);
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        let table = document.getElementById('data-table');
+        table.appendChild(tbody);
+        table.style.display = 'table';
+    }
+
+    function renderTable(response)
+    {
+        if (response.data.length <= 1 && response.meta.length >= 5) {
+            renderTableTransposed(response)
+            return;
+        }
+
+        const should_display_row_numbers = response.data.length > 3;
+
+        let thead = document.createElement('thead');
+
+        if (should_display_row_numbers) {
+            let th = document.createElement('th');
+            th.className = 'row-number';
+            th.appendChild(document.createTextNode('№'));
+            thead.appendChild(th);
+        }
+
+        for (let idx in response.meta) {
+            let th = document.createElement('th');
+            const name = document.createTextNode(response.meta[idx].name);
+            th.appendChild(name);
+            thead.appendChild(th);
+        }
+
+        /// To prevent hanging the browser, limit the number of cells in a table.
+        /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
+        /// Also we permit rendering of more records but only if elapsed time is not large.
+        const max_rows = 10000 / response.meta.length;
+        const max_render_ms = 200;
+        let row_num = 0;
+
+        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/));
+        const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
+        const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
+        const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
+
+        const settings = {
+            is_transposed: false,
+            column_is_number: column_is_number,
+            column_maximums: column_maximums,
+            column_minimums: column_minimums,
+            column_need_render_bars: column_need_render_bars,
+        };
+
+        const start_time = performance.now();
+
+        let tbody = document.createElement('tbody');
+        for (let row_idx in response.data) {
+            let tr = document.createElement('tr');
+            if (should_display_row_numbers) {
+                let td = document.createElement('td');
+                td.className = 'row-number';
+                td.appendChild(document.createTextNode(1 + +row_idx));
+                tr.appendChild(td);
+            }
+            for (let col_idx in response.data[row_idx]) {
+                let cell = response.data[row_idx][col_idx];
+                const td = renderCell(cell, col_idx, settings);
+
+                td.onclick = () => { td.classList.add('td-selected') };
+                td.onmouseenter = () => {
+                    td.classList.add('td-hover-hysteresis');
+                    td.onmouseleave = () => {
+                        setTimeout(() => { td && td.classList.remove('td-hover-hysteresis') }, 1000);
+                    };
+                };
+
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+
+            ++row_num;
+            if (row_num >= max_rows && performance.now() - start_time >= max_render_ms) {
                 break;
             }
         }
-        if (!has_exception) {
-            renderError(state.data);
+
+        let table = document.getElementById('data-table');
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        table.style.display = 'table';
+    }
+
+    /// A function to render raw data when non-default format is specified.
+    function renderUnparsedResult(response)
+    {
+        clear();
+        let data = document.getElementById('data-unparsed')
+
+        if (response === '') {
+            /// TODO: Fade or remove previous result when new request will be performed.
+            response = 'Ok.';
         }
 
-        document.getElementById('hourglass').style.display = 'none';
-        document.documentElement.style.setProperty('--progress', '0');
-        return;
-    } else if (format == default_format) {
-        is_table = true;
-        let lines = state.data.split('\n');
-        let fragment = document.createDocumentFragment();
-
-        for (line of lines) {
-            if (line.length == 0) continue;
-            if (!update(JSON.parse(line), fragment)) { break; }
-        }
-
-        if (fragment.hasChildNodes()) {
-            document.getElementById('tbody').appendChild(fragment);
-        }
-    } else if (format == 'JSONCompactColumns') {
-        is_chart = true;
-        if (posted_request_num != request_num) { return; }
-        renderChart(JSON.parse(state.data));
-    } else {
-        is_raw = true;
-        updateRaw(state.data);
+        data.innerText = response;
+        /// inline-block make width adjust to the size of content.
+        data.style.display = 'inline-block';
     }
 
-    if (is_explain_graph) {
-        await renderGraph();
-    } else {
-        if (extremes['min'] && extremes['max']) renderExtremes();
-        if (is_table) transposeTableIfNeeded();
+    function renderError(response)
+    {
+        clear();
+
+        let message = response;
+        try {
+            let json = JSON.parse(response);
+            if (json.exception) {
+                message = json.exception;
+            }
+        } catch (e) {}
+
+        document.getElementById('error').innerText = message ? message : "No response.";
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('logo-container').style.display = 'none';
     }
 
-    document.getElementById('check-mark').style.display = 'inline-block';
-    document.getElementById('hourglass').style.display = 'none';
-
-    if (is_raw) elapsed_ns = state.elapsed_ns;
-
-    updateProgressText();
-    document.documentElement.style.setProperty('--progress', '0');
-    document.documentElement.style.setProperty('--background-color-rotate', queryToColor(query));
-}
-
-let query_area = document.getElementById('query');
-
-window.onpopstate = function(event) {
-    if (!event.state) return;
-    restoreFromHistory(event.state);
-};
-
-if (window.location.hash) {
-    query_area.value = window.atob(window.location.hash.substr(1));
-}
-
-let in_flight = false;
-async function post()
-{
-    ++request_num;
-    let query = query_area.value;
-    in_flight = true;
-    let run = document.getElementById('run');
-    run.innerText = 'Stop';
-    await postImpl(request_num, query);
-    run.blur();
-    run.innerText = 'Run';
-    in_flight = false;
-}
-
-async function cancel()
-{
-    controller.abort();
-    document.getElementById('run').innerText = 'Run';
-}
-
-document.getElementById('run').onclick = function(e)
-{
-    if (in_flight) {
-        cancel();
-    } else {
-        post();
-    }
-}
-
-document.addEventListener('keydown', event => {
-    /// Firefox has code 13 for Enter and Chromium has code 10.
-    if ((event.metaKey || event.ctrlKey) && (event.keyCode == 13 || event.keyCode == 10)) {
-        post();
-    }
-});
-
-/// Pressing Tab in textarea will increase indentation.
-/// But for accessibility reasons, we will fall back to tab navigation if the user already used Tab for that.
-
-let user_prefers_tab_navigation = false;
-
-[...document.querySelectorAll('input')].map(elem => {
-    elem.onkeydown = (e) => {
-        if (e.key == 'Tab') { user_prefers_tab_navigation = true; }
-    };
-});
-
-query_area.onkeydown = (e) => {
-    if (e.key == 'Tab' && !event.shiftKey && !user_prefers_tab_navigation) {
-        let elem = e.target;
-        let selection_start = elem.selectionStart;
-        let selection_end = elem.selectionEnd;
-
-        elem.value = elem.value.substring(0, elem.selectionStart) + '    ' + elem.value.substring(elem.selectionEnd);
-        elem.selectionStart = selection_start + 4;
-        elem.selectionEnd = selection_start + 4;
-
-        e.preventDefault();
-        return false;
-    } else if (e.key === 'Enter' && !(event.metaKey || event.ctrlKey)) {
-        // If the user presses Enter, and the previous line starts with spaces,
-        // then we will insert the same number of spaces.
-        const elem = e.target;
-        if (elem.selectionStart !== elem.selectionEnd) {
-            // If there is a selection, then we will not insert spaces.
-            return;
-        }
-        const cursor_pos = elem.selectionStart;
-
-        const elem_value = elem.value;
-        const text_before_cursor = elem_value.substring(0, cursor_pos);
-        const text_after_cursor = elem_value.substring(cursor_pos);
-        const prev_lines = text_before_cursor.split('\n');
-        const prev_line = prev_lines.pop();
-        const lead_spaces = prev_line.match(/^\s*/)[0];
-        if (!lead_spaces) {
-            return;
-        }
-
-        // Add leading spaces to the current line.
-        elem.value = text_before_cursor + '\n' + lead_spaces + text_after_cursor;
-        elem.selectionStart = cursor_pos + lead_spaces.length + 1;
-        elem.selectionEnd = elem.selectionStart;
-
-        e.preventDefault();
-        return false;
-    }
-};
-
-function clearElement(id)
-{
-    let elem = document.getElementById(id);
-    while (elem.firstChild) {
-        elem.removeChild(elem.lastChild);
-    }
-    elem.style.display = 'none';
-}
-
-function clear()
-{
-    clearElement('data-table');
-    clearElement('graph');
-    clearElement('chart');
-    clearElement('data-unparsed');
-    clearElement('error');
-    clearElement('progress');
-
-    document.getElementById('check-mark').display = 'none';
-    document.getElementById('hourglass').display = 'none';
-    document.getElementById('stats').innerText = '';
-    document.getElementById('logo-container').style.display = 'block';
-
-    extremes = {};
-    header = {};
-    row_idx = 0;
-    elapsed_ns = 0;
-    incomplete_result = false;
-    is_explain_graph = false;
-    explain_graph = '';
-}
-
-function formatReadable(number = 0, decimals = 2, units = []) {
-    const k = 1000;
-    const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
-    const unit = units[i];
-    const dm = unit ? decimals : 0;
-    return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
-}
-
-function formatReadableBytes(bytes) {
-    const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
-
-    return formatReadable(bytes, 2, units);
-}
-
-function formatReadableRows(rows) {
-    const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
-
-    return formatReadable(rows, 2, units);
-}
-
-function renderCell(name, value)
-{
-    let td = document.createElement('td');
-
-    let is_null = (value === null);
-    let is_link = false;
-
-    /// Test: SELECT number, toString(number) AS str, number % 2 ? number : NULL AS nullable, range(number) AS arr, CAST((['hello', 'world'], [number, number % 2]) AS Map(String, UInt64)) AS map FROM numbers(10)
-    let text;
-    if (is_null) {
-        text = 'ᴺᵁᴸᴸ';
-    } else if (typeof(value) === 'object') {
-        text = JSON.stringify(value);
-    } else {
-        text = value;
-
-        /// If it looks like URL, create a link. This is for convenience.
-        if (typeof(value) == 'string' && value.match(/^https?:\/\/\S+$/)) {
-            is_link = true;
-        }
+    /// Huge JS libraries should be loaded only if needed.
+    function loadJS(src, integrity) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            if (integrity) {
+                script.crossOrigin = 'anonymous';
+                script.integrity = integrity;
+            } else {
+                console.warn('no integrity for', src)
+            }
+            script.addEventListener('load', function() { resolve(true); });
+            document.head.appendChild(script);
+        });
     }
 
-    let node = document.createTextNode(text);
-    if (is_link) {
-        let link = document.createElement('a');
-        link.appendChild(node);
-        link.href = text;
-        link.setAttribute('target', '_blank');
-        node = link;
+    let load_dagre_promise;
+    function loadDagre() {
+        if (load_dagre_promise) { return load_dagre_promise; }
+
+        load_dagre_promise = Promise.all([
+            loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
+                   'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
+            loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
+                   'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
+            loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
+                   'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
+            loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
+                   'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
+        ]);
+
+        return load_dagre_promise;
     }
 
-    td.className = column_is_number[name] ? 'right' : 'left';
+    async function renderGraph(response)
+    {
+        await loadDagre();
 
-    if (column_is_number[name]) {
-        if (text.length >= 5 && text.match(/^[\d]{5,}$/)) {
-            let i = 0;
-            td.innerHTML = text.split('').reverse().map(c => {
-                if (i > 0 && i % 3 == 0) { c = `<u>${c}<\/u>`; }; ++i; return c;
-            }).reverse().join('');
-            return td;
-        }
+        /// https://github.com/dagrejs/dagre-d3/issues/131
+        const dot = response.data.reduce((acc, row) => acc + '\n' + row[0].replace(/shape\s*=\s*box/g, 'shape=rect'));
+
+        let graph = graphlibDot.read(dot);
+        graph.graph().rankdir = 'TB';
+
+        let render = new dagreD3.render();
+
+        let svg = document.getElementById('graph');
+        svg.style.display = 'block';
+
+        render(d3.select("#graph"), graph);
+
+        svg.style.width = graph.graph().width;
+        svg.style.height = graph.graph().height;
     }
 
-    td.appendChild(node);
-    return td;
-}
-
-document.getElementById('query').addEventListener('focus', e => {
-    current_selected_cell?.classList.remove('td-selected');
-    current_selected_cell?.parentElement.classList.remove('tr-selected');
-    current_selected_cell = null;
-});
-
-document.addEventListener('keydown', e => {
-    let cell = current_selected_cell;
-    if (!cell) { return; }
-
-    const row = cell.parentElement;
-    const table = row.parentElement;
-    let cell_index = cell.cellIndex;
-    let row_index = row.rowIndex;
-
-    switch(e.key) {
-        case 'ArrowUp': --row_index; break;
-        case 'ArrowDown': ++row_index; break;
-        case 'ArrowLeft': --cell_index; break;
-        case 'ArrowRight': ++cell_index; break;
-        default:
-            return;
+    let load_uplot_promise;
+    function loadUplot() {
+        if (load_uplot_promise) { return load_uplot_promise; }
+        load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
+            'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
+        return load_uplot_promise;
     }
 
-    /// The first cell in each row is the row number.
-    if (row_index < 0 || cell_index <= 0) { return; }
+    let uplot;
+    async function renderChart(json)
+    {
+        await loadUplot();
+        clear();
 
-    let new_cell = table.rows[row_index]?.cells[cell_index];
-    if (!new_cell) { return; }
+        let chart = document.getElementById('chart');
+        chart.style.display = 'block';
 
-    e.preventDefault();
+        let paths = uPlot.paths.stepped({align:  1});
 
-    cell.classList.remove('td-selected');
-    cell.parentElement.classList.remove('tr-selected');
-    new_cell.classList.add('td-selected');
-    new_cell.parentElement.classList.add('tr-selected');
-    new_cell.scrollIntoView({ block: 'nearest' });
-    current_selected_cell = new_cell;
-});
+        const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
+            ? ["#F80", "#FED", "#c7d0d9", "#2c3235"]
+            : ["#888", "#045", "#2c3235", "#c7d0d9"];
 
-function transposeTableIfNeeded()
-{
-    let table = document.getElementById('data-table');
-    if (table.rows.length > 1 || table.rows[0]?.cells.length <= 5) return;
-
-    let heads = table.tHead.childNodes;
-    let values = table.rows[0]?.cells;
-    let num_cols = heads.length - 1;
-
-    let new_tbody = document.createElement('tbody');
-    for (let i = 0; i < num_cols; ++i) {
-        let tr = document.createElement('tr');
-        let th = heads[1];
-        th.className = 'right';
-        th.style.width = '0';
-        tr.appendChild(th);
-        if (values) {
-            let td = values[1];
-            td.classList.remove('right');
-            tr.appendChild(td);
-        } else if (i == 0) {
-            /// If the result is empty, show this fact with a style.
-            let td = document.createElement('td');
-            td.rowSpan = num_cols;
-            td.className = 'empty-result';
-            let div = document.createElement('div');
-            div.appendChild(document.createTextNode("empty result"));
-            div.className = 'empty-result';
-            td.appendChild(div);
-            tr.appendChild(td);
-        }
-        new_tbody.appendChild(tr);
-    }
-
-    table.removeChild(table.tHead);
-    table.removeChild(table.tBodies[0]);
-    table.appendChild(new_tbody);
-}
-
-function update(json, fragment) {
-    if (json.progress) {
-        updateProgress(json.progress);
-        return true;
-    } else if (json.meta) {
-        appendHeader(json.meta);
-        return true;
-    } else if (json.row) {
-        if (is_explain_graph
-            || (row_idx == 0 && Object.keys(json.row).length == 1 && json.row.explain == 'digraph'
-                && query_area.value.match(/^\s*EXPLAIN/i))) {
-            is_explain_graph = true;
-            explain_graph += json.row.explain + '\n';
-            return true;
-        } else {
-            return appendRow(json.row, fragment);
-        }
-    } else if (json.min) {
-        extremes['min'] = json.min;
-        return true;
-    } else if (json.max) {
-        extremes['max'] = json.max;
-        return true;
-    } else if (json.exception) {
-        renderError(json.exception);
-        return true;
-    }
-}
-
-function updateRaw(data) {
-    const fragment = document.createTextNode(data);
-    let container = document.getElementById('data-unparsed');
-    container.appendChild(fragment);
-    container.style.display = 'block';
-}
-
-function updateProgressText() {
-    let progress_elem = document.getElementById('progress');
-    let progress_text = '';
-    if (row_idx) {
-        progress_text += `${row_idx}${incomplete_result ? '+' : ''} rows in result`;
-        if (elapsed_ns) progress_text += ', ';
-    }
-    if (elapsed_ns) { progress_text += `${(elapsed_ns / 1e9).toFixed(2)} sec.`; }
-    progress_elem.innerText = progress_text;
-    progress_elem.style.display = 'block';
-}
-
-function updateProgress(progress) {
-    let stats = document.getElementById('stats');
-    let progress_elem = document.getElementById('progress');
-
-    const rows = progress.read_rows;
-    const bytes = progress.read_bytes;
-    const total_rows = progress.total_rows_to_read;
-    elapsed_ns = progress.elapsed_ns;
-
-    let formatted_rows = formatReadableRows(rows);
-    let formatted_bytes = formatReadableBytes(bytes);
-
-    const rps = rows * 1e9 / elapsed_ns;
-    const bps = bytes * 1e9 / elapsed_ns;
-
-    let formatted_rps = formatReadableRows(rps) + '/sec';
-    let formatted_bps = formatReadableBytes(bps) + '/sec';
-
-    if (rows >= 1e11) { formatted_rows = `<b>${formatted_rows}<\/b>`; }
-    if (bytes >= 1e12) { formatted_bytes = `<b>${formatted_bytes}<\/b>`; }
-    if (rps >= 1e10) { formatted_rps = `<b>${formatted_rps}<\/b>`; }
-    if (bps >= 1e10) { formatted_bps = `<b>${formatted_bps}<\/b>`; }
-
-    let text = '';
-
-    if (total_rows) { text += (100 * Math.min(1.0, rows / total_rows)).toFixed(1) + '%, '; }
-
-    text += `Read ${formatted_rows} rows, ${formatted_bytes}`;
-
-    if (rps > 1e6) { text += ` (${formatted_rps}, ${formatted_bps})`; }
-
-    stats.innerHTML = text;
-
-    updateProgressText();
-
-    document.documentElement.style.setProperty('--progress',
-        rows && total_rows ? (100 * rows / total_rows) + '%' : '0');
-}
-
-function appendHeader(meta) {
-    if (meta.length == 0) { return; }
-    header = meta;
-
-    let thead = document.createElement('thead');
-
-    let th = document.createElement('th');
-    th.className = 'row-number';
-    th.appendChild(document.createTextNode('№'));
-    thead.appendChild(th);
-
-    meta.forEach(elem => {
-        let th = document.createElement('th');
-        const name = document.createTextNode(elem.name);
-        th.appendChild(name);
-        let type_hint = document.createElement('span');
-        type_hint.className = 'type-hint';
-        type_hint.appendChild(document.createTextNode(elem.type));
-        th.appendChild(type_hint);
-        thead.appendChild(th);
-
-        column_is_number[elem.name] = !!elem.type.match(/^(Nullable\()?(U?Int|Decimal|Float)/);
-    });
-
-    let table = document.getElementById('data-table');
-    while (table.firstChild) {
-        table.removeChild(table.lastChild);
-    }
-    let tbody = document.createElement('tbody');
-    tbody.id = 'tbody';
-    table.appendChild(thead);
-    table.appendChild(tbody);
-    table.style.display = 'table';
-
-    row_idx = 0;
-}
-
-const max_rows = 1_000;
-const max_cells = 100_000;
-
-let current_selected_cell = null;
-function appendRow(row, fragment) {
-    if (row_idx >= max_rows || (1 + row_idx) * Object.keys(header).length > max_cells) {
-        incomplete_result = true;
-        return false;
-    }
-
-    ++row_idx;
-    let tr = document.createElement('tr');
-
-    let td = document.createElement('td');
-    td.className = 'row-number';
-    td.appendChild(document.createTextNode(row_idx));
-    tr.appendChild(td);
-
-    let col_idx = 0;
-    for (const column of header) {
-        const td = renderCell(column.name, row[column.name]);
-        ++col_idx;
-
-        td.onclick = () => {
-            current_selected_cell?.classList.remove('td-selected');
-            current_selected_cell?.parentElement.classList.remove('tr-selected');
-            current_selected_cell = td;
-            current_selected_cell.classList.add('td-selected')
-            current_selected_cell.parentElement.classList.add('tr-selected')
-            current_selected_cell.scrollIntoView({ block: 'nearest' });
+        const opts = {
+            width: chart.clientWidth,
+            height: chart.clientHeight,
+            scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
+            axes: [ { stroke: axes_color,
+                      grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
+					{ stroke: axes_color,
+					  grid: { width: 1 / devicePixelRatio, stroke: grid_color },
+					  ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
+            series: [ { label: "x" },
+                      { label: "y", stroke: line_color, fill: fill_color,
+                        drawStyle: 0, lineInterpolation: 1, paths } ],
+            padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
         };
 
-        tr.appendChild(td);
+        uplot = new uPlot(opts, json, chart);
     }
 
-    fragment.appendChild(tr);
-    incomplete_result = false;
-    return true;
-}
-
-function renderExtremes() {
-    let col_idx = 0;
-    for (const column of header) {
-        const name = column.name;
-        ++col_idx;
-        if (column_is_number[name]
-            && extremes.min[name] !== undefined && extremes.max[name] !== undefined
-            && Number(extremes.max[name]) > Number(extremes.min[name])) {
-            let table = document.getElementById('data-table');
-            for (let row of table.rows) {
-                let cell = row.cells[col_idx];
-                let value = +cell.innerText;
-                if (value > 0) {
-                    const ratio = 100 * value / extremes.max[name];
-
-                    cell.style.cssText = `
-                        background-size: 100% 50%;
-                        background-position: center;
-                        background-repeat: no-repeat;
-                        background: linear-gradient(to right,
-                            var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                            var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
-                }
-            }
+    function resizeChart() {
+        if (uplot) {
+            let chart = document.getElementById('chart');
+            uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
         }
     }
-}
 
-function renderError(message)
-{
-    document.getElementById('error').innerText = message ? message : "No response.";
-    document.getElementById('error').style.display = 'block';
-    document.getElementById('logo-container').style.display = 'none';
-}
-
-/// Huge JS libraries should be loaded only if needed.
-function loadJS(src, integrity) {
-    return new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = src;
-        if (integrity) {
-            script.crossOrigin = 'anonymous';
-            script.integrity = integrity;
-        } else {
-            console.warn('no integrity for', src)
+    function redrawChart() {
+        if (uplot && document.getElementById('chart').style.display == 'block') {
+            renderChart(uplot.data);
         }
-        script.addEventListener('load', function() { resolve(true); });
-        document.head.appendChild(script);
-    });
-}
-
-let load_dagre_promise;
-function loadDagre() {
-    if (load_dagre_promise) { return load_dagre_promise; }
-
-    load_dagre_promise = Promise.all([
-        loadJS('https://dagrejs.github.io/project/dagre/v0.8.5/dagre.min.js',
-                'sha384-2IH3T69EIKYC4c+RXZifZRvaH5SRUdacJW7j6HtE5rQbvLhKKdawxq6vpIzJ7j9M'),
-        loadJS('https://dagrejs.github.io/project/graphlib-dot/v0.6.4/graphlib-dot.min.js',
-                'sha384-Q7oatU+b+y0oTkSoiRH9wTLH6sROySROCILZso/AbMMm9uKeq++r8ujD4l4f+CWj'),
-        loadJS('https://dagrejs.github.io/project/dagre-d3/v0.6.4/dagre-d3.min.js',
-                'sha384-9N1ty7Yz7VKL3aJbOk+8ParYNW8G5W+MvxEfFL9G7CRYPmkHI9gJqyAfSI/8190W'),
-        loadJS('https://cdn.jsdelivr.net/npm/d3@7.0.0',
-                'sha384-S+Kf0r6YzKIhKA8d1k2/xtYv+j0xYUU3E7+5YLrcPVab6hBh/r1J6cq90OXhw80u'),
-    ]);
-
-    return load_dagre_promise;
-}
-
-async function renderGraph()
-{
-    clearElement('data-table');
-    await loadDagre();
-
-    /// https://github.com/dagrejs/dagre-d3/issues/131
-    const dot = explain_graph.replace(/shape\s*=\s*box/g, 'shape=rect');
-
-    let graph = graphlibDot.read(dot);
-    let render = new dagreD3.render();
-
-    graph.setGraph({
-        nodesep: 20,
-        rankdir: 'LR',
-    });
-
-    let svg = document.getElementById('graph');
-    svg.style.display = 'block';
-
-    render(d3.select("#graph"), graph);
-
-    svg.style.width = graph.graph().width;
-    svg.style.height = graph.graph().height;
-}
-
-let load_uplot_promise;
-function loadUplot() {
-    if (load_uplot_promise) { return load_uplot_promise; }
-    load_uplot_promise = loadJS('https://cdn.jsdelivr.net/npm/uplot@1.6.21/dist/uPlot.iife.min.js',
-        'sha384-TwdJPnTsKP6pnvFZZKda0WJCXpjcHCa7MYHmjrYDu6rsEsb/UnFdoL0phS5ODqTA');
-    return load_uplot_promise;
-}
-
-let uplot;
-async function renderChart(json)
-{
-    await loadUplot();
-    clear();
-
-    let chart = document.getElementById('chart');
-    chart.style.display = 'block';
-
-    let paths = uPlot.paths.stepped({align:  1});
-
-    const [line_color, fill_color, grid_color, axes_color] = theme == 'light'
-        ? ["#F8C", "#F8C", "#CCC", "#444"]
-        : ["#FF6", "#FF6", "#444", "#CCC"];
-
-    const opts = {
-        width: chart.clientWidth,
-        height: chart.clientHeight,
-        scales: { x: { time: json[0][0] > 1000000000 && json[0][0] < 2000000000 } },
-        axes: [ { stroke: axes_color,
-                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } },
-                { stroke: axes_color,
-                    grid: { width: 1 / devicePixelRatio, stroke: grid_color },
-                    ticks: { width: 1 / devicePixelRatio, stroke: grid_color } } ],
-        series: [ { label: "x" },
-                    { label: "y", stroke: line_color, fill: fill_color,
-                    drawStyle: 0, lineInterpolation: 1, paths } ],
-        padding: [ null, null, null, (Math.ceil(Math.log10(Math.max(...json[1]))) + Math.floor(Math.log10(Math.max(...json[1])) / 3)) * 6 ],
-    };
-
-    uplot = new uPlot(opts, json, chart);
-}
-
-function resizeChart() {
-    if (uplot) {
-        let chart = document.getElementById('chart');
-        uplot.setSize({ width: chart.clientWidth, height: chart.clientHeight });
-    }
-}
-
-function redrawChart() {
-    if (uplot && document.getElementById('chart').style.display == 'block') {
-        renderChart(uplot.data);
-    }
-}
-
-new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
-
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
-}
-if (!theme) {
-    theme = 'light';
-}
-
-function setColorTheme(new_theme, update_preference) {
-    theme = new_theme;
-    if (update_preference) {
-        window.localStorage.setItem('theme', theme);
-    }
-    document.documentElement.setAttribute('data-theme', theme);
-    redrawChart();
-}
-
-if (theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-} else {
-    /// Obtain system-level user preference
-    const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
-    if (media_query_list.matches) {
-        setColorTheme('dark');
     }
 
-    /// There is a rumor that on some computers, the theme is changing automatically on day/night.
-    media_query_list.addEventListener('change', function(e) {
-        setColorTheme(e.matches ? 'dark' : 'light');
-    });
-}
+    new ResizeObserver(resizeChart).observe(document.getElementById('chart'));
 
-if (run_immediately) {
-    post();
-}
+    /// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+    let theme = current_url.searchParams.get('theme');
+    if (['dark', 'light'].indexOf(theme) === -1) {
+        theme = window.localStorage.getItem('theme');
+    }
+    if (!theme) {
+        theme = 'light';
+    }
 
-document.getElementById('toggle-light').onclick = function() {
-    setColorTheme('light', true);
-}
+    function setColorTheme(new_theme, update_preference) {
+        theme = new_theme;
+        if (update_preference) {
+            window.localStorage.setItem('theme', theme);
+        }
+        document.documentElement.setAttribute('data-theme', theme);
+        redrawChart();
+    }
 
-document.getElementById('toggle-dark').onclick = function() {
-    setColorTheme('dark', true);
-}
+    if (theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+    } else {
+        /// Obtain system-level user preference
+        const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+        if (media_query_list.matches) {
+            setColorTheme('dark');
+        }
+
+        /// There is a rumor that on some computers, the theme is changing automatically on day/night.
+        media_query_list.addEventListener('change', function(e) {
+            setColorTheme(e.matches ? 'dark' : 'light');
+        });
+    }
+
+    document.getElementById('toggle-light').onclick = function() {
+        setColorTheme('light', true);
+    }
+
+    document.getElementById('toggle-dark').onclick = function() {
+        setColorTheme('dark', true);
+    }
 </script>
 </html>

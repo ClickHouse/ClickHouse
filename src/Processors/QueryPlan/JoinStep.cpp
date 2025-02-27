@@ -1,15 +1,11 @@
-#include <IO/Operators.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Processors/Transforms/SquashingTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
-#include <Core/BlockNameMap.h>
-#include <Processors/Transforms/ColumnPermuteTransform.h>
 
 namespace DB
 {
@@ -35,66 +31,23 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
     if (!table_join.getClauses().empty())
-        description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
-
-    if (const auto & mixed_expression = table_join.getMixedJoinExpression())
-        description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
+        description.emplace_back("Clauses", table_join.formatClauses(table_join.getClauses(), true /*short_format*/));
 
     return description;
-}
-
-std::vector<size_t> getPermutationForBlock(
-    const Block & block,
-    const Block & lhs_block,
-    const Block & rhs_block,
-    const NameSet & name_filter)
-{
-    std::vector<size_t> permutation;
-    permutation.reserve(block.columns());
-    BlockNameMap name_map = getNamesToIndexesMap(block);
-
-    bool is_trivial = true;
-    for (const auto & other_block : {lhs_block, rhs_block})
-    {
-        for (const auto & col : other_block)
-        {
-            if (!name_filter.contains(col.name))
-                continue;
-            if (auto it = name_map.find(col.name); it != name_map.end())
-            {
-                is_trivial = is_trivial && it->second == permutation.size();
-                permutation.push_back(it->second);
-            }
-        }
-    }
-
-    if (is_trivial && permutation.size() == block.columns())
-        return {};
-
-    return permutation;
 }
 
 }
 
 JoinStep::JoinStep(
-    const Header & left_header_,
-    const Header & right_header_,
+    const DataStream & left_stream_,
+    const DataStream & right_stream_,
     JoinPtr join_,
     size_t max_block_size_,
-    size_t min_block_size_bytes_,
     size_t max_streams_,
-    NameSet required_output_,
-    bool keep_left_read_in_order_,
-    bool use_new_analyzer_)
-    : join(std::move(join_))
-    , max_block_size(max_block_size_)
-    , min_block_size_bytes(min_block_size_bytes_)
-    , max_streams(max_streams_)
-    , required_output(std::move(required_output_))
-    , keep_left_read_in_order(keep_left_read_in_order_)
-    , use_new_analyzer(use_new_analyzer_)
+    bool keep_left_read_in_order_)
+    : join(std::move(join_)), max_block_size(max_block_size_), max_streams(max_streams_), keep_left_read_in_order(keep_left_read_in_order_)
 {
-    updateInputHeaders({left_header_, right_header_});
+    updateInputStreams(DataStreams{left_stream_, right_stream_});
 }
 
 QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -102,60 +55,23 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    Block lhs_header = pipelines[0]->getHeader();
-    Block rhs_header = pipelines[1]->getHeader();
-
-    if (swap_streams)
-        std::swap(pipelines[0], pipelines[1]);
-
-    std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
     if (join->pipelineType() == JoinPipelineType::YShaped)
     {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-            std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+        auto joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
+            std::move(pipelines[0]), std::move(pipelines[1]), join, output_stream->header, max_block_size, &processors);
         joined_pipeline->resize(max_streams);
-    }
-    else
-    {
-        joined_pipeline = QueryPipelineBuilder::joinPipelinesRightLeft(
-            std::move(pipelines[0]),
-            std::move(pipelines[1]),
-            join,
-            join_algorithm_header,
-            max_block_size,
-            min_block_size_bytes,
-            max_streams,
-            keep_left_read_in_order,
-            &processors);
-    }
-
-    if (!use_new_analyzer)
         return joined_pipeline;
-
-    auto column_permutation = getPermutationForBlock(joined_pipeline->getHeader(), lhs_header, rhs_header, required_output);
-    if (!column_permutation.empty())
-    {
-        joined_pipeline->addSimpleTransform([&column_permutation](const Block & header)
-        {
-            return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
-        });
     }
 
-    if (join->supportParallelJoin())
-    {
-        joined_pipeline->addSimpleTransform([&](const Block & header)
-                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
-    }
-
-    const auto & pipeline_output_header = joined_pipeline->getHeader();
-    const auto & expected_output_header = getOutputHeader();
-    if (!isCompatibleHeader(pipeline_output_header, expected_output_header))
-    {
-        assertBlocksHaveEqualStructure(pipeline_output_header, expected_output_header,
-            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header.dumpNames()));
-    }
-
-    return joined_pipeline;
+    return QueryPipelineBuilder::joinPipelinesRightLeft(
+        std::move(pipelines[0]),
+        std::move(pipelines[1]),
+        join,
+        output_stream->header,
+        max_block_size,
+        max_streams,
+        keep_left_read_in_order,
+        &processors);
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -174,49 +90,20 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
-    if (swap_streams)
-        settings.out << prefix << "Swapped: true\n";
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     for (const auto & [name, value] : describeJoinActions(join))
         map.add(name, value);
-    if (swap_streams)
-        map.add("Swapped", true);
 }
 
-void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
+void JoinStep::updateOutputStream()
 {
-    join_algorithm_header.clear();
-    swap_streams = swap_streams_;
-    join = std::move(join_);
-    updateOutputHeader();
-}
-
-void JoinStep::updateOutputHeader()
-{
-    if (join_algorithm_header)
-        return;
-
-    const auto & header = swap_streams ? input_headers[1] : input_headers[0];
-
-    Block result_header = JoiningTransform::transformHeader(header, join);
-    join_algorithm_header = result_header;
-
-    if (!use_new_analyzer)
+    output_stream = DataStream
     {
-        if (swap_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
-        output_header = result_header;
-        return;
-    }
-
-    auto column_permutation = getPermutationForBlock(result_header, input_headers[0], input_headers[1], required_output);
-    if (!column_permutation.empty())
-        result_header = ColumnPermuteTransform::permute(result_header, column_permutation);
-
-    output_header = result_header;
+        .header = JoiningTransform::transformHeader(input_streams[0].header, join),
+    };
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -234,10 +121,10 @@ static ITransformingStep::Traits getStorageJoinTraits()
     };
 }
 
-FilledJoinStep::FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_)
+FilledJoinStep::FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, size_t max_block_size_)
     : ITransformingStep(
-        input_header_,
-        JoiningTransform::transformHeader(input_header_, join_),
+        input_stream_,
+        JoiningTransform::transformHeader(input_stream_.header, join_),
         getStorageJoinTraits())
     , join(std::move(join_))
     , max_block_size(max_block_size_)
@@ -255,19 +142,20 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
         default_totals = true;
     }
 
-    auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
+    auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
 
     pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, *output_header, join, max_block_size, on_totals, default_totals, counter);
+        return std::make_shared<JoiningTransform>(header, output_stream->header, join, max_block_size, on_totals, default_totals, counter);
     });
 }
 
-void FilledJoinStep::updateOutputHeader()
+void FilledJoinStep::updateOutputStream()
 {
-    output_header = JoiningTransform::transformHeader(input_headers.front(), join);
+    output_stream = createOutputStream(
+        input_streams.front(), JoiningTransform::transformHeader(input_streams.front().header, join), getDataStreamTraits());
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

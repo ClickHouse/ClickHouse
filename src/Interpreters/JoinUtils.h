@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Core/Block_fwd.h>
-#include <Core/Joins.h>
-#include <Interpreters/ActionsDAG.h>
+#include <Core/Block.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -49,7 +49,7 @@ public:
         return nullptr;
     }
 
-    bool isRowFiltered(size_t row) const
+    inline bool isRowFiltered(size_t row) const
     {
         return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
     }

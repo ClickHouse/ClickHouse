@@ -1,9 +1,7 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/welchttest
-sidebar_position: 214
+slug: /en/sql-reference/aggregate-functions/reference/welchttest
+sidebar_position: 301
 sidebar_label: welchTTest
-title: "welchTTest"
-description: "Applies Welch's t-test to samples from two populations."
 ---
 
 # welchTTest

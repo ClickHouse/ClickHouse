@@ -1,19 +1,17 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/stochasticlogisticregression
-sidebar_position: 193
-title: "stochasticLogisticRegression"
-description: "This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way."
+slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
+sidebar_position: 222
 ---
 
 # stochasticLogisticRegression
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-### Parameters {#parameters}
+### Parameters
 
 Parameters are exactly the same as in stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-For more information see [parameters](../reference/stochasticlinearregression.md/#parameters).
+For more information see [parameters](#agg_functions-stochasticlinearregression-parameters).
 
 ``` text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
@@ -23,7 +21,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 <!-- -->
 
-    See the `Fitting` section in the [stochasticLinearRegression](/docs/sql-reference/aggregate-functions/reference/stochasticlinearregression) description.
+    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
 
     Predicted labels have to be in \[-1, 1\].
 

@@ -3,13 +3,13 @@
 #include <base/DayNum.h>
 #include <base/defines.h>
 #include <base/types.h>
+#include <Core/DecimalFunctions.h>
 
 #include <ctime>
 #include <cassert>
 #include <string>
 #include <type_traits>
 
-/// NOLINTBEGIN(modernize-macro-to-enum)
 #define DATE_SECONDS_PER_DAY 86400 /// Number of seconds in a day, 60 * 60 * 24
 
 #define DATE_LUT_MIN_YEAR 1900 /// 1900 since majority of financial organizations consider 1900 as an initial year.
@@ -29,7 +29,6 @@
 /// A constant to add to time_t so every supported time point becomes non-negative and still has the same remainder of division by 3600.
 /// If we treat "remainder of division" operation in the sense of modular arithmetic (not like in C++).
 #define DATE_LUT_ADD ((1970 - DATE_LUT_MIN_YEAR) * 366L * 86400)
-/// NOLINTEND(modernize-macro-to-enum)
 
 
 /// Flags for toYearWeek() function.
@@ -43,18 +42,13 @@ enum class WeekModeFlag : UInt8
 using YearWeek = std::pair<UInt16, UInt8>;
 
 /// Modes for toDayOfWeek() function.
-enum class WeekDayMode : uint8_t
+enum class WeekDayMode
 {
     WeekStartsMonday1 = 0,
     WeekStartsMonday0 = 1,
     WeekStartsSunday0 = 2,
     WeekStartsSunday1 = 3
 };
-
-namespace DB
-{
-class DateTime64;
-}
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -599,7 +593,29 @@ public:
         return time % 60;
     }
 
-    unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+    template <typename DateOrTime>
+    unsigned toMillisecond(const DateOrTime & datetime, Int64 scale_multiplier) const
+    {
+        constexpr Int64 millisecond_multiplier = 1'000;
+        constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
+        constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
+
+        auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
+
+        if (datetime.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        Int64 fractional = components.fractional;
+        if (scale_multiplier > microsecond_multiplier)
+            fractional = fractional / (scale_multiplier / microsecond_multiplier);
+        else if (scale_multiplier < microsecond_multiplier)
+            fractional = fractional * (microsecond_multiplier / scale_multiplier);
+
+        UInt16 millisecond = static_cast<UInt16>(fractional / divider);
+        return millisecond;
+    }
 
     unsigned toMinute(Time t) const
     {
@@ -885,12 +901,14 @@ public:
         {
             return toFirstDayNumOfWeek(v);
         }
-
-        const auto day_of_week = toDayOfWeek(v);
-        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
-            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        {
+            const auto day_of_week = toDayOfWeek(v);
+            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            else
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        }
     }
 
     /// Get last day of week with week_mode, return Saturday or Sunday
@@ -902,13 +920,15 @@ public:
         {
             return toLastDayNumOfWeek(v);
         }
-
-        const auto day_of_week = toDayOfWeek(v);
-        v += 6;
-        if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
-            return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
         else
-            return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        {
+            const auto day_of_week = toDayOfWeek(v);
+            v += 6;
+            if constexpr (std::is_unsigned_v<DateOrTime> || std::is_same_v<DateOrTime, DayNum>)
+                return (day_of_week != 7) ? DayNum(saturateMinus(v, day_of_week)) : toDayNum(v);
+            else
+                return (day_of_week != 7) ? ExtendedDayNum(v - day_of_week) : toDayNum(v);
+        }
     }
 
     /// Check and change mode to effective.
@@ -935,7 +955,8 @@ public:
         const LUTIndex i = toLUTIndex(v);
         if (!sunday_first_day_of_week)
             return toDayOfWeek(i) - 1;
-        return toDayOfWeek(i + 1) - 1;
+        else
+            return toDayOfWeek(i + 1) - 1;
     }
 
     /// Calculate days in one year.
@@ -977,7 +998,7 @@ public:
     }
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
-    /// It's needed for correct work of dateDiff function.
+    /// It’s needed for correct work of dateDiff function.
     Time toStableRelativeHourNum(Time t) const
     {
         return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
@@ -1101,7 +1122,8 @@ public:
                 time -= values.amount_of_offset_change();
 
                 /// With cutoff at the time of the shift. Otherwise we may end up with something like 23:00 previous day.
-                time = std::max<Time>(time, values.time_at_offset_change());
+                if (time < values.time_at_offset_change())
+                    time = values.time_at_offset_change();
             }
         }
         else
@@ -1167,10 +1189,6 @@ public:
         /// When date is out of range, default value is DATE_LUT_SIZE - 1 (2299-12-31)
         return LUTIndex{std::min(index, static_cast<UInt32>(DATE_LUT_SIZE - 1))};
     }
-
-    Values lutIndexByMonthSinceEpochStartsZeroIndexing(Int32 months) const;
-
-    Values lutIndexByYearSinceEpochStartsZeroIndexing(Int16 years) const;
 
     /// Create DayNum from year, month, day of month.
     ExtendedDayNum makeDayNum(Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num = 0) const
@@ -1250,7 +1268,7 @@ public:
     DateComponents toDateComponents(Time t) const
     {
         const Values & values = getValues(t);
-        return { .year = values.year, .month = values.month, .day = values.day_of_month };
+        return { values.year, values.month, values.day_of_month };
     }
 
     DateTimeComponents toDateTimeComponents(Time t) const
@@ -1350,7 +1368,10 @@ public:
 
         UInt8 days_in_month = daysInMonth(year, month);
 
-        return std::min(day_of_month, days_in_month);
+        if (day_of_month > days_in_month)
+            day_of_month = days_in_month;
+
+        return day_of_month;
     }
 
     template <typename DateOrTime>
@@ -1368,12 +1389,14 @@ public:
 
             return makeLUTIndex(year, month, day_of_month);
         }
+        else
+        {
+            auto year = values.year - (12 - month) / 12;
+            month = 12 - (-month % 12);
+            auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
 
-        auto year = values.year - (12 - month) / 12;
-        month = 12 - (-month % 12);
-        auto day_of_month = saturateDayOfMonth(year, month, values.day_of_month);
-
-        return makeLUTIndex(year, month, day_of_month);
+            return makeLUTIndex(year, month, day_of_month);
+        }
     }
 
     /// If resulting month has less days than source month, then saturation can happen.

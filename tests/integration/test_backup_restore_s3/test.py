@@ -1,11 +1,10 @@
-import os
-import uuid
-from typing import Dict
-
+from typing import Dict, Iterable
 import pytest
-
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+import uuid
+import os
+
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
@@ -17,8 +16,6 @@ node = cluster.add_instance(
         "configs/named_collection_s3_backups.xml",
         "configs/s3_settings.xml",
         "configs/blob_log.xml",
-        "configs/remote_servers.xml",
-        "configs/query_log.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
@@ -256,7 +253,6 @@ def check_system_tables(backup_query_id=None):
         ("disk_s3_cache", "ObjectStorage", "S3", "Local"),
         ("disk_s3_other_bucket", "ObjectStorage", "S3", "Local"),
         ("disk_s3_plain", "ObjectStorage", "S3", "Plain"),
-        ("disk_s3_plain_rewritable", "ObjectStorage", "S3", "PlainRewritable"),
         ("disk_s3_restricted_user", "ObjectStorage", "S3", "Local"),
     )
     assert len(expected_disks) == len(disks)
@@ -333,9 +329,6 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
 
     assert backup_events["S3CopyObject"] > 0
     assert restore_events["S3CopyObject"] > 0
-
-    # BACKUP shouldn't download any files from S3 except ".lock" file.
-    assert backup_events["S3GetObject"] == backup_events["BackupLockFileReads"]
 
 
 def test_backup_to_s3():
@@ -417,26 +410,33 @@ def test_backup_to_s3_multipart():
     )
     assert backup_events["WriteBufferFromS3Microseconds"] > 0
     assert "WriteBufferFromS3RequestsErrors" not in backup_events
-
     # restore
     assert (
-        restore_events["ReadBufferFromS3Bytes"]
-        + restore_events["RestorePartsSkippedBytes"]
-        == restore_total_size + backup_meta_size
+        restore_events["ReadBufferFromS3Bytes"] - backup_meta_size == restore_total_size
     )
     assert restore_events["ReadBufferFromS3Microseconds"] > 0
     assert "ReadBufferFromS3RequestsErrors" not in restore_events
 
 
-@pytest.mark.parametrize(
-    "storage_policy",
-    [
-        "policy_s3",
-        "policy_s3_other_bucket",
-        "policy_s3_plain_rewritable",
-    ],
-)
-def test_backup_to_s3_native_copy(storage_policy):
+def test_backup_to_s3_native_copy():
+    storage_policy = "policy_s3"
+    backup_name = new_backup_name()
+    backup_destination = (
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+    )
+    (backup_events, restore_events) = check_backup_and_restore(
+        storage_policy, backup_destination
+    )
+    # single part upload
+    assert backup_events["S3CopyObject"] > 0
+    assert restore_events["S3CopyObject"] > 0
+    assert node.contains_in_log(
+        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+    )
+
+
+def test_backup_to_s3_native_copy_other_bucket():
+    storage_policy = "policy_s3_other_bucket"
     backup_name = new_backup_name()
     backup_destination = (
         f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
@@ -493,8 +493,6 @@ def test_incremental_backup_append_table_def():
     assert node.query("SELECT count(), sum(x) FROM data") == "100\t4950\n"
     assert "parts_to_throw_insert = 100" in node.query("SHOW CREATE TABLE data")
 
-    node.query("DROP TABLE data")
-
 
 @pytest.mark.parametrize(
     "in_cache_initially, allow_backup_read_cache, allow_s3_native_copy",
@@ -540,11 +538,10 @@ def test_backup_with_fs_cache(
     # print(f"restore_events = {restore_events}")
 
     # BACKUP never updates the filesystem cache but it may read it if `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` allows that.
-    # And if allow_s3_native_copy == True then BACKUP shouldn't read MergeTree parts from S3 and thus it shouldn't request any files from the file cache.
-    if allow_backup_read_cache and in_cache_initially and not allow_s3_native_copy:
+    if allow_backup_read_cache and in_cache_initially:
         assert backup_events["CachedReadBufferReadFromCacheBytes"] > 0
         assert not "CachedReadBufferReadFromSourceBytes" in backup_events
-    elif allow_backup_read_cache and not allow_s3_native_copy:
+    elif allow_backup_read_cache:
         assert not "CachedReadBufferReadFromCacheBytes" in backup_events
         assert backup_events["CachedReadBufferReadFromSourceBytes"] > 0
     else:
@@ -629,189 +626,65 @@ def test_user_specific_auth(start_cluster):
     create_user("superuser2")
     create_user("regularuser")
 
-    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=MergeTree ORDER BY col")
-    node.query("INSERT INTO specific_auth VALUES (1)")
-
-    def backup_restore(backup, user, should_fail, on_cluster=False, base_backup=None):
-        on_cluster_clause = "ON CLUSTER 'cluster'" if on_cluster else ""
-        base_backup = (
-            f" SETTINGS base_backup = {base_backup}" if base_backup is not None else ""
-        )
-        backup_query = (
-            f"BACKUP TABLE specific_auth {on_cluster_clause} TO {backup} {base_backup}"
-        )
-        restore_query = f"RESTORE TABLE specific_auth {on_cluster_clause} FROM {backup}"
-
-        if should_fail:
-            assert "Access" in node.query_and_get_error(backup_query, user=user)
-        else:
-            node.query(backup_query, user=user)
-            node.query("DROP TABLE specific_auth SYNC")
-            node.query(restore_query, user=user)
-
-    random_str = uuid.uuid4().hex
-    backup1_path = f"http://minio1:9001/root/data/backups/limited/{random_str}/backup1/"
-    backup1_inc_path = (
-        f"http://minio1:9001/root/data/backups/limited/{random_str}/backup1_inc/"
-    )
-    backup2_path = f"http://minio1:9001/root/data/backups/limited/{random_str}/backup2/"
-    backup3_path = f"http://minio1:9001/root/data/backups/limited/{random_str}/backup3/"
-    backup3_inc_path = (
-        f"http://minio1:9001/root/data/backups/limited/{random_str}/backup3_inc/"
-    )
-
-    backup_restore(f"S3('{backup1_path}')", user=None, should_fail=True)
-    backup_restore(f"S3('{backup1_path}')", user="regularuser", should_fail=True)
-    backup_restore(f"S3('{backup1_path}')", user="superuser1", should_fail=False)
-
-    backup_restore(f"S3('{backup2_path}')", user="superuser2", should_fail=False)
+    node.query("CREATE TABLE specific_auth (col UInt64) ENGINE=Memory")
 
     assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_path}')",
-        user="regularuser",
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')"
     )
-
-    node.query("INSERT INTO specific_auth VALUES (2)")
-
-    backup_restore(
-        f"S3('{backup1_inc_path}')",
-        user="regularuser",
-        should_fail=True,
-        base_backup=f"S3('{backup1_path}')",
-    )
-
-    backup_restore(
-        f"S3('{backup1_inc_path}')",
-        user="superuser1",
-        should_fail=False,
-        base_backup=f"S3('{backup1_path}')",
-    )
-
     assert "Access" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth FROM S3('{backup1_inc_path}')",
-        user="regularuser",
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        f"SELECT * FROM s3('{backup1_path}*', 'RawBLOB')",
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="regularuser",
     )
 
     node.query(
-        f"SELECT * FROM s3('{backup1_path}*', 'RawBLOB')",
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="superuser1",
     )
-
-    backup_restore(
-        f"S3('{backup3_path}')",
-        user="regularuser",
-        should_fail=True,
-        on_cluster=True,
-    )
-
-    backup_restore(
-        f"S3('{backup3_path}')",
+    node.query(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="superuser1",
-        should_fail=False,
-        on_cluster=True,
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_path}')",
-        user="regularuser",
-    )
-
-    node.query("INSERT INTO specific_auth VALUES (3)")
-
-    backup_restore(
-        f"S3('{backup3_inc_path}')",
-        user="regularuser",
-        should_fail=True,
-        on_cluster=True,
-        base_backup=f"S3('{backup3_path}')",
-    )
-
-    backup_restore(
-        f"S3('{backup3_inc_path}')",
-        user="superuser1",
-        should_fail=False,
-        on_cluster=True,
-        base_backup=f"S3('{backup3_path}')",
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        f"RESTORE TABLE specific_auth ON CLUSTER 'cluster' FROM S3('{backup3_inc_path}')",
-        user="regularuser",
-    )
-
-    assert "Access Denied" in node.query_and_get_error(
-        f"SELECT * FROM s3('{backup3_path}*', 'RawBLOB')",
-        user="regularuser",
     )
 
     node.query(
-        f"SELECT * FROM s3('{backup3_path}*', 'RawBLOB')",
-        user="superuser1",
+        "BACKUP TABLE specific_auth TO S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
+        user="superuser2",
+    )
+    node.query(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup2.zip')",
+        user="superuser2",
     )
 
-    assert "Access Denied" in node.query_and_get_error(
-        f"SELECT * FROM s3Cluster(cluster, '{backup3_path}*', 'RawBLOB')",
+    assert "Access" in node.query_and_get_error(
+        "RESTORE TABLE specific_auth FROM S3('http://minio1:9001/root/data/backups/limited/backup1.zip')",
         user="regularuser",
     )
 
-    node.query("DROP TABLE specific_auth")
-    node.query("DROP USER superuser1, superuser2, regularuser")
+    assert "HTTP response code: 403" in node.query_and_get_error(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
+        user="regularuser",
+    )
+    node.query(
+        "SELECT * FROM s3('http://minio1:9001/root/data/backups/limited/backup1.zip', 'RawBLOB')",
+        user="superuser1",
+    )
+
+    node.query("DROP TABLE IF EXISTS test.specific_auth")
 
 
-@pytest.mark.parametrize(
-    "allow_s3_native_copy,use_multipart_copy",
-    [(True, True), (True, False), (False, True), (False, False)],
-    ids=[
-        "native_multipart",
-        "native_single",
-        "non_native_multipart",
-        "non_native_single",
-    ],
-)
-def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_copy):
+def test_backup_to_s3_different_credentials():
     storage_policy = "policy_s3_restricted"
 
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
-    settings = {"allow_s3_native_copy": allow_s3_native_copy}
-    size = 1000
-    if use_multipart_copy:
-        size = 10000000
-    (backup_events, _) = check_backup_and_restore(
-        storage_policy,
-        backup_destination,
-        backup_settings=settings,
-        restore_settings=settings,
-        size=size
-    )
-    check_system_tables(backup_events["query_id"])
+    def check_backup_restore(allow_s3_native_copy):
+        backup_name = new_backup_name()
+        backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
+        settings = {"allow_s3_native_copy": allow_s3_native_copy}
+        (backup_events, _) = check_backup_and_restore(
+            storage_policy,
+            backup_destination,
+            backup_settings=settings,
+            restore_settings=settings,
+        )
+        check_system_tables(backup_events["query_id"])
 
-
-def test_backup_restore_system_tables_with_plain_rewritable_disk():
-    instance = cluster.instances["node"]
-    backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    backup_query_id = uuid.uuid4().hex
-    instance.query(
-        f"BACKUP TABLE system.query_log TO {backup_destination}",
-        query_id=backup_query_id,
-    )
-    restore_query_id = uuid.uuid4().hex
-    instance.query("DROP TABLE IF EXISTS data_restored SYNC")
-    instance.query(
-        f"""
-        RESTORE TABLE system.query_log AS data_restored FROM {backup_destination};
-        """,
-        query_id=restore_query_id,
-    )
-    instance.query("DROP TABLE data_restored SYNC")
+    check_backup_restore(False)
+    check_backup_restore(True)

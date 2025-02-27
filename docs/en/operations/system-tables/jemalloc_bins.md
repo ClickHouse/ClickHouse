@@ -1,12 +1,7 @@
 ---
-description: "System table containing information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas."
-slug: /operations/system-tables/jemalloc_bins
-title: "jemalloc_bins"
-keywords: ["system table", "jemalloc_bins"]
+slug: /en/operations/system-tables/jemalloc_bins
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# jemalloc_bins
 
 Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas.
 These statistics might not be absolutely accurate because of thread local caching in jemalloc.

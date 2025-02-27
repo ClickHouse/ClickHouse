@@ -2,11 +2,10 @@
 
 #include "config.h"
 
-#include <base/MemorySanitizer.h>
+#include <Common/safe_cast.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/safe_cast.h>
 
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>
@@ -42,13 +41,13 @@ StringRef foldEncryptionKeyInMySQLCompatitableMode(size_t cipher_key_size, Strin
 
 const EVP_CIPHER * getCipherByName(StringRef name);
 
-enum class CompatibilityMode : uint8_t
+enum class CompatibilityMode
 {
     MySQL,
     OpenSSL
 };
 
-enum class CipherMode : uint8_t
+enum class CipherMode
 {
     MySQLCompatibility,   // with key folding
     OpenSSLCompatibility, // just as regular openssl's enc application does (AEAD modes, like GCM and CCM are not supported)
@@ -59,7 +58,7 @@ enum class CipherMode : uint8_t
 template <CipherMode mode>
 struct KeyHolder
 {
-    StringRef setKey(size_t cipher_key_size, StringRef key) const
+    inline StringRef setKey(size_t cipher_key_size, StringRef key) const
     {
         if (key.size != cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -71,7 +70,7 @@ struct KeyHolder
 template <>
 struct KeyHolder<CipherMode::MySQLCompatibility>
 {
-    StringRef setKey(size_t cipher_key_size, StringRef key)
+    inline StringRef setKey(size_t cipher_key_size, StringRef key)
     {
         if (key.size < cipher_key_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid key size: {} expected {}", key.size, cipher_key_size);
@@ -165,7 +164,7 @@ private:
             });
         }
 
-        validateFunctionArguments(*this, arguments,
+        validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "encryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "plaintext"},
@@ -174,11 +173,6 @@ private:
             optional_args
         );
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -246,9 +240,10 @@ private:
             {
                 return doEncryptImpl<CipherMode::RFC5116_AEAD_AES_GCM>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
-
-            return doEncryptImpl<CipherMode::OpenSSLCompatibility>(
-                evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+            else
+            {
+                return doEncryptImpl<CipherMode::OpenSSLCompatibility>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+            }
         }
 
         return nullptr;
@@ -371,14 +366,12 @@ private:
                         reinterpret_cast<unsigned char*>(encrypted), &output_len,
                         reinterpret_cast<const unsigned char*>(input_value.data), static_cast<int>(input_value.size)) != 1)
                     onError("Failed to encrypt");
-                __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 3: retrieve encrypted data (ciphertext)
                 if (EVP_EncryptFinal_ex(evp_ctx,
                         reinterpret_cast<unsigned char*>(encrypted), &output_len) != 1)
                     onError("Failed to fetch ciphertext");
-                __msan_unpoison(encrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                 encrypted += output_len;
 
                 // 4: optionally retrieve a tag and append it to the ciphertext (RFC5116):
@@ -442,7 +435,7 @@ private:
             });
         }
 
-        validateFunctionArguments(*this, arguments,
+        validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
                 {"mode", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "decryption mode string"},
                 {"input", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), {}, "ciphertext"},
@@ -454,11 +447,6 @@ private:
         if constexpr (use_null_when_decrypt_fail)
             return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
 
-        return std::make_shared<DataTypeString>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeString>();
     }
 
@@ -526,9 +514,10 @@ private:
             {
                 return doDecryptImpl<CipherMode::RFC5116_AEAD_AES_GCM, use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
             }
-
-            return doDecryptImpl<CipherMode::OpenSSLCompatibility, use_null_when_decrypt_fail>(
-                evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+            else
+            {
+                return doDecryptImpl<CipherMode::OpenSSLCompatibility, use_null_when_decrypt_fail>(evp_cipher, input_rows_count, input_column, key_column, iv_column, aad_column);
+            }
         }
 
         return nullptr;
@@ -681,7 +670,6 @@ private:
                 }
                 else
                 {
-                    __msan_unpoison(decrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                     decrypted += output_len;
                     // 3: optionally get tag from the ciphertext (RFC5116) and feed it to the context
                     if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -700,10 +688,7 @@ private:
                         decrypt_fail = true;
                     }
                     else
-                    {
-                        __msan_unpoison(decrypted, output_len); /// OpenSSL uses assembly which evades msan's analysis
                         decrypted += output_len;
-                    }
                 }
             }
 

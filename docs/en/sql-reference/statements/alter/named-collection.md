@@ -1,11 +1,7 @@
 ---
-slug: /sql-reference/statements/alter/named-collection
+slug: /en/sql-reference/statements/alter/named-collection
 sidebar_label: NAMED COLLECTION
 ---
-
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-<CloudNotSupportedBadge />
 
 # ALTER NAMED COLLECTION
 

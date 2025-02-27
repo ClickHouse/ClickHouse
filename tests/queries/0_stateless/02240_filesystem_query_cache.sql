@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-object-storage, no-random-settings
+-- Tags: no-parallel, no-fasttest, no-s3-storage, no-random-settings
 
 -- { echo }
 
@@ -20,6 +20,7 @@ SETTINGS min_bytes_for_wide_part = 10485760,
             path = 'filesystem_query_cache/',
             cache_on_write_operations= 1,
             enable_filesystem_query_cache_limit = 1,
+            delayed_cleanup_interval_ms = 100,
             disk = 's3_disk');
 SYSTEM DROP FILESYSTEM CACHE;
 INSERT INTO test SELECT number, toString(number) FROM numbers(100);

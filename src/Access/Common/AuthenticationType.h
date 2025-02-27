@@ -6,7 +6,7 @@
 namespace DB
 {
 
-enum class AuthenticationType : uint8_t
+enum class AuthenticationType
 {
     /// User doesn't have to enter password.
     NO_PASSWORD,
@@ -34,15 +34,12 @@ enum class AuthenticationType : uint8_t
     /// Password is encrypted in bcrypt hash.
     BCRYPT_PASSWORD,
 
-    /// Server sends a random string named `challenge` to the client. The client encrypts it with its SSH private key.
-    /// The server decrypts the result using the SSH public key registered for the user and compares with the original string.
+    /// Server sends a random string named `challenge` which client needs to encrypt with private key.
+    /// The check is performed on server side by decrypting the data and comparing with the original string.
     SSH_KEY,
 
     /// Authentication through HTTP protocol
     HTTP,
-
-    /// JSON Web Token
-    JWT,
 
     MAX,
 };

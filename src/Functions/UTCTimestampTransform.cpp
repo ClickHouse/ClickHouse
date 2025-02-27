@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 namespace
 {
-    template <typename Name, bool toUTC>
+    template <typename Name>
     class UTCTimestampTransform : public IFunction
     {
     public:
@@ -67,7 +67,7 @@ namespace
             return date_time_type;
         }
 
-        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+        ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t) const override
         {
             if (arguments.size() != 2)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {}'s arguments number must be 2.", name);
@@ -77,50 +77,37 @@ namespace
             if (!time_zone_const_col)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of 2nd argument of function {}. Excepted const(String).", arg2.column->getName(), name);
             String time_zone_val = time_zone_const_col->getDataAt(0).toString();
-            const DateLUTImpl & time_zone = DateLUT::instance(time_zone_val);
+            auto column = result_type->createColumn();
             if (WhichDataType(arg1.type).isDateTime())
             {
-                const auto & date_time_col = checkAndGetColumn<ColumnDateTime>(*arg1.column);
-                using ColVecTo = DataTypeDateTime::ColumnType;
-                typename ColVecTo::MutablePtr result_column = ColVecTo::create(input_rows_count);
-                typename ColVecTo::Container & result_data = result_column->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
+                const auto * date_time_col = checkAndGetColumn<ColumnDateTime>(arg1.column.get());
+                for (size_t i = 0; i < date_time_col->size(); ++i)
                 {
-                    UInt32 date_time_val = date_time_col.getElement(i);
-                    auto time_zone_offset = time_zone.timezoneOffset(date_time_val);
-                    if constexpr (toUTC)
-                        result_data[i] = date_time_val - static_cast<UInt32>(time_zone_offset);
-                    else
-                        result_data[i] = date_time_val + static_cast<UInt32>(time_zone_offset);
+                    UInt32 date_time_val = date_time_col->getElement(i);
+                    LocalDateTime date_time(date_time_val, Name::to ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
+                    time_t time_val = date_time.to_time_t(Name::from ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
+                    column->insert(time_val);
                 }
-                return result_column;
             }
-            if (WhichDataType(arg1.type).isDateTime64())
+            else if (WhichDataType(arg1.type).isDateTime64())
             {
-                const auto & date_time_col = checkAndGetColumn<ColumnDateTime64>(*arg1.column);
+                const auto * date_time_col = checkAndGetColumn<ColumnDateTime64>(arg1.column.get());
                 const DataTypeDateTime64 * date_time_type = static_cast<const DataTypeDateTime64 *>(arg1.type.get());
-                UInt32 col_scale = date_time_type->getScale();
-                Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(col_scale);
-                using ColDecimalTo = DataTypeDateTime64::ColumnType;
-                typename ColDecimalTo::MutablePtr result_column = ColDecimalTo::create(input_rows_count, col_scale);
-                typename ColDecimalTo::Container & result_data = result_column->getData();
-                for (size_t i = 0; i < input_rows_count; ++i)
+                Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(date_time_type->getScale());
+                for (size_t i = 0; i < date_time_col->size(); ++i)
                 {
-                    DateTime64 date_time_val = date_time_col.getElement(i);
+                    DateTime64 date_time_val = date_time_col->getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
-                    auto time_zone_offset = time_zone.timezoneOffset(seconds);
-                    Int64 time_val = seconds;
-                    if constexpr (toUTC)
-                        time_val -= time_zone_offset;
-                    else
-                        time_val += time_zone_offset;
+                    LocalDateTime date_time(seconds, Name::to ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
+                    time_t time_val = date_time.to_time_t(Name::from ? DateLUT::instance("UTC") : DateLUT::instance(time_zone_val));
                     DateTime64 date_time_64(time_val * scale_multiplier + micros);
-                    result_data[i] = date_time_64;
+                    column->insert(date_time_64);
                 }
-                return result_column;
             }
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be DateTime/DateTime64. ", name);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {}'s 1st argument can only be datetime/datatime64. ", name);
+            return column;
         }
 
     };
@@ -128,23 +115,27 @@ namespace
     struct NameToUTCTimestamp
     {
         static constexpr auto name = "toUTCTimestamp";
+        static constexpr auto from = false;
+        static constexpr auto to = true;
     };
 
     struct NameFromUTCTimestamp
     {
         static constexpr auto name = "fromUTCTimestamp";
+        static constexpr auto from = true;
+        static constexpr auto to = false;
     };
 
-    using ToUTCTimestampFunction = UTCTimestampTransform<NameToUTCTimestamp, true>;
-    using FromUTCTimestampFunction = UTCTimestampTransform<NameFromUTCTimestamp, false>;
+    using ToUTCTimestampFunction = UTCTimestampTransform<NameToUTCTimestamp>;
+    using FromUTCTimestampFunction = UTCTimestampTransform<NameFromUTCTimestamp>;
 }
 
 REGISTER_FUNCTION(UTCTimestampTransform)
 {
     factory.registerFunction<ToUTCTimestampFunction>();
     factory.registerFunction<FromUTCTimestampFunction>();
-    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("to_utc_timestamp", NameToUTCTimestamp::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("from_utc_timestamp", NameFromUTCTimestamp::name, FunctionFactory::CaseInsensitive);
 }
 
 }

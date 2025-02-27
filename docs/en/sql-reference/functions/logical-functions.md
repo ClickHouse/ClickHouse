@@ -1,16 +1,16 @@
 ---
-slug: /sql-reference/functions/logical-functions
+slug: /en/sql-reference/functions/logical-functions
 sidebar_position: 110
 sidebar_label: Logical
 ---
 
 # Logical Functions
 
-Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../data-types/int-uint.md) or in some cases `NULL`.
+Below functions perform logical operations on arguments of arbitrary numeric types. They return either 0 or 1 as [UInt8](../../sql-reference/data-types/int-uint.md) or in some cases `NULL`.
 
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 
-## and {#and}
+## and
 
 Calculates the logical conjunction of two or more values. 
 
@@ -26,7 +26,7 @@ Alias: The [AND operator](../../sql-reference/operators/index.md#logical-and-ope
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
@@ -64,7 +64,7 @@ Result:
 └──────────────────────┘
 ```
 
-## or {#or}
+## or
 
 Calculates the logical disjunction of two or more values.
 
@@ -80,7 +80,7 @@ Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-opera
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
@@ -118,7 +118,7 @@ Result:
 └─────────────┘
 ```
 
-## not {#not}
+## not
 
 Calculates the logical negation of a value.
 
@@ -132,7 +132,7 @@ Alias: The [Negation operator](../../sql-reference/operators/index.md#logical-ne
 
 **Arguments**
 
-- `val` — The value. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
+- `val` — The value. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 
@@ -156,7 +156,7 @@ Result:
 └────────┘
 ```
 
-## xor {#xor}
+## xor
 
 Calculates the logical exclusive disjunction of two or more values. For more than two input values, the function first xor-s the first two values, then xor-s the result with the third value etc.
 
@@ -168,7 +168,7 @@ xor(val1, val2...)
 
 **Arguments**
 
-- `val1, val2, ...` — List of at least two values. [Int](../data-types/int-uint.md), [UInt](../data-types/int-uint.md), [Float](../data-types/float.md) or [Nullable](../data-types/nullable.md).
+- `val1, val2, ...` — List of at least two values. [Int](../../sql-reference/data-types/int-uint.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md) or [Nullable](../../sql-reference/data-types/nullable.md).
 
 **Returned value**
 

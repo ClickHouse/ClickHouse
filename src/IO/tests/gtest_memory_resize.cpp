@@ -134,7 +134,7 @@ TEST(MemoryResizeTest, SmallInitAndBigResizeOverflowWhenPadding)
         ASSERT_EQ(memory.m_capacity, 0x8000000000000000ULL - 1);
         ASSERT_EQ(memory.m_size, 0x8000000000000000ULL - PADDING_FOR_SIMD);
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
+#ifndef ABORT_ON_LOGICAL_ERROR
         EXPECT_THROW_ERROR_CODE(memory.resize(0x8000000000000000ULL - (PADDING_FOR_SIMD - 1)), Exception, ErrorCodes::LOGICAL_ERROR);
         ASSERT_TRUE(memory.m_data);  // state is intact after exception
         ASSERT_EQ(memory.m_capacity, 0x8000000000000000ULL - 1);
@@ -158,7 +158,7 @@ TEST(MemoryResizeTest, SmallInitAndBigResizeOverflowWhenPadding)
         ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
         ASSERT_EQ(memory.m_size, 1);
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
+#ifndef ABORT_ON_LOGICAL_ERROR
         EXPECT_THROW_ERROR_CODE(memory.resize(0x8000000000000000ULL - (PADDING_FOR_SIMD - 1)), Exception, ErrorCodes::LOGICAL_ERROR);
         ASSERT_TRUE(memory.m_data); // state is intact after exception
         ASSERT_EQ(memory.m_capacity, PADDING_FOR_SIMD);
@@ -197,7 +197,7 @@ TEST(MemoryResizeTest, BigInitAndSmallResizeOverflowWhenPadding)
         , ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
+#ifndef ABORT_ON_LOGICAL_ERROR
     {
         EXPECT_THROW_ERROR_CODE(
         {

@@ -74,7 +74,6 @@ public:
     size_t size() const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
     bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
@@ -85,18 +84,10 @@ public:
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
     void insert(const Field & x) override;
     bool tryInsert(const Field & x) override;
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t n) override;
-#endif
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -104,11 +95,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-#else
-    int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
-#endif
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator & collator) const override;
     void getPermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res) const override;
@@ -119,8 +106,6 @@ public:
     void updatePermutationWithCollation(const Collator & collator, PermutationSortDirection direction, PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges& equal_ranges) const override;
     void reserve(size_t n) override;
-    size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns) override;
     void shrinkToFit() override;
     void ensureOwnership() override;
     size_t byteSize() const override;
@@ -160,33 +145,15 @@ public:
     /// For example, `getDataInRange(0, size())` is the same as `getDataPtr()->clone()`.
     MutableColumnPtr getDataInRange(size_t start, size_t length) const;
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(offsets);
         callback(data);
     }
 
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
-    {
-        callback(*offsets);
-        offsets->forEachMutableSubcolumnRecursively(callback);
-        callback(*data);
-        data->forEachMutableSubcolumnRecursively(callback);
-    }
-
-    void forEachSubcolumn(ColumnCallback callback) const override
-    {
-        callback(offsets);
-        callback(data);
-    }
-
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*offsets);
         offsets->forEachSubcolumnRecursively(callback);
@@ -207,16 +174,6 @@ public:
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
     size_t getNumberOfDimensions() const;
-
-    bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-
-    bool dynamicStructureEquals(const IColumn & rhs) const override
-    {
-        if (const auto * rhs_concrete = typeid_cast<const ColumnArray *>(&rhs))
-            return data->dynamicStructureEquals(*rhs_concrete->data);
-        return false;
-    }
 
 private:
     WrappedPtr data;
