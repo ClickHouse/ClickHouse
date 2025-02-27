@@ -23,8 +23,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     const StoredObjects & blobs_to_read_,
     const ReadSettings & settings_,
     std::shared_ptr<FilesystemCacheLog> cache_log_,
-    bool use_external_buffer_,
-    size_t buffer_size)
+    bool use_external_buffer_)
     : ReadBufferFromFileBase()
     , settings(settings_)
     , blobs_to_read(blobs_to_read_)

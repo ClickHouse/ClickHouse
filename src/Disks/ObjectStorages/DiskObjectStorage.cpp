@@ -726,8 +726,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         storage_objects,
         read_settings,
         global_context->getFilesystemCacheLog(),
-        /* use_external_buffer */use_async_buffer,
-        /* buffer_size */use_async_buffer ? 0 : buffer_size);
+        /* use_external_buffer */use_async_buffer);
 
     if (use_async_buffer)
     {
