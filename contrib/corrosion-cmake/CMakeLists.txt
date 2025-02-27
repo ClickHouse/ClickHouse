@@ -26,7 +26,7 @@ endif ()
 
 if (NOT ENABLE_LIBRARIES)
   set(DEFAULT_ENABLE_RUST FALSE)
-elif (NOT DEFINED ENABLE_RUST)
+elseif (NOT DEFINED ENABLE_RUST)
   list (APPEND CMAKE_MODULE_PATH "${ClickHouse_SOURCE_DIR}/contrib/corrosion/cmake")
   find_package(Rust)
   set(DEFAULT_ENABLE_RUST ${Rust_FOUND})
