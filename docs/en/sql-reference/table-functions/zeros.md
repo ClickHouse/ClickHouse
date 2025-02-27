@@ -1,10 +1,12 @@
 ---
-slug: /en/sql-reference/table-functions/zeros
+slug: /sql-reference/table-functions/zeros
 sidebar_position: 145
 sidebar_label: zeros
+title: "zeros"
+description: "Used for test purposes as the fastest method to generate many rows. Similar to the `system.zeros` and `system.zeros_mt` system tables."
 ---
 
-# zeros
+# zeros Table Function
 
 * `zeros(N)` – Returns a table with the single 'zero' column (UInt8) that contains the integer 0 `N` times
 * `zeros_mt(N)` – The same as `zeros`, but uses multiple threads.

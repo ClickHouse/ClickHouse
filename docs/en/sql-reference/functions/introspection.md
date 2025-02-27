@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/introspection
+slug: /sql-reference/functions/introspection
 sidebar_position: 100
 sidebar_label: Introspection
 ---
@@ -22,7 +22,7 @@ For proper operation of introspection functions:
 
 ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine
+## addressToLine {#addresstoline}
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -112,7 +112,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToLineWithInlines
+## addressToLineWithInlines {#addresstolinewithinlines}
 
 Similar to `addressToLine`, but returns an Array with all inline functions. As a result of this, it is slower than `addressToLine`.
 
@@ -213,7 +213,7 @@ The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions
 ```
 
 
-## addressToSymbol
+## addressToSymbol {#addresstosymbol}
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -308,7 +308,7 @@ start_thread
 clone
 ```
 
-## demangle
+## demangle {#demangle}
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
@@ -401,9 +401,9 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-## tid
+## tid {#tid}
 
-Returns id of the thread, in which current [Block](/docs/en/development/architecture/#block) is processed.
+Returns id of the thread, in which current [Block](/docs/development/architecture/#block) is processed.
 
 **Syntax**
 
@@ -431,9 +431,9 @@ Result:
 └───────┘
 ```
 
-## logTrace
+## logTrace {#logtrace}
 
-Emits trace log message to server log for each [Block](/docs/en/development/architecture/#block).
+Emits trace log message to server log for each [Block](/docs/development/architecture/#block).
 
 **Syntax**
 

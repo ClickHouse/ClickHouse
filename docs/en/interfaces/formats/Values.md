@@ -1,6 +1,6 @@
 ---
 title : Values
-slug : /en/interfaces/formats/Values
+slug: /interfaces/formats/Values
 keywords : [Values]
 input_format: true
 output_format: true
@@ -11,7 +11,7 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 The `Values` format prints every row in brackets. 
 
@@ -23,7 +23,7 @@ The `Values` format prints every row in brackets.
 - Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
 
 During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
-[`NULL`](/docs/en/sql-reference/syntax.md) is represented as `NULL`.
+[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in the `Values` format: 
 - single quotes
@@ -31,9 +31,9 @@ The minimum set of characters that you need to escape when passing data in the `
 
 This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 | Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
 |-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|

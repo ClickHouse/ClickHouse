@@ -179,6 +179,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 {
     String buf;
     bool first = true;
+    std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
@@ -186,12 +187,9 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
     /// Remove the file if exists
-    if (std::remove(nfile.generic_string().c_str()) && errno != ENOENT)
+    if (!std::filesystem::remove(nfile, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
     ff->set_path(nfile.generic_string());
 
@@ -346,6 +344,7 @@ void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
+    std::error_code ec;
     bool explain = false;
     Select * sel = nullptr;
     InsertSelect * insel = nullptr;
@@ -371,12 +370,9 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
-        if (std::remove(qfile.generic_string().c_str()) && errno != ENOENT)
+        if (!std::filesystem::remove(qfile, ec) && ec)
         {
-            char buffer[1024];
-
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
@@ -438,6 +434,20 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
+    }
+    else if (measure_performance)
+    {
+        /// Add tag to find query later on
+        if (!sel->has_setting_values())
+        {
+            auto * news = sel->mutable_setting_values();
+            UNUSED(news);
+        }
+        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
     }
 }
 
@@ -588,14 +598,12 @@ void QueryOracle::replaceQueryWithTablePeers(
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
+        std::error_code ec;
         FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunction().file());
 
-        if (std::remove(qfile_peer.generic_string().c_str()) && errno != ENOENT)
+        if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
-            char buffer[1024];
-
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff.set_path(qfile_peer.generic_string());
     }

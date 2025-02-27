@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/monitoring
+slug: /operations/monitoring
 sidebar_position: 45
 sidebar_label: Monitoring
 description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.
@@ -17,7 +17,7 @@ You can monitor:
 - Utilization of hardware resources.
 - ClickHouse server metrics.
 
-## Built-in advanced observability dashboard
+## Built-in advanced observability dashboard {#built-in-advanced-observability-dashboard}
 
 <img width="400" alt="Screenshot 2023-11-12 at 6 08 58 PM" src="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" />
 

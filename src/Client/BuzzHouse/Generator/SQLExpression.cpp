@@ -653,7 +653,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
-        func_call->set_distinct(agg.support_distinct && func_call->args_size() == 1 && rg.nextBool());
+        func_call->set_distinct(func_call->args_size() > 0 && rg.nextSmallNumber() < 4);
         if (agg.support_nulls_clause && rg.nextSmallNumber() < 7)
         {
             func_call->set_fnulls(rg.nextBool() ? FuncNulls::NRESPECT : FuncNulls::NIGNORE);
@@ -726,7 +726,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
 {
     const size_t funcs_size = CHTableFuncs.size();
-    std::uniform_int_distribution<uint32_t> next_dist(0, funcs_size - 1);
+    std::uniform_int_distribution<size_t> next_dist(0, funcs_size - 1);
     const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
     const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
     uint32_t generated_params = 0;
