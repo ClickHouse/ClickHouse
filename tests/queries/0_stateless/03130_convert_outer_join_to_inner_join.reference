@@ -31,6 +31,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -111,6 +112,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String
@@ -191,6 +193,7 @@ Positions: 4 0 1 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Expression
       Header: __table1.id UInt64
               __table1.value String

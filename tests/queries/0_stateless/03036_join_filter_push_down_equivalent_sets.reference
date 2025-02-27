@@ -38,6 +38,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
@@ -117,6 +118,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
@@ -196,6 +198,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
@@ -286,6 +289,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
@@ -378,6 +382,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
+      Sharding: [(id = id)]
         Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
@@ -464,6 +469,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
+      Sharding: [(id = id)]
         Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
@@ -537,6 +543,7 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
+    Sharding: [(id = id)]
       Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
@@ -629,6 +636,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
+      Sharding: [(id = id)]
         Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
@@ -715,6 +723,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
+      Sharding: [(id = id)]
         Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
@@ -808,6 +817,7 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
+      Sharding: [(id = id)]
         Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
