@@ -663,6 +663,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+            {"add_minmax_index_for_numeric_columns", false, true, "Should give benefits."},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
