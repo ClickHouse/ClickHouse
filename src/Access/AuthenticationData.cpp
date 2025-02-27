@@ -35,8 +35,6 @@
 #     include <bcrypt.h>
 #endif
 
-#include <iostream>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -190,7 +188,6 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
             return;
 
         case AuthenticationType::SCRAM_SHA256_PASSWORD:
-            std::cerr << "bp1\n";
             setPasswordHashBinary(Util::encodeScramSHA256(password_, ""), validate);
             return;
 
