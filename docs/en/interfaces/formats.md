@@ -436,9 +436,9 @@ See [Npy](/interfaces/formats/Npy)
 ### LineAsString {#lineasstring}
 
 See:
-- [LineAsString](/interfaces/formats/LineAsString.md)
-- [LineAsStringWithNames](/interfaces/formats/LineAsStringWithNames.md)
-- [LineAsStringWithNamesAndTypes](/interfaces/formats/LineAsStringWithNamesAndTypes.md)
+- [LineAsString](/interfaces/formats/LineAsString)
+- [LineAsStringWithNames](/interfaces/formats/LineAsStringWithNames)
+- [LineAsStringWithNamesAndTypes](/interfaces/formats/LineAsStringWithNamesAndTypes)
 
 ### Regexp {#data-format-regexp}
 
@@ -446,27 +446,27 @@ See [Regexp](/interfaces/formats/Regexp)
 
 ### RawBLOB {#rawblob}
 
-See [RawBLOB](/interfaces/formats/RawBLOB.md)
+See [RawBLOB](/interfaces/formats/RawBLOB)
 
 ### Markdown {#markdown}
 
-See [Markdown](/interfaces/formats/Markdown.md)
+See [Markdown](/interfaces/formats/Markdown)
 
 ### MsgPack {#msgpack}
 
-See [MsgPack](/interfaces/formats/MsgPack.md)
+See [MsgPack](/interfaces/formats/MsgPack)
 
 ### MySQLDump {#mysqldump}
 
-See [MySQLDump](/interfaces/formats/MySQLDump.md)
+See [MySQLDump](/interfaces/formats/MySQLDump)
 
 ### DWARF {#dwarf}
 
-See [Dwarf](/interfaces/formats/DWARF.md)
+See [Dwarf](/interfaces/formats/DWARF)
 
 ### Form {#form}
 
-See [Form](/interfaces/formats/Form.md)
+See [Form](/interfaces/formats/Form)
 
 ## Format Schema {#formatschema}
 
