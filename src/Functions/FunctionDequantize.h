@@ -196,7 +196,8 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First argument of function {} must be a FixedString", getName());
 
         size_t fixed_string_length = col_fixed_string->getN();
-        size_t array_size = fixed_string_length / Traits::divisor;
+        size_t array_size = fixed_string_length * Traits::multiplier / Traits::divisor;
+        array_size = std::max(1ul, array_size);
 
         auto result_column = ColumnArray::create(ColumnFloat32::create());
         auto & result_data = typeid_cast<ColumnFloat32 &>(result_column->getData()).getData();

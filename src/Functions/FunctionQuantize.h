@@ -84,7 +84,9 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays must have the same size");
         }
 
-        size_t fixed_string_length = array_size * Traits::multiplier;
+        size_t fixed_string_length = array_size * Traits::multiplier / Traits::divider;
+        fixed_string_length = std::max(1ul, fixed_string_length);
+
         auto result_column = ColumnFixedString::create(fixed_string_length);
         auto & result_chars = result_column->getChars();
         result_chars.resize_fill(input_rows_count * fixed_string_length);

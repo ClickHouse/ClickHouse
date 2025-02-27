@@ -1,0 +1,17 @@
+SELECT dequantize4Bit(toFixedString(unhex('02'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('02'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('9100'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('02'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('02'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('00'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('0000'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('01'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('9100'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('07'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('F700'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('07'), 1));
+SELECT dequantize4Bit(toFixedString(unhex('7700'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('1200'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('9A00'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('A200'), 2));
+SELECT dequantize4Bit(toFixedString(unhex('9100'), 2));

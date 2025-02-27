@@ -65,24 +65,28 @@ struct Dequantize1BitImpl
 struct Dequantize16BitTraits
 {
     static constexpr const char * name = "dequantize16Bit";
+    static constexpr size_t multiplier = 1;
     static constexpr size_t divisor = 2;
 };
 
 struct Dequantize8BitTraits
 {
     static constexpr const char * name = "dequantize8Bit";
+    static constexpr size_t multiplier = 1;
     static constexpr size_t divisor = 1;
 };
 
 struct Dequantize4BitTraits
 {
     static constexpr const char * name = "dequantize4Bit";
+    static constexpr size_t multiplier = 2;
     static constexpr size_t divisor = 1;
 };
 
 struct Dequantize1BitTraits
 {
     static constexpr const char * name = "dequantize1Bit";
+    static constexpr size_t multiplier = 8;
     static constexpr size_t divisor = 1;
 };
 

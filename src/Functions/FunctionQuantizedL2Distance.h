@@ -57,8 +57,8 @@ private:
         const auto & array_x = *assert_cast<const ColumnFixedString *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnFixedString *>(col_y.get());
 
-        const T * data_x = reinterpret_cast<const T *>(array_x.getChars().data());
-        const T * data_y = reinterpret_cast<const T *>(array_y.getChars().data());
+        const T * __restrict__ data_x = reinterpret_cast<const T *>(array_x.getChars().data());
+        const T * __restrict__ data_y = reinterpret_cast<const T *>(array_y.getChars().data());
 
         size_t fixed_size = array_x.getN() / sizeof(T);
 
@@ -103,8 +103,8 @@ private:
         const auto & array_x = *assert_cast<const ColumnFixedString *>(col_x.get());
         const auto & array_y = *assert_cast<const ColumnFixedString *>(col_y.get());
 
-        const T * data_x = reinterpret_cast<const T *>(array_x.getChars().data());
-        const T * data_y = reinterpret_cast<const T *>(array_y.getChars().data());
+        const T * __restrict__ data_x = reinterpret_cast<const T *>(array_x.getChars().data());
+        const T * __restrict__ data_y = reinterpret_cast<const T *>(array_y.getChars().data());
 
         size_t fixed_size = array_x.getN() / sizeof(T);
 

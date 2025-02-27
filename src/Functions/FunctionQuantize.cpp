@@ -297,24 +297,28 @@ struct Quantize16BitTraits
 {
     static constexpr const char * name = "quantize16Bit";
     static constexpr size_t multiplier = 2;
+    static constexpr size_t divider = 1;
 };
 
 struct Quantize8BitTraits
 {
     static constexpr const char * name = "quantize8Bit";
     static constexpr size_t multiplier = 1;
+    static constexpr size_t divider = 1;
 };
 
 struct Quantize4BitTraits
 {
     static constexpr const char * name = "quantize4Bit";
     static constexpr size_t multiplier = 1;
+    static constexpr size_t divider = 2;
 };
 
 struct Quantize1BitTraits
 {
     static constexpr const char * name = "quantize1Bit";
     static constexpr size_t multiplier = 1;
+    static constexpr size_t divider = 8;
 };
 
 using FunctionQuantize16Bit = FunctionQuantizeBase<Quantize16BitTraits, Quantize16BitImpl>;
