@@ -11,12 +11,9 @@
 #include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
 
-#    include <Common/logger_useful.h>
-
 namespace DB::ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
