@@ -30,7 +30,6 @@ namespace ErrorCodes
     extern const int SQLITE_ENGINE_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 DatabaseSQLite::DatabaseSQLite(
