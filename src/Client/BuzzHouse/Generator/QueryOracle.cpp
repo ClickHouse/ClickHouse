@@ -655,7 +655,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
     {
         if (measure_performance)
         {
-            measure_performance
+            other_steps_sucess
                 &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
         }
         else
