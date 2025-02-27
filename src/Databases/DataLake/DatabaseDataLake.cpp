@@ -28,16 +28,16 @@
 
 namespace DB
 {
-namespace DatabaseIcebergSetting
+namespace DatabaseDataLakeSetting
 {
-    extern const DatabaseIcebergSettingsDatabaseDataLakeCatalogType catalog_type;
-    extern const DatabaseIcebergSettingsString warehouse;
-    extern const DatabaseIcebergSettingsString catalog_credential;
-    extern const DatabaseIcebergSettingsString auth_header;
-    extern const DatabaseIcebergSettingsString auth_scope;
-    extern const DatabaseIcebergSettingsString storage_endpoint;
-    extern const DatabaseIcebergSettingsString oauth_server_uri;
-    extern const DatabaseIcebergSettingsBool vended_credentials;
+    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
+    extern const DatabaseDataLakeSettingsString warehouse;
+    extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsString auth_header;
+    extern const DatabaseDataLakeSettingsString auth_scope;
+    extern const DatabaseDataLakeSettingsString storage_endpoint;
+    extern const DatabaseDataLakeSettingsString oauth_server_uri;
+    extern const DatabaseDataLakeSettingsBool vended_credentials;
 }
 namespace Setting
 {
@@ -72,20 +72,20 @@ namespace
 DatabaseDataLake::DatabaseDataLake(
     const std::string & database_name_,
     const std::string & url_,
-    const DatabaseIcebergSettings & settings_,
+    const DatabaseDataLakeSettings & settings_,
     ASTPtr database_engine_definition_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
-    , log(getLogger("DatabaseIceberg(" + database_name_ + ")"))
+    , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
 {
     validateSettings();
 }
 
 void DatabaseDataLake::validateSettings()
 {
-    if (settings[DatabaseIcebergSetting::warehouse].value.empty())
+    if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
@@ -98,32 +98,32 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     if (catalog_impl)
         return catalog_impl;
 
-    switch (settings[DatabaseIcebergSetting::catalog_type].value)
+    switch (settings[DatabaseDataLakeSetting::catalog_type].value)
     {
         case DB::DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
             catalog_impl = std::make_shared<DataLake::RestCatalog>(
-                settings[DatabaseIcebergSetting::warehouse].value,
+                settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseIcebergSetting::catalog_credential].value,
-                settings[DatabaseIcebergSetting::auth_scope].value,
-                settings[DatabaseIcebergSetting::auth_header],
-                settings[DatabaseIcebergSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 Context::getGlobalContextInstance());
             break;
         }
         case DB::DatabaseDataLakeCatalogType::UNITY:
         {
             catalog_impl = std::make_shared<DataLake::UnityCatalog>(
-                settings[DatabaseIcebergSetting::warehouse].value,
+                settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
-                settings[DatabaseIcebergSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
                 Context::getGlobalContextInstance());
             break;
         }
         default:
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown catalog type specified {}", settings[DatabaseIcebergSetting::catalog_type].value);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown catalog type specified {}", settings[DatabaseDataLakeSetting::catalog_type].value);
         }
     }
     return catalog_impl;
@@ -209,7 +209,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
 
 std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const
 {
-    auto endpoint_from_settings = settings[DatabaseIcebergSetting::storage_endpoint].value;
+    auto endpoint_from_settings = settings[DatabaseDataLakeSetting::storage_endpoint].value;
     if (endpoint_from_settings.empty())
         return table_metadata.getLocation();
     else
@@ -242,7 +242,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     else
         table_metadata = table_metadata.withLocationIfExists();
 
-    const bool with_vended_credentials = settings[DatabaseIcebergSetting::vended_credentials].value;
+    const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials && !lightweight)
         table_metadata = table_metadata.withStorageCredentials();
 
@@ -478,21 +478,21 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         const auto url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
 
-        DatabaseIcebergSettings database_settings;
+        DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define);
 
         if (database_engine_name == "IcebergRestCatalog")
         {
-            database_settings[DB::DatabaseIcebergSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
+            database_settings[DB::DatabaseDataLakeSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
         }
         else if (database_engine_name == "UnityCatalog")
         {
-            database_settings[DB::DatabaseIcebergSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::UNITY;
+            database_settings[DB::DatabaseDataLakeSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::UNITY;
         }
         else if (database_engine_name == "DataLakeCatalog")
         {
-            if (database_settings[DB::DatabaseIcebergSetting::catalog_type] == DB::DatabaseDataLakeCatalogType::UNKNOWN)
+            if (database_settings[DB::DatabaseDataLakeSetting::catalog_type] == DB::DatabaseDataLakeCatalogType::UNKNOWN)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "If generic database engine is specified (`{}`), the catalog implementation must be speicified in `SETTINGS catalog_type = 'XXX'`",
@@ -506,7 +506,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         auto engine_for_tables = database_engine_define->clone();
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
 
-        switch (database_settings[DB::DatabaseIcebergSetting::catalog_type].value)
+        switch (database_settings[DB::DatabaseDataLakeSetting::catalog_type].value)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             {

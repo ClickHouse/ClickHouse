@@ -3,7 +3,7 @@
 
 #if USE_AVRO
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DataLake/DatabaseIcebergSettings.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -17,7 +17,7 @@ public:
     explicit DatabaseDataLake(
         const std::string & database_name_,
         const std::string & url_,
-        const DatabaseIcebergSettings & settings_,
+        const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_);
 
     String getEngineName() const override { return "DataLake"; }
@@ -53,7 +53,7 @@ private:
     /// Iceberg Catalog url.
     const std::string url;
     /// SETTINGS from CREATE query.
-    const DatabaseIcebergSettings settings;
+    const DatabaseDataLakeSettings settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
     const ASTPtr database_engine_definition;
     const LoggerPtr log;
