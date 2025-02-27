@@ -3351,7 +3351,7 @@ CONV_FN(CreateView, create_view)
             ExprSchemaTableToString(ret, cmvt.est());
             if (cmvt.col_list_size())
             {
-                ret += "(";
+                ret += " (";
                 for (int i = 0; i < cmvt.col_list_size(); i++)
                 {
                     if (i != 0)

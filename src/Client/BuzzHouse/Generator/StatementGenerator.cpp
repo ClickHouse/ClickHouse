@@ -151,12 +151,46 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
     cv->set_append(rg.nextBool());
 }
 
+static void matchQueryAliases(const SQLView & v, Select * osel, Select * nsel)
+{
+    if (v.has_with_cols)
+    {
+        /// Make sure aliases match
+        uint32_t i = 0;
+        SelectStatementCore * ssc = nsel->mutable_select_core();
+
+        for (const auto & entry : v.cols)
+        {
+            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+
+            eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+                "c" + std::to_string(i));
+            eca->mutable_col_alias()->set_column("c" + std::to_string(entry));
+            i++;
+        }
+        ssc->mutable_from()
+            ->mutable_tos()
+            ->mutable_join_clause()
+            ->mutable_tos()
+            ->mutable_joined_derived_query()
+            ->mutable_select()
+            ->mutable_inner_query()
+            ->mutable_select()
+            ->set_allocated_sel(osel);
+    }
+    else
+    {
+        nsel->CopyFrom(*osel);
+    }
+}
+
 void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView * cv)
 {
     SQLView next;
     uint32_t tname = 0;
     ExprSchemaTable * est = cv->mutable_est();
     const bool replace = collectionCount<SQLView>(attached_views) > 3 && rg.nextMediumNumber() < 16;
+    const uint32_t view_ncols = (rg.nextMediumNumber() % 5) + 1;
 
     if (replace)
     {
@@ -178,7 +212,6 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     cv->set_replace(replace);
     next.is_materialized = rg.nextBool();
     cv->set_materialized(next.is_materialized);
-    next.ncols = (rg.nextMediumNumber() % 5) + 1;
     if (next.db)
     {
         est->mutable_database()->set_database("d" + std::to_string(next.db->dname));
@@ -199,14 +232,15 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.is_deterministic = true;
             next.teng = TableEngineValues::MergeTree;
         }
-        const auto & table_to_lambda = [&next](const SQLTable & t)
-        { return t.isAttached() && t.numberOfInsertableColumns() >= next.ncols && (t.is_deterministic || !next.is_deterministic); };
-        const bool has_with_cols = collectionHas<SQLTable>(table_to_lambda);
-        const bool has_tables = has_with_cols || !tables.empty();
-        const bool has_to = !replace && nopt > 6 && (has_with_cols || has_tables) && rg.nextSmallNumber() < (has_with_cols ? 9 : 6);
+        const auto & table_to_lambda = [&view_ncols, &next](const SQLTable & t)
+        { return t.isAttached() && t.numberOfInsertableColumns() >= view_ncols && (t.is_deterministic || !next.is_deterministic); };
+        next.has_with_cols = collectionHas<SQLTable>(table_to_lambda);
+        const bool has_tables = next.has_with_cols || !tables.empty();
+        const bool has_to
+            = !replace && nopt > 6 && (next.has_with_cols || has_tables) && rg.nextSmallNumber() < (next.has_with_cols ? 9 : 6);
 
         chassert(this->entries.empty());
-        for (uint32_t i = 0; i < next.ncols; i++)
+        for (uint32_t i = 0; i < view_ncols; i++)
         {
             std::vector<ColumnPathChainEntry> path = {ColumnPathChainEntry("c" + std::to_string(i), nullptr)};
             entries.emplace_back(ColumnPathChain(std::nullopt, ColumnSpecial::NONE, std::nullopt, std::move(path)));
@@ -215,7 +249,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         {
             SQLRelation rel(vname);
 
-            for (uint32_t i = 0; i < next.ncols; i++)
+            for (uint32_t i = 0; i < view_ncols; i++)
             {
                 rel.cols.emplace_back(SQLRelationCol(vname, {"c" + std::to_string(i)}));
             }
@@ -235,15 +269,15 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             CreateMatViewTo * cmvt = cv->mutable_to();
             ExprSchemaTable * to_est = cmvt->mutable_est();
             SQLTable & t = const_cast<SQLTable &>(
-                has_with_cols ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(table_to_lambda)).get()
-                              : rg.pickValueRandomlyFromMap(this->tables));
+                next.has_with_cols ? rg.pickRandomlyFromVector(filterCollection<SQLTable>(table_to_lambda)).get()
+                                   : rg.pickValueRandomlyFromMap(this->tables));
 
             if (t.db)
             {
                 to_est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
             }
             to_est->mutable_table()->set_table("t" + std::to_string(t.tname));
-            if (has_with_cols && rg.nextBool())
+            if (next.has_with_cols)
             {
                 for (const auto & col : t.cols)
                 {
@@ -256,11 +290,12 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
                 {
                     std::shuffle(filtered_columns.begin(), filtered_columns.end(), rg.generator);
                 }
-                for (size_t i = 0; i < next.ncols; i++)
+                for (uint32_t i = 0; i < view_ncols; i++)
                 {
                     SQLColumn col = filtered_columns[i].get();
 
                     addTableColumnInternal(rg, t, col.cname, false, false, ColumnSpecial::NONE, fc.type_mask, col, cmvt->add_col_list());
+                    next.cols.insert(col.cname);
                 }
                 filtered_columns.clear();
             }
@@ -279,6 +314,13 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     {
         next.is_deterministic = rg.nextSmallNumber() < 9;
     }
+    if (next.cols.empty())
+    {
+        for (uint32_t i = 0; i < view_ncols; i++)
+        {
+            next.cols.insert(i);
+        }
+    }
     if (next.is_deterministic)
     {
         this->setAllowNotDetermistic(false);
@@ -290,7 +332,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         rg,
         false,
         false,
-        next.ncols,
+        view_ncols,
         next.is_materialized ? (~allow_prewhere) : std::numeric_limits<uint32_t>::max(),
         cv->mutable_select());
     this->levels.clear();
@@ -300,6 +342,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         this->setAllowNotDetermistic(true);
         this->enforceFinal(false);
     }
+    matchQueryAliases(next, cv->release_select(), cv->mutable_select());
     if (rg.nextSmallNumber() < 3)
     {
         cv->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
@@ -854,7 +897,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             }
             else
             {
-                v.staged_ncols = (rg.nextMediumNumber() % 5) + 1;
+                v.staged_ncols = v.has_with_cols ? static_cast<uint32_t>(v.cols.size()) : ((rg.nextMediumNumber() % 5) + 1);
+
                 if (v.is_deterministic)
                 {
                     this->setAllowNotDetermistic(false);
@@ -876,6 +920,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                     this->setAllowNotDetermistic(true);
                     this->enforceFinal(false);
                 }
+                matchQueryAliases(v, ati->release_modify_query(), ati->mutable_modify_query());
             }
         }
     }
@@ -3129,9 +3174,13 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             {
                 const AlterTableItem & ati = i == 0 ? at.alter() : at.other_alters(i - 1);
 
-                if (success && ati.has_add_column())
+                if (success && ati.has_add_column() && !v.has_with_cols)
                 {
-                    v.ncols = v.staged_ncols;
+                    v.cols.clear();
+                    for (uint32_t j = 0; j < v.staged_ncols; j++)
+                    {
+                        v.cols.insert(j);
+                    }
                 }
             }
         }
