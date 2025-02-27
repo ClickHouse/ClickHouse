@@ -79,7 +79,8 @@ namespace
         {
             DatabaseCatalog::instance().updateDatabaseComment(db);
         }
-        catch(...) {
+        catch (...)
+        {
             db->setDatabaseComment(old_database_comment);
         }
     }
