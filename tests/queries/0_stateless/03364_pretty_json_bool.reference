@@ -1,0 +1,23 @@
+{
+	"meta":
+	[
+		{
+			"name": "a",
+			"type": "Bool"
+		},
+		{
+			"name": "b",
+			"type": "Bool"
+		}
+	],
+
+	"data":
+	[
+		{
+			"a": true,
+			"b": false
+		}
+	],
+
+	"rows": 1
+}
