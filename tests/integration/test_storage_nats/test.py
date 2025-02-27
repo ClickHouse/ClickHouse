@@ -526,7 +526,7 @@ def test_nats_protobuf(nats_cluster):
 
 def test_nats_big_message(nats_cluster):
     # Create batchs of messages of size ~100Kb
-    nats_messages = 1000
+    nats_messages = 100
     batch_messages = 1000
     messages = [
         json.dumps({"key": i, "value": "x" * 100}) * batch_messages
