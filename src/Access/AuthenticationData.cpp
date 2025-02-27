@@ -51,9 +51,10 @@ namespace ErrorCodes
 
 namespace
 {
-#if USE_SSL 
+#if USE_SSL
 
-std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations) {
+std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
+{
     std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
     PKCS5_PBKDF2_HMAC(
         password.data(),
@@ -67,7 +68,8 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
     return derived_key;
 }
 
-std::vector<uint8_t> base64Decode(std::string_view encoded) {
+std::vector<uint8_t> base64Decode(std::string_view encoded)
+{
     BIO *bio;
     BIO *b64;
     size_t decode_len = encoded.size();
@@ -98,7 +100,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 #endif
 }
 
-AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password, std::string_view salt)
+AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password [[maybe_unused]], std::string_view salt [[maybe_unused]])
 {
 #if USE_SSL
     auto salt_digest = base64Decode(salt);

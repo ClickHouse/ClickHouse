@@ -500,7 +500,7 @@ class SASLInitialResponse : public Messaging::FrontMessage
 {
 public:
     String auth_method;
-    String sasl_mechanism;   
+    String sasl_mechanism;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -553,7 +553,7 @@ public:
 class SASLResponse : public Messaging::FrontMessage
 {
 public:
-    String sasl_mechanism;   
+    String sasl_mechanism;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -1196,35 +1196,36 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 {
     static constexpr int num_iterations = 4096;
 
-    static std::string base64Encode(const std::string &in) {      
+    static std::string base64Encode(const std::string &in)
+    {
         static const char* lookup =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         std::string out;
         out.reserve(in.size());
-      
+
         int val = 0;
         int valb = -6;
-      
-        for (uint8_t c : in) 
+
+        for (uint8_t c : in)
         {
             val = (val << 8) + c;
             valb += 8;
-            while (valb >= 0) 
+            while (valb >= 0)
             {
                 out.push_back(lookup[(val >> valb) & 0x3F]);
                 valb -= 6;
             }
         }
-      
-        if (valb > -6) 
+
+        if (valb > -6)
             out.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]);
-      
+
         while (out.size() % 4)
             out.push_back('=');
-      
+
         return out;
     }
-      
+
     static String parseResponse(const String & key, const String & pattern)
     {
         String result;
@@ -1297,7 +1298,7 @@ public:
         auth_message += rsp->sasl_mechanism.substr(3);
         auto nonce = client_nonce + server_nonce;
 
-        String salt;        
+        String salt;
         const auto& access_control = session.globalContext()->getAccessControl();
         if (auto id = access_control.find<User>(user_name))
         {
