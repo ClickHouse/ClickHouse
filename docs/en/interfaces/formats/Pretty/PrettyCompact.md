@@ -1,7 +1,7 @@
 ---
-title : PrettyCompact
+title: PrettyCompact
 slug: /interfaces/formats/PrettyCompact
-keywords : [PrettyCompact]
+keywords: [PrettyCompact]
 input_format: false
 output_format: true
 alias: []
