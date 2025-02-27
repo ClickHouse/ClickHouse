@@ -909,10 +909,6 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 
 void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
 {
-    if (!command.comment)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not get database comment from query");
-
-    String old_database_comment = getDatabaseComment();
     setDatabaseComment(command.comment.value());
 }
 }
