@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/ssh
+slug: /interfaces/ssh
 sidebar_label: SSH Interface
 sidebar_position: 60
 keywords: [client, ssh, putty]
@@ -12,12 +12,12 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-## Preface
+## Preface {#preface}
 
 ClickHouse server allows to connect to itself directly using the SSH protocol. Any client is allowed.
 
 
-After creating a [database user identified by an SSH key](https://clickhouse.com/docs/knowledgebase/how-to-connect-to-ch-cloud-using-ssh-keys):
+After creating a [database user identified by an SSH key](/docs/knowledgebase/how-to-connect-to-ch-cloud-using-ssh-keys):
 ```sql
 CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
 ```
@@ -49,7 +49,7 @@ The command execution over SSH (the non-interactive mode) is also supported:
 ```
 
 
-## Server configuration
+## Server configuration {#server-configuration}
 
 In order to enable the SSH server capability, you need to uncomment or place the following section in your `config.xml`:
 
@@ -64,7 +64,7 @@ In order to enable the SSH server capability, you need to uncomment or place the
 
 The host key is an integral part of a SSH protocol. The public part of this key is stored in the `~/.ssh/known_hosts` file on the client side and typically needed to prevent man-in-the-middle type of attacks. When connecting to the server for the first time you will see the message below:
 
-```
+```shell
 The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
 RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
 This key is not known by any other names
@@ -75,11 +75,11 @@ This, in fact means: "Do you want to remember the public key of this host and co
 
 You can tell your SSH client not to verify the host by passing an option:
 
-```
+```bash
 ssh -o "StrictHostKeyChecking no" user@host
 ```
 
-## Configuring embedded client
+## Configuring embedded client {#configuring-embedded-client}
 
 You are able to pass options to an embedded client similar to the ordinary `clickhouse-client`, but with a few limitations.
 Since this is an SSH protocol, the only way to pass parameters to the target host is through environment variables.

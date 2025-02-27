@@ -78,6 +78,20 @@ namespace DB
     A value of `0` means unlimited.
     :::
     )", 0) \
+    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_size, 100, R"(
+    ClickHouse uses threads from the prefixes deserialization Thread pool for parallel reading of metadata of columns and subcolumns from file prefixes in Wide parts in MergeTree. `max_prefixes_deserialization_thread_pool_size` limits the maximum number of threads in the pool.
+    )", 0) \
+    DECLARE(UInt64, max_prefixes_deserialization_thread_pool_free_size, 0, R"(
+    If the number of **idle** threads in the prefixes deserialization Thread pool exceeds `max_prefixes_deserialization_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.
+    )", 0) \
+    DECLARE(UInt64, prefixes_deserialization_thread_pool_thread_pool_queue_size, 10000, R"(
+    The maximum number of jobs that can be scheduled on the prefixes deserialization Thread pool.
+
+    :::note
+    A value of `0` means unlimited.
+    :::
+    )", 0) \
+    DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
@@ -134,7 +148,7 @@ namespace DB
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, tmp_policy, "", R"(
-    Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/en/engines/table-engines/mergetree-family/mergetree) documentation.
+    Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/engines/table-engines/mergetree-family/mergetree) documentation.
 
     :::note
     - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
@@ -317,7 +331,7 @@ namespace DB
     \
     /* Database Catalog */ \
     DECLARE(UInt64, database_atomic_delay_before_drop_table_sec, 8 * 60, R"(
-    The delay during which a dropped table can be restored using the [`UNDROP`](/docs/en/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+    The delay during which a dropped table can be restored using the [`UNDROP`](/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
     The default for this setting is `480` (8 minutes).
     )", 0) \
     DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
@@ -433,7 +447,7 @@ namespace DB
     DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
-    Maximum size of cache for marks (index of [`MergeTree`](/docs/en/engines/table-engines/mergetree-family) family of tables).
+    Maximum size of cache for marks (index of [`MergeTree`](/docs/engines/table-engines/mergetree-family) family of tables).
 
     :::note
     This setting can be modified at runtime and will take effect immediately.
@@ -484,9 +498,9 @@ namespace DB
 
     | System Table                                                                                                                                                                                                                                                                                                                                                       | Metric                                                                                                   |
     |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-    | [`system.metrics`](/docs/en/operations/system-tables/metrics) and [`system.metric_log`](/docs/en/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
-    | [`system.asynchronous_metrics_log`](/docs/en/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
-    | [`system.events`](/docs/en/operations/system-tables/events), [`system.processes`](/docs/en/operations/system-tables/processes), [`system.query_log`](/docs/en/operations/system-tables/query_log), [`system.query_thread_log`](/docs/en/operations/system-tables/query_thread_log), [`system.query_views_log`](/docs/en/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
+    | [`system.metrics`](/docs/operations/system-tables/metrics) and [`system.metric_log`](/docs/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
+    | [`system.asynchronous_metrics_log`](/docs/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
+    | [`system.events`](/docs/operations/system-tables/events), [`system.processes`](/docs/operations/system-tables/processes), [`system.query_log`](/docs/operations/system-tables/query_log), [`system.query_thread_log`](/docs/operations/system-tables/query_thread_log), [`system.query_views_log`](/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
 
     :::note
     The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
@@ -507,7 +521,7 @@ namespace DB
     DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
     Restriction on deleting tables.
 
-    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
+    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
 
     :::note
     A value of `0` means that you can delete all tables without any restrictions.
@@ -524,7 +538,7 @@ namespace DB
     DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
     Restriction on dropping partitions.
 
-    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can’t drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
     This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
     :::note
@@ -727,9 +741,9 @@ namespace DB
     - `shortest_task_first` — Always execute smaller merge or mutation. Merges and mutations are assigned priorities based on their resulting size. Merges with smaller sizes are strictly preferred over bigger ones. This policy ensures the fastest possible merge of small parts but can lead to indefinite starvation of big merges in partitions heavily overloaded by `INSERT`s.
     )", 0) \
     DECLARE(UInt64, background_move_pool_size, 8, R"(The maximum number of threads that will be used for moving data parts to another disk or volume for *MergeTree-engine tables in a background.)", 0) \
-    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/docs/en/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/docs/en/engines/table-engines/mergetree-family) tables in the background.)", 0) \
-    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/docs/en/engines/table-engines/special/buffer) in the background.)", 0) \
+    DECLARE(UInt64, background_fetches_pool_size, 16, R"(The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_common_pool_size, 8, R"(The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.)", 0) \
+    DECLARE(UInt64, background_buffer_flush_schedule_pool_size, 16, R"(The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.)", 0) \
     DECLARE(UInt64, background_schedule_pool_size, 512, R"(The maximum number of threads that will be used for constantly executing some lightweight periodic operations for replicated tables, Kafka streaming, and DNS cache updates.)", 0) \
     DECLARE(UInt64, background_message_broker_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing background operations for message streaming.)", 0) \
     DECLARE(UInt64, background_distributed_schedule_pool_size, 16, R"(The maximum number of threads that will be used for executing distributed sends.)", 0) \
@@ -863,13 +877,28 @@ namespace DB
     Used to regulate how resources are utilized and shared between merges and other workloads. Specified value is used as `workload` setting value for all background merges. Can be overridden by a merge tree setting.
 
     **See Also**
-    - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+    - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
     DECLARE(String, mutation_workload, "default", R"(
     Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
 
     **See Also**
-    - [Workload Scheduling](/docs/en/operations/workload-scheduling.md)
+    - [Workload Scheduling](/operations/workload-scheduling.md)
+    )", 0) \
+    DECLARE(Bool, throw_on_unknown_workload, false, R"(
+    Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
+
+    - If `true`, RESOURCE_ACCESS_DENIED exception is thrown from a query that is trying to access unknown workload. Useful to enforce resource scheduling for all queries after WORKLOAD hierarchy is established and contains WORKLOAD default.
+    - If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
+
+    **Example**
+
+    ``` xml
+    <throw_on_unknown_workload>true</throw_on_unknown_workload>
+    ```
+
+    **See Also**
+    - [Workload Scheduling](/operations/workload-scheduling.md)
     )", 0) \
     DECLARE(String, series_keeper_path, "/clickhouse/series", R"(
     Path in Keeper with auto-incremental numbers, generated by the `generateSerialID` function. Each series will be a node under this path.
@@ -903,9 +932,6 @@ namespace DB
     )", 0) \
     DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
-    )", 0) \
-    DECLARE(Bool, send_settings_to_client, false, R"(
-    Send user settings from server configuration to clients (in the server Hello message).
     )", 0) \
     \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
@@ -1092,6 +1118,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},
+            {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"config_reload_interval_ms", {std::to_string(context->getConfigReloaderInterval()), ChangeableWithoutRestart::Yes}},
 
             {"allow_feature_tier",

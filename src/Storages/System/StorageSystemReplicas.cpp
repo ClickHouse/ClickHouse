@@ -139,11 +139,7 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                if (thread_group)
-                    CurrentThread::attachToGroupIfDetached(thread_group);
-
-                setThreadName("SystemReplicas");
+                ThreadGroupSwitcher switcher(thread_group, "SystemReplicas");
 
                 try
                 {
@@ -481,8 +477,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         if (query_status)
             query_status->checkTimeLimit();
 
-        auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
-            [(*col_table)[i].safeGet<const String &>()];
+        auto & storage = replicated_tables[(*col_database)[i].safeGet<String>()]
+            [(*col_table)[i].safeGet<String>()];
 
         auto [request_id, future] = get_status_requests.addRequest(storage, with_zk_fields);
         futures.emplace_back(future);

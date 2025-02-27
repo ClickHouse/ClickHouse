@@ -14,11 +14,9 @@
 #include <Poco/JSON/Parser.h>
 
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
-#include <unordered_map>
 
 namespace DB
 {
@@ -49,18 +47,17 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
 
-    const std::unordered_map<String, String> & getColumnNameToPhysicalNameMapping() const override { return column_name_to_physical_name; }
-
-    const DataLakePartitionColumns & getPartitionColumns() const override { return partition_columns; }
-
     bool operator==(const IDataLakeMetadata & other) const override
     {
         const auto * iceberg_metadata = dynamic_cast<const IcebergMetadata *>(&other);
         return iceberg_metadata && getVersion() == iceberg_metadata->getVersion();
     }
 
-    static DataLakeMetadataPtr
-    create(const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context);
+    static DataLakeMetadataPtr create(
+        const ObjectStoragePtr & object_storage,
+        const ConfigurationObserverPtr & configuration,
+        const ContextPtr & local_context,
+        bool allow_experimental_delta_kernel_rs);
 
     size_t getVersion() const { return current_metadata_version; }
 
@@ -87,22 +84,21 @@ public:
 
     bool update(const ContextPtr & local_context) override;
 
-
     Strings makePartitionPruning(const ActionsDAG & filter_dag) override;
 
     bool supportsPartitionPruning() override { return true; }
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
+    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileIterator>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable Iceberg::ManifestFilesByName manifest_files_by_name;
-    mutable Iceberg::ManifestListsByName manifest_lists_by_name;
-    mutable ManifestEntryByDataFile manifest_entry_by_data_file;
+    mutable Iceberg::ManifestFilesStorage manifest_files_by_name;
+    mutable Iceberg::ManifestListsStorage manifest_lists_by_name;
+    mutable ManifestEntryByDataFile manifest_file_by_data_file;
 
     Int32 current_metadata_version;
     Int32 format_version;
@@ -111,15 +107,19 @@ private:
 
     mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 
-    Iceberg::ManifestList initializeManifestList(const String & manifest_list_file) const;
+    mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
-    Iceberg::IcebergSnapshot getSnapshot(const String & manifest_list_file) const;
+    Iceberg::ManifestList initializeManifestList(const String & filename) const;
+
+    Iceberg::ManifestListIterator getManifestList(const String & filename) const;
+
+    Iceberg::IcebergSnapshot getSnapshot(const String & filename) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    Iceberg::ManifestFileEntry getManifestFile(const String & manifest_file) const;
+    Iceberg::ManifestFileContent initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
-    Iceberg::ManifestFileEntry initializeManifestFile(const String & filename, const ConfigurationPtr & configuration_ptr) const;
+    Iceberg::ManifestFileIterator getManifestFile(const String & filename) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
@@ -127,9 +127,7 @@ private:
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
-    //Fields are needed only for providing dynamic polymorphism
-    std::unordered_map<String, String> column_name_to_physical_name;
-    DataLakePartitionColumns partition_columns;
+    std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
 };
 
 }

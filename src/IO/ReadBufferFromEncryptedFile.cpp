@@ -14,12 +14,14 @@ namespace ErrorCodes
 }
 
 ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
+    const String & file_name_,
     size_t buffer_size_,
     std::unique_ptr<ReadBufferFromFileBase> in_,
     const String & key_,
     const FileEncryption::Header & header_,
     size_t offset_)
     : ReadBufferFromFileBase(buffer_size_, nullptr, 0)
+    , file_name(file_name_)
     , in(std::move(in_))
     , encrypted_buffer(buffer_size_)
     , encryptor(header_.algorithm, key_, header_.init_vector)
@@ -27,11 +29,13 @@ ReadBufferFromEncryptedFile::ReadBufferFromEncryptedFile(
 {
     offset = offset_;
     need_seek = true;
-    LOG_TEST(log, "Decrypting {}: version={}, algorithm={}", in->getFileName(), header_.version, toString(header_.algorithm));
+    LOG_TEST(log, "Decrypting {}: version={}, algorithm={}", file_name, header_.version, toString(header_.algorithm));
 }
 
 off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
 {
+    off_t old_pos = getPosition();
+
     off_t new_pos;
     if (whence == SEEK_SET)
     {
@@ -41,9 +45,9 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
     }
     else if (whence == SEEK_CUR)
     {
-        if (off < 0 && -off > getPosition())
+        if (off < 0 && -off > old_pos)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "SEEK_CUR shift out of bounds");
-        new_pos = getPosition() + off;
+        new_pos = old_pos + off;
     }
     else
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "ReadBufferFromFileEncrypted::seek expects SEEK_SET or SEEK_CUR as whence");
@@ -59,6 +63,8 @@ off_t ReadBufferFromEncryptedFile::seek(off_t off, int whence)
     {
         need_seek = true;
         offset = new_pos;
+
+        LOG_TEST(log, "Seek to position {} (old_pos = {}) in {}", new_pos, old_pos, getFileName());
 
         /// No more reading from the current working buffer until next() is called.
         resetWorkingBuffer();
@@ -120,6 +126,11 @@ bool ReadBufferFromEncryptedFile::nextImpl()
     offset += bytes_read;
     pos = working_buffer.begin();
     return true;
+}
+
+void ReadBufferFromEncryptedFile::prefetch(Priority priority)
+{
+    in->prefetch(priority);
 }
 
 }
