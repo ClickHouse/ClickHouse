@@ -163,6 +163,10 @@ void FilterTransform::doTransform(Chunk & chunk)
     }
 
     std::unique_ptr<IFilterDescription> filter_description;
+
+    if (isColumnConst(*filter_column))
+        filter_column = filter_column->convertToFullColumnIfConst();
+
     if (filter_column->isSparse())
         filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
     else
