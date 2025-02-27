@@ -22,7 +22,7 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | ANALYZE | TABLE OVERRIDE] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -62,6 +62,7 @@ Union
 - `QUERY TREE` — Query tree after Query Tree level optimizations.
 - `PLAN` — Query execution plan.
 - `PIPELINE` — Query execution pipeline.
+- `ANALYZE` - Query execution statistics.
 
 ### EXPLAIN AST
 
@@ -443,6 +444,21 @@ Result:
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+### EXPLAIN ANALYZE 
+
+Shows statistics of time spent in each operator as well as rows and bytes processed by each operator.
+
+Example:
+
+```sql
+EXPLAIN ANALYZE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
+```
+
+![output](./images/explain_analyze_example.png)
+
+The output is a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language.  
+You can convert it into an image with `dot` and write it to a `.png` file.   
+Eg: `dot -Tpng GRAPHVIZ_FILEPATH > DESTINATION_FILEPATH`
 
 ### EXPLAIN TABLE OVERRIDE
 
