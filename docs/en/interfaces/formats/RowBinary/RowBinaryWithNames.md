@@ -1,7 +1,7 @@
 ---
-title : RowBinaryWithNames
+title: RowBinaryWithNames
 slug: /interfaces/formats/RowBinaryWithNames
-keywords : [RowBinaryWithNames]
+keywords: [RowBinaryWithNames]
 input_format: true
 output_format: true
 ---

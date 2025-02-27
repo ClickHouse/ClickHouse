@@ -1,7 +1,7 @@
 ---
-title : CSV
+title: CSV
 slug: /interfaces/formats/CSV
-keywords : [CSV]
+keywords: [CSV]
 input_format: true
 output_format: true
 alias: []

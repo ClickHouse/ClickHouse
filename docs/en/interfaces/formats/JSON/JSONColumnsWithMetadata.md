@@ -1,7 +1,7 @@
 ---
-title : JSONColumnsWithMetadata
+title: JSONColumnsWithMetadata
 slug: /interfaces/formats/JSONColumnsWithMetadata
-keywords : [JSONColumnsWithMetadata]
+keywords: [JSONColumnsWithMetadata]
 input_format: true
 output_format: true
 alias: []

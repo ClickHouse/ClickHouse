@@ -1,7 +1,7 @@
 ---
-title : JSONCompactStringsEachRowWithNames
+title: JSONCompactStringsEachRowWithNames
 slug: /interfaces/formats/JSONCompactStringsEachRowWithNames
-keywords : [JSONCompactStringsEachRowWithNames]
+keywords: [JSONCompactStringsEachRowWithNames]
 input_format: true
 output_format: true
 alias: []

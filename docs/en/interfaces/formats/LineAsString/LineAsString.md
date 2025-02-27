@@ -1,7 +1,7 @@
 ---
-title : LineAsString
+title: LineAsString
 slug: /interfaces/formats/LineAsString
-keywords : [LineAsString]
+keywords: [LineAsString]
 input_format: true
 output_format: true
 alias: []

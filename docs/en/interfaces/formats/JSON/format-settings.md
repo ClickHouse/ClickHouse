@@ -1,7 +1,7 @@
 ---
-title : Format Settings For JSON
+title: Format Settings For JSON
 slug: /interfaces/formats/JSON/format-settings
-keywords : [Format Settings, JSON]
+keywords: [Format Settings, JSON]
 ---
 
 On this page you can find format settings common to all JSON formats.

@@ -1,7 +1,7 @@
 ---
-title : TSKV
+title: TSKV
 slug: /interfaces/formats/TSKV
-keywords : [TSKV]
+keywords: [TSKV]
 input_format: true
 output_format: true
 alias: []

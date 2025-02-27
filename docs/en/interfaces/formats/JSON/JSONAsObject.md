@@ -1,7 +1,7 @@
 ---
-title : JSONAsObject
+title: JSONAsObject
 slug: /interfaces/formats/JSONAsObject
-keywords : [JSONAsObject]
+keywords: [JSONAsObject]
 input_format: true
 output_format: false
 alias: []
