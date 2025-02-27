@@ -60,12 +60,15 @@ private:
         if (length < 7)
             throw std::runtime_error("Cannot parse LocalTime: " + std::string(s, length));
 
-        char * s_copy = new char[length];
-        if (s[0] == '-')
+        std::string s_copy;
+        if (s[0] == '-') // if we have a minus sign at the beginning
         {
             is_negative = true;
-            s_copy = new char[length-1];
-            std::strcpy(s_copy, s + 1); // if we have a minus sign at the beginning, we remove it to omit code duplication
+            s_copy = std::string(s + 1, length - 1);
+        }
+        else
+        {
+            s_copy = std::string(s, length);
         }
 
         /// Here we should consider three cases: HHH:MM::SS, HH:MM:SS and H:MM:SS
@@ -133,6 +136,17 @@ private:
 
         // Initialize padding
         std::memset(pad, 0, sizeof(pad));
+    }
+
+    // Helper function to compute the total seconds represented by the LocalTime.
+    // For negative times, the total seconds is negative.
+    inline int64_t totalSeconds() const
+    {
+        // Compute total seconds from hours, minutes, and seconds.
+        int64_t total = static_cast<int64_t>(m_hour) * 3600
+                      + static_cast<int64_t>(m_minute) * 60
+                      + static_cast<int64_t>(m_second);
+        return is_negative ? -total : total;
     }
 
 public:
@@ -211,31 +225,31 @@ public:
     // Comparison operators
     bool operator< (const LocalTime & other) const
     {
-        return std::memcmp(this, &other, sizeof(*this)) < 0;
+        return totalSeconds() < other.totalSeconds();
     }
 
     bool operator> (const LocalTime & other) const
     {
-        return std::memcmp(this, &other, sizeof(*this)) > 0;
+        return totalSeconds() > other.totalSeconds();
     }
 
     bool operator<= (const LocalTime & other) const
     {
-        return std::memcmp(this, &other, sizeof(*this)) <= 0;
+        return totalSeconds() <= other.totalSeconds();
     }
 
     bool operator>= (const LocalTime & other) const
     {
-        return std::memcmp(this, &other, sizeof(*this)) >= 0;
+        return totalSeconds() >= other.totalSeconds();
     }
 
     bool operator== (const LocalTime & other) const
     {
-        return std::memcmp(this, &other, sizeof(*this)) == 0;
+        return totalSeconds() == other.totalSeconds();
     }
 
     bool operator!= (const LocalTime & other) const
     {
-        return !(*this == other);
+        return totalSeconds() != other.totalSeconds();
     }
 };
