@@ -55,8 +55,8 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     static constexpr int infinite_reconnect_count = -1;
     natsOptions_SetMaxReconnect(options.get(), infinite_reconnect_count);
 
-    // On connections with significant traffic, the client will often figure out there is a problem between PINGS, 
-    // and as a result the default ping interval is typically on the order of minutes. 
+    // On connections with significant traffic, the client will often figure out there is a problem between PINGS,
+    // and as a result the default ping interval is typically on the order of minutes.
     // To close an unresponsive connection after 3m, set the ping interval to 60'000 milliseconds and the maximum pings outstanding to 3
     natsOptions_SetPingInterval(options.get(), 60'000);
     natsOptions_SetMaxPingsOut(options.get(), 3);
