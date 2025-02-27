@@ -1,4 +1,4 @@
-CREATE OR REPLACE TABLE test(
+CREATE TABLE test(
     key String,
     val Array(String)
 ) engine = MergeTree
