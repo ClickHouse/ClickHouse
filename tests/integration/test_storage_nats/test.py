@@ -1282,19 +1282,18 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
 
 
 def test_nats_no_connection_at_startup_1(nats_cluster):
-    nats_cluster.pause_container("nats1")
-    instance.query_and_get_error(
+    with nats_cluster.pause_container("nats1"):
+        instance.query_and_get_error(
+            """
+            CREATE TABLE test.cs (key UInt64, value UInt64)
+                ENGINE = NATS
+                SETTINGS nats_url = 'nats1:4444',
+                        nats_subjects = 'cs',
+                        nats_format = 'JSONEachRow',
+                        nats_num_consumers = '5',
+                        nats_row_delimiter = '\\n';
         """
-        CREATE TABLE test.cs (key UInt64, value UInt64)
-            ENGINE = NATS
-            SETTINGS nats_url = 'nats1:4444',
-                     nats_subjects = 'cs',
-                     nats_format = 'JSONEachRow',
-                     nats_num_consumers = '5',
-                     nats_row_delimiter = '\\n';
-    """
-    )
-    nats_cluster.unpause_container("nats1")
+        )
 
 
 def test_nats_no_connection_at_startup_2(nats_cluster):
@@ -1316,9 +1315,9 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
     )
 
     instance.query("DETACH TABLE test.cs")
-    nats_cluster.pause_container("nats1")
-    instance.query("ATTACH TABLE test.cs")
-    nats_cluster.unpause_container("nats1")
+    with nats_cluster.pause_container("nats1"):
+        instance.query("ATTACH TABLE test.cs")
+
     while not check_table_is_ready(instance, "test.cs"):
         logging.debug("Table test.cs is not yet ready")
         time.sleep(0.5)
