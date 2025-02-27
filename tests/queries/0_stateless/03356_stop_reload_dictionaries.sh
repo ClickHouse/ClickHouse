@@ -18,6 +18,8 @@ function wait_for_dict_upate()
     return 1
 }
 
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY IF EXISTS ${CLICKHOUSE_DATABASE}.dict"
+
 $CLICKHOUSE_CLIENT <<EOF
 CREATE TABLE ${CLICKHOUSE_DATABASE}.table(x Int64, y Int64, insert_time DateTime) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO ${CLICKHOUSE_DATABASE}.table VALUES (12, 102, now());
@@ -98,3 +100,5 @@ $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARIES"
 $CLICKHOUSE_CLIENT --query "SELECT '12 (4) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(12))"
 $CLICKHOUSE_CLIENT --query "SELECT '13 (4) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 $CLICKHOUSE_CLIENT --query "SELECT '14 (4) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(14))"
+
+$CLICKHOUSE_CLIENT --query "DROP DICTIONARY ${CLICKHOUSE_DATABASE}.dict"
