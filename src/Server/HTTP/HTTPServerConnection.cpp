@@ -93,8 +93,9 @@ void HTTPServerConnection::run()
         {
             break;
         }
-        catch (const Poco::Net::MessageException &)
+        catch (const Poco::Net::MessageException & e)
         {
+            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
         catch (const Poco::Exception &)
