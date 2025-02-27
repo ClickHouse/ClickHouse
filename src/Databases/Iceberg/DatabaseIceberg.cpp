@@ -146,6 +146,11 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseIceberg::getConfigu
         {
             return std::make_shared<StorageLocalIcebergConfiguration>();
         }
+        case DB::DatabaseIcebergStorageType::Other:
+        {
+            return std::make_shared<StorageLocalIcebergConfiguration>();
+        }
+
 #if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

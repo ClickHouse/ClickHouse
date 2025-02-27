@@ -10,6 +10,7 @@ enum class DatabaseIcebergStorageType : uint8_t
     Azure,
     Local,
     HDFS,
+    Other,
 };
 
 }

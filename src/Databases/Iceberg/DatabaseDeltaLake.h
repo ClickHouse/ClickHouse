@@ -36,6 +36,12 @@ public:
         const FilterByNameFunction & filter_by_table_name,
         bool skip_not_loaded) const override;
 
+    DatabaseTablesIteratorPtr getLightweightTablesIterator(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded) const override;
+
+
     void shutdown() override {}
 
     ASTPtr getCreateDatabaseQuery() const override;
@@ -60,6 +66,9 @@ private:
     std::shared_ptr<Iceberg::ICatalog> getCatalog() const;
     std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseIcebergStorageType type) const;
     std::string getStorageEndpointForTable(const Iceberg::TableMetadata & table_metadata) const;
+
+
+    StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool load_credentials) const;
 };
 
 }

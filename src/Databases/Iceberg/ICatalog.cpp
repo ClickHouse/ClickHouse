@@ -156,4 +156,18 @@ StorageType TableMetadata::getStorageType() const
     return parseStorageTypeFromLocation(location_without_path);
 }
 
+bool TableMetadata::hasLocation() const
+{
+    return !location_without_path.empty();
+}
+bool TableMetadata::hasSchema() const
+{
+    return !schema.empty();
+}
+bool TableMetadata::hasStorageCredentials() const
+{
+    return storage_credentials != nullptr;
+}
+
+
 }

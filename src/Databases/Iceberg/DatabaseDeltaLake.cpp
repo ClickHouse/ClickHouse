@@ -41,6 +41,7 @@ namespace DatabaseIcebergSetting
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 namespace ErrorCodes
@@ -103,6 +104,7 @@ std::shared_ptr<Iceberg::ICatalog> DatabaseDeltaLake::getCatalog() const
             catalog_impl = std::make_shared<DeltaLake::UnityCatalog>(
                 settings[DatabaseIcebergSetting::warehouse].value,
                 url,
+                settings[DatabaseIcebergSetting::catalog_credential].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -127,6 +129,10 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDeltaLake::getConfi
         }
 #endif
         case DB::DatabaseIcebergStorageType::Local:
+        {
+            return std::make_shared<StorageLocalDeltaLakeConfiguration>();
+        }
+        case DB::DatabaseIcebergStorageType::Other:
         {
             return std::make_shared<StorageLocalDeltaLakeConfiguration>();
         }
@@ -160,11 +166,16 @@ bool DatabaseDeltaLake::isTableExist(const String & name, ContextPtr /* context_
 
 StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr context_) const
 {
+    return tryGetTableImpl(name, context_, true);
+}
+
+StoragePtr DatabaseDeltaLake::tryGetTableImpl(const String & name, ContextPtr context_, bool load_credentials) const
+{
     auto catalog = getCatalog();
     auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
 
     const bool with_vended_credentials = settings[DatabaseIcebergSetting::vended_credentials].value;
-    if (with_vended_credentials)
+    if (with_vended_credentials && load_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
     auto [namespace_name, table_name] = parseTableName(name);
@@ -191,9 +202,13 @@ StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr contex
     /// so we have a separate setting to know whether we should even try to fetch them.
     if (with_vended_credentials && args.size() == 1)
     {
-        auto storage_credentials = table_metadata.getStorageCredentials();
-        if (storage_credentials)
-            storage_credentials->addCredentialsToEngineArgs(args);
+        if (load_credentials)
+        {
+            LOG_DEBUG(log, "Getting credentials");
+            auto storage_credentials = table_metadata.getStorageCredentials();
+            if (storage_credentials)
+                storage_credentials->addCredentialsToEngineArgs(args);
+        }
     }
     else if (args.size() == 1)
     {
@@ -208,16 +223,23 @@ StoragePtr DatabaseDeltaLake::tryGetTable(const String & name, ContextPtr contex
     const auto columns = ColumnsDescription(table_metadata.getSchema());
     LOG_DEBUG(log, "Got columns {}", columns.toString());
 
-    DatabaseIcebergStorageType storage_type;
+    DatabaseIcebergStorageType storage_type = DatabaseIcebergStorageType::Other;
     auto storage_type_from_catalog = catalog->getStorageType();
     if (storage_type_from_catalog.has_value())
         storage_type = storage_type_from_catalog.value();
     else
-        storage_type = table_metadata.getStorageType();
+    {
+        if (table_metadata.hasLocation() || load_credentials)
+            storage_type = table_metadata.getStorageType();
+    }
 
     const auto configuration = getConfiguration(storage_type);
     auto storage_settings = std::make_unique<StorageObjectStorageSettings>();
 
+    ContextMutablePtr context_copy = Context::createCopy(context_);
+    Settings settings_copy = context_copy->getSettingsCopy();
+    settings_copy[Setting::use_hive_partitioning] = false;
+    context_copy->setSettings(settings_copy);
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, storage_settings.get());
@@ -259,6 +281,28 @@ DatabaseTablesIteratorPtr DatabaseDeltaLake::getTablesIterator(
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
+DatabaseTablesIteratorPtr DatabaseDeltaLake::getLightweightTablesIterator(
+    ContextPtr context_,
+    const FilterByNameFunction & filter_by_table_name,
+    bool /*skip_not_loaded*/) const
+{
+     Tables tables;
+    auto catalog = getCatalog();
+    const auto iceberg_tables = catalog->getTables();
+
+    for (const auto & table_name : iceberg_tables)
+    {
+        if (filter_by_table_name && !filter_by_table_name(table_name))
+            continue;
+
+        auto storage = tryGetTableImpl(table_name, context_, false);
+        [[maybe_unused]] bool inserted = tables.emplace(table_name, storage).second;
+        chassert(inserted);
+    }
+
+    return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
+}
+
 ASTPtr DatabaseDeltaLake::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
@@ -284,6 +328,9 @@ ASTPtr DatabaseDeltaLake::getCreateTableQueryImpl(
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
+    if (!table_metadata.isDefaultReadableTable())
+        storage->engine->name = "Other";
+
     storage->settings = {};
 
     create_table_query->set(create_table_query->storage, table_storage_define);
@@ -307,19 +354,25 @@ ASTPtr DatabaseDeltaLake::getCreateTableQueryImpl(
     }
 
     auto storage_engine_arguments = storage->engine->arguments;
-    if (storage_engine_arguments->children.empty())
+    if (table_metadata.isDefaultReadableTable())
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Unexpected number of arguments: {}",
-            storage_engine_arguments->children.size());
+        if (storage_engine_arguments->children.empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Unexpected number of arguments: {}",
+                storage_engine_arguments->children.size());
+        }
+        auto table_endpoint = getStorageEndpointForTable(table_metadata);
+        if (table_endpoint.starts_with("file:/"))
+            table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+
+        LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
+        storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
     }
-
-    auto table_endpoint = getStorageEndpointForTable(table_metadata);
-    if (table_endpoint.starts_with("file:/"))
-        table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
-
-    LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
-    storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
+    else
+    {
+        storage_engine_arguments->children.clear();
+    }
 
     return create_table_query;
 }

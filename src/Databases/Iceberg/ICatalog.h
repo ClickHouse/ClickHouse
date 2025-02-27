@@ -22,6 +22,10 @@ public:
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
 
+    bool hasLocation() const;
+    bool hasSchema() const;
+    bool hasStorageCredentials() const;
+
     void setLocation(const std::string & location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_) const;
@@ -39,6 +43,9 @@ public:
     bool requiresCredentials() const { return with_storage_credentials; }
 
     StorageType getStorageType() const;
+
+    void setDefaultReadableTable(bool value) { is_default_readable_table = value; }
+    bool isDefaultReadableTable() const { return is_default_readable_table; }
 
 private:
     /// Starts with s3://, file://, etc.
@@ -59,6 +66,8 @@ private:
     bool with_location = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
+
+    bool is_default_readable_table = false;
 
     std::string constructLocation(const std::string & endpoint_) const;
 };

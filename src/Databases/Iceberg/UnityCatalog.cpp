@@ -20,8 +20,13 @@ namespace DB::ErrorCodes
 namespace DeltaLake
 {
 
-extern const auto SCHEMAS_ENDPOINT = "schemas";
-extern const auto TABLES_ENDPOINT = "tables";
+static const auto SCHEMAS_ENDPOINT = "schemas";
+static const auto TABLES_ENDPOINT = "tables";
+static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
+
+//static const auto READABLE_SCHEMAS = "SCHEMA_DB_STORAGE";
+static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
+static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
 struct UnityCatalogFullSchemaName
 {
@@ -41,7 +46,9 @@ UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
 DB::ReadWriteBufferFromHTTPPtr UnityCatalog::createReadBuffer(
     const std::string & endpoint,
     const Poco::URI::QueryParameters & params,
-    const DB::HTTPHeaderEntries & headers) const
+    const DB::HTTPHeaderEntries & headers,
+    const std::string & method,
+    std::function<void(std::ostream &)> out_stream_callaback) const
 {
     const auto & context = getContext();
 
@@ -51,14 +58,19 @@ DB::ReadWriteBufferFromHTTPPtr UnityCatalog::createReadBuffer(
 
     auto create_buffer = [&]()
     {
+        DB::HTTPHeaderEntries result_headers = headers;
+        result_headers.push_back(auth_header);
+
         return DB::BuilderRWBufferFromHTTP(url)
             .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
             .withSettings(getContext()->getReadSettings())
             .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
             .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withHeaders(headers)
+            .withHeaders(result_headers)
             .withDelayInit(false)
             .withSkipNotFound(false)
+            .withMethod(method)
+            .withOutCallback(out_stream_callaback)
             .create(credentials);
     };
 
@@ -107,6 +119,53 @@ void UnityCatalog::getTableMetadata(
 }
 
 
+void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & metadata) const
+{
+    LOG_DEBUG(log, "Getting credentials for table {}", table_id);
+    auto storage_type = parseStorageTypeFromLocation(metadata.getLocation());
+    switch (storage_type)
+    {
+        case StorageType::S3:
+        {
+            LOG_DEBUG(log, "We are S3");
+            auto callback = [table_id] (std::ostream & os)
+            {
+                Poco::JSON::Object obj;
+                obj.set("table_id", table_id);
+                obj.set("operation", "READ");
+                obj.stringify(os);
+            };
+
+            auto buf = createReadBuffer(TEMPORARY_CREDENTIALS_ENDPOINT, {}, {}, Poco::Net::HTTPRequest::HTTP_POST, callback);
+            String json_str;
+            readJSONObjectPossiblyInvalid(json_str, *buf);
+
+            Poco::JSON::Parser parser;
+            Poco::Dynamic::Var json = parser.parse(json_str);
+            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+            if (object->has("aws_temp_credentials") && !object->isNull("aws_temp_credentials"))
+            {
+                const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
+                std::string access_key_id = creds_object->get("access_key_id").extract<String>();
+                std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
+                std::string session_token = creds_object->get("session_token").extract<String>();
+
+                LOG_DEBUG(log, "KEY ID {}", access_key_id);
+                auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
+                metadata.setStorageCredentials(creds);
+            }
+            std::string storage_endpoint = object->get("url").extract<String>();
+            LOG_DEBUG(log, "ENDPOINT {}", storage_endpoint);
+
+            break;
+        }
+        default:
+            break;
+    }
+
+}
+
 bool UnityCatalog::tryGetTableMetadata(
     const std::string & schema_name,
     const std::string & table_name,
@@ -127,11 +186,24 @@ bool UnityCatalog::tryGetTableMetadata(
         if (object->has("name") && object->get("name").extract<String>() == table_name)
         {
             std::string location;
-            if (result.requiresLocation())
+            if (result.requiresLocation() && object->has("storage_location"))
             {
                 location = object->get("storage_location").extract<String>();
                 result.setLocation(location);
                 LOG_TEST(log, "Location for table {}: {}", table_name, location);
+            }
+
+            if (object->has("securable_kind") && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))
+            {
+                result.setDefaultReadableTable(false);
+            }
+            else if (object->has("data_source_format") && object->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
+            {
+                result.setDefaultReadableTable(false);
+            }
+            else
+            {
+                result.setDefaultReadableTable(true);
             }
 
             if (result.requiresSchema())
@@ -170,6 +242,9 @@ bool UnityCatalog::tryGetTableMetadata(
             {
                 LOG_DEBUG(log, "Doesn't require schema");
             }
+
+            if (result.requiresCredentials())
+                getCredentials(object->get("table_id"), result);
 
             return true;
         }
@@ -310,6 +385,7 @@ Iceberg::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base_
                 auto schema_info = schemas_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 chassert(schema_info->get("catalog_name").extract<String>() == warehouse);
                 UnityCatalogFullSchemaName schema_name = parseFullSchemaName(schema_info->get("full_name").extract<String>());
+
                 if (schema_name.schema_name.starts_with(base_prefix))
                     schemas.push_back(schema_name.schema_name);
 
@@ -351,11 +427,13 @@ Iceberg::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base_
 UnityCatalog::UnityCatalog(
     const std::string & catalog_,
     const std::string & base_url_,
+    const std::string & catalog_credential_,
     DB::ContextPtr context_)
     : ICatalog(catalog_)
     , DB::WithContext(context_)
     , base_url(base_url_)
     , log(getLogger("UnityCatalog(" + catalog_ + ")"))
+    , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
 
 }
