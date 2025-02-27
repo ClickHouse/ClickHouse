@@ -1636,6 +1636,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
     const Settings & settings = context->getSettingsRef();
 
     String query_for_logging;
+    UInt64 normalized_query_hash;
     ASTPtr ast;
     const bool internal = flags.internal;
     size_t log_queries_cut_to_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
@@ -1669,14 +1670,17 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
         {
             query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
         }
+
+        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
     }
     catch (...)
     {
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
         logQuery(query_for_logging, context, internal, QueryProcessingStage::QueryPlan);
+        normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
         if (!internal)
-            logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, ast, query_span, start_watch.elapsedMilliseconds());
         throw;
     }
 
@@ -1735,7 +1739,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
         if (!internal)
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context, start_watch.getStart());
+            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, ast.get(), context, start_watch.getStart());
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
@@ -1870,6 +1874,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                 query_start_time,
                 context,
                 query_for_logging,
+                normalized_query_hash,
                 ast,
                 pipeline,
                 nullptr,
@@ -1893,7 +1898,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
                 //     /// partial/garbage results in case of exceptions during query execution.
                 //     query_pipeline.finalizeWriteInQueryCache();
 
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, QueryCache::Usage::None, internal);
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
@@ -1926,7 +1931,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
             txn->onException();
 
         if (!internal)
-            logExceptionBeforeStart(query_for_logging, context, ast, query_span, start_watch.elapsedMilliseconds());
+            logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, ast, query_span, start_watch.elapsedMilliseconds());
 
         throw;
     }
@@ -1947,7 +1952,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     if (stage == QueryProcessingStage::QueryPlan)
         std::tie(ast, res) = executeQueryImpl(context, flags, query, query_plan);
     else
-        std::tie(ast, res) = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
+        res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, nullptr, ast);
 
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
