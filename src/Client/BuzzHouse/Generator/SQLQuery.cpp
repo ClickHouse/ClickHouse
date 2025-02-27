@@ -1043,7 +1043,7 @@ bool StatementGenerator::generateGroupBy(
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
-                const uint32_t nelems std::min<uint32_t>(
+                const uint32_t nelems = std::min<uint32_t>(
                     this->fc.max_width - this->width,
                     rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size())));
                 OptionalExprList * oel = i == 0 ? gsets->mutable_exprs() : gsets->add_other_exprs();
