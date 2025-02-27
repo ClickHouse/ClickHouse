@@ -86,7 +86,7 @@ def nats_cluster():
 
 @pytest.fixture(autouse=True)
 def nats_setup_teardown():
-    print("NATS is available - running test")
+    logging.debug("NATS is available - running test")
 
     instance.query("DROP DATABASE IF EXISTS test SYNC")
     instance.query("CREATE DATABASE test")
@@ -890,7 +890,7 @@ def test_nats_many_inserts(nats_cluster):
 
     while time.monotonic() < deadline:
         result = instance.query("SELECT count() FROM test.view_many")
-        print(result, messages_num * threads_num)
+        logging.debug(result, messages_num * threads_num)
         if int(result) >= messages_num * threads_num:
             break
         time.sleep(1)
@@ -1132,7 +1132,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
 
     num_tables = 4
     for table_id in range(num_tables):
-        print(("Setting up table {}".format(table_id)))
+        logging.debug(("Setting up table {}".format(table_id)))
         instance.query(
             """
             DROP TABLE IF EXISTS test.many_consumers_{0};
@@ -1647,7 +1647,7 @@ def test_row_based_formats(nats_cluster):
         "RowBinaryWithNamesAndTypes",
         "MsgPack",
     ]:
-        print(format_name)
+        logging.debug(format_name)
 
         instance.query(
             f"""
@@ -1804,7 +1804,7 @@ def test_block_based_formats_2(nats_cluster):
         "ORC",
         "JSONCompactColumns",
     ]:
-        print(format_name)
+        logging.debug(format_name)
 
         instance.query(
             f"""
