@@ -333,6 +333,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--zookeeper')
         ADDITIONAL_OPTIONS+=('--shard')
     fi
+    if [[ "$USE_ASYNC_INSERTS" -eq 1 ]]; then
+        ADDITIONAL_OPTIONS+=('--no-async-inserts')
+    fi
+
     if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
         ADDITIONAL_OPTIONS+=('--no-stateful')
     fi
