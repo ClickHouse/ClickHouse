@@ -219,17 +219,15 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
     auto& ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
     zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
-    Strings ddl_tasks = zookeeper->getChildren(ddl_zookeeper_path);
+    Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
+
 
     std::vector<std::string> ddl_task_full_paths;
     ddl_task_full_paths.reserve(ddl_task_paths.size());
     std::vector<std::string> ddl_task_status_paths;
     ddl_task_status_paths.reserve(ddl_task_paths.size() * 2); // for active and finished
 
-    ddl_task_paths.reserve(ddl_tasks.size());
-    active_finished_nodes_paths.reserve(ddl_tasks.size() * 2);
-
-    for (const auto & task_path : ddl_tasks)
+    for (const auto & task_path : ddl_task_paths)
     {
         ddl_task_full_paths.push_back(ddl_zookeeper_path / task_path);
         /// List status dirs. Active host may become finished, so we list active first.
@@ -250,7 +248,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             continue;
         }
 
-        DDLTask task{ddl_tasks[i], ddl_zookeeper_path / ddl_tasks[i]};
+        DDLTask task{ddl_task_paths[i], ddl_zookeeper_path / ddl_task_paths[i]};
         try
         {
             task.entry.parse(task_info.data);
