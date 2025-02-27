@@ -48,7 +48,7 @@ public:
         const ISerialization & serialization,
         ColumnPtr & column,
         ReadBuffer & istr,
-        bool data_types_binary_encoding,
+        const FormatSettings * format_settings,
         size_t rows,
         double avg_value_size_hint);
 

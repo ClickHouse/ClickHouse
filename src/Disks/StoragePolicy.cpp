@@ -111,7 +111,7 @@ StoragePolicy::StoragePolicy(
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -130,7 +130,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        toString(move_factor), backQuote(name));
+                        move_factor, backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());

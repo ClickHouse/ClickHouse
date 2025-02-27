@@ -3,7 +3,10 @@
 #if USE_NURAFT
 #include <Coordination/tests/gtest_coordination_common.h>
 
+#include <Coordination/KeeperStorage.h>
+
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 TYPED_TEST(CoordinationTest, TestSystemNodeModify)
 {

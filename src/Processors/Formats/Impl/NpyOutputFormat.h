@@ -1,13 +1,10 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Formats/NumpyDataTypes.h>
 #include <Columns/IColumn_fwd.h>
 
 #include <vector>
-#include <string>
 
 
 namespace DB

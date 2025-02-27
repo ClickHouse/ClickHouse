@@ -5,6 +5,8 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Processors/Port.h>
+
 #include <parquet/arrow/writer.h>
 #include "ArrowBufferedStreams.h"
 #include "CHColumnToArrowColumn.h"
@@ -102,6 +104,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Blo
         options.output_datetime_as_uint32 = format_settings.parquet.output_datetime_as_uint32;
         options.data_page_size = format_settings.parquet.data_page_size;
         options.write_batch_size = format_settings.parquet.write_batch_size;
+        options.write_page_index = format_settings.parquet.write_page_index;
+        options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
+        options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
+        options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
 
         schema = convertSchema(header_, options);
     }
@@ -227,14 +233,13 @@ void ParquetBlockOutputFormat::finalizeImpl()
             }
         }
 
-        if (row_groups_complete.empty())
+        if (file_state.completed_row_groups.empty())
         {
             base_offset = out.count();
-            writeFileHeader(out);
+            writeFileHeader(file_state, out);
         }
-        if (format_settings.parquet.write_page_index)
-            writePageIndex(column_indexes, offset_indexes, row_groups_complete, out, base_offset);
-        writeFileFooter(std::move(row_groups_complete), schema, options, out);
+        writeFileFooter(file_state, schema, options, out);
+        chassert(out.count() - base_offset == file_state.offset);
     }
     else
     {
@@ -268,10 +273,8 @@ void ParquetBlockOutputFormat::resetFormatterImpl()
     threads_running = 0;
     task_queue.clear();
     row_groups.clear();
+    file_state = {};
     file_writer.reset();
-    column_indexes.clear();
-    offset_indexes.clear();
-    row_groups_complete.clear();
     staging_chunks.clear();
     staging_rows = 0;
     staging_bytes = 0;
@@ -337,7 +340,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
             builder.compression_level(static_cast<int>(format_settings.parquet.output_compression_level));
         }
 
-        // write page index is disable at default.
+        // Writing page index is disabled by default.
         if (format_settings.parquet.write_page_index)
             builder.enable_write_page_index();
 
@@ -377,28 +380,18 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
             chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
             options, &columns_to_write);
 
-    if (row_groups_complete.empty())
+    if (file_state.completed_row_groups.empty())
     {
         base_offset = out.count();
-        writeFileHeader(out);
+        writeFileHeader(file_state, out);
     }
-    auto & rg_column_index = column_indexes.emplace_back();
-    auto & rg_offset_index = offset_indexes.emplace_back();
-    std::vector<parquet::format::ColumnChunk> column_chunks;
     for (auto & s : columns_to_write)
     {
-        size_t offset = out.count() - base_offset;
         writeColumnChunkBody(s, options, out);
-        for (auto & location : s.offset_index.page_locations)
-            location.offset -= base_offset;
-        rg_column_index.emplace_back(std::move(s.column_index));
-        rg_offset_index.emplace_back(std::move(s.offset_index));
-        auto c = finalizeColumnChunkAndWriteFooter(offset, std::move(s), options, out);
-        column_chunks.push_back(std::move(c));
+        finalizeColumnChunkAndWriteFooter(std::move(s), file_state, out);
     }
 
-    auto r = makeRowGroup(std::move(column_chunks), chunk.getNumRows());
-    row_groups_complete.push_back(std::move(r));
+    finalizeRowGroup(file_state, chunk.getNumRows(), options, out);
 }
 
 void ParquetBlockOutputFormat::writeRowGroupInParallel(std::vector<Chunk> chunks)
@@ -449,31 +442,22 @@ void ParquetBlockOutputFormat::reapCompletedRowGroups(std::unique_lock<std::mute
 
         lock.unlock();
 
-        if (row_groups_complete.empty())
+        if (file_state.completed_row_groups.empty())
         {
             base_offset = out.count();
-            writeFileHeader(out);
+            writeFileHeader(file_state, out);
         }
 
-        auto & rg_column_index = column_indexes.emplace_back();
-        auto & rg_offset_index = offset_indexes.emplace_back();
-        std::vector<parquet::format::ColumnChunk> metadata;
         for (auto & cols : r.column_chunks)
         {
             for (ColumnChunk & col : cols)
             {
-                size_t offset = out.count() - base_offset;
-                for (auto & location : col.state.offset_index.page_locations)
-                    location.offset += offset;
                 out.write(col.serialized.data(), col.serialized.size());
-                rg_column_index.emplace_back(std::move(col.state.column_index));
-                rg_offset_index.emplace_back(std::move(col.state.offset_index));
-                auto m = finalizeColumnChunkAndWriteFooter(offset, std::move(col.state), options, out);
-                metadata.push_back(std::move(m));
+                finalizeColumnChunkAndWriteFooter(std::move(col.state), file_state, out);
             }
         }
 
-        row_groups_complete.push_back(makeRowGroup(std::move(metadata), r.num_rows));
+        finalizeRowGroup(file_state, r.num_rows, options, out);
 
         lock.lock();
 
@@ -489,13 +473,9 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
     {
         auto job = [this, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
-                setThreadName("ParquetEncoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetEncoder");
 
                 threadFunction();
             }

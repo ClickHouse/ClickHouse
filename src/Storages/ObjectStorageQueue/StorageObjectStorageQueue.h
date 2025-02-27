@@ -132,6 +132,7 @@ private:
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,
+        size_t inserted_rows,
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
         const std::string & exception_message = {}) const;
 };

@@ -5,9 +5,6 @@ import urllib
 from typing import Optional
 
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3 import Retry
-
 from praktika.info import Info
 
 from ._environment import _Environment
@@ -107,56 +104,40 @@ class CIDB:
             yield json.dumps(dataclasses.asdict(record))
 
     def insert(self, result: Result):
-        # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
             "query": f"INSERT INTO {Settings.CI_DB_TABLE_NAME} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
+        assert Settings.CI_DB_TABLE_NAME and Settings.CI_DB_TABLE_NAME
 
-        session = requests.Session()
-        # MAX_RETRIES = 3
-        retries = Retry(
-            total=5,  # Retry up to 5 times
-            backoff_factor=1,  # Exponential backoff (1s, 2s, 4s, 8s...)
-            status_forcelist=[500, 502, 503, 504],  # Retry only for server errors
-            allowed_methods=["POST"],
-        )
-
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        printed = False
+        MAX_RETRIES = 3
+        jsons = []
         for json_str in self.json_data_generator(result):
-            response = session.post(
-                url=self.url,
-                params=params,
-                data=json_str,
-                headers=self.auth,
-                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            )
-            if not response.ok and not printed:
-                printed = True
-                print(f"ERROR: Insert failed with {response.status_code}")
-            # for retry in range(MAX_RETRIES):
-            #     try:
-            #         response = session.post(
-            #             url=self.url,
-            #             params=params,
-            #             data=json_str,
-            #             headers=self.auth,
-            #             timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-            #         )
-            #         if response.ok:
-            #             break
-            #         else:
-            #             if retry == MAX_RETRIES - 1:
-            #                 raise RuntimeError(
-            #                     f"Failed to write to CI DB, response code [{response.status_code}]"
-            #                 )
-            #     except Exception as ex:
-            #         if retry == MAX_RETRIES - 1:
-            #             raise ex
-        session.close()
+            jsons.append(json_str)
+
+        for retry in range(MAX_RETRIES):
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data=",".join(jsons),
+                    headers=self.auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                print(response.text)
+                if response.ok:
+                    print(f"INFO: {len(jsons)} rows inserted into CIDB")
+                    break
+                else:
+                    if retry == MAX_RETRIES - 1:
+                        raise RuntimeError(
+                            f"Failed to write to CI DB, response code [{response.status_code}]"
+                        )
+            except Exception as ex:
+                if retry == MAX_RETRIES - 1:
+                    raise ex
 
     def check(self):
         # Create a session object

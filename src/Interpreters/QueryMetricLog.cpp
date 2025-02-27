@@ -1,7 +1,8 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/LockGuard.h>
+#include <Common/logger_useful.h>
+#include <Common/UniqueLock.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -107,7 +108,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
         return;
     }
 
-    LockGuard global_lock(queries_mutex);
+    UniqueLock global_lock(queries_mutex);
     auto it = queries.find(query_id);
 
     /// The query might have finished while the scheduled task is running.
@@ -126,7 +127,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
         return;
     }
 
-    LockGuard query_lock(query_status.getMutex());
+    UniqueLock query_lock(query_status.getMutex());
     global_lock.unlock();
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
@@ -153,14 +154,14 @@ void QueryMetricLog::startQuery(const String & query_id, TimePoint start_time, U
         collectMetric(process_list, query_id);
     });
 
-    LockGuard global_lock(queries_mutex);
+    UniqueLock global_lock(queries_mutex);
     query_status.scheduleNext(query_id);
     queries.emplace(query_id, std::move(query_status));
 }
 
 void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time, QueryStatusInfoPtr query_info)
 {
-    LockGuard global_lock(queries_mutex);
+    UniqueLock global_lock(queries_mutex);
     auto it = queries.find(query_id);
 
     /// finishQuery may be called from logExceptionBeforeStart when the query has not even started
@@ -170,7 +171,7 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
 
     auto & query_status = it->second;
     decltype(query_status.mutex) query_mutex;
-    LockGuard query_lock(query_status.getMutex());
+    UniqueLock query_lock(query_status.getMutex());
 
     /// Move the query mutex here so that we hold it until the end, after removing the query from queries.
     query_mutex = std::move(query_status.mutex);

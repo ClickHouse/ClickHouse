@@ -16,7 +16,6 @@
 
 namespace DB
 {
-
 thread_local ThreadStatus constinit * current_thread = nullptr;
 
 #if !defined(SANITIZER)
@@ -69,6 +68,7 @@ static thread_local bool has_alt_stack = false;
 
 ThreadGroup::ThreadGroup()
     : master_thread_id(CurrentThread::get().thread_id)
+    , memory_spill_scheduler(false)
 {}
 
 ThreadStatus::ThreadStatus(bool check_current_thread_on_destruction_)

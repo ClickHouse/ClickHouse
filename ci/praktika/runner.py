@@ -6,10 +6,13 @@ import sys
 import traceback
 from pathlib import Path
 
+from praktika.info import Info
+
 from ._environment import _Environment
 from .artifact import Artifact
 from .cidb import CIDB
 from .digest import Digest
+from .gh import GH
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
@@ -62,6 +65,7 @@ class Runner:
             cache_success_base64=[],
             cache_artifacts={},
             cache_jobs={},
+            filtered_jobs={},
             custom_data={},
         )
         for docker in workflow.dockers:
@@ -100,6 +104,8 @@ class Runner:
         return 0
 
     def _pre_run(self, workflow, job, local_run=False):
+        if job.name == Settings.CI_CONFIG_JOB_NAME:
+            GH.print_actions_debug_info()
         env = _Environment.get()
 
         result = Result(
@@ -413,6 +419,28 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        report_url = Info().get_job_report_url()
+        if (
+            workflow.enable_commit_status_on_failure and not result.is_ok()
+        ) or job.enable_commit_status:
+            if Settings.USE_CUSTOM_GH_AUTH:
+                from praktika.gh_auth_deprecated import GHAuth
+
+                pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
+                app_id = workflow.get_secret(Settings.SECRET_GH_APP_ID).get_value()
+                GHAuth.auth(app_key=pem, app_id=app_id)
+            if not GH.post_commit_status(
+                name=job.name,
+                status=result.status,
+                description=result.info[0:70],
+                url=report_url,
+            ):
+                print(f"ERROR: Failed to post failed commit status for the job")
+
+        if workflow.enable_report:
+            # to make it visible in GH Actions annotations
+            print(f"::notice ::Job report: {report_url}")
+
         return True
 
     def run(
@@ -485,12 +513,12 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
-            print(f"=== Run scrip finished ===\n\n")
+            print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
             self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
-            print(f"=== Post run scrip finished ===")
+            print(f"=== Post run script finished ===")
 
         if not res:
             sys.exit(1)

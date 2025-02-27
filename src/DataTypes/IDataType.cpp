@@ -139,7 +139,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         {
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization);
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;

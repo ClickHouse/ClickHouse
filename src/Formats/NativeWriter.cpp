@@ -81,8 +81,8 @@ void NativeWriter::flush()
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
-    settings.data_types_binary_encoding = format_settings && format_settings->native.encode_types_in_binary_format;
-    settings.write_json_as_string = format_settings && format_settings->native.write_json_as_string;
+    settings.native_format = true;
+    settings.format_settings = format_settings ? &*format_settings : nullptr;
     settings.use_v1_object_and_dynamic_serialization = client_revision < DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION;
 
     ISerialization::SerializeBinaryBulkStatePtr state;

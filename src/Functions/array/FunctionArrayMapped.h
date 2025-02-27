@@ -1,7 +1,5 @@
 #pragma once
 
-#include <type_traits>
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFunction.h>

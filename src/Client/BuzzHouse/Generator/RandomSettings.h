@@ -20,12 +20,11 @@ public:
     const bool changes_behavior;
 
     CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
-        : random_func(rf), oracle_values(ov), changes_behavior(cb)
+        : random_func(rf)
+        , oracle_values(ov)
+        , changes_behavior(cb)
     {
     }
-
-    constexpr CHSetting(const CHSetting & rhs) = default;
-    constexpr CHSetting(CHSetting && rhs) = default;
 };
 
 const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
@@ -95,6 +94,14 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(1, std::thread::hardware_concurrency())); }, {}, false)}};
 
+const std::unordered_map<String, CHSetting> distributedTableSettings
+    = {{"background_insert_batch", CHSetting(trueOrFalse, {}, false)},
+       {"background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
+       {"flush_on_detach", CHSetting(trueOrFalse, {}, false)},
+       {"fsync_after_insert", CHSetting(trueOrFalse, {}, false)},
+       {"fsync_directories", CHSetting(trueOrFalse, {}, false)},
+       {"skip_unavailable_shards", CHSetting(trueOrFalse, {}, false)}};
+
 extern std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
 const std::unordered_map<String, CHSetting> mergeTreeColumnSettings
@@ -130,7 +137,8 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {Hudi, {}},
        {DeltaLake, {}},
        {IcebergS3, {}},
-       {Merge, {}}};
+       {Merge, {}},
+       {Distributed, {}}};
 
 extern std::unique_ptr<SQLType> size_tp, null_tp;
 

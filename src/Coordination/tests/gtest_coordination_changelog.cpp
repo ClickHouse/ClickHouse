@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 template<typename TestType>
 class CoordinationChangelogTest : public ::testing::Test

@@ -38,9 +38,9 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     ColumnPtr concrete_column(column->cloneEmpty());
-    const bool data_types_binary_encoding = settings.data_types_binary_encoding;
-    auto task = [concrete_column, nested_serialization = nested, limit, data_types_binary_encoding](const ColumnBlob::Blob & blob, int)
-    { return ColumnBlob::fromBlob(blob, concrete_column, nested_serialization, limit, data_types_binary_encoding); };
+    auto task = [concrete_column, nested_serialization = nested, limit, format_settings = settings.format_settings](
+                    const ColumnBlob::Blob & blob, int)
+    { return ColumnBlob::fromBlob(blob, concrete_column, nested_serialization, limit, format_settings); };
 
     auto column_blob = ColumnPtr(ColumnBlob::create(std::move(task), limit));
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, limit, settings, state, cache);

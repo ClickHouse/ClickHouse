@@ -1,5 +1,5 @@
 ---
-slug: /en/engines/table-engines/log-family/log
+slug: /engines/table-engines/log-family/log
 toc_priority: 33
 toc_title: Log
 ---
@@ -32,7 +32,7 @@ The `Log` engine efficiently stores data by writing each column to its own file.
 - `<column>.bin`: A data file for each column, containing the serialized and compressed data.
 `__marks.mrk`: A marks file, storing offsets and row counts for each data block inserted. Marks are used to facilitate efficient query execution by allowing the engine to skip irrelevant data blocks during reads.
 
-### Writing Process
+### Writing Process {#writing-process}
 
 When data is written to a `Log` table:
 

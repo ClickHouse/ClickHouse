@@ -1,8 +1,5 @@
 #pragma once
 
-#include <algorithm>
-#include <list>
-#include <mutex>
 #include <optional>
 
 #include <Columns/IColumn_fwd.h>

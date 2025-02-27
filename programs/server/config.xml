@@ -1208,6 +1208,18 @@
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
+    <!-- Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval. -->
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </latency_log>
+
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>
         <database>system</database>
@@ -1249,6 +1261,8 @@
 
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
+
+        NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
         <!--
@@ -1317,6 +1331,7 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1517,6 +1532,7 @@
     <!--
     <merge_workload>merges_and_mutations</merge_workload>
     <mutation_workload>merges_and_mutations</mutation_workload>
+    <throw_on_unknown_workload>true</throw_on_unknown_workload>
     -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

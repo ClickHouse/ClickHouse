@@ -81,7 +81,7 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t size = offsets[n] - offsets[n - 1];
 
     res = Map();
-    auto & map = res.safeGet<Map &>();
+    auto & map = res.safeGet<Map>();
     map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -128,7 +128,7 @@ void ColumnMap::insertData(const char *, size_t)
 
 void ColumnMap::insert(const Field & x)
 {
-    const auto & map = x.safeGet<const Map &>();
+    const auto & map = x.safeGet<Map>();
     nested->insert(Array(map.begin(), map.end()));
 }
 
@@ -137,7 +137,7 @@ bool ColumnMap::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Map)
         return false;
 
-    const auto & map = x.safeGet<const Map &>();
+    const auto & map = x.safeGet<Map>();
     return nested->tryInsert(Array(map.begin(), map.end()));
 }
 
@@ -359,12 +359,23 @@ void ColumnMap::rollback(const ColumnCheckpoint & checkpoint)
     nested->rollback(checkpoint);
 }
 
-void ColumnMap::forEachSubcolumn(MutableColumnCallback callback)
+void ColumnMap::forEachMutableSubcolumn(MutableColumnCallback callback)
 {
     callback(nested);
 }
 
-void ColumnMap::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+void ColumnMap::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
+{
+    callback(*nested);
+    nested->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnMap::forEachSubcolumn(ColumnCallback callback) const
+{
+    callback(nested);
+}
+
+void ColumnMap::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
 {
     callback(*nested);
     nested->forEachSubcolumnRecursively(callback);

@@ -9,6 +9,9 @@
 namespace DB
 {
 
+class Set;
+using ConstSetPtr = std::shared_ptr<const Set>;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;

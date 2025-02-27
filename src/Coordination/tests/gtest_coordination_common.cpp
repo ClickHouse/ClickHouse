@@ -4,6 +4,7 @@
 
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/KeeperStateMachine.h>
+#include <Coordination/KeeperStorage.h>
 
 LogEntryPtr getLogEntry(const std::string & s, size_t term)
 {
@@ -34,7 +35,7 @@ void assertFileDeleted(std::string path)
 nuraft::ptr<nuraft::log_entry>
 getLogEntryFromZKRequest(size_t term, int64_t session_id, int64_t zxid, const Coordination::ZooKeeperRequestPtr & request)
 {
-    DB::KeeperStorageBase::RequestForSession request_for_session;
+    DB::KeeperRequestForSession request_for_session;
     request_for_session.session_id = session_id;
     request_for_session.zxid = zxid;
     request_for_session.request = request;
