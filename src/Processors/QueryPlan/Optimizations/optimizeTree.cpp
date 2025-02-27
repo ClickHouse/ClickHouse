@@ -248,7 +248,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     applyOrder(optimization_settings, root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
-        optimizeJoinByLayers(root);
+        optimizeJoinByShards(root);
 }
 
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)

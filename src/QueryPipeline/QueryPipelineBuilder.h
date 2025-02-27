@@ -137,7 +137,6 @@ public:
         JoinPtr join,
         const Block & output_header,
         size_t max_block_size,
-        size_t min_block_size_bytes,
         Processors * collected_processors = nullptr);
 
     /// Join two independent pipelines, processing them simultaneously.

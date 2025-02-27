@@ -646,7 +646,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     JoinPtr join,
     const Block & output_header,
     size_t max_block_size,
-    size_t min_block_size_bytes,
     Processors * collected_processors)
 {
     left->checkInitializedAndNotCompleted();
@@ -698,14 +697,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 
     for (size_t i = 0; i < num_streams; ++i)
     {
-        auto squashing = std::make_shared<SimpleSquashingChunksTransform>(left->getHeader(), 0, min_block_size_bytes);
-        connect(**lit, squashing->getInputs().front());
-
         auto finish_counter = std::make_shared<FinishCounter>(1);
         auto joining = std::make_shared<JoiningTransform>(
             left_header, output_header, joins[i], max_block_size, false, false, finish_counter);
 
-        connect(squashing->getOutputPort(), joining->getInputs().front());
+        connect(**lit, joining->getInputs().front());
         connect(**rit, joining->getInputs().back());
 
         *lit = &joining->getOutputs().front();
@@ -715,7 +711,6 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
         if (collected_processors)
             collected_processors->emplace_back(joining);
 
-        left->pipe.processors->emplace_back(std::move(squashing));
         left->pipe.processors->emplace_back(std::move(joining));
     }
 

@@ -281,7 +281,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
         join_step->keepLeftPipelineInOrder();
 }
 
-void optimizeJoinByLayers(QueryPlan::Node & root)
+void optimizeJoinByShards(QueryPlan::Node & root)
 {
     struct Result
     {

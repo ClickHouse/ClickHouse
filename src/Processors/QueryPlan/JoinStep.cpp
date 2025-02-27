@@ -146,7 +146,6 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
-                min_block_size_bytes,
                 &processors);
         }
     }

@@ -125,7 +125,7 @@ void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizeJoinByLayers(QueryPlan::Node & root);
+void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
