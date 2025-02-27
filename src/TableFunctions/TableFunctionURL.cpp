@@ -106,7 +106,7 @@ StoragePtr TableFunctionURL::getStorage(
     {
         return std::make_shared<StorageURLCluster>(
             global_context,
-            settings[Setting::cluster_for_parallel_replicas],
+            parallel_replicas_cluster_name,
             filename,
             format,
             compression_method,
