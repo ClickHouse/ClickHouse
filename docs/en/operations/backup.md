@@ -81,7 +81,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
 - PARTITIONS: a list of partitions to restore
 - SETTINGS:
     - `id`: id of backup or restore operation, randomly generated UUID is used, if not specified manually. If there is already running operation with the same `id` exception is thrown.
-    - [`compression_method`](/docs/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
+    - [`compression_method`](/sql-reference/statements/create/table.md/#column-compression-codecs) and compression_level
     - `password` for the file on disk
     - `base_backup`: the destination of the previous backup of this source.  For example, `Disk('backups', '1.zip')`
     - `use_same_s3_credentials_for_base_backup`: whether base backup to S3 should inherit credentials from the query. Only works with `S3`.
@@ -293,7 +293,7 @@ To write backups to an S3 bucket you need three pieces of information:
   for example `Abc+123`
 
 :::note
-Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/docs/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
+Creating an S3 bucket is covered in [Use S3 Object Storage as a ClickHouse disk](/integrations/data-ingestion/s3/index.md#configuring-s3-for-clickhouse-use), just come back to this doc after saving the policy, there is no need to configure ClickHouse to use the S3 bucket.
 :::
 
 The destination for a backup will be specified like this:
