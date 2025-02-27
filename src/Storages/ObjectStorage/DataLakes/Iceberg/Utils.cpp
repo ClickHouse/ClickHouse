@@ -82,9 +82,7 @@ std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::s
     while (pos != std::string::npos)
     {
         auto potential_position = pos + common_path.size();
-        if ((std::string_view(data_path.data() + potential_position, 5) == "data/")
-            || (std::string_view(data_path.data() + potential_position, 6) == "/data/")
-            || (std::string_view(data_path.data() + potential_position, 9) == "metadata/")
+        if ((std::string_view(data_path.data() + potential_position, 6) == "/data/")
             || (std::string_view(data_path.data() + potential_position, 10) == "/metadata/"))
         {
             good_pos = pos;
