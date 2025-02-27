@@ -2,10 +2,10 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
-#include <Databases/Iceberg/StorageCredentials.h>
-#include <Databases/Iceberg/DatabaseIcebergStorageType.h>
+#include <Databases/DataLake/StorageCredentials.h>
+#include <Databases/DataLake/DatabaseIcebergStorageType.h>
 
-namespace Iceberg
+namespace DataLake
 {
 
 using StorageType = DB::DatabaseIcebergStorageType;
@@ -19,6 +19,7 @@ public:
     TableMetadata() = default;
 
     TableMetadata & withLocation() { with_location = true; return *this; }
+    TableMetadata & withLocationIfExists() { with_location_if_exists = true; return *this; }
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
 
@@ -31,6 +32,7 @@ public:
     std::string getLocationWithEndpoint(const std::string & endpoint_) const;
 
     void setEndpoint(const std::string & endpoint_);
+    std::string getEndpoint() const { return endpoint; }
 
     void setSchema(const DB::NamesAndTypesList & schema_);
     const DB::NamesAndTypesList & getSchema() const;
@@ -39,6 +41,7 @@ public:
     std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
 
     bool requiresLocation() const { return with_location; }
+    bool requiresLocationIfExists() const { return with_location_if_exists; }
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
 
@@ -64,10 +67,11 @@ private:
     std::shared_ptr<IStorageCredentials> storage_credentials;
 
     bool with_location = false;
+    bool with_location_if_exists = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
 
-    bool is_default_readable_table = false;
+    bool is_default_readable_table = true;
 
     std::string constructLocation(const std::string & endpoint_) const;
 };
@@ -82,6 +86,7 @@ public:
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
+    virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?

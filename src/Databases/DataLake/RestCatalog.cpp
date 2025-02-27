@@ -1,8 +1,8 @@
 #include "config.h"
 
 #if USE_AVRO
-#include <Databases/Iceberg/RestCatalog.h>
-#include <Databases/Iceberg/StorageCredentials.h>
+#include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/StorageCredentials.h>
 
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -34,7 +34,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Iceberg
+namespace DataLake
 {
 
 static constexpr auto CONFIG_ENDPOINT = "config";

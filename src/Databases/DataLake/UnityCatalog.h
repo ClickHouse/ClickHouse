@@ -3,18 +3,16 @@
 
 #if USE_AVRO
 
-#include <Databases/Iceberg/ICatalog.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <Poco/JSON/Object.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 
-namespace DeltaLake
+namespace DataLake
 {
-
-using namespace Iceberg;
 
 class UnityCatalog final : public ICatalog, private DB::WithContext
 {
@@ -45,23 +43,23 @@ public:
 
     std::optional<StorageType> getStorageType() const override { return std::nullopt; }
 
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    {
+        return DB::DatabaseDataLakeCatalogType::UNITY;
+    }
+
 private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
     DB::HTTPHeaderEntry auth_header;
 
+    std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
+    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
+
     Poco::Net::HTTPBasicCredentials credentials{};
 
-    DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
-        const std::string & endpoint,
-        const Poco::URI::QueryParameters & params = {},
-        const DB::HTTPHeaderEntries & headers = {},
-        const std::string & method = Poco::Net::HTTPRequest::HTTP_GET,
-        std::function<void(std::ostream &)> out_stream_callaback = {}
-    ) const;
-
-    Iceberg::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
+    DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
     DB::Names getTablesForSchema(const std::string & schema, size_t limit = 0) const;
     void getCredentials(const std::string & table_id, TableMetadata & metadata) const;

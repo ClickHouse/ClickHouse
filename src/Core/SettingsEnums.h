@@ -359,12 +359,13 @@ DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
-enum class DatabaseIcebergCatalogType : uint8_t
+enum class DatabaseDataLakeCatalogType : uint8_t
 {
-    REST,
+    UNKNOWN,
+    ICEBERG_REST,
     UNITY,
 };
 
-DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
+DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
 
 }

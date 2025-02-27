@@ -1,4 +1,4 @@
-#include <Databases/Iceberg/UnityCatalog.h>
+#include <Databases/DataLake/UnityCatalog.h>
 
 #if USE_AVRO
 
@@ -17,7 +17,7 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_CATALOG_ERROR;
 }
 
-namespace DeltaLake
+namespace DataLake
 {
 
 static const auto SCHEMAS_ENDPOINT = "schemas";
@@ -42,43 +42,17 @@ UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
     return UnityCatalogFullSchemaName{.catalog_name = catalog_name, .schema_name = schema};
 }
 
-
-DB::ReadWriteBufferFromHTTPPtr UnityCatalog::createReadBuffer(
-    const std::string & endpoint,
-    const Poco::URI::QueryParameters & params,
-    const DB::HTTPHeaderEntries & headers,
-    const std::string & method,
-    std::function<void(std::ostream &)> out_stream_callaback) const
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
-
-    Poco::URI url(base_url / endpoint);
-    if (!params.empty())
-        url.setQueryParameters(params);
-
-    auto create_buffer = [&]()
-    {
-        DB::HTTPHeaderEntries result_headers = headers;
-        result_headers.push_back(auth_header);
-
-        return DB::BuilderRWBufferFromHTTP(url)
-            .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-            .withSettings(getContext()->getReadSettings())
-            .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
-            .withHostFilter(&getContext()->getRemoteHostFilter())
-            .withHeaders(result_headers)
-            .withDelayInit(false)
-            .withSkipNotFound(false)
-            .withMethod(method)
-            .withOutCallback(out_stream_callaback)
-            .create(credentials);
-    };
-
-    LOG_TEST(log, "Requesting: {}", url.toString());
-
-    return create_buffer();
+    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, params, {auth_header});
 }
 
+std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
+{
+    const auto & context = getContext();
+    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, {auth_header}, Poco::Net::HTTPRequest::HTTP_GET, out_stream_callaback);
+}
 
 bool UnityCatalog::empty() const
 {
@@ -92,7 +66,6 @@ bool UnityCatalog::empty() const
 
     return true;
 }
-
 
 DB::Names UnityCatalog::getTables() const
 {
@@ -108,7 +81,6 @@ DB::Names UnityCatalog::getTables() const
     return result;
 }
 
-
 void UnityCatalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
@@ -117,7 +89,6 @@ void UnityCatalog::getTableMetadata(
     if (!tryGetTableMetadata(namespace_name, table_name, result))
         throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "No response from iceberg catalog");
 }
-
 
 void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & metadata) const
 {
@@ -136,12 +107,7 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
                 obj.stringify(os);
             };
 
-            auto buf = createReadBuffer(TEMPORARY_CREDENTIALS_ENDPOINT, {}, {}, Poco::Net::HTTPRequest::HTTP_POST, callback);
-            String json_str;
-            readJSONObjectPossiblyInvalid(json_str, *buf);
-
-            Poco::JSON::Parser parser;
-            Poco::Dynamic::Var json = parser.parse(json_str);
+            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             if (object->has("aws_temp_credentials") && !object->isNull("aws_temp_credentials"))
@@ -163,7 +129,6 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
         default:
             break;
     }
-
 }
 
 bool UnityCatalog::tryGetTableMetadata(
@@ -172,21 +137,16 @@ bool UnityCatalog::tryGetTableMetadata(
     TableMetadata & result) const
 {
     auto full_table_name = warehouse + "." + schema_name + "." + table_name;
-    auto buf = createReadBuffer(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
-    if (buf->eof())
-        return false;
-
-    String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
+    Poco::Dynamic::Var json;
+    std::string json_str;
     try
     {
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var json = parser.parse(json_str);
+        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (object->has("name") && object->get("name").extract<String>() == table_name)
         {
             std::string location;
-            if (result.requiresLocation() && object->has("storage_location"))
+            if (result.requiresLocation() || (result.requiresLocationIfExists() && object->has("storage_location")))
             {
                 location = object->get("storage_location").extract<String>();
                 result.setLocation(location);
@@ -194,33 +154,25 @@ bool UnityCatalog::tryGetTableMetadata(
             }
 
             if (object->has("securable_kind") && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))
-            {
                 result.setDefaultReadableTable(false);
-            }
             else if (object->has("data_source_format") && object->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
-            {
                 result.setDefaultReadableTable(false);
-            }
             else
-            {
                 result.setDefaultReadableTable(true);
-            }
 
             if (result.requiresSchema())
             {
-                LOG_DEBUG(log, "Requires schema, will parse from {}", json_str);
                 DB::NamesAndTypesList schema;
                 auto columns_json = object->getArray("columns");
 
-                LOG_DEBUG(log, "Columns size {}", columns_json->size());
                 for (size_t i = 0; i < columns_json->size(); ++i)
                 {
                     const auto column_json = columns_json->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                     std::string name = column_json->getValue<String>("name");
                     auto is_nullable = column_json->getValue<bool>("nullable");
-                    LOG_WARNING(log, "Column json {}", fmt::join(column_json->getNames(), ","));
                     auto type_json_str = column_json->get("type_json").extract<String>();
                     DB::DataTypePtr data_type;
+                    /// NOTE: Weird case with OSS Unity catalog, when instead of JSON for simple we have just string with type name
                     if (type_json_str.starts_with("\"") && type_json_str.ends_with("\"") && !type_json_str.contains('{'))
                     {
                         type_json_str.pop_back();
@@ -230,6 +182,7 @@ bool UnityCatalog::tryGetTableMetadata(
                     }
                     else
                     {
+                        Poco::JSON::Parser parser;
                         auto parsed_json_type = parser.parse(type_json_str);
                         data_type = DB::DeltaLakeMetadata::getFieldType(parsed_json_type.extract<Poco::JSON::Object::Ptr>(), "type", is_nullable);
                     }
@@ -255,26 +208,15 @@ bool UnityCatalog::tryGetTableMetadata(
         e.addMessage("while parsing JSON: " + json_str);
         throw;
     }
-    catch (const Poco::Exception & poco_ex)
-    {
-        DB::Exception our_ex(DB::Exception::CreateFromPocoTag{}, poco_ex);
-        our_ex.addMessage("Cannot parse json {}", json_str);
-        throw our_ex;
-    }
 }
 
 bool UnityCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
-    auto buf = createReadBuffer(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
-    if (buf->eof())
-        return false;
-
     String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
+    Poco::Dynamic::Var json;
     try
     {
-        Poco::JSON::Parser parser;
-        Poco::Dynamic::Var json = parser.parse(json_str);
+        std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
         if (object->has("name") && object->get("name").extract<String>() == table_name)
             return true;
@@ -297,17 +239,12 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
     DB::Names tables;
     do
     {
-        auto buf = createReadBuffer(TABLES_ENDPOINT, params);
-        if (buf->eof())
-            return {};
-
         String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
+        Poco::Dynamic::Var json;
 
         try
         {
-            Poco::JSON::Parser parser;
-            Poco::Dynamic::Var json = parser.parse(json_str);
+            std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             auto tables_object = object->get("tables").extract<Poco::JSON::Array::Ptr>();
@@ -355,25 +292,20 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
     return tables;
 }
 
-Iceberg::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base_prefix, size_t limit) const
+DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base_prefix, size_t limit) const
 {
     Poco::URI::QueryParameters params;
     params.push_back({"catalog_name", warehouse});
 
-    Iceberg::ICatalog::Namespaces schemas;
+    DataLake::ICatalog::Namespaces schemas;
     do
     {
-        auto buf = createReadBuffer(SCHEMAS_ENDPOINT, params);
-        if (buf->eof())
-            return {};
-
         String json_str;
-        readJSONObjectPossiblyInvalid(json_str, *buf);
+        Poco::Dynamic::Var json;
 
         try
         {
-            Poco::JSON::Parser parser;
-            Poco::Dynamic::Var json = parser.parse(json_str);
+            std::tie(json, json_str) = getJSONRequest(SCHEMAS_ENDPOINT, params);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
             auto schemas_object = object->get("schemas").extract<Poco::JSON::Array::Ptr>();
@@ -435,7 +367,6 @@ UnityCatalog::UnityCatalog(
     , log(getLogger("UnityCatalog(" + catalog_ + ")"))
     , auth_header("Authorization", "Bearer " + catalog_credential_)
 {
-
 }
 
 }

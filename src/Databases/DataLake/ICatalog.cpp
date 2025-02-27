@@ -1,4 +1,4 @@
-#include <Databases/Iceberg/ICatalog.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
@@ -11,7 +11,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace Iceberg
+namespace DataLake
 {
 
 StorageType parseStorageTypeFromLocation(const std::string & location)
