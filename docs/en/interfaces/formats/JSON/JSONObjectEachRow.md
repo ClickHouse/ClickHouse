@@ -1,7 +1,7 @@
 ---
-title : JSONObjectEachRow
+title: JSONObjectEachRow
 slug: /interfaces/formats/JSONObjectEachRow
-keywords : [JSONObjectEachRow]
+keywords: [JSONObjectEachRow]
 input_format: true
 output_format: true
 alias: []

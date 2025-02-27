@@ -1,7 +1,7 @@
 ---
-title : JSONCompactColumns
+title: JSONCompactColumns
 slug: /interfaces/formats/JSONCompactColumns
-keywords : [JSONCompactColumns]
+keywords: [JSONCompactColumns]
 input_format: true
 output_format: true
 alias: []
