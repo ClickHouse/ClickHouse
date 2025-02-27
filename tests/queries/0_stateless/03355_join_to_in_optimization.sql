@@ -38,7 +38,7 @@ FROM
         'k' AS a,
         'v' AS b
 ) AS q
-INNER JOIN
+ANY INNER JOIN
 (
     SELECT
         'k' AS a,

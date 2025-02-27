@@ -60,7 +60,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!join)
         return 0;
     auto & join_info = join->getJoinInfo();
-    if (join_info.strictness != JoinStrictness::All && join_info.strictness != JoinStrictness::ANY)
+    if (/*join_info.strictness != JoinStrictness::All &&*/ join_info.strictness != JoinStrictness::Any)
         return 0;
     if (join->getJoinSettings().join_use_nulls)
         return 0;
