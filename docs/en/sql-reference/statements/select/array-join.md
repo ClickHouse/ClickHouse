@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/array-join
+slug: /en/sql-reference/statements/select/array-join
 sidebar_label: ARRAY JOIN
 ---
 
@@ -19,14 +19,16 @@ FROM <left_subquery>
 ...
 ```
 
+You can specify only one `ARRAY JOIN` clause in a `SELECT` query.
+
 Supported types of `ARRAY JOIN` are listed below:
 
 - `ARRAY JOIN` - In base case, empty arrays are not included in the result of `JOIN`.
 - `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
-## Basic ARRAY JOIN Examples {#basic-array-join-examples}
+## Basic ARRAY JOIN Examples
 
-The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let's create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
+The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let’s create a table with an [Array](../../../sql-reference/data-types/array.md) type column and insert values into it:
 
 ```sql
 CREATE TABLE arrays_test
@@ -84,7 +86,7 @@ LEFT ARRAY JOIN arr;
 └─────────────┴─────┘
 ```
 
-## Using Aliases {#using-aliases}
+## Using Aliases
 
 An alias can be specified for an array in the `ARRAY JOIN` clause. In this case, an array item can be accessed by this alias, but the array itself is accessed by the original name. Example:
 
@@ -182,7 +184,7 @@ SETTINGS enable_unaligned_array_join = 1;
 └─────────┴─────────┴───┴───────────┘
 ```
 
-## ARRAY JOIN with Nested Data Structure {#array-join-with-nested-data-structure}
+## ARRAY JOIN with Nested Data Structure
 
 `ARRAY JOIN` also works with [nested data structures](../../../sql-reference/data-types/nested-data-structures/index.md):
 
@@ -295,16 +297,16 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
 └───────┴─────┴─────┴─────────┴────────────┴─────┘
 ```
 
-## Implementation Details {#implementation-details}
+## Implementation Details
 
 The query execution order is optimized when running `ARRAY JOIN`. Although `ARRAY JOIN` must always be specified before the [WHERE](../../../sql-reference/statements/select/where.md)/[PREWHERE](../../../sql-reference/statements/select/prewhere.md) clause in a query, technically they can be performed in any order, unless result of `ARRAY JOIN` is used for filtering. The processing order is controlled by the query optimizer.
 
-### Incompatibility with short-circuit function evaluation {#incompatibility-with-short-circuit-function-evaluation}
+### Incompatibility with short-circuit function evaluation
 
-[Short-circuit function evaluation](../../../operations/settings/overview#short-circuit-function-evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
+[Short-circuit function evaluation](../../../operations/settings/index.md#short-circuit-function-evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
 
 `arrayJoin` is always executed and not supported for short circuit function evaluation. That's because it's a unique function processed separately from all other functions during query analysis and execution and requires additional logic that doesn't work with short circuit function execution. The reason is that the number of rows in the result depends on the arrayJoin result, and it's too complex and expensive to implement lazy execution of `arrayJoin`.
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

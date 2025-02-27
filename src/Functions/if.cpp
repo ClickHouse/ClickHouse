@@ -11,7 +11,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
-#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
@@ -950,8 +949,8 @@ private:
 
     ColumnPtr executeForNullableThenElse(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        /// If result type is Variant/Dynamic, we don't need to remove Nullable.
-        if (isVariant(result_type) || isDynamic(result_type))
+        /// If result type is Variant, we don't need to remove Nullable.
+        if (isVariant(result_type))
             return nullptr;
 
         const ColumnWithTypeAndName & arg_cond = arguments[0];

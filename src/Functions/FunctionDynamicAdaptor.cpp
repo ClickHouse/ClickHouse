@@ -206,7 +206,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
             nested_result_type = result_type;
         }
 
-        /// If the result of nested function is Dynamic (or we cast to it from Variant), we can just expand it
+        /// If the result of nested function is Dynamic (or we casted to it from Variant), we can just expand it
         /// and cast to the result Dynamic type (it can have different max_types parameter).
         if (isDynamic(nested_result_type))
         {

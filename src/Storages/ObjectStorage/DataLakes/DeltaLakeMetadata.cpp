@@ -6,13 +6,12 @@
 #if USE_PARQUET
 
 #include <Common/logger_useful.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnArray.h>
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -104,14 +103,14 @@ struct DeltaLakeMetadataImpl
     {
         NamesAndTypesList schema;
         Strings data_files;
-        DeltaLakePartitionColumns partition_columns;
+        DataLakePartitionColumns partition_columns;
     };
     DeltaLakeMetadata processMetadataFiles()
     {
         auto configuration_ptr = configuration.lock();
         std::set<String> result_files;
         NamesAndTypesList current_schema;
-        DeltaLakePartitionColumns current_partition_columns;
+        DataLakePartitionColumns current_partition_columns;
         const auto checkpoint_version = getCheckpointIfExists(result_files, current_schema, current_partition_columns);
 
         if (checkpoint_version)
@@ -180,11 +179,11 @@ struct DeltaLakeMetadataImpl
     void processMetadataFile(
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
-        DeltaLakePartitionColumns & file_partition_columns,
+        DataLakePartitionColumns & file_partition_columns,
         std::set<String> & result)
     {
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(metadata_file_path);
+        StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
         char c;
@@ -210,7 +209,7 @@ struct DeltaLakeMetadataImpl
             if (!object)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse metadata file");
 
-#ifdef DEBUG_OR_SANITIZER_BUILD
+#ifdef ABORT_ON_LOGICAL_ERROR
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             object->stringify(oss);
             LOG_TEST(log, "Metadata: {}", oss.str());
@@ -496,7 +495,7 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(last_checkpoint_file);
+        StorageObjectStorageSource::ObjectInfo object_info(last_checkpoint_file);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -550,7 +549,7 @@ struct DeltaLakeMetadataImpl
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
-        DeltaLakePartitionColumns & file_partition_columns)
+        DataLakePartitionColumns & file_partition_columns)
     {
         const auto version = readLastCheckpointIfExists();
         if (!version)
@@ -566,7 +565,7 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(checkpoint_path);
+        StorageObjectStorageSource::ObjectInfo object_info(checkpoint_path);
         auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 

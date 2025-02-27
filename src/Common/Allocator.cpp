@@ -243,10 +243,10 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
                 ReadableSize(new_size));
         }
 
+        buf = new_buf;
         auto trace_free = CurrentMemoryTracker::free(old_size);
         trace_free.onFree(buf, old_size);
-        trace_alloc.onAlloc(new_buf, new_size);
-        buf = new_buf;
+        trace_alloc.onAlloc(buf, new_size);
 
         if constexpr (clear_memory)
             if (new_size > old_size)

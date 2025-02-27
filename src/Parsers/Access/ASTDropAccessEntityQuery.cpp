@@ -8,14 +8,14 @@ namespace DB
 {
 namespace
 {
-    void formatNames(const Strings & names, WriteBuffer & ostr)
+    void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
         for (const auto & name : names)
         {
             if (std::exchange(need_comma, true))
-                ostr << ',';
-            ostr << ' ' << backQuoteIfNeed(name);
+                settings.ostr << ',';
+            settings.ostr << ' ' << backQuoteIfNeed(name);
         }
     }
 }
@@ -38,27 +38,27 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 }
 
 
-void ASTDropAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "DROP " << AccessEntityTypeInfo::get(type).name
                   << (if_exists ? " IF EXISTS" : "")
                   << (settings.hilite ? hilite_none : "");
 
     if (type == AccessEntityType::ROW_POLICY)
     {
-        ostr << " ";
-        row_policy_names->format(ostr, settings);
+        settings.ostr << " ";
+        row_policy_names->format(settings);
     }
     else
-        formatNames(names, ostr);
+        formatNames(names, settings);
 
     if (!storage_name.empty())
-        ostr << (settings.hilite ? hilite_keyword : "")
+        settings.ostr << (settings.hilite ? hilite_keyword : "")
                       << " FROM " << (settings.hilite ? hilite_none : "")
                       << backQuoteIfNeed(storage_name);
 
-    formatOnCluster(ostr, settings);
+    formatOnCluster(settings);
 }
 
 

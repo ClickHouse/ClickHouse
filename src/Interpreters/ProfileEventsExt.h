@@ -2,7 +2,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
 
 
 namespace ProfileEvents

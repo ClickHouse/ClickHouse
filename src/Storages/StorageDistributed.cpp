@@ -12,8 +12,6 @@
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/NestedUtils.h>
 
-#include <Disks/IVolume.h>
-
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
@@ -65,7 +63,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -164,8 +161,6 @@ namespace Setting
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
-    extern const SettingsBool prefer_localhost_replica;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace DistributedSetting
@@ -319,10 +314,7 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
-        ? settings[Setting::max_parallel_replicas] : 1;
-
-    return (num_remote_shards + num_local_shards) * max_parallel_replicas;
+    return (num_remote_shards + num_local_shards) * settings[Setting::max_parallel_replicas];
 }
 
 }
@@ -694,7 +686,7 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
 
 static bool requiresObjectColumns(const ColumnsDescription & all_columns, ASTPtr query)
 {
-    if (!hasDynamicSubcolumnsDeprecated(all_columns))
+    if (!hasDynamicSubcolumns(all_columns))
         return false;
 
     if (!query)
@@ -758,7 +750,6 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
 
         const auto & column_source = column_node->getColumnSourceOrNull();
         if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
                            || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
             return nullptr;
 
@@ -1027,8 +1018,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
-        new_query->IAST::format(buf, ast_format_settings);
+            /*ostr_=*/buf, /*one_line*/ true, /*hilite*/ false, /*identifier_quoting_rule_=*/IdentifierQuotingRule::Always);
+        new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
 
@@ -1039,7 +1030,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
-        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
+        if (shard_info.isLocal())
         {
             InterpreterInsertQuery interpreter(
                 new_query,
@@ -1088,7 +1079,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
         interpreter.buildQueryPlan(plan);
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(context));
+    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());
@@ -1148,8 +1139,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
-            /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        new_query->IAST::format(buf, ast_format_settings);
+            /*ostr_=*/buf, /*one_line=*/true, /*hilite=*/false, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
+        new_query->IAST::format(ast_format_settings);
         new_query_str = buf.str();
     }
 
@@ -1989,7 +1980,6 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
-        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
 

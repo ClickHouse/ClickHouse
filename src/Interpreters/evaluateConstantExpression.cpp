@@ -1,7 +1,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
@@ -21,11 +20,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -362,7 +359,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
+                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);
@@ -600,15 +597,15 @@ namespace
         if (column->size() > max_elements)
             return {};
 
-        ColumnPtr cast_col;
+        ColumnPtr casted_col;
         const NullMap * null_map = nullptr;
 
         if (!type->equals(*node->result_type))
         {
-            cast_col = tryCastColumn(column, value->result_type, node->result_type);
-            if (!cast_col)
+            casted_col = tryCastColumn(column, value->result_type, node->result_type);
+            if (!casted_col)
                 return {};
-            const auto & col_nullable = assert_cast<const ColumnNullable &>(*cast_col);
+            const auto & col_nullable = assert_cast<const ColumnNullable &>(*casted_col);
             null_map = &col_nullable.getNullMapData();
             column = col_nullable.getNestedColumnPtr();
         }
@@ -689,11 +686,8 @@ namespace
                 if (lists.empty())
                     return {};
 
-                /// clang-tidy says the comparator might be called on moved-from object of type 'std::list'
-                /// NOLINTBEGIN(clang-analyzer-cplusplus.Move)
                 std::sort(lists.begin(), lists.end(),
                     [](const auto & lhs, const auto & rhs) { return lhs.size() < rhs.size(); });
-                /// NOLINTEND(clang-analyzer-cplusplus.Move)
 
                 DisjunctionList res;
                 bool first = true;

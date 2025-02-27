@@ -6,7 +6,6 @@
 #include <Common/FileRenamer.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
-#include <Interpreters/ActionsDAG.h>
 
 #include <atomic>
 #include <shared_mutex>

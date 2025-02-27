@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/select/order-by
+slug: /en/sql-reference/statements/select/order-by
 sidebar_label: ORDER BY
 ---
 
@@ -22,14 +22,14 @@ Also, sorting is performed case-sensitively.
 Rows with identical values for a sort expressions are returned in an arbitrary and non-deterministic order.
 If the `ORDER BY` clause is omitted in a `SELECT` statement, the row order is also arbitrary and non-deterministic.
 
-## Sorting of Special Values {#sorting-of-special-values}
+## Sorting of Special Values
 
 There are two approaches to `NaN` and `NULL` sorting order:
 
 - By default or with the `NULLS LAST` modifier: first the values, then `NaN`, then `NULL`.
 - With the `NULLS FIRST` modifier: first `NULL`, then `NaN`, then other values.
 
-### Example {#example}
+### Example
 
 For the table
 
@@ -67,7 +67,7 @@ Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
 
 When floating point numbers are sorted, NaNs are separate from the other values. Regardless of the sorting order, NaNs come at the end. In other words, for ascending sorting they are placed as if they are larger than all the other numbers, while for descending sorting they are placed as if they are smaller than the rest.
 
-## Collation Support {#collation-support}
+## Collation Support
 
 For sorting by [String](../../../sql-reference/data-types/string.md) values, you can specify collation (comparison). Example: `ORDER BY SearchPhrase COLLATE 'tr'` - for sorting by keyword in ascending order, using the Turkish alphabet, case insensitive, assuming that strings are UTF-8 encoded. `COLLATE` can be specified or not for each expression in ORDER BY independently. If `ASC` or `DESC` is specified, `COLLATE` is specified after it. When using `COLLATE`, sorting is always case-insensitive.
 
@@ -75,7 +75,7 @@ Collate is supported in [LowCardinality](../../../sql-reference/data-types/lowca
 
 We only recommend using `COLLATE` for final sorting of a small number of rows, since sorting with `COLLATE` is less efficient than normal sorting by bytes.
 
-## Collation Examples {#collation-examples}
+## Collation Examples
 
 Example only with [String](../../../sql-reference/data-types/string.md) values:
 
@@ -185,7 +185,7 @@ Example with [LowCardinality](../../../sql-reference/data-types/lowcardinality.m
 
 Input table:
 
-```response
+```text
 ┌─x─┬─s───┐
 │ 1 │ Z   │
 │ 2 │ z   │
@@ -205,7 +205,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-```response
+```text
 ┌─x─┬─s───┐
 │ 7 │     │
 │ 3 │ a   │
@@ -219,7 +219,7 @@ Result:
 
 Example with [Tuple](../../../sql-reference/data-types/tuple.md):
 
-```response
+```text
 ┌─x─┬─s───────┐
 │ 1 │ (1,'Z') │
 │ 2 │ (1,'z') │
@@ -239,7 +239,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Result:
 
-```response
+```text
 ┌─x─┬─s───────┐
 │ 3 │ (1,'a') │
 │ 5 │ (1,'A') │
@@ -251,7 +251,7 @@ Result:
 └───┴─────────┘
 ```
 
-## Implementation Details {#implementation-details}
+## Implementation Details
 
 Less RAM is used if a small enough [LIMIT](../../../sql-reference/statements/select/limit.md) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](../../../sql-reference/statements/select/group-by.md) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
@@ -261,7 +261,7 @@ Running a query may use more memory than `max_bytes_before_external_sort`. For t
 
 External sorting works much less effectively than sorting in RAM.
 
-## Optimization of Data Reading {#optimization-of-data-reading}
+## Optimization of Data Reading
 
  If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.
 
@@ -281,7 +281,7 @@ Optimization is supported in the following table engines:
 
 In `MaterializedView`-engine tables the optimization works with views like `SELECT ... FROM merge_tree_table ORDER BY pk`. But it is not supported in the queries like `SELECT ... FROM view ORDER BY pk` if the view query does not have the `ORDER BY` clause.
 
-## ORDER BY Expr WITH FILL Modifier {#order-by-expr-with-fill-modifier}
+## ORDER BY Expr WITH FILL Modifier
 
 This modifier also can be combined with [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
 
@@ -298,7 +298,7 @@ ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_
 `WITH FILL` can be applied for fields with Numeric (all kinds of float, decimal, int) or Date/DateTime types. When applied for `String` fields, missed values are filled with empty strings.
 When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
-When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](/docs/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
+When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 When `STALENESS const_numeric_expr` is defined, the query will generate rows until the difference from the previous row in the original data exceeds `const_numeric_expr`.
 `INTERPOLATE` can be applied to columns not participating in `ORDER BY WITH FILL`. Such columns are filled based on previous fields values by applying `expr`. If `expr` is not present will repeat previous value. Omitted list will result in including all allowed columns.
@@ -381,7 +381,7 @@ Result:
 └────────────┴────────────┴──────────┘
 ```
 
-Field `d1` does not fill in and use the default value cause we do not have repeated values for `d2` value, and the sequence for `d1` can't be properly calculated.
+Field `d1` does not fill in and use the default value cause we do not have repeated values for `d2` value, and the sequence for `d1` can’t be properly calculated.
 
 The following query with the changed field in `ORDER BY`:
 
@@ -432,7 +432,7 @@ ORDER BY
 ```
 
 Result:
-```response
+```
 ┌─────────d1─┬─────────d2─┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-12 │ 1970-01-01 │          │
@@ -614,7 +614,7 @@ Result:
 └─────┴──────────┴───────┘
 ```
 
-## Filling grouped by sorting prefix {#filling-grouped-by-sorting-prefix}
+## Filling grouped by sorting prefix
 
 It can be useful to fill rows which have the same values in particular columns independently, - a good example is filling missing values in time series.
 Assume there is the following time series table:
@@ -638,7 +638,7 @@ SELECT * FROM timeseries;
 ```
 And we'd like to fill missing values for each sensor independently with 1 second interval.
 The way to achieve it is to use `sensor_id` column as sorting prefix for filling column `timestamp`:
-```sql
+```
 SELECT *
 FROM timeseries
 ORDER BY
@@ -662,6 +662,6 @@ INTERPOLATE ( value AS 9999 )
 Here, the `value` column was interpolated with `9999` just to make filled rows more noticeable.
 This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enabled by default)
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

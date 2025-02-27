@@ -62,8 +62,8 @@ void Chunk::checkNumRowsIsConsistent()
     {
         auto & column = columns[i];
         if (column->size() != num_rows)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk {} column {} at position {}: expected {}, got {}",
-                dumpStructure(), column->getName(), i, num_rows, column->size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}: expected {}, got {}",
+                            column->getName() + " position " + toString(i), toString(num_rows), toString(column->size()));
     }
 }
 
@@ -100,8 +100,8 @@ void Chunk::addColumn(ColumnPtr column)
     if (empty())
         num_rows = column->size();
     else if (column->size() != num_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk {} column {}: expected {}, got {}",
-            dumpStructure(), column->getName(), num_rows, column->size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of rows in Chunk column {}, got {}",
+                        column->getName()+ ": expected " + toString(num_rows), toString(column->size()));
 
     columns.emplace_back(std::move(column));
 }

@@ -1024,10 +1024,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         source_columns_ordinary = metadata_snapshot->getColumns().getOrdinary();
     }
-    else
-    {
-        source_columns_ordinary = source_columns;
-    }
 
     source_columns_set = removeDuplicateColumns(source_columns);
 }
@@ -1214,20 +1210,23 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
     }
 
-    /// Check for subcolumns in unknown required columns.
-    if (!unknown_required_source_columns.empty() && (!storage || storage->supportsSubcolumns()))
+    /// Check for dynamic subcolumns in unknown required columns.
+    if (!unknown_required_source_columns.empty())
     {
         for (const NameAndTypePair & pair : source_columns_ordinary)
         {
+            if (!pair.type->hasDynamicSubcolumns())
+                continue;
+
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
-                auto [column_name, subcolumn_name] = Nested::splitName(*it);
+                auto [column_name, dynamic_subcolumn_name] = Nested::splitName(*it);
 
                 if (column_name == pair.name)
                 {
-                    if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
+                    if (auto dynamic_subcolumn_type = pair.type->tryGetSubcolumnType(dynamic_subcolumn_name))
                     {
-                        source_columns.emplace_back(*it, subcolumn_type);
+                        source_columns.emplace_back(*it, dynamic_subcolumn_type);
                         it = unknown_required_source_columns.erase(it);
                         continue;
                     }
@@ -1240,12 +1239,12 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
     if (!unknown_required_source_columns.empty())
     {
-        constexpr auto format_string = "Missing columns: {} while processing: '{}', required columns:{}{}";
+        constexpr auto format_string = "Missing columns: {} while processing query: '{}', required columns:{}{}";
         WriteBufferFromOwnString ss;
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while processing: '" << queryToString(query) << "'";
+        ss << " while processing query: '" << queryToString(query) << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())
@@ -1253,34 +1252,32 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         if (storage)
         {
-            std::vector<String> hints;
-            std::set<String> used_hints;
-            for (const auto & col : columns_context.requiredColumns())
+            std::vector<String> hint_name{};
+            std::set<String> helper_hint_name{};
+            for (const auto & name : columns_context.requiredColumns())
             {
-                for (const auto & hint : storage->getHints(col))
+                auto hints = storage->getHints(name);
+                for (const auto & hint : hints)
                 {
                     // We want to preserve the ordering of the hints
                     // (as they are ordered by Levenshtein distance)
-                    auto [_, inserted] = used_hints.insert(hint);
+                    auto [_, inserted] = helper_hint_name.insert(hint);
                     if (inserted)
-                        hints.push_back(hint);
+                        hint_name.push_back(hint);
                 }
             }
 
-            if (!hints.empty())
+            if (!hint_name.empty())
             {
                 ss << ", maybe you meant: ";
-                ss << toStringWithFinalSeparator(hints, " or ");
+                ss << toStringWithFinalSeparator(hint_name, " or ");
             }
         }
         else
         {
             if (!source_column_names.empty())
-            {
-                ss << ", available columns:";
-                for (const auto & name : source_column_names)
+                for (const auto & name : columns_context.requiredColumns())
                     ss << " '" << name << "'";
-            }
             else
                 ss << ", no source columns";
         }
@@ -1356,15 +1353,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     if (tables_with_columns.size() > 1)
     {
-        auto columns_from_left_table = tables_with_columns[0].columns;
         const auto & right_table = tables_with_columns[1];
         auto columns_from_joined_table = right_table.columns;
         /// query can use materialized or aliased columns from right joined table,
         /// we want to request it for right table
         columns_from_joined_table.insert(columns_from_joined_table.end(), right_table.hidden_columns.begin(), right_table.hidden_columns.end());
-        columns_from_left_table.insert(columns_from_left_table.end(), tables_with_columns[0].hidden_columns.begin(), tables_with_columns[0].hidden_columns.end());
-        result.analyzed_join->setColumnsFromJoinedTable(
-            std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix(), columns_from_left_table);
+        result.analyzed_join->setColumnsFromJoinedTable(std::move(columns_from_joined_table), source_columns_set, right_table.table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_columns);
@@ -1577,7 +1571,7 @@ void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases, ContextPtr context_, bool is_create_parameterized_view)
 {
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query, context_);
+        UserDefinedSQLFunctionVisitor::visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings[Setting::count_distinct_implementation]};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);

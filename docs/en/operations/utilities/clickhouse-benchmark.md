@@ -1,5 +1,5 @@
 ---
-slug: /operations/utilities/clickhouse-benchmark
+slug: /en/operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: clickhouse-benchmark
 ---
@@ -50,7 +50,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `-s`, `--secure` — Using `TLS` connection.
 - `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
 - `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `--port` keys.
-- `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) to determine whether the two distributions aren't different with the selected level of confidence.
+- `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student’s t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) to determine whether the two distributions aren’t different with the selected level of confidence.
 - `--cumulative` — Printing cumulative data instead of data per interval.
 - `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
 - `--user=USERNAME` — ClickHouse user name. Default value: `default`.
@@ -59,7 +59,7 @@ clickhouse-benchmark [keys] < queries_file;
 - `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns an answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
 - `--help` — Shows the help message.
 
-If you want to apply some [settings](../../operations/settings/overview) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
+If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
 
 ## Output {#clickhouse-benchmark-output}
 

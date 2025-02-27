@@ -267,7 +267,7 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         assert False
     except Exception as error:
         assert (
-            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces". Make sure no empty array values in the first row.'
+            'PostgreSQL cannot infer dimensions of an empty array: array_ndim_view."Mixed-case with spaces"'
             in str(error)
         )
 

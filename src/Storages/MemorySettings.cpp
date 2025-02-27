@@ -110,10 +110,5 @@ void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
 {
     impl->applyChanges(changes);
 }
-
-bool MemorySettings::hasBuiltin(std::string_view name)
-{
-    return MemorySettingsImpl::hasBuiltin(name);
-}
 }
 

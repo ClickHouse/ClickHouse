@@ -54,7 +54,7 @@ BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::R
 }
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
-    AzureClientPtr blob_container_client_,
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t buf_size_,
     const WriteSettings & write_settings_,
@@ -83,21 +83,9 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
     LOG_TRACE(limited_log, "Close WriteBufferFromAzureBlobStorage. {}.", blob_path);
 
-    if (canceled)
+    /// That destructor could be call with finalized=false in case of exceptions
+    if (!finalized)
     {
-        if (!isEmpty())
-        {
-            LOG_INFO(
-                log,
-                "WriteBufferFromAzureBlobStorage was canceled."
-                "The file might not be written to AzureBlobStorage. "
-                "{}.",
-                blob_path);
-        }
-    }
-    else if (!finalized)
-    {
-        /// That destructor could be call with finalized=false in case of exceptions
         LOG_INFO(
             log,
             "WriteBufferFromAzureBlobStorage is not finalized in destructor. "
@@ -152,7 +140,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
     if (block_ids.empty())
     {
         ProfileEvents::increment(ProfileEvents::AzureUpload);
-        if (blob_container_client->IsClientForDisk())
+        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureUpload);
 
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
@@ -199,7 +187,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
     {
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
         ProfileEvents::increment(ProfileEvents::AzureCommitBlockList);
-        if (blob_container_client->IsClientForDisk())
+        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
         execWithRetry([&](){ block_blob_client.CommitBlockList(block_ids); }, max_unexpected_write_error_retries);
@@ -336,7 +324,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
         ProfileEvents::increment(ProfileEvents::AzureStageBlock);
-        if (blob_container_client->IsClientForDisk())
+        if (blob_container_client->GetClickhouseOptions().IsClientForDisk)
             ProfileEvents::increment(ProfileEvents::DiskAzureStageBlock);
 
         Azure::Core::IO::MemoryBodyStream memory_stream(reinterpret_cast<const uint8_t *>(std::get<1>(*worker_data).memory.data()), data_size);

@@ -1,32 +1,31 @@
 #include "ZooKeeper.h"
-#include "Common/ZooKeeper/KeeperFeatureFlags.h"
+#include "Coordination/KeeperFeatureFlags.h"
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
 
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/ShuffleHost.h>
-#include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/quoteString.h>
-#include <Common/randomSeed.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerUUID.h>
-#include <Interpreters/Context.h>
-#include <base/getFQDNOrHostName.h>
-#include <base/map.h>
-#include <base/sort.h>
-
-#include <Poco/Net/NetException.h>
-#include <Poco/Net/DNS.h>
-#include <Poco/Util/LayeredConfiguration.h>
-
-#include <chrono>
+#include <filesystem>
 #include <functional>
 #include <ranges>
 #include <vector>
+#include <chrono>
+
+#include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/randomSeed.h>
+#include <base/sort.h>
+#include <base/map.h>
+#include <base/getFQDNOrHostName.h>
+#include <Core/ServerUUID.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Common/ZooKeeper/IKeeper.h>
+#include <Common/StringUtils.h>
+#include <Common/quoteString.h>
+#include <Common/Exception.h>
+#include <Interpreters/Context.h>
+
+#include <Poco/Net/NetException.h>
+#include <Poco/Net/DNS.h>
 
 
 namespace fs = std::filesystem;

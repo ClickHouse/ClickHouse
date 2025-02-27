@@ -16,6 +16,7 @@ namespace DB
 class ASTCreateQuery;
 class ASTColumnDeclaration;
 class ASTExpressionList;
+class ASTConstraintDeclaration;
 class ASTStorage;
 class IDatabase;
 class DDLGuard;
@@ -121,7 +122,6 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
-    void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
     void throwIfTooManyEntities(ASTCreateQuery & create, StoragePtr storage) const;
 
     ASTPtr query_ptr;

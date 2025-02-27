@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -9,9 +7,8 @@
 #endif
 #if USE_RAPIDJSON
 #include <Common/JSONParsers/RapidJSONParser.h>
-#else
-#include <Common/JSONParsers/DummyJSONParser.h>
 #endif
+#include <Common/JSONParsers/DummyJSONParser.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
@@ -25,7 +22,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/IColumn.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -1414,8 +1410,10 @@ template <typename JSONParser>
 class DynamicNode : public JSONExtractTreeNode<JSONParser>
 {
 public:
-    explicit DynamicNode(DataTypePtr object_type_ = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON))
-        :  object_type(std::move(object_type_))
+    explicit DynamicNode(
+        size_t max_dynamic_paths_for_object_ = DataTypeObject::DEFAULT_MAX_SEPARATELY_STORED_PATHS,
+        size_t max_dynamic_types_for_object_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
+        :  max_dynamic_paths_for_object(max_dynamic_paths_for_object_), max_dynamic_types_for_object(max_dynamic_types_for_object_)
     {
     }
 
@@ -1505,7 +1503,7 @@ public:
         auto type = elementToDataTypeImpl(element, format_settings, json_inference_info);
         transformFinalInferredJSONTypeIfNeeded(type, format_settings, &json_inference_info);
         if (format_settings.schema_inference_make_columns_nullable && type->haveSubtypes())
-            type = makeNullableRecursively(type, format_settings);
+            type = makeNullableRecursively(type);
         return type;
     }
 
@@ -1584,11 +1582,14 @@ private:
                 return std::make_shared<DataTypeTuple>(types);
             }
             case ElementType::OBJECT:
-                return object_type;
+            {
+                return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON, max_dynamic_paths_for_object, max_dynamic_types_for_object);
+            }
         }
     }
 
-    DataTypePtr object_type;
+    size_t max_dynamic_paths_for_object;
+    size_t max_dynamic_types_for_object;
 
     /// Avoid building JSONExtractTreeNode for the same data types on each row by using cache.
     mutable std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> json_extract_nodes_cache;
@@ -1602,10 +1603,13 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & type_of_nested_objects)
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_)
         : typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
-        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
+        , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(
+              max_dynamic_paths_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR,
+              max_dynamic_types_ / DataTypeObject::NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR))
         , dynamic_serialization(std::make_shared<SerializationDynamic>())
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
@@ -1635,7 +1639,7 @@ public:
         /// Instead we collect all paths and values that should go to shared data, sort them and insert later.
         /// It's not optimal, but it's a price we pay for faster reading of subcolumns.
         std::vector<std::pair<String, String>> paths_and_values_for_shared_data;
-        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error, true))
+        if (!traverseAndInsert(column_object, element, "", insert_settings, format_settings, paths_and_values_for_shared_data, prev_size, error))
         {
             /// If there was an error, restore previous state.
             SerializationObject::restoreColumnObject(column_object, prev_size);
@@ -1691,8 +1695,7 @@ private:
         const FormatSettings & format_settings,
         std::vector<std::pair<String, String>> & paths_and_values_for_shared_data,
         size_t current_size,
-        String & error,
-        bool is_root) const
+        String & error) const
     {
         if (shouldSkipPath(current_path))
             return true;
@@ -1702,10 +1705,10 @@ private:
             for (auto [key, value] : element.getObject())
             {
                 String path = current_path;
-                if (!is_root)
+                if (!path.empty())
                     path.append(".");
                 path += key;
-                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error, false))
+                if (!traverseAndInsert(column_object, value, path, insert_settings, format_settings, paths_and_values_for_shared_data, current_size, error))
                     return false;
             }
 
@@ -1777,9 +1780,7 @@ private:
 
             paths_and_values_for_shared_data.emplace_back(current_path, "");
             WriteBufferFromString buf(paths_and_values_for_shared_data.back().second);
-            /// Use default format settings for binary serialization. Non-default settings may change
-            /// the binary representation of the values and break the future deserialization.
-            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, getDefaultFormatSettings());
+            dynamic_serialization->serializeBinary(*tmp_dynamic_column, 0, buf, format_settings);
         }
 
         return true;
@@ -1804,12 +1805,6 @@ private:
         }
 
         return false;
-    }
-
-    const FormatSettings & getDefaultFormatSettings() const
-    {
-        static const FormatSettings settings;
-        return settings;
     }
 
     std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
@@ -1980,7 +1975,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getTypeOfNestedObjects());
+                        object_type.getMaxDynamicPaths(),
+                        object_type.getMaxDynamicTypes());
             }
         }
         default:
@@ -2004,9 +2000,6 @@ template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float6
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
 template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
-template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_integer, bool allow_type_conversion, String & error);
 #endif
 
 }

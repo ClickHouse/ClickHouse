@@ -2,7 +2,6 @@
 
 #include "DictionarySourceFactory.h"
 #if USE_MONGODB
-#include <Columns/IColumn.h>
 #include <Common/RemoteHostFilter.h>
 #include "MongoDBPocoLegacyDictionarySource.h"
 #include "DictionaryStructure.h"
@@ -40,13 +39,7 @@ void registerDictionarySourceMongoDBPocoLegacy(DictionarySourceFactory & factory
         const auto config_prefix = root_config_prefix + ".mongodb";
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, config_prefix, context) : nullptr;
 
-        String host;
-        String username;
-        String password;
-        String database;
-        String method;
-        String options;
-        String collection;
+        String host, username, password, database, method, options, collection;
         UInt16 port;
         if (named_collection)
         {

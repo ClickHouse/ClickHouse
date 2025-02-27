@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexactweighted
+slug: /en/sql-reference/aggregate-functions/reference/quantileexactweighted
 sidebar_position: 174
-title: "quantileExactWeighted"
-description: "Exactly computes the quantile of a numeric data sequence, taking into account the weight of each element."
 ---
 
 # quantileExactWeighted
@@ -67,4 +65,4 @@ Result:
 **See Also**
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](/docs/sql-reference/aggregate-functions/reference/quantiles)
+- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

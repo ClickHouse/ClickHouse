@@ -1,79 +1,193 @@
-from praktika import Workflow
+from praktika import Artifact, Job, Workflow
+from praktika.settings import Settings
 
-from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs, JobNames
-from ci.defs.job_configs import JobConfigs
-from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
-from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
+from ci.settings.definitions import (
+    BASE_BRANCH,
+    DOCKERS,
+    SECRETS,
+    JobNames,
+    RunnerLabels,
+)
+
+
+class ArtifactNames:
+    CH_AMD_DEBUG = "CH_AMD_DEBUG"
+    CH_AMD_RELEASE = "CH_AMD_RELEASE"
+    CH_ARM_RELEASE = "CH_ARM_RELEASE"
+    CH_ARM_ASAN = "CH_ARM_ASAN"
+
+
+style_check_job = Job.Config(
+    name=JobNames.STYLE_CHECK,
+    runs_on=[RunnerLabels.CI_SERVICES],
+    command="python3 ./ci/jobs/check_style.py",
+    run_in_docker="clickhouse/style-test",
+)
+
+fast_test_job = Job.Config(
+    name=JobNames.FAST_TEST,
+    runs_on=[RunnerLabels.BUILDER_AMD],
+    command="python3 ./ci/jobs/fast_test.py",
+    run_in_docker="clickhouse/fasttest",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/fast_test.py",
+            "./tests/queries/0_stateless/",
+            "./src",
+        ],
+    ),
+)
+
+build_jobs = Job.Config(
+    name=JobNames.BUILD,
+    runs_on=["...from params..."],
+    requires=[JobNames.FAST_TEST],
+    command="python3 ./ci/jobs/build_clickhouse.py --build-type {PARAMETER}",
+    run_in_docker="clickhouse/fasttest",
+    timeout=3600 * 2,
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./src",
+            "./contrib/",
+            "./CMakeLists.txt",
+            "./PreLoad.cmake",
+            "./cmake",
+            "./base",
+            "./programs",
+            "./docker/packager/packager",
+            "./rust",
+            "./tests/ci/version_helper.py",
+            "./ci/jobs/build_clickhouse.py",
+        ],
+    ),
+).parametrize(
+    parameter=["amd_debug", "amd_release", "arm_release", "arm_asan"],
+    provides=[
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN],
+    ],
+    runs_on=[
+        [RunnerLabels.BUILDER_AMD],
+        [RunnerLabels.BUILDER_AMD],
+        [RunnerLabels.BUILDER_ARM],
+        [RunnerLabels.BUILDER_ARM],
+    ],
+)
+
+stateless_tests_jobs = Job.Config(
+    name=JobNames.STATELESS,
+    runs_on=[RunnerLabels.BUILDER_AMD],
+    command="python3 ./ci/jobs/functional_stateless_tests.py --test-options {PARAMETER}",
+    # many tests expect to see "/var/lib/clickhouse" in various output lines - add mount for now, consider creating this dir in docker file
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/functional_stateless_tests.py",
+        ],
+    ),
+).parametrize(
+    parameter=[
+        "amd_debug,parallel",
+        "amd_debug,non-parallel",
+        "amd_release,parallel",
+        "amd_release,non-parallel",
+        "arm_asan,parallel",
+        "arm_asan,non-parallel",
+    ],
+    runs_on=[
+        [RunnerLabels.BUILDER_AMD],
+        [RunnerLabels.FUNC_TESTER_AMD],
+        [RunnerLabels.BUILDER_AMD],
+        [RunnerLabels.FUNC_TESTER_AMD],
+        [RunnerLabels.BUILDER_ARM],
+        [RunnerLabels.FUNC_TESTER_ARM],
+    ],
+    requires=[
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_DEBUG],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_AMD_RELEASE],
+        [ArtifactNames.CH_ARM_ASAN],
+        [ArtifactNames.CH_ARM_ASAN],
+    ],
+)
+
+stateful_tests_jobs = Job.Config(
+    name=JobNames.STATEFUL,
+    runs_on=[RunnerLabels.BUILDER_AMD],
+    command="python3 ./ci/jobs/functional_stateful_tests.py --test-options {PARAMETER}",
+    # many tests expect to see "/var/lib/clickhouse"
+    # some tests expect to see "/var/log/clickhouse"
+    run_in_docker="clickhouse/stateless-test+--security-opt seccomp=unconfined",
+    digest_config=Job.CacheDigestConfig(
+        include_paths=[
+            "./ci/jobs/functional_stateful_tests.py",
+        ],
+    ),
+).parametrize(
+    parameter=[
+        "amd_debug,parallel",
+    ],
+    runs_on=[
+        [RunnerLabels.BUILDER_AMD],
+    ],
+    requires=[
+        [ArtifactNames.CH_AMD_DEBUG],
+    ],
+)
 
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        JobConfigs.docker_build_arm,
-        JobConfigs.docker_build_amd,
-        JobConfigs.style_check,
-        JobConfigs.docs_job,
-        JobConfigs.fast_test,
-        *[
-            job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
-            for job in JobConfigs.build_jobs
-        ],
-        *[
-            job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
-            for job in JobConfigs.special_build_jobs
-        ],
-        *JobConfigs.unittest_jobs,
-        JobConfigs.docker_sever,
-        JobConfigs.docker_keeper,
-        *JobConfigs.install_check_jobs,
-        *JobConfigs.compatibility_test_jobs,
-        *JobConfigs.functional_tests_jobs_required,
-        *JobConfigs.functional_tests_jobs_non_required,
-        *JobConfigs.functional_tests_jobs_azure_master_only,
-        JobConfigs.bugfix_validation_job,
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
-        *JobConfigs.integration_test_jobs_required,
-        *JobConfigs.integration_test_jobs_non_required,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        *JobConfigs.stress_test_jobs,
-        *JobConfigs.upgrade_test_jobs,
-        *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
-        *JobConfigs.performance_comparison_amd_jobs,
-        *JobConfigs.performance_comparison_arm_jobs,
+        style_check_job,
+        fast_test_job,
+        *build_jobs,
+        *stateless_tests_jobs,
+        *stateful_tests_jobs,
     ],
     artifacts=[
-        *ArtifactConfigs.unittests_binaries,
-        *ArtifactConfigs.clickhouse_binaries,
-        ArtifactConfigs.fast_test,
-        *ArtifactConfigs.clickhouse_debians,
-        *ArtifactConfigs.clickhouse_rpms,
-        *ArtifactConfigs.clickhouse_tgzs,
-        ArtifactConfigs.fuzzers,
-        ArtifactConfigs.fuzzers_corpus,
-        *ArtifactConfigs.performance_packages,
-        *ArtifactConfigs.performance_reports,
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_DEBUG,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.CH_AMD_RELEASE,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.CH_ARM_RELEASE,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
+        Artifact.Config(
+            name=ArtifactNames.CH_ARM_ASAN,
+            type=Artifact.Type.S3,
+            path=f"{Settings.TEMP_DIR}/build/programs/clickhouse",
+        ),
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
-    enable_cidb=True,
     enable_merge_ready_status=True,
-    enable_commit_status_on_failure=True,
-    pre_hooks=[
-        can_be_trusted,
-        "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/pr_description.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-    ],
-    workflow_filter_hooks=[should_skip_job],
-    post_hooks=[
-        "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
-    ],
 )
 
 WORKFLOWS = [
     workflow,
 ]
+
+
+# if __name__ == "__main__":
+#     # local job test inside praktika environment
+#     from praktika.runner import Runner
+#     from praktika.digest import Digest
+#
+#     print(Digest().calc_job_digest(amd_debug_build_job))
+#
+#     Runner().run(workflow, fast_test_job, docker="fasttest", local_run=True)

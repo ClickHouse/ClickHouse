@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/ym-dict-functions
+slug: /en/sql-reference/functions/ym-dict-functions
 sidebar_position: 60
 sidebar_label: Embedded Dictionaries
 ---
@@ -7,18 +7,18 @@ sidebar_label: Embedded Dictionaries
 # Functions for Working with Embedded Dictionaries
 
 :::note
-In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can't be loaded, an exception is thrown.
+In order for the functions below to work, the server config must specify the paths and addresses for getting all the embedded dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
 
 As such, the examples shown in this section will throw an exception in [ClickHouse Fiddle](https://fiddle.clickhouse.com/) and in quick release and production deployments by default, unless first configured.
 :::
 
-For information about creating reference lists, see the section ["Dictionaries"](../dictionaries#embedded-dictionaries).
+For information about creating reference lists, see the section [“Dictionaries”](../dictionaries#embedded-dictionaries).
 
-## Multiple Geobases {#multiple-geobases}
+## Multiple Geobases
 
 ClickHouse supports working with multiple alternative geobases (regional hierarchies) simultaneously, in order to support various perspectives on which countries certain regions belong to.
 
-The 'clickhouse-server' config specifies the file with the regional hierarchy:
+The ‘clickhouse-server’ config specifies the file with the regional hierarchy:
 
 ```<path_to_regions_hierarchy_file>/opt/geo/regions_hierarchy.txt</path_to_regions_hierarchy_file>```
 
@@ -37,7 +37,7 @@ regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_
 regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
 ```
 
-### regionToName {#regiontoname}
+### regionToName
 
 Accepts a region ID and geobase and returns a string of the name of the region in the corresponding language. If the region with the specified ID does not exist, an empty string is returned.
 
@@ -76,7 +76,7 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
-### regionToCity {#regiontocity}
+### regionToCity
 
 Accepts a region ID from the geobase. If this region is a city or part of a city, it returns the region ID for the appropriate city. Otherwise, returns 0.
 
@@ -124,9 +124,9 @@ Result:
 └────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────┘
 ```
 
-### regionToArea {#regiontoarea}
+### regionToArea
 
-Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as ['regionToCity'](#regiontocity).
+Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as [‘regionToCity’](#regiontocity).
 
 **Syntax**
 
@@ -176,9 +176,9 @@ Result:
 └──────────────────────────────────────────────────────┘
 ```
 
-### regionToDistrict {#regiontodistrict}
+### regionToDistrict
 
-Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as 'regionToCity'.
+Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as ‘regionToCity’.
 
 **Syntax**
 
@@ -228,9 +228,9 @@ Result:
 └──────────────────────────────────────────────────────────┘
 ```
 
-### regionToCountry {#regiontocountry}
+### regionToCountry
 
-Converts a region to a country (type 3 in the geobase). In every other way, this function is the same as 'regionToCity'.
+Converts a region to a country (type 3 in the geobase). In every other way, this function is the same as ‘regionToCity’.
 
 **Syntax**
 
@@ -276,9 +276,9 @@ Result:
 └────────────────────────────────────────────┴────┴─────────────────────────────────────────────────────────────┘
 ```
 
-### regionToContinent {#regiontocontinent}
+### regionToContinent
 
-Converts a region to a continent (type 1 in the geobase). In every other way, this function is the same as 'regionToCity'.
+Converts a region to a continent (type 1 in the geobase). In every other way, this function is the same as ‘regionToCity’.
 
 **Syntax**
 
@@ -324,7 +324,7 @@ Result:
 └────────────────────────────────────────────┴────┴───────────────────────────────────────────────────────────────┘
 ```
 
-### regionToTopContinent {#regiontotopcontinent}
+### regionToTopContinent
 
 Finds the highest continent in the hierarchy for the region.
 
@@ -372,9 +372,9 @@ Result:
 └────────────────────────────────────────────┴────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-### regionToPopulation {#regiontopopulation}
+### regionToPopulation
 
-Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../dictionaries#embedded-dictionaries). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
+Gets the population for a region. The population can be recorded in files with the geobase. See the section [“Dictionaries”](../dictionaries#embedded-dictionaries). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
 
 **Syntax**
 
@@ -420,7 +420,7 @@ Result:
 └────────────────────────────────────────────┴────────────┘
 ```
 
-### regionIn {#regionin}
+### regionIn
 
 Checks whether a `lhs` region belongs to a `rhs` region. Returns a UInt8 number equal to 1 if it belongs, or 0 if it does not belong.
 
@@ -468,7 +468,7 @@ USA is not in Boulder County
 USA is not in Boulder    
 ```
 
-### regionHierarchy {#regionhierarchy}
+### regionHierarchy
 
 Accepts a UInt32 number – the region ID from the geobase. Returns an array of region IDs consisting of the passed region and all parents along the chain.
 

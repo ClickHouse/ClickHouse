@@ -1,6 +1,5 @@
 #include <cstring>
 
-#include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <base/unaligned.h>
@@ -494,8 +493,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
 
-    T min;
-    T max;
+    T min, max;
     findMinMax<T>(src, bytes_size, min, max);
     MinMaxType min64 = min; // NOLINT
     MinMaxType max64 = max; // NOLINT

@@ -13,7 +13,6 @@
 
 #include <boost/program_options.hpp>
 #include <filesystem>
-#include <iostream>
 
 namespace fs = std::filesystem;
 

@@ -11,9 +11,6 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/*"), "/[^/]*");
-    EXPECT_EQ(makeRegexpPatternFromGlobs("{123}"), "(123)");
-    EXPECT_EQ(makeRegexpPatternFromGlobs("{test}"), "(test)");
-    EXPECT_EQ(makeRegexpPatternFromGlobs("{test.tar.gz}"), "(test\\.tar\\.gz)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*_{{a,b,c,d}}/?.csv"), "[^/]*_\\{(a|b|c|d)\\}/[^/]\\.csv");
     /* Regex Parsing for {..} can have three possible cases
        1) The left range width == the right range width
@@ -39,6 +36,9 @@ TEST(Common, makeRegexpPatternFromGlobs)
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{103..95}"), "f(95|96|97|98|99|100|101|102|103)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{9..01}"), "f(01|02|03|04|05|06|07|08|09)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{9..000}"), "f(000|001|002|003|004|005|006|007|008|009)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("f{1,2}{1..2}"), "f(1|2)(1|2)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("f{1..2}{1,2}"), "f(1|2)(1|2)");
+    EXPECT_EQ(makeRegexpPatternFromGlobs("f{1,2}{1,2}"), "f(1|2)(1|2)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{1..2}{1..2}"), "f(1|2)(1|2)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{1..1}{1..1}"), "f(1)(1)");
     EXPECT_EQ(makeRegexpPatternFromGlobs("f{0..0}{0..0}"), "f(0)(0)");

@@ -4,7 +4,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/logger_useful.h>
-#include <Compression/CompressionFactory.h>
 
 namespace ProfileEvents
 {
@@ -318,10 +317,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndexRow(const B
     for (size_t i = 0; i < index_block.columns(); ++i)
     {
         const auto & column = index_block.getByPosition(i).column;
-        index_serializations[i]->serializeBinary(*column, row, index_stream, {});
 
-        if (settings.save_primary_index_in_memory)
-            index_columns[i]->insertFrom(*column, row);
+        index_columns[i]->insertFrom(*column, row);
+        index_serializations[i]->serializeBinary(*column, row, index_stream, {});
     }
 }
 
@@ -339,10 +337,8 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
          */
         MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-        if (settings.save_primary_index_in_memory && index_columns.empty())
-        {
+        if (index_columns.empty())
             index_columns = primary_index_block.cloneEmptyColumns();
-        }
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (const auto & granule : granules_to_write)

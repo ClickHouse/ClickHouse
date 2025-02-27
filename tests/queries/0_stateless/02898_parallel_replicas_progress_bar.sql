@@ -15,7 +15,6 @@ system sync replica t2;
 system sync replica t3;
 
 SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost';
-SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
 -- default coordinator
 SELECT count(), min(k), max(k), avg(k) FROM t1 SETTINGS log_comment='02898_default_190aed82-2423-413b-ad4c-24dcca50f65b';

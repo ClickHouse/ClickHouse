@@ -19,6 +19,9 @@ target_link_libraries (valid_utf8_perf PRIVATE clickhouse_common_io clickhouse_c
 clickhouse_add_executable (valid_utf8 valid_utf8.cpp)
 target_link_libraries (valid_utf8 PRIVATE clickhouse_common_io clickhouse_common_config)
 
+clickhouse_add_executable (var_uint var_uint.cpp)
+target_link_libraries (var_uint PRIVATE clickhouse_common_io clickhouse_common_config)
+
 clickhouse_add_executable (read_escaped_string read_escaped_string.cpp)
 target_link_libraries (read_escaped_string PRIVATE clickhouse_common_io clickhouse_common_config)
 

@@ -10,29 +10,43 @@ HeaderFilterRegex: '^.*/(base|src|programs|utils)/.*(h|hpp)$'
 Checks: [
   '*',
 
-  '-abseil-string-find-str-contains', # disabled to avoid a misleading suggestion (obsolete absl::StrContains() instead of C++23 std::string::contains())
+  '-abseil-*',
 
   '-altera-*',
 
   '-android-*',
 
   '-boost-use-ranges',
+  '-modernize-use-ranges',
 
   '-bugprone-assignment-in-if-condition',
   '-bugprone-branch-clone',
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
+  '-bugprone-forward-declaration-namespace',
   '-bugprone-implicit-widening-of-multiplication-result',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
+  '-bugprone-not-null-terminated-result',
+  '-bugprone-reserved-identifier', # useful but too slow, TODO retry when https://reviews.llvm.org/rG1c282052624f9d0bd273bde0b47b30c96699c6c7 is merged
   '-bugprone-unchecked-optional-access',
   '-bugprone-crtp-constructor-accessibility',
-  '-bugprone-not-null-terminated-result',
 
   '-cert-dcl16-c',
+  '-cert-dcl37-c',
+  '-cert-dcl51-cpp',
   '-cert-err58-cpp',
+  '-cert-msc32-c',
+  '-cert-msc51-cpp',
+  '-cert-oop54-cpp',
+  '-cert-oop57-cpp',
+  '-cert-err33-c', # Misreports on clang-19: it warns about all functions containing 'remove' in the name, not only about the standard library.
 
   '-clang-analyzer-optin.performance.Padding',
+
+  '-clang-analyzer-cplusplus.PlacementNew',
+
+  '-clang-analyzer-unix.Malloc',
 
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
@@ -66,34 +80,39 @@ Checks: [
   '-hicpp-use-emplace',
   '-hicpp-vararg',
 
+  '-linuxkernel-*',
+
   '-llvm-*',
 
   '-llvmlibc-*',
+
+  '-openmp-*',
 
   '-misc-const-correctness',
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
   '-misc-non-private-member-variables-in-classes',
+  '-misc-confusable-identifiers', # useful but slooo
   '-misc-use-anonymous-namespace',
   '-misc-use-internal-linkage',
 
   '-modernize-avoid-c-arrays',
   '-modernize-concat-nested-namespaces',
+  '-modernize-macro-to-enum',
   '-modernize-pass-by-value',
   '-modernize-return-braced-init-list',
   '-modernize-use-auto',
+  '-modernize-use-constraints', # This is a good check, but clang-tidy crashes, see https://github.com/llvm/llvm-project/issues/91872
   '-modernize-use-default-member-init',
   '-modernize-use-emplace',
   '-modernize-use-nodiscard',
-  '-modernize-use-ranges',
   '-modernize-use-trailing-return-type',
   '-modernize-use-designated-initializers',
 
-  '-performance-avoid-endl',
   '-performance-enum-size',
   '-performance-inefficient-string-concatenation',
-  '-performance-inefficient-vector-operation',
   '-performance-no-int-to-ptr',
+  '-performance-avoid-endl',
   '-performance-unnecessary-value-param',
 
   '-portability-simd-intrinsics',
@@ -108,6 +127,7 @@ Checks: [
   '-readability-identifier-length',
   '-readability-identifier-naming', # useful but too slow
   '-readability-implicit-bool-conversion',
+  '-readability-isolate-declaration',
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',

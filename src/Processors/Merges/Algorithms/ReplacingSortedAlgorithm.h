@@ -1,6 +1,4 @@
 #pragma once
-
-#include <Columns/ColumnsNumber.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>

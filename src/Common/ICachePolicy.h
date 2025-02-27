@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/ICachePolicyUserQuota.h>
 #include <base/UUID.h>
 

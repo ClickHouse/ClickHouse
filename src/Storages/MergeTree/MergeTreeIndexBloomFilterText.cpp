@@ -2,17 +2,19 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
-#include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
@@ -61,15 +63,6 @@ void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, 
         istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), params.filter_size);
     }
     has_elems = true;
-}
-
-
-size_t MergeTreeIndexGranuleBloomFilterText::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter.memoryUsageBytes();
-    return sum;
 }
 
 
@@ -621,8 +614,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
         auto & value = const_value.safeGet<String>();
         String required_substring;
-        bool dummy_is_trivial;
-        bool dummy_required_substring_is_prefix;
+        bool dummy_is_trivial, dummy_required_substring_is_prefix;
         std::vector<String> alternatives;
         OptimizedRegularExpression::analyze(value, required_substring, dummy_is_trivial, dummy_required_substring_is_prefix, alternatives);
 

@@ -10,16 +10,16 @@ ASTPtr ASTDropWorkloadQuery::clone() const
     return std::make_shared<ASTDropWorkloadQuery>(*this);
 }
 
-void ASTDropWorkloadQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTDropWorkloadQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DROP WORKLOAD ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << "DROP WORKLOAD ";
 
     if (if_exists)
-        ostr << "IF EXISTS ";
+        settings.ostr << "IF EXISTS ";
 
-    ostr << (settings.hilite ? hilite_none : "");
-    ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(workload_name) << (settings.hilite ? hilite_none : "");
-    formatOnCluster(ostr, settings);
+    settings.ostr << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(workload_name) << (settings.hilite ? hilite_none : "");
+    formatOnCluster(settings);
 }
 
 }

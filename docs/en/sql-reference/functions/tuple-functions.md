@@ -1,15 +1,14 @@
 ---
-slug: /sql-reference/functions/tuple-functions
+slug: /en/sql-reference/functions/tuple-functions
 sidebar_position: 180
 sidebar_label: Tuples
-title: Tuple Functions
 ---
 
-## tuple {#tuple}
+## tuple
 
 A function that allows grouping multiple columns.
 For columns C1, C2, ... with the types T1, T2, ..., it returns a named Tuple(C1 T1, C2 T2, ...) type tuple containing these columns if their names are unique and can be treated as unquoted identifiers, otherwise a Tuple(T1, T2, ...) is returned. There is no cost to execute the function.
-Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can't be written to a table.
+Tuples are normally used as intermediate values for an argument of IN operators, or for creating a list of formal parameters of lambda functions. Tuples can’t be written to a table.
 
 The function implements the operator `(x, y, ...)`.
 
@@ -19,7 +18,7 @@ The function implements the operator `(x, y, ...)`.
 tuple(x, y, ...)
 ```
 
-## tupleElement {#tupleelement}
+## tupleElement
 
 A function that allows getting a column from a tuple.
 
@@ -34,7 +33,7 @@ tupleElement(tuple, index, [, default_value])
 tupleElement(tuple, name, [, default_value])
 ```
 
-## untuple {#untuple}
+## untuple
 
 Performs syntactic substitution of [tuple](../data-types/tuple.md#tuplet1-t2) elements in the call location.
 
@@ -114,7 +113,7 @@ Result:
 
 - [Tuple](../data-types/tuple.md)
 
-## tupleHammingDistance {#tuplehammingdistance}
+## tupleHammingDistance
 
 Returns the [Hamming Distance](https://en.wikipedia.org/wiki/Hamming_distance) between two tuples of the same size.
 
@@ -186,7 +185,7 @@ Result:
 └─────────────────┘
 ```
 
-## tupleToNameValuePairs {#tupletonamevaluepairs}
+## tupleToNameValuePairs
 
 Turns a named tuple into an array of (name, value) pairs. For a `Tuple(a T, b T, ..., c T)` returns `Array(Tuple(String, T), ...)`
 in which the `Strings` represents the named fields of the tuple and `T` are the values associated with those names. All values in the tuple should be of the same type.
@@ -260,7 +259,7 @@ Result:
 └───────────────────────────────────────┘
 ```
 
-## tupleNames {#tuplenames}
+## tupleNames
 
 Converts a tuple into an array of column names. For a tuple in the form `Tuple(a T, b T, ...)`, it returns an array of strings representing the named columns of the tuple. If the tuple elements do not have explicit names, their indices will be used as the column names instead.
 
@@ -314,7 +313,7 @@ Result:
 └───────────────────────┘
 ```
 
-## tuplePlus {#tupleplus}
+## tuplePlus
 
 Calculates the sum of corresponding values of two tuples of the same size.
 
@@ -351,7 +350,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## tupleMinus {#tupleminus}
+## tupleMinus
 
 Calculates the subtraction of corresponding values of two tuples of the same size.
 
@@ -388,7 +387,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## tupleMultiply {#tuplemultiply}
+## tupleMultiply
 
 Calculates the multiplication of corresponding values of two tuples of the same size.
 
@@ -423,7 +422,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## tupleDivide {#tupledivide}
+## tupleDivide
 
 Calculates the division of corresponding values of two tuples of the same size. Note that division by zero will return `inf`.
 
@@ -458,7 +457,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## tupleNegate {#tuplenegate}
+## tupleNegate
 
 Calculates the negation of the tuple values.
 
@@ -492,7 +491,7 @@ Result:
 └─────────────────────┘
 ```
 
-## tupleMultiplyByNumber {#tuplemultiplybynumber}
+## tupleMultiplyByNumber
 
 Returns a tuple with all values multiplied by a number.
 
@@ -527,7 +526,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## tupleDivideByNumber {#tupledividebynumber}
+## tupleDivideByNumber
 
 Returns a tuple with all values divided by a number. Note that division by zero will return `inf`.
 
@@ -562,7 +561,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## tupleConcat {#tupleconcat}
+## tupleConcat
 
 Combines tuples passed as arguments.
 
@@ -586,7 +585,7 @@ SELECT tupleConcat((1, 2), (3, 4), (true, false)) AS res
 └──────────────────────┘
 ```
 
-## tupleIntDiv {#tupleintdiv}
+## tupleIntDiv
 
 Does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients.
 
@@ -640,7 +639,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## tupleIntDivOrZero {#tupleintdivorzero}
+## tupleIntDivOrZero
 
 Like [tupleIntDiv](#tupleintdiv) it does integer division of a tuple of numerators and a tuple of denominators, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0. 
 
@@ -678,7 +677,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## tupleIntDivByNumber {#tupleintdivbynumber}
+## tupleIntDivByNumber
 
 Does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients.
 
@@ -732,7 +731,7 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-## tupleIntDivOrZeroByNumber {#tupleintdivorzerobynumber}
+## tupleIntDivOrZeroByNumber
 
 Like [tupleIntDivByNumber](#tupleintdivbynumber) it does integer division of a tuple of numerators by a given denominator, and returns a tuple of the quotients. It does not throw an error for 0 divisors, but rather returns the quotient as 0.
 
@@ -786,7 +785,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## tupleModulo {#tuplemodulo}
+## tupleModulo
 
 Returns a tuple of the moduli (remainders) of division operations of two tuples.
 
@@ -822,7 +821,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## tupleModuloByNumber {#tuplemodulobynumber}
+## tupleModuloByNumber
 
 Returns a tuple of the moduli (remainders) of division operations of a tuple and a given divisor.
 
@@ -858,7 +857,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## flattenTuple {#flattentuple}
+## flattenTuple
 
 Returns a flattened `output` tuple from a nested named `input` tuple. Elements of the `output` tuple are the paths from the original `input` tuple. For instance: `Tuple(a Int, Tuple(b Int, c Int)) -> Tuple(a Int, b Int, c Int)`. `flattenTuple` can be used to select all paths from type `Object` as separate columns.
 
@@ -894,6 +893,6 @@ Result:
 └───────────────────────────┘
 ```
 
-## Distance functions {#distance-functions}
+## Distance functions
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).

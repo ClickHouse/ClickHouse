@@ -3,6 +3,7 @@
 #include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SipHash.h>
 
 #include <base/types.h>
 #include <cppkafka/cppkafka.h>
@@ -23,7 +24,6 @@ namespace DB
 {
 
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer2
 {
@@ -46,7 +46,13 @@ public:
 
     struct OnlyTopicNameAndPartitionIdHash
     {
-        std::size_t operator()(const TopicPartition & tp) const;
+        std::size_t operator()(const TopicPartition & tp) const
+        {
+            SipHash s;
+            s.update(tp.topic);
+            s.update(tp.partition_id);
+            return s.get64();
+        }
     };
 
     struct OnlyTopicNameAndPartitionIdEquality

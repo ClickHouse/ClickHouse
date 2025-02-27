@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 
 
 namespace DB
@@ -91,37 +91,37 @@ void ASTSystemQuery::setTable(const String & name)
     }
 }
 
-void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     auto print_identifier = [&](const String & identifier) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(identifier)
                       << (settings.hilite ? hilite_none : "");
-        return ostr;
+        return settings.ostr;
     };
 
     auto print_keyword = [&](const auto & keyword) -> WriteBuffer &
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
-        return ostr;
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << keyword << (settings.hilite ? hilite_none : "");
+        return settings.ostr;
     };
 
     auto print_database_table = [&]() -> WriteBuffer &
     {
         if (database)
         {
-            database->format(ostr, settings, state, frame);
-            ostr << '.';
+            database->formatImpl(settings, state, frame);
+            settings.ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
-        return ostr;
+        table->formatImpl(settings, state, frame);
+        return settings.ostr;
     };
 
     auto print_drop_replica = [&]
     {
-        ostr << " " << quoteString(replica);
+        settings.ostr << " " << quoteString(replica);
         if (!shard.empty())
             print_keyword(" FROM SHARD ") << quoteString(shard);
 
@@ -151,7 +151,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     print_keyword("SYSTEM") << " ";
     print_keyword(typeToString(type));
     if (!cluster.empty())
-        formatOnCluster(ostr, settings);
+        formatOnCluster(settings);
 
     switch (type)
     {
@@ -173,12 +173,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
-        case Type::LOAD_PRIMARY_KEY:
         case Type::UNLOAD_PRIMARY_KEY:
         {
             if (table)
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_database_table();
             }
             else if (!volume.empty())
@@ -193,41 +192,40 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::WAIT_LOADING_PARTS:
         case Type::FLUSH_DISTRIBUTED:
         case Type::PREWARM_MARK_CACHE:
-        case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             if (table)
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_database_table();
             }
 
             if (sync_replica_mode != SyncReplicaMode::DEFAULT)
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_keyword(magic_enum::enum_name(sync_replica_mode));
 
                 // If the mode is LIGHTWEIGHT and specific source replicas are specified
                 if (sync_replica_mode == SyncReplicaMode::LIGHTWEIGHT && !src_replicas.empty())
                 {
-                    ostr << ' ';
+                    settings.ostr << ' ';
                     print_keyword("FROM");
-                    ostr << ' ';
+                    settings.ostr << ' ';
 
                     bool first = true;
                     for (const auto & src : src_replicas)
                     {
                         if (!first)
-                            ostr << ", ";
+                            settings.ostr << ", ";
                         first = false;
-                        ostr << quoteString(src);
+                        settings.ostr << quoteString(src);
                     }
                 }
             }
 
             if (query_settings)
             {
-                ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
-                query_settings->format(ostr, settings, state, frame);
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
+                query_settings->formatImpl(settings, state, frame);
             }
 
             break;
@@ -240,22 +238,22 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (table)
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_database_table();
             }
             else if (!target_model.empty())
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_identifier(target_model);
             }
             else if (!target_function.empty())
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_identifier(target_function);
             }
             else if (!disk.empty())
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_identifier(disk);
             }
 
@@ -263,7 +261,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::SYNC_DATABASE_REPLICA:
         {
-            ostr << ' ';
+            settings.ostr << ' ';
             print_identifier(database->as<ASTIdentifier>()->name());
             break;
         }
@@ -292,7 +290,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             if (!filesystem_cache_name.empty())
             {
-                ostr << ' ' << quoteString(filesystem_cache_name);
+                settings.ostr << ' ' << quoteString(filesystem_cache_name);
                 if (!key_to_drop.empty())
                 {
                     print_keyword(" KEY ");
@@ -300,7 +298,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     if (offset_to_drop.has_value())
                     {
                         print_keyword(" OFFSET ");
-                        ostr << offset_to_drop.value();
+                        settings.ostr << offset_to_drop.value();
                     }
                 }
             }
@@ -318,17 +316,17 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");
-            ostr << quoteString(backup_name);
+            settings.ostr << quoteString(backup_name);
             break;
         }
         case Type::START_LISTEN:
         case Type::STOP_LISTEN:
         {
-            ostr << ' ';
+            settings.ostr << ' ';
             print_keyword(ServerType::serverTypeToString(server_type.type));
 
             if (server_type.type == ServerType::Type::CUSTOM)
-                ostr << ' ' << quoteString(server_type.custom_name);
+                settings.ostr << ' ' << quoteString(server_type.custom_name);
 
             bool comma = false;
 
@@ -342,11 +340,11 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                         continue;
 
                     if (comma)
-                        ostr << ',';
+                        settings.ostr << ',';
                     else
                         comma = true;
 
-                    ostr << ' ';
+                    settings.ostr << ' ';
                     print_keyword(ServerType::serverTypeToString(cur_type));
                 }
 
@@ -355,13 +353,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     for (const auto & cur_name : server_type.exclude_custom_names)
                     {
                         if (comma)
-                            ostr << ',';
+                            settings.ostr << ',';
                         else
                             comma = true;
 
-                        ostr << ' ';
+                        settings.ostr << ' ';
                         print_keyword(ServerType::serverTypeToString(ServerType::Type::CUSTOM));
-                        ostr << " " << quoteString(cur_name);
+                        settings.ostr << " " << quoteString(cur_name);
                     }
                 }
             }
@@ -371,7 +369,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DISABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         {
-            ostr << ' ';
+            settings.ostr << ' ';
             print_identifier(fail_point_name);
             break;
         }
@@ -381,39 +379,25 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         {
-            ostr << ' ';
+            settings.ostr << ' ';
             print_database_table();
             break;
         }
         case Type::TEST_VIEW:
         {
-            ostr << ' ';
+            settings.ostr << ' ';
             print_database_table();
 
             if (!fake_time_for_view)
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_keyword("UNSET FAKE TIME");
             }
             else
             {
-                ostr << ' ';
+                settings.ostr << ' ';
                 print_keyword("SET FAKE TIME");
-                ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
-            }
-            break;
-        }
-        case Type::FLUSH_LOGS:
-        {
-            bool comma = false;
-            for (const auto & cur_log : logs)
-            {
-                if (comma)
-                    ostr << ',';
-                else
-                    comma = true;
-                ostr << ' ';
-                print_identifier(cur_log);
+                settings.ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
             }
             break;
         }
@@ -424,11 +408,9 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:
-        case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::RESET_COVERAGE:
@@ -449,6 +431,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case Type::FLUSH_LOGS:
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:

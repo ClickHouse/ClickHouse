@@ -61,7 +61,6 @@
     ],
     "row_groups": [
         {
-            "file_offset": "4",
             "num_columns": "3",
             "num_rows": "65409",
             "total_uncompressed_size": "200527",
@@ -80,7 +79,7 @@
                         "min": "0",
                         "max": "999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "have_bloom_filter": false
                 },
                 {
                     "name": "str",
@@ -95,7 +94,7 @@
                         "min": "Hello0",
                         "max": "Hello999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "have_bloom_filter": false
                 },
                 {
                     "name": "mod",
@@ -110,12 +109,11 @@
                         "min": "0",
                         "max": "8"
                     },
-                    "bloom_filter_bytes": "0"
+                    "have_bloom_filter": false
                 }
             ]
         },
         {
-            "file_offset": "14635",
             "num_columns": "3",
             "num_rows": "34591",
             "total_uncompressed_size": "113620",
@@ -134,7 +132,7 @@
                         "min": "0",
                         "max": "999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "have_bloom_filter": false
                 },
                 {
                     "name": "str",
@@ -149,7 +147,7 @@
                         "min": "Hello0",
                         "max": "Hello999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "have_bloom_filter": false
                 },
                 {
                     "name": "mod",
@@ -164,7 +162,7 @@
                         "min": "0",
                         "max": "8"
                     },
-                    "bloom_filter_bytes": "0"
+                    "have_bloom_filter": false
                 }
             ]
         }
@@ -259,7 +257,6 @@
     ],
     "row_groups": [
         {
-            "file_offset": "4",
             "num_columns": "1",
             "num_rows": "5",
             "total_uncompressed_size": "105",
@@ -278,7 +275,7 @@
                         "min": "27 32 150 125 17 250 66 31 157 44 75 218 51 50 19 144 ",
                         "max": "154 31 90 141 15 7 68 47 190 29 121 145 188 162 234 154 "
                     },
-                    "bloom_filter_bytes": "1048594"
+                    "have_bloom_filter": true
                 }
             ]
         }

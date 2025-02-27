@@ -122,8 +122,8 @@ bool ColumnDescription::operator==(const ColumnDescription & other) const
 String formatASTStateAware(IAST & ast, IAST::FormatState & state)
 {
     WriteBufferFromOwnString buf;
-    IAST::FormatSettings settings(true, false);
-    ast.format(buf, settings, state, IAST::FormatStateStacked());
+    IAST::FormatSettings settings(buf, true, false);
+    ast.formatImpl(settings, state, IAST::FormatStateStacked());
     return buf.str();
 }
 
@@ -215,7 +215,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
                 comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
-                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
+                codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true);
 
             if (col_ast->ttl)
                 ttl = col_ast->ttl;
@@ -386,9 +386,7 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     };
 
     if (first)
-    {
         reorder_column([&]() { return columns.cbegin(); });
-    }
     else if (!after_column.empty() && column_name != after_column)
     {
         /// Checked first
@@ -972,7 +970,7 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     names.reserve(columns.size());
     for (const auto & column : columns)
     {
-        if (!column.name.contains('.'))
+        if (column.name.find('.') == std::string::npos)
             names.push_back(column.name);
     }
     return names;

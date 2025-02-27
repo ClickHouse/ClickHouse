@@ -35,8 +35,6 @@ public:
     /// Version of `receivePacket` function without locking.
     virtual Packet receivePacketUnlocked(AsyncCallback async_callback) = 0;
 
-    virtual UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) = 0;
-
     /// Break all active connections.
     virtual void disconnect() = 0;
 

@@ -1,15 +1,15 @@
 #pragma once
 
+#include <Compression/CompressionFactory.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
-#include <Core/NamesAndAliases.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ColumnDefault.h>
+#include <Common/SettingsChanges.h>
 #include <Storages/StatisticsDescription.h>
 #include <Common/Exception.h>
-#include <Common/NamePrompter.h>
-#include <Common/SettingsChanges.h>
 
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/mem_fun.hpp>
@@ -279,7 +279,7 @@ struct DefaultExpressionsInfo
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
 /// Validate default expressions and corresponding types compatibility, i.e.
-/// default expression result can be cast to column_type. Also checks, that we
+/// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
 void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);

@@ -3,7 +3,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
@@ -15,7 +14,6 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
-#include <base/defines.h>
 
 #include "config.h"
 
@@ -49,11 +47,6 @@ bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
     return !LockMemoryExceptionInThread::isBlocked(level, fault_injection) && !std::uncaught_exceptions();
 }
 
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTrackingUncorrected;
 }
 
 namespace DB
@@ -261,9 +254,11 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
       * So, we allow over-allocations.
       */
     Int64 will_be = size ? size + amount.fetch_add(size, std::memory_order_relaxed) : amount.load(std::memory_order_relaxed);
-    Int64 will_be_rss = 0;
-    if (level == VariableContext::Global)
-        will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
+    Int64 will_be_rss = size ? size + rss.fetch_add(size, std::memory_order_relaxed) : rss.load(std::memory_order_relaxed);
+
+    auto metric_loaded = metric.load(std::memory_order_relaxed);
+    if (metric_loaded != CurrentMetrics::end() && size)
+        CurrentMetrics::add(metric_loaded, size);
 
     Int64 current_hard_limit = hard_limit.load(std::memory_order_relaxed);
     Int64 current_profiler_limit = profiler_limit.load(std::memory_order_relaxed);
@@ -331,13 +326,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
                     "{}{} exceeded: "
-                    "would use {} (attempt to allocate chunk of {} bytes){}, maximum: {}."
+                    "would use {} (attempt to allocate chunk of {} bytes), current RSS {}, maximum: {}."
                     "{}{}",
                     description ? description : "",
                     description ? " memory limit" : "Memory limit",
                     formatReadableSizeWithBinarySuffix(will_be),
                     size,
-                    level == VariableContext::Global ? fmt::format(", current RSS: {}", formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed))) : "",
+                    formatReadableSizeWithBinarySuffix(rss.load(std::memory_order_relaxed)),
                     formatReadableSizeWithBinarySuffix(current_hard_limit),
                     overcommit_result_ignore ? "" : " OvercommitTracker decision: ",
                     overcommit_result_ignore ? "" : toDescription(overcommit_result));
@@ -375,10 +370,6 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceed
             debugLogBigAllocationWithoutCheck(size);
         }
     }
-
-    auto metric_loaded = metric.load(std::memory_order_relaxed);
-    if (metric_loaded != CurrentMetrics::end() && size)
-        CurrentMetrics::add(metric_loaded, size);
 
     if (peak_updated && allocation_traced)
     {
@@ -540,11 +531,7 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
             "Correcting the value of global memory tracker from {} to {}",
             ReadableSize(total_memory_tracker.amount.load(std::memory_order_relaxed)),
             ReadableSize(allocated_));
-
-    auto current_amount = total_memory_tracker.amount.exchange(new_amount, std::memory_order_relaxed);
-    total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
-    total_memory_tracker.last_corrected_amount = new_amount;
-    CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
+    total_memory_tracker.amount.store(new_amount, std::memory_order_relaxed);
 
     auto metric_loaded = total_memory_tracker.metric.load(std::memory_order_relaxed);
     if (metric_loaded != CurrentMetrics::end())
@@ -611,20 +598,6 @@ void MemoryTracker::setParent(MemoryTracker * elem)
         DB::current_thread->flushUntrackedMemory();
 
     parent.store(elem, std::memory_order_relaxed);
-
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    bool found_total_memory_tracker = false;
-    const auto * next = this;
-    do
-    {
-        if (found_total_memory_tracker)
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Double total in the MemoryTracker chains. It is a bug.");
-        if (next == &total_memory_tracker)
-            found_total_memory_tracker = true;
-    } while ((next = next->parent.load(std::memory_order_relaxed)));
-    if (!found_total_memory_tracker)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot found total MemoryTracker. Bug in nesting.");
-#endif
 }
 
 bool canEnqueueBackgroundTask()

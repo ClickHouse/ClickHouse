@@ -4,12 +4,10 @@
 #include "createVolume.h"
 
 #include <Interpreters/Context.h>
-#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
-#include <Disks/VolumeJBOD.h>
 
 #include <algorithm>
 #include <set>
@@ -111,7 +109,7 @@ StoragePolicy::StoragePolicy(
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        move_factor, backQuote(name));
+                        toString(move_factor), backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
@@ -130,7 +128,7 @@ StoragePolicy::StoragePolicy(String name_, Volumes volumes_, double move_factor_
     if (move_factor > 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
-                        move_factor, backQuote(name));
+                        toString(move_factor), backQuote(name));
 
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());

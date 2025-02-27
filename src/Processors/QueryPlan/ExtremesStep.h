@@ -13,9 +13,6 @@ public:
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
-    void serialize(Serialization & ctx) const override;
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
 private:
     void updateOutputHeader() override
     {
