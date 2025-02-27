@@ -3060,11 +3060,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/overview#custom_settings)
 
 ## getSettingOrDefault {#getsettingordefault}
 
-Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](/operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3099,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/overview#custom_settings)
 
 ## isDecimalOverflow {#isdecimaloverflow}
 
