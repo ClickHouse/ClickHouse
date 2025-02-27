@@ -308,7 +308,7 @@ class ClickhouseIntegrationTestsRunner:
                     full_path = os.path.join(debs_path, f)
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
-                    log_path = os.path.join(str(self.path()), log_name)
+                    log_path = os.path.join(self.path(), log_name)
                     cmd = f"dpkg -x {full_path} ."
                     logging.info("Executing installation cmd %s", cmd)
                     with TeePopen(cmd, log_file=log_path) as proc:
@@ -594,12 +594,12 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
-                f"--report-log={report_name} --color=no --durations=0 "
+                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
+                f"-rfEps --run-id={i} --report-log={report_name} --color=no --durations=0 "
                 f"{_get_deselect_option(self.should_skip_tests())}"
             )
 
-            log_basename = test_group_str + "_" + str(i) + ".log"
+            log_basename = f"{test_group_str}_{i}.log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
             # ignore retcode, since it meaningful due to pipe to tee
@@ -610,7 +610,7 @@ class ClickhouseIntegrationTestsRunner:
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
-                str(self.path()), "integration_run_" + log_basename
+                self.path(), "integration_run_" + log_basename
             )
             shutil.copy(log_path, log_result_path)
             log_paths.append(log_result_path)
@@ -629,13 +629,7 @@ class ClickhouseIntegrationTestsRunner:
                 self.repo_path, "tests/integration/dockerd.log"
             )
             if os.path.exists(dockerd_log_path):
-                new_name = (
-                    test_group_str
-                    + "_"
-                    + str(i)
-                    + "_"
-                    + os.path.basename(dockerd_log_path)
-                )
+                new_name = f"{test_group_str}_{i}_{os.path.basename(dockerd_log_path)}"
                 os.rename(
                     dockerd_log_path,
                     os.path.join(self.repo_path, "tests/integration", new_name),
@@ -661,8 +655,7 @@ class ClickhouseIntegrationTestsRunner:
 
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
-                    str(self.path()),
-                    f"integration_run_{test_group_str}_{i}.tar.zst",
+                    self.path(), f"integration_run_{test_group_str}_{i}.tar.zst"
                 )
                 self._compress_logs(
                     os.path.join(self.repo_path, "tests/integration"),
@@ -1034,8 +1027,8 @@ def run():
         subprocess.check_call("sudo -E dmesg -T", shell=True)
 
     status = (state, description)
-    out_results_file = os.path.join(str(runner.path()), "test_results.tsv")
-    out_status_file = os.path.join(str(runner.path()), "check_status.tsv")
+    out_results_file = os.path.join(runner.path(), "test_results.tsv")
+    out_status_file = os.path.join(runner.path(), "check_status.tsv")
     write_results(out_results_file, out_status_file, test_results, status)
     logging.info("Result written")
 
