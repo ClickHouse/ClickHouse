@@ -53,7 +53,10 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     }
 
     static constexpr int infinite_reconnect_count = -1;
+    natsOptions_SetPingInterval(options.get(), 600'000);
+    natsOptions_SetMaxPingsOut(options.get(), 3);
     natsOptions_SetMaxReconnect(options.get(), infinite_reconnect_count);
+    
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
