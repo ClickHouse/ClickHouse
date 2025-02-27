@@ -664,18 +664,13 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     }
 }
 
-void DatabaseCatalog::updateDatabaseComment(const String & database_name, const String & old_database_comment)
+void DatabaseCatalog::updateDatabaseComment(const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
-    auto it = databases.find(database_name);
-    assert(it != databases.end());
-    auto db = it->second;
-    if (!db)
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
-
-    ASTPtr ast = db->getCreateDatabaseQuery();
+    ASTPtr ast = database->getCreateDatabaseQuery();
     if (!ast)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+        throw Exception(
+            ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database->getDatabaseName()));
 
     auto * ast_create_query = ast->as<ASTCreateQuery>();
     if (!ast_create_query->is_dictionary)
@@ -686,8 +681,8 @@ void DatabaseCatalog::updateDatabaseComment(const String & database_name, const 
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql.tmp");
-    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
     auto db_disk = getContext()->getDatabaseDisk();
 
     writeMetadataFile(
@@ -701,7 +696,7 @@ void DatabaseCatalog::updateDatabaseComment(const String & database_name, const 
     catch (...)
     {
         db_disk->removeFileIfExists(database_metadata_tmp_path);
-        db->setDatabaseComment(old_database_comment);
+        throw;
     }
 }
 

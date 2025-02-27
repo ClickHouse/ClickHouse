@@ -271,7 +271,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateDatabaseComment(const String & database_name, const String & old_database_comment);
+    void updateDatabaseComment(const DatabasePtr & database);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow

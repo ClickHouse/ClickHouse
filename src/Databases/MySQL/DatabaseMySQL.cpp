@@ -427,12 +427,7 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
 
 void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
 {
-    if (!command.comment)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not get database comment from query");
-
-    String old_database_comment = getDatabaseComment();
     setDatabaseComment(command.comment.value());
-    DatabaseCatalog::instance().updateDatabaseComment(getDatabaseName(), old_database_comment);
 }
 
 String DatabaseMySQL::getMetadataPath() const
