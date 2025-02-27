@@ -176,12 +176,14 @@ The granule size is restricted by the `index_granularity` and `index_granularity
 
 Take the `(CounterID, Date)` primary key as an example. In this case, the sorting and index can be illustrated as follows:
 
-      Whole data:     [---------------------------------------------]
-      CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
-      Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
-      Marks:           |      |      |      |      |      |      |      |      |      |      |
-                      a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
-      Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
+```text
+Whole data:     [---------------------------------------------]
+CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
+Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
+Marks:           |      |      |      |      |      |      |      |      |      |      |
+                a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
+Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
+```
 
 If the data query specifies:
 

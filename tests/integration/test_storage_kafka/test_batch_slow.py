@@ -161,8 +161,8 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
     k.kafka_produce(kafka_cluster, topic_name, messages)
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
-        with kafka_cluster.paused_container("kafka1"):
 
+        with kafka_cluster.pause_container("kafka1"):
             create_query = create_query_generator(
                 "test_bad_reschedule",
                 "key UInt64, value UInt64",
@@ -177,7 +177,7 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
                 CREATE MATERIALIZED VIEW test.destination_unavailable ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT
                     key,
-                    now() as consume_ts,,
+                    now() as consume_ts,
                     value,
                     _topic,
                     _key,
@@ -1022,7 +1022,8 @@ def test_kafka_handling_commit_failure(kafka_cluster):
     # the tricky part here is that disconnect should happen after write prefix, but before we do commit
     # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
     # while materialized view is working to inject zookeeper failure
-    with kafka_cluster.paused_container("kafka1"):
+
+    with kafka_cluster.pause_container("kafka1"):
         # if we restore the connection too fast (<30sec) librdkafka will not report any timeout
         # (alternative is to decrease the default session timeouts for librdkafka)
         #

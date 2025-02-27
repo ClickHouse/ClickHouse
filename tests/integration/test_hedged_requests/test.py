@@ -208,7 +208,7 @@ def test_stuck_replica(started_cluster):
 
     update_configs()
 
-    with cluster.paused_container("node_1"):
+    with cluster.pause_container("node_1"):
         check_query(expected_replica="node_2")
         check_changing_replica_events(1)
 

@@ -15,7 +15,7 @@ Columns:
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `format` ([String](/docs/sql-reference/data-types/string.md)) — Format name.
+- `format` ([String](/sql-reference/data-types/string.md)) — Format name.
 - `first_update` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — First insert time with microseconds resolution.
 - `total_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of bytes waiting in the queue.
 - `entries.query_id` ([Array(String)](../../sql-reference/data-types/array.md)) - Array of query ids of the inserts waiting in the queue.

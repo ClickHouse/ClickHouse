@@ -210,7 +210,8 @@ def test_distributed_replica_max_ignored_errors():
 
     # initiate connection (if started only this test)
     n2.query("SELECT * FROM dist", settings=settings)
-    with cluster.paused_container("n1"):
+
+    with cluster.pause_container("n1"):
         # n1 paused -- skipping, and increment error_count for n1
         # but the query succeeds, no need in query_and_get_error()
         n2.query("SELECT * FROM dist", settings=settings)

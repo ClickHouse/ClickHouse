@@ -193,7 +193,7 @@ The setting is now back to its default:
 
 ## Custom Settings {#custom_settings}
 
-In addition to the common [settings](../../operations/settings/settings.md), users can define custom settings.
+In addition to the common [settings](/operations/settings/settings.md), users can define custom settings.
 
 A custom setting name must begin with one of predefined prefixes. The list of these prefixes must be declared in the [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) parameter in the server configuration file.
 
@@ -215,5 +215,5 @@ SELECT getSetting('custom_a');
 
 **See Also**
 
-- View the [Settings](./settings.md) page for a description of the ClickHouse settings.
-- [Global server settings](../../operations/server-configuration-parameters/settings.md)
+- View the [Settings](/operations/settings/settings.md) page for a description of the ClickHouse settings.
+- [Global server settings](/operations/server-configuration-parameters/settings.md)

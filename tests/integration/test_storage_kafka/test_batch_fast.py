@@ -459,7 +459,7 @@ def test_kafka_consumer_hang(kafka_cluster):
     # This should trigger heartbeat fail,
     # which will trigger REBALANCE_IN_PROGRESS,
     # and which can lead to consumer hang.
-    with kafka_cluster.paused_container("kafka1"):
+    with kafka_cluster.pause_container("kafka1"):
         instance.wait_for_log_line("heartbeat error")
 
     # logging.debug("Attempt to drop")
