@@ -127,6 +127,11 @@ using GinSegmentDictionaryPtr = std::shared_ptr<GinSegmentDictionary>;
 class GinIndexStore
 {
 public:
+    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
+    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
+    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
+    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
+
     /// Container for all term's Gin Index Postings List Builder
     using GinIndexPostingsBuilderContainer = absl::flat_hash_map<std::string, GinIndexPostingsBuilderPtr>;
 
@@ -138,9 +143,6 @@ public:
 
     /// Get a range of next 'numIDs'-many available row IDs
     UInt32 getNextRowIDRange(size_t numIDs);
-
-    /// Get next available segment ID by updating file .gin_sid
-    UInt32 getNextSegmentID();
 
     /// Get total number of segments in the store
     UInt32 getNumOfSegments();
@@ -168,11 +170,16 @@ public:
 
     const String & getName() const { return name; }
 
+    bool filesWouldBeWritten() const { return bool(metadata_file_stream) || !current_postings.empty(); }
+
 private:
     friend class GinIndexStoreDeserializer;
 
     /// Initialize all indexing files for this store
     void initFileStreams();
+
+    /// Get next available segment ID by updating file .gin_sid
+    UInt32 getNextSegmentID();
 
     /// Get a range of next available segment IDs by updating file .gin_sid
     UInt32 getNextSegmentIDRange(const String & file_name, size_t n);
@@ -203,11 +210,6 @@ private:
     std::unique_ptr<WriteBufferFromFileBase> metadata_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> dict_file_stream;
     std::unique_ptr<WriteBufferFromFileBase> postings_file_stream;
-
-    static constexpr auto GIN_SEGMENT_ID_FILE_TYPE = ".gin_sid";
-    static constexpr auto GIN_SEGMENT_METADATA_FILE_TYPE = ".gin_seg";
-    static constexpr auto GIN_DICTIONARY_FILE_TYPE = ".gin_dict";
-    static constexpr auto GIN_POSTINGS_FILE_TYPE = ".gin_post";
 
     enum class Format : uint8_t
     {
