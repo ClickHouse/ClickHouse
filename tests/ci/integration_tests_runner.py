@@ -595,7 +595,8 @@ class ClickhouseIntegrationTestsRunner:
                 f"cd {self.repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
                 f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
-                f"-rfEps --run-id={i} --report-log={report_name} --color=no --durations=0 "
+                f"-rfEps --run-id={i} --color=no --durations=0 "
+                f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "
                 f"{_get_deselect_option(self.should_skip_tests())}"
             )
 
