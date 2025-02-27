@@ -18,7 +18,8 @@ public:
         const std::string & database_name_,
         const std::string & url_,
         const DatabaseDataLakeSettings & settings_,
-        ASTPtr database_engine_definition_);
+        ASTPtr database_engine_definition_,
+        ASTPtr table_engine_definition_);
 
     String getEngineName() const override { return "DataLake"; }
 
@@ -56,6 +57,7 @@ private:
     const DatabaseDataLakeSettings settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
     const ASTPtr database_engine_definition;
+    const ASTPtr table_engine_definition;
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;

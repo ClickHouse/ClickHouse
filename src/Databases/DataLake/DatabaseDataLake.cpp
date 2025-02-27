@@ -73,11 +73,13 @@ DatabaseDataLake::DatabaseDataLake(
     const std::string & database_name_,
     const std::string & url_,
     const DatabaseDataLakeSettings & settings_,
-    ASTPtr database_engine_definition_)
+    ASTPtr database_engine_definition_,
+    ASTPtr table_engine_definition_)
     : IDatabase(database_name_)
     , url(url_)
     , settings(settings_)
     , database_engine_definition(database_engine_definition_)
+    , table_engine_definition(table_engine_definition_)
     , log(getLogger("DatabaseDataLake(" + database_name_ + ")"))
 {
     validateSettings();
@@ -246,7 +248,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (with_vended_credentials && !lightweight)
         table_metadata = table_metadata.withStorageCredentials();
 
-
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
@@ -256,13 +257,16 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     ASTStorage * storage = database_engine_definition->as<ASTStorage>();
     ASTs args = storage->engine->arguments->children;
 
-    /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
-    auto table_endpoint = getStorageEndpointForTable(table_metadata);
-    LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
-    if (table_endpoint.starts_with("file:/"))
-        table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+    if (!lightweight || table_metadata.hasLocation())
+    {
+        /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
+        auto table_endpoint = getStorageEndpointForTable(table_metadata);
+        LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
+        if (table_endpoint.starts_with("file:/"))
+            table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+        args[0] = std::make_shared<ASTLiteral>(table_endpoint);
+    }
 
-    args[0] = std::make_shared<ASTLiteral>(table_endpoint);
 
     /// We either fetch storage credentials from catalog
     /// or get storage credentials from database engine arguments
@@ -290,7 +294,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
 
     const auto columns = ColumnsDescription(table_metadata.getSchema());
-    LOG_DEBUG(log, "Got columns {}", columns.toString());
 
     DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
     auto storage_type_from_catalog = catalog->getStorageType();
@@ -315,17 +318,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, storage_settings.get());
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_copy, /* with_table_structure */false, storage_settings.get());
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        configuration->createObjectStorage(context_, /* is_readonly */ false),
-        context_,
+        configuration->createObjectStorage(context_copy, /* is_readonly */ false),
+        context_copy,
         StorageID(getDatabaseName(), name),
         /* columns */columns,
         /* constraints */ConstraintsDescription{},
         /* comment */"",
-        getFormatSettings(context_),
+        getFormatSettings(context_copy),
         LoadingStrictnessLevel::CREATE,
         /* distributed_processing */false,
         /* partition_by */nullptr,
@@ -389,7 +392,6 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     ContextPtr /* context_ */,
     bool /* throw_on_error */) const
 {
-    LOG_DEBUG(log, "SHOW CREATE TABLE FOR {}", name);
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
@@ -397,7 +399,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
-    auto table_storage_define = database_engine_definition->clone();
+    auto table_storage_define = table_engine_definition->clone();
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
@@ -506,6 +508,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         auto engine_for_tables = database_engine_define->clone();
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
 
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Database engine name {}", database_engine_name);
+
         switch (database_settings[DB::DatabaseDataLakeSetting::catalog_type].value)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
@@ -524,10 +528,12 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             }
         }
 
+        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Database engine name {}", database_engine_name);
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
             url,
             database_settings,
+            database_engine_define->clone(),
             std::move(engine_for_tables));
     };
     factory.registerDatabase("UnityCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });

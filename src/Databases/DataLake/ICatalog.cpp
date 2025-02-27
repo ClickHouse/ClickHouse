@@ -52,7 +52,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
 
 void TableMetadata::setLocation(const std::string & location_)
 {
-    if (!with_location)
+    if (!with_location && !with_location_if_exists)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     /// Location has format:
@@ -82,7 +82,7 @@ void TableMetadata::setLocation(const std::string & location_)
 
 std::string TableMetadata::getLocation() const
 {
-    if (!with_location)
+    if (!with_location && !with_location_if_exists)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())

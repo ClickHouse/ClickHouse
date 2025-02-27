@@ -91,7 +91,8 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (state.create_engine_name == "Iceberg")
+            static const std::unordered_set<String> hidden_databases = {"IcebergRestCatalog", "UnityCatalog", "DataLakeCatalog"};
+            if (hidden_databases.contains(state.create_engine_name))
             {
                 const std::set<std::string_view> secret_settings = {"catalog_credential", "auth_header"};
                 if (secret_settings.contains(change.name))
