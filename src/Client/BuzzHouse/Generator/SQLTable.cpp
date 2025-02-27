@@ -1317,7 +1317,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
     if (rg.nextSmallNumber() < 7)
     {
-        uint32_t granularity = 0;
+        uint32_t granularity = 1;
         const uint32_t next_opt = rg.nextSmallNumber();
 
         if (next_opt < 4)
@@ -1325,7 +1325,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             std::uniform_int_distribution<uint32_t> next_dist(1, 4194304);
             granularity = next_dist(rg.generator);
         }
-        else if (next_opt < 10)
+        else if (next_opt < 8)
         {
             granularity = UINT32_C(1) << (rg.nextLargeNumber() % 21);
         }
