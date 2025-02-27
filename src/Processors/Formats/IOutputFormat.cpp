@@ -127,7 +127,7 @@ void IOutputFormat::finalize()
     finalizeImpl();
 
     if (auto_flush)
-    flush();
+        flush();
 
     finalizeBuffers();
     finalized = true;
