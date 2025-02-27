@@ -986,6 +986,8 @@ void InOrderCoordinator<mode>::doHandleInitialAllRangesAnnouncement(InitialAllRa
 template <CoordinationMode mode>
 ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest request)
 {
+    LOG_TRACE(log, "Got read request: {}", request.describe());
+
     if (request.mode != mode)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -993,8 +995,6 @@ ParallelReadResponse InOrderCoordinator<mode>::handleRequest(ParallelReadRequest
             request.replica_num,
             magic_enum::enum_name(request.mode),
             magic_enum::enum_name(mode));
-
-    LOG_TRACE(log, "Got read request: {}", request.describe());
 
     ParallelReadResponse response;
     response.description = request.description;
