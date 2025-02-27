@@ -16,7 +16,6 @@
 #define QUILL_DISABLE_NON_PREFIXED_MACROS 1
 
 #include <quill/Logger.h>
-#include <quill/Backend.h>
 #include <quill/Frontend.h>
 #include <quill/sinks/ConsoleSink.h>
 #include <quill/LogMacros.h>
