@@ -67,5 +67,5 @@ flush_query_id:          cd2c1e43-83f5-49dc-92e4-2fbc7f8d3716
 
 **See Also**
 
-- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_log](../../operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
 - [system.asynchronous_inserts](../../operations/system-tables/asynchronous_inserts.md#system_tables-asynchronous_inserts) — This table contains information about pending asynchronous inserts in queue.
