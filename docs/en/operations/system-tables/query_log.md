@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about executed queries, for example, start time, duration of processing, error messages."
 slug: /operations/system-tables/query_log
-title: "query_log"
+title: "system.query_log"
 keywords: ["system table", "query_log"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

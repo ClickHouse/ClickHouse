@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about and status of scheduling nodes residing on the local server."
 slug: /operations/system-tables/scheduler
-title: "scheduler"
+title: "system.scheduler"
 keywords: ["system table", "scheduler"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
