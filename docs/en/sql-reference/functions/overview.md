@@ -46,13 +46,15 @@ Functions have the following behaviors:
 
 Functions can't change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
-## Higher-order functions, `->` operator and lambda(params, expr) function {#higher-order-functions---operator-and-lambdaparams-expr-function}
+## Higher-order functions {#higher-order-functions}
+
+### `->` operator and lambda(params, expr) functions {#arrow-operator-and-lambda}
 
 Higher-order functions can only accept lambda functions as their functional argument. To pass a lambda function to a higher-order function use `->` operator. The left side of the arrow has a formal parameter, which is any ID, or multiple formal parameters – any IDs in a tuple. The right side of the arrow has an expression that can use these formal parameters, as well as any table columns.
 
 Examples:
 
-```The correct language is `python`.
+```python
 x -> 2 * x
 str -> str != Referer
 ```
