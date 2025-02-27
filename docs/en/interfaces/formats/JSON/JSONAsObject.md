@@ -9,9 +9,9 @@ alias: []
 
 ## Description {#description}
 
-In this format, a single JSON object is interpreted as a single [JSON](/docs/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
+In this format, a single JSON object is interpreted as a single [JSON](/sql-reference/data-types/newjson.md) value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
-This format can only be parsed for a table with a single field of type [JSON](/docs/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/docs/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/docs/sql-reference/statements/create/table.md/#materialized).
+This format can only be parsed for a table with a single field of type [JSON](/sql-reference/data-types/newjson.md). The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/table.md/#materialized).
 
 ## Example Usage {#example-usage}
 

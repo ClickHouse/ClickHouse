@@ -29,7 +29,7 @@ The `JSONCompactColumns` output format buffers all data in memory to output it a
 ]
 ```
 
-Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/docs/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+Columns that are not present in the block will be filled with default values (you can use [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
 
 ## Format Settings {#format-settings}
 

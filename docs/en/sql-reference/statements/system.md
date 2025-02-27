@@ -434,7 +434,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA {#sync-database-replica}
 
-Waits until the specified [replicated database](/docs/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
+Waits until the specified [replicated database](/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql

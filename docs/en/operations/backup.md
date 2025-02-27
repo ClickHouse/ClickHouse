@@ -90,7 +90,7 @@ The BACKUP and RESTORE statements take a list of DATABASE and TABLE names, a des
     - `storage_policy`: storage policy for the tables being restored. See [Using Multiple Block Devices for Data Storage](../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes). This setting is only applicable to the `RESTORE` command. The specified storage policy applies only to tables with an engine from the `MergeTree` family.
     - `s3_storage_class`: the storage class used for S3 backup. For example, `STANDARD`
     - `azure_attempt_to_create_container`: when using Azure Blob Storage, whether the specified container will try to be created if it doesn't exist. Default: true.
-    - [core settings](/docs/operations/settings/settings) can be used here too
+    - [core settings](/operations/settings/settings) can be used here too
 
 ### Usage examples {#usage-examples}
 
@@ -516,4 +516,4 @@ System tables related to access management, such as users, roles, row_policies, 
 
 This feature ensures that the access control configuration of a ClickHouse cluster can be backed up and restored as part of the cluster's overall setup.
 
-Note: This functionality only works for configurations managed through SQL commands (referred to as ["SQL-driven Access Control and Account Management"](/docs/operations/access-rights#enabling-access-control)). Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`) are not included in backups and cannot be restored through this method.
+Note: This functionality only works for configurations managed through SQL commands (referred to as ["SQL-driven Access Control and Account Management"](/operations/access-rights#enabling-access-control)). Access configurations defined in ClickHouse server configuration files (e.g. `users.xml`) are not included in backups and cannot be restored through this method.

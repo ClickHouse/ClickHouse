@@ -14,8 +14,8 @@ alias: []
 ## Description {#description}
 
 The `LineAsString` format interprets every line of input data as a single string value. 
-This format can only be parsed for a table with a single field of type [String](/docs/sql-reference/data-types/string.md). 
-The remaining columns must be set to [`DEFAULT`](/docs/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/docs/sql-reference/statements/create/table.md/#materialized), or omitted.
+This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
+The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/sql-reference/statements/create/table.md/#materialized), or omitted.
 
 ## Example Usage {#example-usage}
 

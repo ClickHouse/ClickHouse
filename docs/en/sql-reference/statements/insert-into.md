@@ -89,7 +89,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/docs/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/docs/interfaces/http/).
+You can insert data separately from the query by using the [command-line client](/integrations/sql-clients/clickhouse-client-local) or the [HTTP interface](/interfaces/http/).
 
 :::note
 If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ the `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
