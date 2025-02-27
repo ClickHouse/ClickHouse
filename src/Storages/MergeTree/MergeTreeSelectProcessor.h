@@ -7,6 +7,8 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <Processors/Chunk.h>
+
 #include <boost/core/noncopyable.hpp>
 
 
@@ -78,9 +80,11 @@ public:
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
 
+    void onFinish() const;
+
 private:
     /// Sets up range readers corresponding to data readers
-    void initializeRangeReaders();
+    void initializeReadersChain();
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;
@@ -94,10 +98,10 @@ private:
 
     /// Current task to read from.
     MergeTreeReadTaskPtr task;
-    /// This step is added when the part has lightweight delete mask
-    PrewhereExprStepPtr lightweight_delete_filter_step;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
+
+    ReadStepsPerformanceCounters read_steps_performance_counters;
 
     /// Should we add part level to produced chunk. Part level is useful for next steps if query has FINAL
     bool add_part_level = false;

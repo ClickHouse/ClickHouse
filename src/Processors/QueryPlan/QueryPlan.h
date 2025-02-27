@@ -3,7 +3,7 @@
 #include <Core/Names.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Parsers/IAST_fwd.h>
 

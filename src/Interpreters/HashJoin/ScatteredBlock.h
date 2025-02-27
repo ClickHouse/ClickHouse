@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
@@ -13,6 +12,8 @@
 
 namespace DB
 {
+
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 namespace ErrorCodes
 {
@@ -263,7 +264,7 @@ struct ScatteredBlock : private boost::noncopyable
     }
 
     /// Filters selector by mask discarding rows for which filter is false
-    void filter(const IColumn::Filter & filter)
+    void filter(const IColumnFilter & filter)
     {
         chassert(block && block.rows() == filter.size());
         IndexesPtr new_selector = Indexes::create();

@@ -1,5 +1,9 @@
-#include <Processors/Formats/IOutputFormat.h>
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferDecorator.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -81,9 +85,8 @@ void IOutputFormat::work()
             setRowsBeforeLimit(rows_before_limit_counter->get());
         if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
             setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+
         finalizeUnlocked();
-        if (auto_flush)
-            flushImpl();
         return;
     }
 
@@ -117,6 +120,10 @@ void IOutputFormat::work()
 void IOutputFormat::flushImpl()
 {
     out.next();
+
+    /// If output is a compressed buffer, we will flush the compressed chunk as well.
+    if (auto * out_with_nested = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(&out))
+        out_with_nested->getNestedBuffer()->next();
 }
 
 void IOutputFormat::flush()
@@ -156,6 +163,10 @@ void IOutputFormat::finalizeUnlocked()
 
     writeSuffixIfNeeded();
     finalizeImpl();
+
+    if (auto_flush)
+        flushImpl();
+
     finalizeBuffers();
     finalized = true;
 }
@@ -166,6 +177,21 @@ void IOutputFormat::finalize()
     finalizeUnlocked();
 }
 
+void IOutputFormat::setTotals(const Block & totals)
+{
+    std::lock_guard lock(writing_mutex);
+    writeSuffixIfNeeded();
+    consumeTotals(Chunk(totals.getColumns(), totals.rows()));
+    are_totals_written = true;
+}
+
+void IOutputFormat::setExtremes(const Block & extremes)
+{
+    std::lock_guard lock(writing_mutex);
+    writeSuffixIfNeeded();
+    consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
+}
+
 void IOutputFormat::onProgress(const Progress & progress)
 {
     statistics.progress.incrementPiecewiseAtomically(progress);
@@ -174,17 +200,25 @@ void IOutputFormat::onProgress(const Progress & progress)
     if (writesProgressConcurrently())
     {
         has_progress_update_to_write = true;
+
+        /// Do not write progress too frequently.
         if (elapsed_ns >= prev_progress_write_ns + 1000 * progress_write_frequency_us)
         {
             std::unique_lock lock(writing_mutex, std::try_to_lock);
             if (lock)
             {
                 writeProgress(statistics.progress);
+                flushImpl();
                 prev_progress_write_ns = elapsed_ns;
                 has_progress_update_to_write = false;
             }
         }
     }
+}
+
+void IOutputFormat::setProgress(Progress progress)
+{
+    statistics.progress = std::move(progress);
 }
 
 }

@@ -1,3 +1,4 @@
+#include "Core/NamesAndTypes.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -14,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
@@ -21,6 +23,13 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
 
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+extern const Event IcebergPartitionPrunnedFiles;
+}
 namespace DB
 {
 
@@ -209,7 +218,7 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
 
 Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
 {
-    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
     String json_str;
@@ -240,7 +249,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (manifest_list_file && (!current_snapshot.has_value() || (manifest_list_file.value() != current_snapshot->getName())))
     {
         current_snapshot = getSnapshot(manifest_list_file.value());
-        cached_files_for_current_snapshot = std::nullopt;
+        cached_unprunned_files_for_current_snapshot = std::nullopt;
     }
     current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
     return true;
@@ -282,7 +291,10 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 
 
 DataLakeMetadataPtr IcebergMetadata::create(
-    const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context)
+    const ObjectStoragePtr & object_storage,
+    const ConfigurationObserverPtr & configuration,
+    const ContextPtr & local_context,
+    bool)
 {
     auto configuration_ptr = configuration.lock();
 
@@ -290,7 +302,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto log = getLogger("IcebergMetadata");
 
-    StorageObjectStorageSource::ObjectInfo object_info(metadata_file_path);
+    ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
 
     String json_str;
@@ -317,7 +329,7 @@ ManifestList IcebergMetadata::initializeManifestList(const String & manifest_lis
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
     auto context = getContext();
-    StorageObjectStorageSource::ObjectInfo object_info(
+    ObjectInfo object_info(
         std::filesystem::path(configuration_ptr->getPath()) / "metadata" / manifest_list_file);
     auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
 
@@ -360,12 +372,18 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
 {
     String manifest_file = std::filesystem::path(configuration_ptr->getPath()) / "metadata" / filename;
 
-    StorageObjectStorageSource::ObjectInfo manifest_object_info(manifest_file);
+    ObjectInfo manifest_object_info(manifest_file);
     auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
     auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
     auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
+    schema_processor.addIcebergTableSchema(schema_object);
     auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
-        std::move(manifest_file_reader), format_version, configuration_ptr->getPath(), getFormatSettings(getContext()), schema_id);
+        std::move(manifest_file_reader),
+        format_version,
+        configuration_ptr->getPath(),
+        getFormatSettings(getContext()),
+        schema_id,
+        schema_processor);
     auto [manifest_file_iterator, _inserted]
         = manifest_files_by_name.emplace(manifest_file, ManifestFileContent(std::move(manifest_file_impl)));
     ManifestFileEntry manifest_file_entry{manifest_file_iterator};
@@ -373,7 +391,6 @@ ManifestFileEntry IcebergMetadata::initializeManifestFile(const String & filenam
     {
         manifest_entry_by_data_file.emplace(data_file.data_file_name, manifest_file_entry);
     }
-    schema_processor.addIcebergTableSchema(schema_object);
     return manifest_file_entry;
 }
 
@@ -386,34 +403,75 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & manifest_list_file) 
     return IcebergSnapshot{manifest_lists_by_name.emplace(manifest_list_file, initializeManifestList(manifest_list_file)).first};
 }
 
+std::vector<Int32>
+getRelevantPartitionColumnIds(const ManifestFileEntry & entry, const IcebergSchemaProcessor & schema_processor, Int32 current_schema_id)
+{
+    std::vector<Int32> partition_column_ids;
+    partition_column_ids.reserve(entry.getContent().getPartitionColumnInfos().size());
+    for (const auto & partition_column_info : entry.getContent().getPartitionColumnInfos())
+    {
+        std::optional<NameAndTypePair> name_and_type
+            = schema_processor.tryGetFieldCharacteristics(current_schema_id, partition_column_info.source_id);
+        if (name_and_type)
+        {
+            partition_column_ids.push_back(partition_column_info.source_id);
+        }
+    }
+    return partition_column_ids;
+}
 
-Strings IcebergMetadata::getDataFiles() const
+
+Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
-    {
         return {};
-    }
 
-    if (cached_files_for_current_snapshot.has_value())
-    {
-        return cached_files_for_current_snapshot.value();
-    }
+    if (!filter_dag && cached_unprunned_files_for_current_snapshot.has_value())
+        return cached_unprunned_files_for_current_snapshot.value();
 
     Strings data_files;
     for (const auto & manifest_entry : current_snapshot->getManifestList().getManifestFiles())
     {
-        for (const auto & data_file : manifest_entry.getContent().getDataFiles())
+        const auto & partition_columns_ids = getRelevantPartitionColumnIds(manifest_entry, schema_processor, current_schema_id);
+        const auto & partition_pruning_columns_names_and_types
+            = schema_processor.tryGetFieldsCharacteristics(current_schema_id, partition_columns_ids);
+
+        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
+            ActionsDAG(partition_pruning_columns_names_and_types), ExpressionActionsSettings(getContext()));
+        const KeyCondition partition_key_condition(
+            filter_dag, getContext(), partition_pruning_columns_names_and_types.getNames(), partition_minmax_idx_expr);
+
+        const auto & data_files_in_manifest = manifest_entry.getContent().getDataFiles();
+        for (const auto & data_file : data_files_in_manifest)
         {
             if (data_file.status != ManifestEntryStatus::DELETED)
             {
-                data_files.push_back(data_file.data_file_name);
+                if (partition_key_condition
+                        .checkInHyperrectangle(
+                            data_file.getPartitionRanges(partition_columns_ids), partition_pruning_columns_names_and_types.getTypes())
+                        .can_be_true)
+                    data_files.push_back(data_file.data_file_name);
+                else
+                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             }
         }
     }
 
-    cached_files_for_current_snapshot.emplace(std::move(data_files));
 
-    return cached_files_for_current_snapshot.value();
+    if (!filter_dag)
+        return (cached_unprunned_files_for_current_snapshot = data_files).value();
+
+    return data_files;
+}
+
+Strings IcebergMetadata::makePartitionPruning(const ActionsDAG & filter_dag)
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
+    }
+    return getDataFilesImpl(&filter_dag);
 }
 }
 

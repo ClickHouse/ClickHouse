@@ -1,6 +1,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/typeid_cast.h>
@@ -20,9 +21,11 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -359,7 +362,7 @@ namespace
             {
                 if (tuple_literal->value.getType() == Field::Types::Tuple)
                 {
-                    const auto & tuple = tuple_literal->value.safeGet<const Tuple &>();
+                    const auto & tuple = tuple_literal->value.safeGet<Tuple>();
                     for (const auto & child : tuple)
                     {
                         const auto dnf = analyzeEquals(identifier, child, expr);

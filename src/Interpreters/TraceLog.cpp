@@ -13,6 +13,8 @@
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>
 
+#include <filesystem>
+
 
 namespace DB
 {

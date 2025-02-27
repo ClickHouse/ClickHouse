@@ -1,0 +1,81 @@
+Regular merge
+20
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/50
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/6
+default	tab	idx_a	430
+default	tab	idx_b	78
+Merge with materialize_skip_indexes_on_merge = 1
+20
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 1/1
+            Granules: 50/50
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 50/50
+default	tab	idx_a	0
+default	tab	idx_b	0
+0	0
+Materialize indexes explicitly
+20
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/50
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 6/6
+default	tab	idx_a	430
+default	tab	idx_b	78
+Merge after resetting materialize_skip_indexes_on_merge to default
+40
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression
+        ReadFromMergeTree (default.tab)
+        Indexes:
+          Skip
+            Name: idx_a
+            Description: minmax GRANULARITY 1
+            Parts: 1/1
+            Granules: 12/100
+          Skip
+            Name: idx_b
+            Description: set GRANULARITY 1
+            Parts: 1/1
+            Granules: 12/12
+default	tab	idx_a	441
+default	tab	idx_b	127

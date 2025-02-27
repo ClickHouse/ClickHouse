@@ -15,6 +15,10 @@ fi
 # The repo is usually mounted to /ClickHouse
 LANGUAGES=$(grep -o "'[/][a-z][a-z]'" /opt/clickhouse-docs/docusaurus.config.js | sort -u | sed "s/'\/\([a-z][a-z]\)'/\1/")
 
+# install latest packages
+yarn install
+yarn prep-from-local /ClickHouse
+
 for lang in $LANGUAGES
 do
   if [ -d "/ClickHouse/docs/${lang}" ]; then

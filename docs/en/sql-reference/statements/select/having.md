@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/having
+slug: /sql-reference/statements/select/having
 sidebar_label: HAVING
 ---
 
@@ -9,6 +9,6 @@ Allows filtering the aggregation results produced by [GROUP BY](../../../sql-ref
 
 It is possible to reference aggregation results from `SELECT` clause in `HAVING` clause by their alias. Alternatively, `HAVING` clause can filter on results of additional aggregates that are not returned in query results.
 
-## Limitations
+## Limitations {#limitations}
 
-`HAVING` can’t be used if aggregation is not performed. Use `WHERE` instead.
+`HAVING` can't be used if aggregation is not performed. Use `WHERE` instead.

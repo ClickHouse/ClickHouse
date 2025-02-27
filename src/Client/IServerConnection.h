@@ -131,6 +131,7 @@ public:
 
     /// Receive packet from server.
     virtual Packet receivePacket() = 0;
+    virtual UInt64 receivePacketType() = 0;
 
     /// If not connected yet, or if connection is broken - then connect. If cannot connect - throw an exception.
     virtual void forceConnected(const ConnectionTimeouts & timeouts) = 0;
@@ -148,6 +149,8 @@ public:
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
+
+    virtual void setFormatSettings(const FormatSettings &) {}
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;

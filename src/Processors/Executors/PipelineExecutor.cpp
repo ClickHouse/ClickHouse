@@ -4,6 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/setThreadName.h>
+#include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
@@ -126,7 +127,12 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     {
         executeImpl(num_threads, concurrency_control);
 
-        /// Execution can be stopped because of exception. Check and rethrow if any.
+        /// Log all of the LOGICAL_ERROR exceptions.
+        for (auto & node : graph->nodes)
+            if (node->exception && getExceptionErrorCode(node->exception) == ErrorCodes::LOGICAL_ERROR)
+                tryLogException(node->exception, log);
+
+        /// Rethrow the first exception.
         for (auto & node : graph->nodes)
             if (node->exception)
                 std::rethrow_exception(node->exception);
@@ -403,14 +409,7 @@ void PipelineExecutor::spawnThreadsImpl()
         /// Start new thread
         pool->scheduleOrThrowOnError([this, thread_num, thread_group = CurrentThread::getGroup(), my_slot = std::move(slot)]
         {
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachFromGroupIfNotDetached();
-            );
-            setThreadName("QueryPipelineEx");
-
-            if (thread_group)
-                CurrentThread::attachToGroup(thread_group);
+            ThreadGroupSwitcher switcher(thread_group, "QueryPipelineEx");
 
             try
             {

@@ -30,9 +30,9 @@ protected:
 
     String getName() const override { return "client"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addExtraOptions(OptionsDescription & options_description) override;
 
     void processOptions(
         const OptionsDescription & options_description,
@@ -53,8 +53,8 @@ private:
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
-    void processQueryAndLog(std::ofstream & outf, const std::string & full_query);
-    bool processBuzzHouseQuery(const std::string & full_query);
+    bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
+    bool processBuzzHouseQuery(const String & full_query);
 #endif
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();

@@ -19,7 +19,7 @@ ColumnPtr FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(
     const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count) const
 {
     FunctionOverloadResolverPtr greater
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(check_decimal_overflow, allow_not_comparable_types));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionGreater>(params));
 
     FunctionOverloadResolverPtr func_builder_or
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
@@ -28,7 +28,7 @@ ColumnPtr FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(
         = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
 
     FunctionOverloadResolverPtr func_builder_equals
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(check_decimal_overflow, allow_not_comparable_types));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
 
     return executeTupleLessGreaterImpl(
         greater,

@@ -109,6 +109,8 @@ public:
 
     Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
+    UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
+
     void disconnect() override;
 
     void sendCancel() override;
