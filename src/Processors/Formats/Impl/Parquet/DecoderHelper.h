@@ -12,6 +12,11 @@
 #include <parquet/page_index.h>
 #include <Common/PODArray.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+}
+
 namespace DB
 {
 

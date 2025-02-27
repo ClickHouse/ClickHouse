@@ -21,6 +21,13 @@ namespace ProfileEvents
 extern const Event ParquetFetchWaitTimeMicroseconds;
 }
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+extern const int NOT_IMPLEMENTED;
+extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 

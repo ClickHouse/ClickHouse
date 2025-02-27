@@ -9,9 +9,6 @@
 
 namespace DB
 {
-
-
-
 static void appendString(ColumnString::Chars & chars, IColumn::Offsets & offsets, const String & value)
 {
     if (!value.empty())

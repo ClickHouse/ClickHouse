@@ -11,10 +11,16 @@
 #include <Common/Stopwatch.h>
 #include <Common/threadPoolCallbackRunner.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int LOGICAL_ERROR;
+}
+
 namespace ProfileEvents
 {
 extern const Event ParquetFilteredRows;
-extern const Event ParquetFetchWaitTimeMicroseconds;
 extern const Event ParquetSkippedRows;
 extern const Event ParquetOutputRows;
 }

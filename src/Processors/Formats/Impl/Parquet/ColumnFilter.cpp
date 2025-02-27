@@ -11,9 +11,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
 extern const int PARQUET_EXCEPTION;
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 template <class T>
@@ -85,7 +85,6 @@ struct PhysicTypeTraits<Decimal64>
     using simd_bool_type = xsimd::batch_bool<simd_internal_type>;
     using simd_idx_type = xsimd::batch<simd_internal_type>;
 };
-
 
 template <typename T, typename S>
 void FilterHelper::filterPlainFixedData(const S * src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read)
@@ -291,8 +290,7 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const T * da
             UNREACHABLE();
     }
 
-    bool aligned = (reinterpret_cast<long>(data) % batch_type::arch_type::alignment() == 0)
-        && (row_set.getOffset() % increment == 0);
+    bool aligned = (reinterpret_cast<long>(data) % batch_type::arch_type::alignment() == 0) && (row_set.getOffset() % increment == 0);
     for (size_t i = 0; i < num_batched; ++i)
     {
         batch_type value;
@@ -683,7 +681,7 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
         case ColumnFilterKind::BigIntValuesUsingHashTable:
             return other->merge(this);
         case ColumnFilterKind::BigIntMultiRange: {
-            const auto *otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
+            const auto * otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
             std::vector<std::shared_ptr<BigIntRangeFilter>> newRanges;
             for (const auto & range : otherMultiRange->getRanges())
             {
@@ -1185,7 +1183,10 @@ ColumnFilterPtr BoolValueFilter::merge(const ColumnFilter * other) const
 }
 BigIntValuesUsingHashTableFilter::BigIntValuesUsingHashTableFilter(
     Int64 min_, Int64 max_, const std::vector<Int64> & values_, bool nullAllowed)
-    : ColumnFilter(ColumnFilterKind::BigIntValuesUsingHashTable, nullAllowed), min(min_), max(max_), values(values_)
+    : ColumnFilter(ColumnFilterKind::BigIntValuesUsingHashTable, nullAllowed)
+    , min(min_)
+    , max(max_)
+    , values(values_)
 {
     constexpr int32_t kPaddingElements = 4;
     if (min >= max)
@@ -1280,7 +1281,9 @@ bool BigIntValuesUsingHashTableFilter::testInt64Range(Int64 min_, Int64 max_, bo
 }
 BigIntValuesUsingBitmaskFilter::BigIntValuesUsingBitmaskFilter(
     Int64 min_, Int64 max_, const std::vector<Int64> & values_, bool null_allowed_)
-    : ColumnFilter(ColumnFilterKind::BigIntValuesUsingBitmask, null_allowed_), min(min_), max(max_)
+    : ColumnFilter(ColumnFilterKind::BigIntValuesUsingBitmask, null_allowed_)
+    , min(min_)
+    , max(max_)
 {
     if (min >= max)
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "min must be less than max");
@@ -1562,11 +1565,8 @@ bool BytesRangeFilter::testStringRange(std::optional<std::string_view> min, std:
     {
         return true;
     }
-    // clang-format off
-  return
-    (lower_unbounded || !max.has_value() || compareRanges(max->data(), max->length(), lower) >=  !!lower_exclusive) &&
-    (upper_unbounded || !min.has_value() || compareRanges(min->data(), min->length(), upper) <= -!!upper_exclusive);
-    // clang-format on
+    return (lower_unbounded || !max.has_value() || compareRanges(max->data(), max->length(), lower) >= !!lower_exclusive)
+        && (upper_unbounded || !min.has_value() || compareRanges(min->data(), min->length(), upper) <= -!!upper_exclusive);
 }
 
 namespace
@@ -1576,7 +1576,7 @@ bool mergeExclusive(int compareResult, bool left, bool right)
 {
     return compareResult == 0 ? (left || right) : (compareResult < 0 ? left : right);
 }
-} // namespace
+}
 
 ColumnFilterPtr BytesRangeFilter::merge(const ColumnFilter * other) const
 {
@@ -1681,7 +1681,8 @@ ColumnFilterPtr NegatedBytesRangeFilter::merge(const ColumnFilter * other) const
 }
 
 BigIntMultiRangeFilter::BigIntMultiRangeFilter(std::vector<std::shared_ptr<BigIntRangeFilter>> ranges_, bool null_allowed_)
-    : ColumnFilter(ColumnFilterKind::BigIntMultiRange, null_allowed_), ranges(std::move(ranges_))
+    : ColumnFilter(ColumnFilterKind::BigIntMultiRange, null_allowed_)
+    , ranges(std::move(ranges_))
 {
     if (ranges_.empty())
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "ranges is empty");
@@ -1728,7 +1729,7 @@ Int32 binarySearch(const std::vector<Int64> & values, Int64 value)
         return static_cast<Int32>(std::distance(values.begin(), it));
     }
 }
-} // namespace
+}
 bool BigIntMultiRangeFilter::testInt64(Int64 value) const
 {
     int32_t i = binarySearch(lower_bounds, value);
@@ -1831,12 +1832,12 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
             std::vector<Int64> rejects;
             if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingBitmask)
             {
-                const auto *otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
+                const auto * otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
                 rejects = otherNegated->getValues();
             }
             else
             {
-                const auto *otherNegated = dynamic_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
+                const auto * otherNegated = dynamic_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
                 rejects = otherNegated->getValues();
             }
 

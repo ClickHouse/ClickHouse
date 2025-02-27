@@ -4,7 +4,6 @@
 
 namespace DB
 {
-
 FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive)
 {
     FilterSplitResultPtr split_result = std::make_shared<FilterSplitResult>();

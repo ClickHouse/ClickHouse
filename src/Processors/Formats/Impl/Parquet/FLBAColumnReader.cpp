@@ -11,6 +11,12 @@
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -396,8 +402,6 @@ template class FixedLengthColumnDirectReader<DataTypeDecimal256>;
 // read from int96
 template class FixedLengthColumnDirectReader<DataTypeDateTime64>;
 template class FixedLengthColumnDirectReader<DataTypeInt64>;
-
-
 
 template class FixedLengthColumnDictionaryReader<DataTypeFixedString, String>;
 template class FixedLengthColumnDictionaryReader<DataTypeDecimal32, Decimal32>;

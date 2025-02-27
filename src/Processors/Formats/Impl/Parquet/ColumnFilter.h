@@ -14,20 +14,25 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
 extern const int PARQUET_EXCEPTION;
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 class RowSet
 {
 public:
-    explicit RowSet(size_t max_rows_) : max_rows(max_rows_)
+    explicit RowSet(size_t max_rows_)
+        : max_rows(max_rows_)
     {
         mask.resize(max_rows, true);
         std::fill(mask.begin(), mask.end(), true);
     }
 
-    explicit RowSet(PaddedPODArray<bool> & mask_) : max_rows(mask_.size()) { mask.swap(mask_); }
+    explicit RowSet(PaddedPODArray<bool> & mask_)
+        : max_rows(mask_.size())
+    {
+        mask.swap(mask_);
+    }
 
     inline void set(size_t i, bool value) { mask[offset + i] = value; }
     inline bool get(size_t i) const
@@ -122,7 +127,11 @@ private:
 class ColumnFilter
 {
 protected:
-    ColumnFilter(ColumnFilterKind kind, bool null_allowed_) : kind_(kind), null_allowed(null_allowed_) { }
+    ColumnFilter(ColumnFilterKind kind, bool null_allowed_)
+        : kind_(kind)
+        , null_allowed(null_allowed_)
+    {
+    }
 
 public:
     virtual ~ColumnFilter() = default;
@@ -227,7 +236,10 @@ class IsNullFilter : public ColumnFilter
 {
 public:
     static OptionalFilter create(const ActionsDAG::Node & node);
-    IsNullFilter() : ColumnFilter(IsNull, true) { }
+    IsNullFilter()
+        : ColumnFilter(IsNull, true)
+    {
+    }
     ~IsNullFilter() override = default;
     bool testNotNull() const override { return false; }
     bool testNull() const override { return true; }
@@ -249,7 +261,10 @@ class IsNotNullFilter : public ColumnFilter
 {
 public:
     static OptionalFilter create(const ActionsDAG::Node & node);
-    IsNotNullFilter() : ColumnFilter(IsNotNull, false) { }
+    IsNotNullFilter()
+        : ColumnFilter(IsNotNull, false)
+    {
+    }
     ~IsNotNullFilter() override = default;
     bool testNotNull() const override { return true; }
     bool testNull() const override { return false; }
@@ -270,7 +285,10 @@ public:
 class AlwaysTrueFilter : public ColumnFilter
 {
 public:
-    AlwaysTrueFilter() : ColumnFilter(AlwaysTrue, true) { }
+    AlwaysTrueFilter()
+        : ColumnFilter(AlwaysTrue, true)
+    {
+    }
     ~AlwaysTrueFilter() override = default;
     bool testNull() const override { return true; }
     bool testNotNull() const override { return true; }
@@ -292,7 +310,10 @@ public:
 class AlwaysFalseFilter : public ColumnFilter
 {
 public:
-    AlwaysFalseFilter() : ColumnFilter(AlwaysFalse, false) { }
+    AlwaysFalseFilter()
+        : ColumnFilter(AlwaysFalse, false)
+    {
+    }
     ~AlwaysFalseFilter() override = default;
     bool testNull() const override { return false; }
     bool testNotNull() const override { return false; }
@@ -314,7 +335,11 @@ public:
 class BoolValueFilter : public ColumnFilter
 {
 public:
-    explicit BoolValueFilter(bool value_, bool null_allowed_) : ColumnFilter(BoolValue, null_allowed_), value(value_) { }
+    explicit BoolValueFilter(bool value_, bool null_allowed_)
+        : ColumnFilter(BoolValue, null_allowed_)
+        , value(value_)
+    {
+    }
     bool testBool(bool value_) const override { return value_ == value; }
     bool testInt64(Int64 value_) const override { return value == (value_ != 0); }
     bool testInt64Range(Int64 min, Int64 max, bool has_null) const override
@@ -412,7 +437,8 @@ public:
     bool testInt16(Int16 int16) const override { return !non_negated->testInt16(int16); }
     bool testInt64Range(Int64 min, Int64 max, bool has_null) const override
     {
-        if (has_null && null_allowed) {
+        if (has_null && null_allowed)
+        {
             return true;
         }
         return !(non_negated->getLower() <= min && max <= non_negated->getUpper());
@@ -515,7 +541,10 @@ public:
     BigIntValuesUsingBitmaskFilter(Int64 min_, Int64 max_, const std::vector<Int64> & values_, bool null_allowed_);
 
     BigIntValuesUsingBitmaskFilter(const BigIntValuesUsingBitmaskFilter & other, bool null_allowed_)
-        : ColumnFilter(ColumnFilterKind::BigIntValuesUsingBitmask, null_allowed_), bitmask(other.bitmask), min(other.min), max(other.max)
+        : ColumnFilter(ColumnFilterKind::BigIntValuesUsingBitmask, null_allowed_)
+        , bitmask(other.bitmask)
+        , min(other.min)
+        , max(other.max)
     {
     }
     ~BigIntValuesUsingBitmaskFilter() override = default;
@@ -595,7 +624,9 @@ class NegatedBigIntValuesUsingBitmaskFilter : public ColumnFilter
 {
 public:
     NegatedBigIntValuesUsingBitmaskFilter(int64_t min_, int64_t max_, const std::vector<int64_t> & values_, bool null_allowed_)
-        : ColumnFilter(ColumnFilterKind::NegatedBigIntValuesUsingBitmask, null_allowed_), min(min_), max(max_)
+        : ColumnFilter(ColumnFilterKind::NegatedBigIntValuesUsingBitmask, null_allowed_)
+        , min(min_)
+        , max(max_)
     {
         if (min > max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "min must be no greater than max");
@@ -635,7 +666,9 @@ class BytesValuesFilter : public ColumnFilter
 
 public:
     BytesValuesFilter(const std::vector<String> & values_, bool null_allowed_)
-        : ColumnFilter(BytesValues, null_allowed_), values_storage(values_), values(values_storage.begin(), values_storage.end())
+        : ColumnFilter(BytesValues, null_allowed_)
+        , values_storage(values_)
+        , values(values_storage.begin(), values_storage.end())
     {
         std::ranges::for_each(values_, [&](const String & value) { lengths.insert(value.size()); });
         lower = *std::min_element(values_.begin(), values_.end());
@@ -676,7 +709,8 @@ class NegatedBytesValuesFilter : public ColumnFilter
 {
 public:
     NegatedBytesValuesFilter(const std::vector<String> & values_, bool null_allowed_)
-        : ColumnFilter(NegatedBytesValues, null_allowed_), non_negated(std::make_unique<BytesValuesFilter>(values_, !null_allowed_))
+        : ColumnFilter(NegatedBytesValues, null_allowed_)
+        , non_negated(std::make_unique<BytesValuesFilter>(values_, !null_allowed_))
     {
     }
     NegatedBytesValuesFilter(const NegatedBytesValuesFilter & other, bool null_allowed_)
@@ -952,7 +986,9 @@ public:
     BigIntMultiRangeFilter(std::vector<std::shared_ptr<BigIntRangeFilter>> ranges, bool null_allowed_);
 
     BigIntMultiRangeFilter(const BigIntMultiRangeFilter & other, bool null_allowed_)
-        : ColumnFilter(ColumnFilterKind::BigIntMultiRange, null_allowed_), ranges(other.ranges), lower_bounds(other.lower_bounds)
+        : ColumnFilter(ColumnFilterKind::BigIntMultiRange, null_allowed_)
+        , ranges(other.ranges)
+        , lower_bounds(other.lower_bounds)
     {
     }
 
@@ -968,13 +1004,14 @@ public:
 
     std::string toString() const override
     {
-        std::ostringstream out;
-        out << "BigintMultiRange: [";
+        WriteBufferFromOwnString out;
+        writeString("BigintMultiRange: [", out);
         for (const auto & range : ranges)
         {
-            out << " " << range->toString();
+            writeString(" " + range->toString(), out);
         }
-        out << " ]" << (null_allowed ? "with nulls" : "no nulls");
+        writeString(" ]", out);
+        writeString(null_allowed ? "with nulls" : "no nulls", out);
         return out.str();
     }
 

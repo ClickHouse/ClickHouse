@@ -478,9 +478,7 @@ endif()
 dbms_target_link_libraries (
     PUBLIC
         boost::circular_buffer
-        boost::heap
-        ch_contrib::xsimd
-)
+        boost::heap)
 
 target_link_libraries(clickhouse_common_io PUBLIC
     ch_contrib::miniselect
@@ -506,7 +504,7 @@ if (TARGET ch_contrib::capnp)
 endif ()
 
 if (TARGET ch_contrib::parquet)
-    dbms_target_link_libraries (PRIVATE ch_contrib::parquet)
+    dbms_target_link_libraries (PRIVATE ch_contrib::parquet ch_contrib::xsimd)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)

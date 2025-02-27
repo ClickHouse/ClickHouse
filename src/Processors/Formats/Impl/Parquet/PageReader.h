@@ -1,4 +1,5 @@
 #pragma once
+
 #include <IO/ReadBufferFromMemory.h>
 #include <Common/PODArray.h>
 #include <generated/parquet_types.h>

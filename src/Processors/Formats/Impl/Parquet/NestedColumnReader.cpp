@@ -11,6 +11,11 @@
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Common/assert_cast.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+}
+
 namespace DB
 {
 static void insertManyToFilter(PaddedPODArray<bool> & filter, bool value, size_t count)

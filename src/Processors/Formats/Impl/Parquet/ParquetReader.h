@@ -1,5 +1,5 @@
-
 #pragma once
+
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -12,7 +12,6 @@
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
 #include <Common/threadPoolCallbackRunner.h>
-
 
 namespace DB
 {

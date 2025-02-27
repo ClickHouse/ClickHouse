@@ -17,9 +17,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
 extern const int PARQUET_EXCEPTION;
-extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 #define THROW_PARQUET_EXCEPTION(s) \

@@ -22,6 +22,12 @@
 #include <parquet/page_index.h>
 #include <Common/PODArray.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+extern const int LOGICAL_ERROR;
+}
+
 namespace parquet
 {
 class ColumnDescriptor;

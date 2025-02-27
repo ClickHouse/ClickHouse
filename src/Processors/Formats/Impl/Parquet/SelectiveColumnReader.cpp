@@ -12,6 +12,8 @@ namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
 extern const int PARQUET_EXCEPTION;
+extern const int NOT_IMPLEMENTED;
+extern const int BAD_ARGUMENTS;
 }
 
 void SelectiveColumnReader::readPageIfNeeded()

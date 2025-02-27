@@ -4,6 +4,12 @@
 #include <Interpreters/Set.h>
 #include <Processors/Formats/Impl/Parquet/ColumnFilterFactory.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+extern const int NOT_IMPLEMENTED;
+}
+
 namespace DB
 {
 ColumnFilterFactory::~ColumnFilterFactory() = default;
@@ -60,8 +66,6 @@ bool isCompareColumnWithConst(const ActionsDAG::Node & node)
     }
     return input_count == 1 && constant_count >= 1;
 }
-
-
 
 const ActionsDAG::Node * getInputNode(const ActionsDAG::Node & node)
 {
@@ -408,6 +412,4 @@ std::vector<ColumnFilterFactoryPtr> ColumnFilterFactory::allFactories()
     };
     return factories;
 }
-
-
 }

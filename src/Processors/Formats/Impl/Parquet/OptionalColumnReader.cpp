@@ -8,9 +8,13 @@
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Common/assert_cast.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+}
+
 namespace DB
 {
-
 
 void OptionalColumnReader::nextBatchNullMapIfNeeded(size_t rows_to_read)
 {

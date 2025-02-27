@@ -12,6 +12,12 @@
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
 
+namespace ErrorCodes
+{
+extern const int PARQUET_EXCEPTION;
+extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
