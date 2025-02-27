@@ -917,6 +917,5 @@ void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
 
     String old_database_comment = getDatabaseComment();
     setDatabaseComment(command.comment.value());
-    DatabaseCatalog::instance().updateDatabaseComment(getDatabaseName(), old_database_comment);
 }
 }
