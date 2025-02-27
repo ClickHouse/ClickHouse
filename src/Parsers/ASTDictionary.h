@@ -25,7 +25,6 @@ public:
 
     ASTPtr clone() const override;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
@@ -47,13 +46,12 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
     void forEachPointerToChild(std::function<void(void**)> f) override
     {
         f(reinterpret_cast<void **>(&parameters));
     }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 
@@ -70,7 +68,6 @@ public:
 
     ASTPtr clone() const override;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
@@ -83,7 +80,6 @@ public:
 
     ASTPtr clone() const override;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
@@ -111,7 +107,6 @@ public:
 
     ASTPtr clone() const override;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 

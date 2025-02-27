@@ -26,7 +26,7 @@ public:
     S3Credentials(
         const std::string & access_key_id_,
         const std::string & secret_access_key_,
-        const std::string & session_token_)
+        const std::string session_token_)
         : access_key_id(access_key_id_)
         , secret_access_key(secret_access_key_)
         , session_token(session_token_)

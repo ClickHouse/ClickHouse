@@ -54,11 +54,9 @@ struct StorageObjectStorageSettings
 
     STORAGE_OBJECT_STORAGE_SETTINGS_SUPPORTED_TYPES(StorageObjectStorageSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    void loadFromQuery(ASTSetQuery & settings_ast);
+    void loadFromQuery(ASTStorage & storage_def);
 
     Field get(const std::string & name);
-
-    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;

@@ -1,9 +1,7 @@
 ---
-description: "System table containing information about setting changes in previous ClickHouse versions."
-slug: /operations/system-tables/settings_changes
-title: "settings_changes"
-keywords: ["system table", "settings_changes"]
+slug: /en/operations/system-tables/settings_changes
 ---
+# settings_changes
 
 Contains information about setting changes in previous ClickHouse versions.
 
@@ -32,5 +30,5 @@ changes: [('input_format_parquet_preserve_order','1','0','Allow Parquet reader t
 
 **See also**
 
-- [Settings](../../operations/settings/overview#session-settings-intro)
+- [Settings](../../operations/settings/index.md#session-settings-intro)
 - [system.settings](settings.md)

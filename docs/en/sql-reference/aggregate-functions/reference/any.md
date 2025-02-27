@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/any
+slug: /en/sql-reference/aggregate-functions/reference/any
 sidebar_position: 102
-title: "any"
-description: "Selects the first encountered value of a column."
 ---
 
 # any

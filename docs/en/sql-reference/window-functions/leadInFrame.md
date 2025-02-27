@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/leadInFrame
+slug: /en/sql-reference/window-functions/leadInFrame
 sidebar_label: leadInFrame
 sidebar_position: 10
 ---

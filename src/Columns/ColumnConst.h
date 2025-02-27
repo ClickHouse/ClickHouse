@@ -1,14 +1,21 @@
 #pragma once
 
-#include <Columns/IColumn.h>
 #include <Core/Field.h>
-#include <Common/PODArray.h>
-#include <Common/assert_cast.h>
+#include <Common/Exception.h>
+#include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /** ColumnConst contains another column with single element,
   *  but looks like a column with arbitrary amount of same elements.
@@ -69,11 +76,6 @@ public:
     void get(size_t, Field & res) const override
     {
         data->get(0, res);
-    }
-
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
-    {
-        return data->getValueNameAndType(0);
     }
 
     StringRef getDataAt(size_t) const override
@@ -252,14 +254,17 @@ public:
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream &) override;
+    void gather(ColumnGathererStream &) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot gather into constant column {}", getName());
+    }
 
     void getExtremes(Field & min, Field & max) const override
     {
         data->getExtremes(min, max);
     }
 
-    void forEachSubcolumn(ColumnCallback callback) const override
+    void forEachSubcolumn(MutableColumnCallback callback) override
     {
         callback(data);
     }
@@ -270,15 +275,10 @@ public:
         data->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override
-    {
-        callback(data);
-    }
-
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*data);
-        data->forEachMutableSubcolumnRecursively(callback);
+        data->forEachSubcolumnRecursively(callback);
     }
 
     bool structureEquals(const IColumn & rhs) const override

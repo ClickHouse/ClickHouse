@@ -1,10 +1,10 @@
 ---
-description: "Learn how to use projections to improve the performance of queries that you run frequently using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales"
-slug: /getting-started/example-datasets/uk-price-paid
+slug: /en/getting-started/example-datasets/uk-price-paid
 sidebar_label: UK Property Prices
 sidebar_position: 1
-title: "The UK property prices dataset"
 ---
+
+# The UK property prices dataset
 
 Projections are a great way to improve the performance of queries that you run frequently. We will demonstrate the power of projections
 using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales. The data is available since 1995, and the size of the dataset in uncompressed form is about 4 GiB (which will only take about 278 MiB in ClickHouse).

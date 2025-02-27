@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/
+slug: /en/sql-reference/window-functions/
 sidebar_label: Window Functions
 sidebar_position: 1
 ---
@@ -9,7 +9,7 @@ sidebar_position: 1
 Windows functions let you perform calculations across a set of rows that are related to the current row.
 Some of the calculations that you can do are similar to those that can be done with an aggregate function, but a window function doesn't cause rows to be grouped into a single output - the individual rows are still returned.
 
-## Standard Window Functions {#standard-window-functions}
+## Standard Window Functions
 
 ClickHouse supports the standard grammar for defining windows and window functions. The table below indicates whether a feature is currently supported.
 
@@ -28,11 +28,11 @@ ClickHouse supports the standard grammar for defining windows and window functio
 | `lag/lead(value, offset)`                                                          | ❌ <br/> You can use one of the following workarounds:<br/> 1) `any(value) over (.... rows between <offset> preceding and <offset> preceding)`, or `following` for `lead` <br/> 2) `lagInFrame/leadInFrame`, which are analogous, but respect the window frame. To get behavior identical to `lag/lead`, use `rows between unbounded preceding and unbounded following`                                                                 |
 | ntile(buckets) | ✅ <br/> Specify window like, (partition by x order by y rows between unbounded preceding and unrounded following). |
 
-## ClickHouse-specific Window Functions {#clickhouse-specific-window-functions}
+## ClickHouse-specific Window Functions
 
 There is also the following ClickHouse specific window function:
 
-### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS]) {#nonnegativederivativemetric_column-timestamp_column-interval-x-units}
+### nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
 
 Finds non-negative derivative for given `metric_column` by `timestamp_column`. 
 `INTERVAL` can be omitted, default is `INTERVAL 1 SECOND`.
@@ -40,7 +40,7 @@ The computed value is the following for each row:
 - `0` for 1st row,
 - ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}}  * \text{interval}$ for $i_{th}$ row.
 
-## Syntax {#syntax}
+## Syntax
 
 ```text
 aggregate_function (column_name)
@@ -72,7 +72,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 └─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
 ```
 
-### Functions {#functions}
+### Functions
 
 These functions can be used only as a window function.
 
@@ -85,11 +85,11 @@ These functions can be used only as a window function.
 - [`lagInFrame(x)`](./lagInFrame.md) - Return a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 - [`leadInFrame(x)`](./leadInFrame.md) - Return a value evaluated at the row that is offset rows after the current row within the ordered frame.
 
-## Examples {#examples}
+## Examples
 
 Let's have a look at some examples of how window functions can be used.
 
-### Numbering rows {#numbering-rows}
+### Numbering rows
 
 ```sql
 CREATE TABLE salaries
@@ -147,7 +147,7 @@ FROM salaries;
 └─────────────────┴────────┴─────┴──────┴───────────┘
 ```
 
-### Aggregation functions {#aggregation-functions}
+### Aggregation functions
 
 Compare each player's salary to the average for their team.
 
@@ -193,7 +193,7 @@ FROM salaries;
 └─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
 ```
 
-### Partitioning by column {#partitioning-by-column}
+### Partitioning by column
 
 ```sql
 CREATE TABLE wf_partition
@@ -226,7 +226,7 @@ ORDER BY
 └──────────┴───────┴───────┴──────────────┘
 ```
 
-### Frame bounding {#frame-bounding}
+### Frame bounding
 
 ```sql
 CREATE TABLE wf_frame
@@ -509,11 +509,11 @@ ORDER BY
 └────────────────┴──────────────┘
 ```
 
-## Real world examples {#real-world-examples}
+## Real world examples
 
 The following examples solve common real-world problems.
 
-### Maximum/total salary per department {#maximumtotal-salary-per-department}
+### Maximum/total salary per department
 
 ```sql
 CREATE TABLE employees
@@ -569,7 +569,7 @@ FROM
 └────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
 ```
 
-### Cumulative sum {#cumulative-sum}
+### Cumulative sum
 
 ```sql
 CREATE TABLE warehouse
@@ -610,7 +610,7 @@ ORDER BY
 └───────┴─────────────────────┴───────┴───────────────┘
 ```
 
-### Moving / Sliding Average (per 3 rows) {#moving--sliding-average-per-3-rows}
+### Moving / Sliding Average (per 3 rows)
 
 ```sql
 CREATE TABLE sensors
@@ -658,7 +658,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴───────────────────┘
 ```
 
-### Moving / Sliding Average (per 10 seconds) {#moving--sliding-average-per-10-seconds}
+### Moving / Sliding Average (per 10 seconds)
 
 ```sql
 SELECT
@@ -684,7 +684,7 @@ ORDER BY
 └──────────┴─────────────────────┴───────┴────────────────────────────┘
 ```
 
-### Moving / Sliding Average (per 10 days) {#moving--sliding-average-per-10-days}
+### Moving / Sliding Average (per 10 days)
 
 Temperature is stored with second precision, but using `Range` and `ORDER BY toDate(ts)` we form a frame with the size of 10 units, and because of `toDate(ts)` the unit is a day.
 
@@ -739,15 +739,15 @@ ORDER BY
 └──────────────┴─────────────────────┴───────┴─────────────────────────┘
 ```
 
-## References {#references}
+## References
 
-### GitHub Issues {#github-issues}
+### GitHub Issues
 
 The roadmap for the initial support of window functions is [in this issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
 
 All GitHub issues related to window functions have the [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) tag.
 
-### Tests {#tests}
+### Tests
 
 These tests contain the examples of the currently supported grammar:
 
@@ -755,7 +755,7 @@ https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window_fu
 
 https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/01591_window_functions.sql
 
-### Postgres Docs {#postgres-docs}
+### Postgres Docs
 
 https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
 
@@ -765,7 +765,7 @@ https://www.postgresql.org/docs/devel/functions-window.html
 
 https://www.postgresql.org/docs/devel/tutorial-window.html
 
-### MySQL Docs {#mysql-docs}
+### MySQL Docs
 
 https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
 
@@ -774,7 +774,7 @@ https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
 https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
 
 
-## Related Content {#related-content}
+## Related Content
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 - Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

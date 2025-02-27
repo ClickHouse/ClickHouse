@@ -1,16 +1,13 @@
 ---
-slug: /sql-reference/table-functions/input
+slug: /en/sql-reference/table-functions/input
 sidebar_position: 95
 sidebar_label: input
-title: "input"
-description: "Table function that allows effectively converting and inserting data sent to the
-server with a given structure to a table with another structure."
 ---
 
-# input Table Function
+# input
 
-`input(structure)` - table function that allows effectively converting and inserting data sent to the
-server with a given structure to a table with another structure.
+`input(structure)` - table function that allows effectively convert and insert data sent to the
+server with given structure to the table with another structure.
 
 `structure` - structure of data sent to the server in following format `'column1_name column1_type, column2_name column2_type, ...'`.
 For example, `'id UInt32, name String'`.

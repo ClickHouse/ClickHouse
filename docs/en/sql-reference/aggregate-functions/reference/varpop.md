@@ -2,10 +2,9 @@
 title: "varPop"
 slug: "/en/sql-reference/aggregate-functions/reference/varPop"
 sidebar_position: 210
-description: "Calculates the population variance."
 ---
 
-## varPop {#varpop}
+## varPop
 
 Calculates the population variance:
 

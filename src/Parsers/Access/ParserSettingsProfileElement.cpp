@@ -319,9 +319,6 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
             }
             else if (ParserKeyword{Keyword::DROP}.ignore(pos, expected))
             {
-                /// `DROP` statements should be at the beginning of the query.
-                if (!add_settings.empty() || !modify_settings.empty())
-                    return false;
                 action = "DROP";
                 target = "";
             }
@@ -389,13 +386,13 @@ bool ParserAlterSettingsProfileElements::parseImpl(Pos & pos, ASTPtr & node, Exp
                 return false;
             }
 
-            if (action == "DROP" && target == "ALL PROFILES" && !drop_all_profiles)
+            if (action == "DROP" && target == "ALL PROFILES")
             {
                 drop_all_profiles = true;
                 return true;
             }
 
-            if (action == "DROP" && target == "ALL SETTINGS" && !drop_all_settings)
+            if (action == "DROP" && target == "ALL SETTINGS")
             {
                 drop_all_settings = true;
                 return true;

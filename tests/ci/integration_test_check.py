@@ -5,7 +5,6 @@ import csv
 import json
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -61,11 +60,15 @@ def get_env_for_runner(
     work_path: Path,
 ) -> Dict[str, str]:
     binary_path = build_path / "clickhouse"
+    odbc_bridge_path = build_path / "clickhouse-odbc-bridge"
+    library_bridge_path = build_path / "clickhouse-library-bridge"
 
     my_env = os.environ.copy()
     my_env["CLICKHOUSE_TESTS_BUILD_PATH"] = build_path.as_posix()
     my_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = binary_path.as_posix()
     my_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = binary_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = odbc_bridge_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"] = library_bridge_path.as_posix()
     my_env["CLICKHOUSE_TESTS_REPO_PATH"] = repo_path.as_posix()
     my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path.as_posix()
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
@@ -155,16 +158,12 @@ def main():
     ), "Check name must be provided in --check-name input option or in CHECK_NAME env"
     validate_bugfix_check = args.validate_bugfix
 
-    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-
-    match = re.search(r"\(.*?\)", check_name)
-    options = match.group(0)[1:-1].split(",") if match else []
-    for option in options:
-        if "/" in option:
-            run_by_hash_num = int(option.split("/")[0]) - 1
-            run_by_hash_total = int(option.split("/")[1])
-            break
+    if "RUN_BY_HASH_NUM" in os.environ:
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
+    else:
+        run_by_hash_num = 0
+        run_by_hash_total = 0
 
     is_flaky_check = "flaky" in check_name
 

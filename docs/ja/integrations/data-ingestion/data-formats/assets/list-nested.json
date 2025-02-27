@@ -1,0 +1,29 @@
+[
+  {
+    "page": {
+      "path": "Akiba_Hebrew_Academy",
+      "title": "Akiba Hebrew Academy",
+      "owner_id": 12
+    },
+    "month": "2017-08-01",
+    "hits": 241
+  },
+  {
+    "page": {
+      "path": "Aegithina_tiphia",
+      "title": "Aegithina Tiphia",
+      "owner_id": 3
+    },
+    "month": "2018-02-01",
+    "hits": 34
+  },
+  {
+    "page": {
+      "path": "1971-72_Utah_Stars_season",
+      "title": "Utah Stars: 71/72 season",
+      "owner_id": 432
+    },
+    "month": "2016-10-01",
+    "hits": 1
+  }
+]

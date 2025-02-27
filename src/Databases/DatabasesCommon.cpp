@@ -31,9 +31,8 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool fsync_metadata;
-extern const SettingsUInt64 max_parser_backtracks;
-extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
 }
 namespace ErrorCodes
 {
@@ -201,12 +200,6 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
-        else if (metadata.settings_changes)
-        {
-            auto & settings_changes = metadata.settings_changes->as<ASTSetQuery &>().changes;
-            if (!settings_changes.empty())
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
-        }
     }
 
     if (metadata.comment.empty())
@@ -300,34 +293,13 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
     if (!query.isView())
         query.select = nullptr;
 
-    query.format_ast = nullptr;
+    query.format = nullptr;
     query.out_file = nullptr;
-}
-
-String readMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path)
-{
-    auto read_buf = db_disk->readFile(file_path, getReadSettingsForMetadata());
-    String content;
-    readStringUntilEOF(content, *read_buf);
-
-    return content;
-}
-
-void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path, std::string_view content, bool fsync_metadata)
-{
-    auto out = db_disk->writeFile(file_path, content.size(), WriteMode::Rewrite, getWriteSettingsForMetadata());
-    writeString(content, *out);
-
-    out->next();
-    if (fsync_metadata)
-        out->sync();
-    out->finalize();
-    out.reset();
 }
 
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : IDatabase(name_), WithContext(context_->getGlobalContext()), db_disk(context_->getDatabaseDisk()), log(getLogger(logger))
+        : IDatabase(name_), WithContext(context_->getGlobalContext()), log(getLogger(logger))
 {
 }
 

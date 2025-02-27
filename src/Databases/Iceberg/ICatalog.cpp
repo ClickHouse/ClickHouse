@@ -3,8 +3,6 @@
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
-#include <filesystem>
-
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -63,50 +61,21 @@ void TableMetadata::setLocation(const std::string & location_)
 
     location_without_path = location_.substr(0, pos_to_path);
     path = location_.substr(pos_to_path + 1);
-    bucket = location_.substr(pos_to_bucket, pos_to_path - pos_to_bucket);
 
     LOG_TEST(getLogger("TableMetadata"),
              "Parsed location without path: {}, path: {}",
              location_without_path, path);
 }
 
-std::string TableMetadata::getLocation() const
+std::string TableMetadata::getLocation(bool path_only) const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
-    if (!endpoint.empty())
-        return constructLocation(endpoint);
-
-    return std::filesystem::path(location_without_path) / path;
-}
-
-std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
-{
-    if (!with_location)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
-
-    if (endpoint_.empty())
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
-
-    return constructLocation(endpoint_);
-}
-
-std::string TableMetadata::constructLocation(const std::string & endpoint_) const
-{
-    std::string location = endpoint_;
-    if (location.ends_with('/'))
-        location.pop_back();
-
-    if (location.ends_with(bucket))
-        return std::filesystem::path(location) / path / "";
+    if (path_only)
+        return path;
     else
-        return std::filesystem::path(location) / bucket / path / "";
-}
-
-void TableMetadata::setEndpoint(const std::string & endpoint_)
-{
-    endpoint = endpoint_;
+        return std::filesystem::path(location_without_path) / path;
 }
 
 void TableMetadata::setSchema(const DB::NamesAndTypesList & schema_)

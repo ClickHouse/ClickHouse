@@ -8,7 +8,6 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -361,7 +360,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ false);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ false);
             if (prefix.empty())
                 return false;
 
@@ -382,7 +381,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<String>(), /*requires_perfect_prefix*/ true);
+            String prefix = extractFixedPrefixFromLikePattern(value.safeGet<const String &>(), /*requires_perfect_prefix*/ true);
             if (prefix.empty())
                 return false;
 
@@ -403,7 +402,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            String prefix = value.safeGet<String>();
+            String prefix = value.safeGet<const String &>();
             if (prefix.empty())
                 return false;
 
@@ -424,7 +423,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             if (value.getType() != Field::Types::String)
                 return false;
 
-            const String & expression = value.safeGet<String>();
+            const String & expression = value.safeGet<const String &>();
 
             /// This optimization can't process alternation - this would require
             /// a comprehensive parsing of regular expression.
@@ -731,32 +730,6 @@ const std::unordered_map<String, KeyCondition::SpaceFillingCurveType> KeyConditi
     {"mortonEncode", SpaceFillingCurveType::Morton},
     {"hilbertEncode", SpaceFillingCurveType::Hilbert}
 };
-
-static bool mayExistOnBloomFilter(const KeyCondition::BloomFilterData & condition_bloom_filter_data,
-                           const KeyCondition::ColumnIndexToBloomFilter & column_index_to_column_bf)
-{
-    chassert(condition_bloom_filter_data.hashes_per_column.size() == condition_bloom_filter_data.key_columns.size());
-
-    for (auto column_index = 0u; column_index < condition_bloom_filter_data.hashes_per_column.size(); column_index++)
-    {
-        // In case bloom filter is missing for parts of the data
-        // (e.g. for some Parquet row groups: https://github.com/ClickHouse/ClickHouse/pull/62966#discussion_r1722361237).
-        if (!column_index_to_column_bf.contains(condition_bloom_filter_data.key_columns[column_index]))
-        {
-            continue;
-        }
-
-        const auto & column_bf = column_index_to_column_bf.at(condition_bloom_filter_data.key_columns[column_index]);
-        const auto & hashes = condition_bloom_filter_data.hashes_per_column[column_index];
-
-        if (!column_bf->findAnyHash(hashes))
-        {
-            return false;
-        }
-    }
-
-    return true;
-}
 
 ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstPtrs nodes, const ContextPtr & context)
 {
@@ -3034,8 +3007,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
 
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
-    const DataTypes & data_types,
-    const ColumnIndexToBloomFilter & column_index_to_column_bf) const
+    const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3060,7 +3032,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             rpn_stack.emplace_back(true, true);
         }
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
-                 || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
+            || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
             if (element.key_column >= hyperrectangle.size())
             {
@@ -3095,13 +3067,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
             bool contains = element.range.containsRange(*key_range);
 
             rpn_stack.emplace_back(intersects, !contains);
-
-            // we don't create bloom_filter_data if monotonic_functions_chain is present
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data && element.monotonic_functions_chain.empty())
-            {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
-
             if (element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -3275,12 +3240,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Set for IN is not created yet");
 
             rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
-
-            if (rpn_stack.back().can_be_true && element.bloom_filter_data)
-            {
-                rpn_stack.back().can_be_true = mayExistOnBloomFilter(*element.bloom_filter_data, column_index_to_column_bf);
-            }
-
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }
@@ -3324,85 +3283,6 @@ BoolMask KeyCondition::checkInHyperrectangle(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in KeyCondition::checkInHyperrectangle");
 
     return rpn_stack[0];
-}
-
-void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
-{
-    for (auto & rpn_element : rpn)
-    {
-        // this would be a problem for `where negate(x) = -58`.
-        // It would perform a bf search on `-58`, and possibly miss row groups containing this data.
-        if (!rpn_element.monotonic_functions_chain.empty())
-        {
-            continue;
-        }
-
-        KeyCondition::BloomFilterData::HashesForColumns hashes;
-
-        if (rpn_element.function == RPNElement::FUNCTION_IN_RANGE
-            || rpn_element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
-        {
-            // Only FUNCTION_EQUALS is supported and for that extremes need to be the same
-            if (rpn_element.range.left != rpn_element.range.right)
-            {
-                continue;
-            }
-
-            auto hashed_value = hash_one(rpn_element.key_column, rpn_element.range.left);
-
-            if (!hashed_value)
-            {
-                continue;
-            }
-
-            hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
-
-            std::vector<std::size_t> key_columns_for_element;
-            key_columns_for_element.emplace_back(rpn_element.key_column);
-
-            rpn_element.bloom_filter_data = KeyCondition::BloomFilterData {std::move(hashes), std::move(key_columns_for_element)};
-        }
-        else if (rpn_element.function == RPNElement::FUNCTION_IN_SET
-                 || rpn_element.function == RPNElement::FUNCTION_NOT_IN_SET)
-        {
-            const auto & set_index = rpn_element.set_index;
-            const auto & ordered_set = set_index->getOrderedSet();
-            const auto & indexes_mapping = set_index->getIndexesMapping();
-
-            std::vector<std::size_t> key_columns_for_element;
-
-            for (auto i = 0u; i < ordered_set.size(); i++)
-            {
-                const auto & set_column = ordered_set[i];
-
-                auto hashes_for_column_opt = hash_many(indexes_mapping[i].key_index, set_column);
-
-                if (!hashes_for_column_opt)
-                {
-                    continue;
-                }
-
-                auto & hashes_for_column = *hashes_for_column_opt;
-
-                if (hashes_for_column.empty())
-                {
-                    continue;
-                }
-
-                hashes.emplace_back(hashes_for_column);
-
-                key_columns_for_element.push_back(indexes_mapping[i].key_index);
-            }
-
-            if (hashes.empty())
-            {
-                continue;
-            }
-
-            rpn_element.bloom_filter_data = {std::move(hashes), std::move(key_columns_for_element)};
-        }
-    }
 }
 
 bool KeyCondition::mayBeTrueInRange(

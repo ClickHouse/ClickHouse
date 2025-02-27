@@ -1,12 +1,7 @@
 ---
-description: "System table containing information about events that occurred with data parts in the MergeTree family tables, such as adding or merging of data."
-slug: /operations/system-tables/part_log
-title: "part_log"
-keywords: ["system table", "part_log"]
+slug: /en/operations/system-tables/part_log
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# part_log
 
 The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#part-log) server setting is specified.
 

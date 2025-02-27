@@ -26,7 +26,6 @@ class ClickHouseClient:
         settings=dict(),
         binary_result=False,
         with_retries=True,
-        headers={},
     ):
         NUMBER_OF_TRIES = 30 if with_retries else 1
         DELAY = 10
@@ -42,11 +41,7 @@ class ClickHouseClient:
 
         for i in range(NUMBER_OF_TRIES):
             r = requests.post(
-                self.host,
-                params=params,
-                timeout=connection_timeout,
-                data=query,
-                headers=headers,
+                self.host, params=params, timeout=connection_timeout, data=query
             )
             if r.status_code == 200:
                 return r.content if binary_result else r.text

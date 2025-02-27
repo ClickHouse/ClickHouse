@@ -31,6 +31,7 @@
             <handler>
                 <type>dynamic_query_handler</type>
                 <user>with_password</user>
+                <password>password</password>
             </handler>
         </rule>
         <rule>
@@ -38,7 +39,8 @@
             <url>/test_dynamic_handler_auth_with_password_fail</url>
             <handler>
                 <type>dynamic_query_handler</type>
-                <user>incorrect_user</user>
+                <user>with_password</user>
+                <!-- No password - authentication should fail -->
             </handler>
         </rule>
         <rule>

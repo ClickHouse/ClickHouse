@@ -39,6 +39,8 @@ public:
 
     ASTPtr clone() const override;
 
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState & state, FormatStateStacked frame) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateWorkloadQuery>(clone()); }
 
     String getWorkloadName() const;
@@ -46,9 +48,6 @@ public:
     String getWorkloadParent() const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

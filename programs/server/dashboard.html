@@ -1116,7 +1116,7 @@ async function doFetch(query, url_params = '') {
 
     let response, reply, error;
     try {
-        response = await fetch(url + url_params, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await fetch(url + url_params, { method: "POST", body: query });
         reply = await response.text();
         if (response.ok) {
             reply = JSON.parse(reply);

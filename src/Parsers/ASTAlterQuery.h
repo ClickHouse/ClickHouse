@@ -82,8 +82,6 @@ public:
 
         MODIFY_COMMENT,
         MODIFY_SQL_SECURITY,
-
-        UNLOCK_SNAPSHOT,
     };
 
     Type type = NO_TYPE;
@@ -252,8 +250,6 @@ public:
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
-
-    bool isUnlockSnapshot() const;
 
     bool isAttachAlter() const;
 

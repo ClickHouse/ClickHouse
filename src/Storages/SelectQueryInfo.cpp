@@ -1,6 +1,5 @@
-#include <Parsers/ASTSelectQuery.h>
-#include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {

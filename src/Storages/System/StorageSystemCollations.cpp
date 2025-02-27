@@ -1,5 +1,4 @@
 #include <Columns/Collator.h>
-#include <Columns/IColumn.h>
 #include <Storages/System/StorageSystemCollations.h>
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeNullable.h>

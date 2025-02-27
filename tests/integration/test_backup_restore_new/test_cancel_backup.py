@@ -72,7 +72,7 @@ def wait_backup(backup_id):
         sleep_time=5,
     )
 
-    backup_duration = float(
+    backup_duration = int(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{backup_id}'"
         )
@@ -136,7 +136,7 @@ def wait_restore(restore_id):
         sleep_time=5,
     )
 
-    restore_duration = float(
+    restore_duration = int(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{restore_id}'"
         )

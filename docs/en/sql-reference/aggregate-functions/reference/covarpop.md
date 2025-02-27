@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/covarpop
+slug: /en/sql-reference/aggregate-functions/reference/covarpop
 sidebar_position: 121
-title: "covarPop"
-description: "Calculates the population covariance"
 ---
 
 # covarPop

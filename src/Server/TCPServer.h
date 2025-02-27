@@ -22,12 +22,6 @@ public:
     /// Close the socket and ask existing connections to stop serving queries
     void stop()
     {
-        if (!is_open)
-            return;
-
-        // Shutdown the listen socket before stopping tcp server to avoid 2.5second delay
-        socket.shutdownReceive();
-
         Poco::Net::TCPServer::stop();
         // This notifies already established connections that they should stop serving
         // queries and close their socket as soon as they can.
@@ -42,8 +36,6 @@ public:
     bool isOpen() const { return is_open; }
 
     UInt16 portNumber() const { return port_number; }
-
-    const Poco::Net::ServerSocket& getSocket() { return socket; }
 
 private:
     TCPServerConnectionFactory::Ptr factory;

@@ -2,12 +2,16 @@
 
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileSize.h>
-
-#include <functional>
 #include <optional>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 class SeekableReadBuffer : public ReadBuffer
 {
@@ -48,7 +52,7 @@ public:
     /// used in CachedOnDiskReadBufferFromFile from multiple threads (because
     /// it first releases the buffer, and then do logging, and so other thread
     /// can already call seek() which will lead to data-race).
-    virtual size_t getFileOffsetOfBufferEnd() const;
+    virtual size_t getFileOffsetOfBufferEnd() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented"); }
 
     /// If true, setReadUntilPosition() guarantees that eof will be reported at the given position.
     virtual bool supportsRightBoundedReads() const { return false; }
@@ -82,7 +86,8 @@ public:
     ///    (e.g. next() or supportsReadAt()).
     ///  * Performance: there's no buffering. Each readBigAt() call typically translates into actual
     ///    IO operation (e.g. HTTP request). Don't use it for small adjacent reads.
-    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const;
+    virtual size_t readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const
+        { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented"); }
 
     /// Checks if readBigAt() is allowed. May be slow, may throw (e.g. it may do an HTTP request or an fstat).
     virtual bool supportsReadAt() { return false; }

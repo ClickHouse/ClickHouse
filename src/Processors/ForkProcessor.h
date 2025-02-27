@@ -6,8 +6,6 @@
 namespace DB
 {
 
-class Block;
-
 /** Has one input and arbitrary non zero number of outputs.
   * All of them have the same structure.
   *
@@ -20,7 +18,10 @@ class Block;
 class ForkProcessor final : public IProcessor
 {
 public:
-    ForkProcessor(const Block & header, size_t num_outputs);
+    ForkProcessor(const Block & header, size_t num_outputs)
+        : IProcessor(InputPorts{header}, OutputPorts(num_outputs, header))
+    {
+    }
 
     String getName() const override { return "Fork"; }
 

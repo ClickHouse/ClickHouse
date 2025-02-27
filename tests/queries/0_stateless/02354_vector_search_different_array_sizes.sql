@@ -1,6 +1,7 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 SET allow_experimental_vector_similarity_index = 1;
+SET enable_analyzer = 1; -- 0 vs. 1 produce slightly different error codes, make it future-proof
 
 DROP TABLE IF EXISTS tab;
 
@@ -18,6 +19,6 @@ WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec, L2Distance(vec, reference_vec)
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3; -- { serverError INCORRECT_QUERY }
+LIMIT 3; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 DROP TABLE tab;
