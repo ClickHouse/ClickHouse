@@ -400,12 +400,7 @@ void DatabasePostgreSQL::shutdown()
 
 void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
 {
-    if (!command.comment)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can not get database comment from query");
-
-    String old_database_comment = getDatabaseComment();
     setDatabaseComment(command.comment.value());
-    DatabaseCatalog::instance().updateDatabaseComment(getDatabaseName(), old_database_comment);
 }
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const

@@ -62,6 +62,23 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
 }
 
+namespace
+{
+    void updateDatabaseCommentWithMetadataFile(const DatabasePtr & db, const AlterCommand & command)
+    {
+        if (!command.comment)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not get database comment from query");
+
+        String old_database_comment = db->getDatabaseComment();
+        db->setDatabaseComment(command.comment.value());
+        try{
+            DatabaseCatalog::instance().updateDatabaseComment(db);
+        }catch(...) {
+            db->setDatabaseComment(old_database_comment);
+        }
+    }
+}
+
 
 InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
 {
@@ -288,7 +305,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
                     database->applySettingsChanges(command.settings_changes, getContext());
                     break;
                 case AlterCommand::MODIFY_DATABASE_COMMENT:
-                    database->alterDatabaseComment(command);
+                    updateDatabaseCommentWithMetadataFile(database, command);
                     break;
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported alter command");
