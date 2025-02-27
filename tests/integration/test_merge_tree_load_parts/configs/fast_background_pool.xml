@@ -8,6 +8,7 @@
     <background_processing_pool_task_sleep_seconds_when_no_work_random_part>0</background_processing_pool_task_sleep_seconds_when_no_work_random_part>
 
     <logger>
-        <level>debug</level>
+        <!-- the test looks at the logs, do not make log level too low like test level -->
+        <level>trace</level>
     </logger>
 </clickhouse>

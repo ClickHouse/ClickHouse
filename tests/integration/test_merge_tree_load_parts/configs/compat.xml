@@ -3,6 +3,7 @@
     <replicated_merge_tree_paranoid_check_on_startup>0</replicated_merge_tree_paranoid_check_on_startup>
 
     <logger>
-        <level>debug</level>
+        <!-- the test looks at the logs, do not make log level too low like test level -->
+        <level>trace</level>
     </logger>
 </clickhouse>
