@@ -4474,8 +4474,20 @@ class ClickHouseInstance:
         )
 
     def replace_in_config(self, path_to_config, replace, replacement):
+        # Do `sed 's/{replace}/{replacement}/g'`, but with some hacks to make it work when {replace}
+        # and {replacement} have quotes or slashes.
+        for d in "/|#-=+@^*~":
+            if d not in replace and d not in replacement:
+                delimiter = d
+                break
+        else:
+            raise Exception(
+                f"Couldn't find a suitable delimiter"
+            )
+        replace = shlex.quote(replace)
+        replacement = shlex.quote(replacement)
         self.exec_in_container(
-            ["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"]
+            ["bash", "-c", f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}"]
         )
 
     def create_dir(self):

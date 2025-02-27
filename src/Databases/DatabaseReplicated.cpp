@@ -41,6 +41,7 @@
 #include <base/chrono_io.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/PoolId.h>
@@ -96,6 +97,11 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace FailPoints
+{
+    extern const char database_replicated_startup_pause[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -761,6 +767,8 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
 
             if (is_probably_dropped)
                 return;
+
+            FailPointInjection::pauseFailPoint(FailPoints::database_replicated_startup_pause);
 
             {
                 std::lock_guard lock{ddl_worker_mutex};
@@ -1622,6 +1630,9 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
+    /// Make sure startupDatabaseAsync doesn't start ddl_worker after stopReplication().
+    waitDatabaseStarted();
+
     std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
         ddl_worker->shutdown();
