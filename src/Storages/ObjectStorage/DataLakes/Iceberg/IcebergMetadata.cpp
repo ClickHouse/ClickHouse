@@ -394,20 +394,14 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
     {
         const std::string_view file_path = manifest_path_col_str->getDataAt(i).toView();
         const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
-        auto manifest_file_it = manifest_files_by_name.find(manifest_file_name);
-        if (manifest_file_it != manifest_files_by_name.end()) {}
-
-
-        const auto current_filename = std::filesystem::path(file_path).filename();
         Int64 added_sequence_number = 0;
         if (format_version > 1)
-
         {
             added_sequence_number = sequence_number_column.value()->getInt(i);
         }
         /// We can't encapsulate this logic in getManifestFile because we need not only the name of the file, but also an inherited sequence number which is known only during the parsing of ManifestList
-        auto manifest_file_content = initializeManifestFile(current_filename, added_sequence_number);
-        auto [iterator, _inserted] = manifest_files_by_name.emplace(current_filename, std::move(manifest_file_content));
+        auto manifest_file_content = initializeManifestFile(manifest_file_name, added_sequence_number);
+        auto [iterator, _inserted] = manifest_files_by_name.emplace(manifest_file_name, std::move(manifest_file_content));
         auto manifest_file_iterator = ManifestFileIterator{iterator};
         for (const auto & data_file_path : manifest_file_iterator->getFiles())
         {
