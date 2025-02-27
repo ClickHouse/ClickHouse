@@ -2454,7 +2454,7 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 
 static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
-    if (!codec)
+    if (!codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
         return block;
 
     Block res;
@@ -2464,7 +2464,7 @@ static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 clie
         ColumnWithTypeAndName column = elem;
 
         // TODO(nickitat): support Tuple
-        if (!elem.type->haveSubtypes())
+        if (!elem.type->haveSubtypes() || elem.type->lowCardinality() || elem.type->isNullable() || isArray(elem.type->getTypeId()))
         {
             auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
             { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
