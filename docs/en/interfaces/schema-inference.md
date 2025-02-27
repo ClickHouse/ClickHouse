@@ -124,7 +124,7 @@ there is an option to use the structure from the insertion table instead of extr
 It can improve insertion performance because schema inference can take some time. Also, it will be helpful when the table has an optimized schema, so
 no conversions between types will be performed.
 
-There is a special setting [use_structure_from_insertion_table_in_table_functions](/docs/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
+There is a special setting [use_structure_from_insertion_table_in_table_functions](/operations/settings/settings.md/#use_structure_from_insertion_table_in_table_functions)
 that controls this behaviour. It has 3 possible values:
 - 0 - table function will extract the structure from the data.
 - 1 - table function will use the structure from the insertion table.
@@ -1577,7 +1577,7 @@ DESC format(JSONEachRow, $$
 └────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/docs/operations/settings/settings-formats.md#date_time_input_format)
+Note: Parsing datetimes during schema inference respect setting [date_time_input_format](/operations/settings/settings-formats.md#date_time_input_format)
 
 #### input_format_try_infer_dates {#input-format-try-infer-dates}
 

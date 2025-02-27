@@ -1,35 +1,35 @@
 ---
 title: "Regular Functions"
-slug: /en/sql-reference/functions/regular-functions
+slug: /sql-reference/functions/regular-functions
 description: "Landing page for Regular Functions"
 ---
 
 | Page                                                                              | Description                                                                                                                     |
 |-----------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
-| [Overview](/docs/en/sql-reference/functions/overview)                             | Overview of all functions.                                                                                                      |
-| [Machine Learning](/docs/en/sql-reference/functions/machine-learning-functions)   | Functions for machine learning.                                                                                                 |
-| [Introspection](/docs/en/sql-reference/functions/introspection)                   | Functions for introspection of ClickHouse.                                                                                      |
-| [arrayJoin](/docs/en/sql-reference/functions/array-join)                          | The arrayJoin function which takes each row and generates a set of rows (unfold)                                                |
-| [Searching in Strings](/docs/en/sql-reference/functions/string-search-functions)  | Functions for searching within strings.                                                                                         |
-| [Hash](/docs/en/sql-reference/functions/hash-functions)                           | Hashing functions.                                                                                                              |
-| [UUIDs](/docs/en/sql-reference/functions/uuid-functions)                          | Functions for Working with UUIDs.                                                                                               |
-| [Time Series](/docs/en/sql-reference/functions/time-series-functions)             | Functions for time series data analysis.                                                                                        |
-| [Random Numbers](/docs/en/sql-reference/functions/random-functions)               | Functions for random number generation.                                                                                         |
-| [NLP](/docs/en/sql-reference/functions/nlp-functions)                             | Functions for Natural Language Processing.                                                                                      |
-| [Conditional](/docs/en/sql-reference/functions/conditional-functions)             | Conditional functions.                                                                                                          |
-| [Nullable](/docs/en/sql-reference/functions/functions-for-nulls)                  | Functions for working with NULL.                                                                                                |
-| [Bit](/docs/en/sql-reference/functions/bit-functions)                             | Bitwise functions.                                                                                                              |
-| [Time Window](/docs/en/sql-reference/functions/time-window-functions)             | Functions which return the inclusive lower and exclusive upper bound of the corresponding window.                               |
-| [IP Address](/docs/en/sql-reference/functions/ip-address-functions)               | Functions for Working with IPv4 and IPv6 Addresses.                                                                             |
-| [Splitting Strings](/docs/en/sql-reference/functions/splitting-merging-functions) | Functions for splitting strings.                                                                                                |
-| [Tuples](/docs/en/sql-reference/functions/tuple-functions)                        | Functions for working with tuples.                                                                                              |
-| [String replacement](/docs/en/sql-reference/functions/string-replace-functions)   | Functions for string replacement.                                                                                               |
-| [User Defined Functions](/docs/en/sql-reference/functions/udf)                    | User Defined Functions.                                                                                                         |
-| [Comparison](/docs/en/sql-reference/functions/comparison-functions)               | Comparison functions (equals, less, greater etc.)                                                                               |
-| [Other](/docs/en/sql-reference/functions/other-functions)                         | Functions which don't fit into any other category.                                                                              |
-| [JSON](/docs/en/sql-reference/functions/json-functions)                           | Functions for working with JSON.                                                                                                |
-| [URL](/docs/en/sql-reference/functions/url-functions)                             | Functions for working with URLs.                                                                                                |
-| [Encoding](/docs/en/sql-reference/functions/encoding-functions)                   | Functions for encoding data.                                                                                                    |
+| [Overview](/sql-reference/functions/overview)                             | Overview of all functions.                                                                                                      |
+| [Machine Learning](/sql-reference/functions/machine-learning-functions)   | Functions for machine learning.                                                                                                 |
+| [Introspection](/sql-reference/functions/introspection)                   | Functions for introspection of ClickHouse.                                                                                      |
+| [arrayJoin](/sql-reference/functions/array-join)                          | The arrayJoin function which takes each row and generates a set of rows (unfold)                                                |
+| [Searching in Strings](/sql-reference/functions/string-search-functions)  | Functions for searching within strings.                                                                                         |
+| [Hash](/sql-reference/functions/hash-functions)                           | Hashing functions.                                                                                                              |
+| [UUIDs](/sql-reference/functions/uuid-functions)                          | Functions for Working with UUIDs.                                                                                               |
+| [Time Series](/sql-reference/functions/time-series-functions)             | Functions for time series data analysis.                                                                                        |
+| [Random Numbers](/sql-reference/functions/random-functions)               | Functions for random number generation.                                                                                         |
+| [NLP](/sql-reference/functions/nlp-functions)                             | Functions for Natural Language Processing.                                                                                      |
+| [Conditional](/sql-reference/functions/conditional-functions)             | Conditional functions.                                                                                                          |
+| [Nullable](/sql-reference/functions/functions-for-nulls)                  | Functions for working with NULL.                                                                                                |
+| [Bit](/sql-reference/functions/bit-functions)                             | Bitwise functions.                                                                                                              |
+| [Time Window](/sql-reference/functions/time-window-functions)             | Functions which return the inclusive lower and exclusive upper bound of the corresponding window.                               |
+| [IP Address](/sql-reference/functions/ip-address-functions)               | Functions for Working with IPv4 and IPv6 Addresses.                                                                             |
+| [Splitting Strings](/sql-reference/functions/splitting-merging-functions) | Functions for splitting strings.                                                                                                |
+| [Tuples](/sql-reference/functions/tuple-functions)                        | Functions for working with tuples.                                                                                              |
+| [String replacement](/sql-reference/functions/string-replace-functions)   | Functions for string replacement.                                                                                               |
+| [User Defined Functions](/sql-reference/functions/udf)                    | User Defined Functions.                                                                                                         |
+| [Comparison](/sql-reference/functions/comparison-functions)               | Comparison functions (equals, less, greater etc.)                                                                               |
+| [Other](/sql-reference/functions/other-functions)                         | Functions which don't fit into any other category.                                                                              |
+| [JSON](/sql-reference/functions/json-functions)                           | Functions for working with JSON.                                                                                                |
+| [URL](/sql-reference/functions/url-functions)                             | Functions for working with URLs.                                                                                                |
+| [Encoding](/sql-reference/functions/encoding-functions)                   | Functions for encoding data.                                                                                                    |
 | [ULID](/docs/en/sql-reference/functions/ulid-functions)                           | Functions for Working with ULID.                                                                                                |
 | [Maps](/docs/en/sql-reference/functions/tuple-map-functions)                      | Functions for working with Maps.                                                                                                |
 | [Dictionaries](/docs/en/sql-reference/functions/ext-dict-functions)               | Functions for working with dictionaries.                                                                                        |

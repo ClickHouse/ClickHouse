@@ -3,7 +3,10 @@ slug: /sql-reference/table-functions/view
 sidebar_position: 210
 sidebar_label: view
 title: view
+description: "Turns a subquery into a table. The function implements views."
 ---
+
+# view Table Function
 
 Turns a subquery into a table. The function implements views (see [CREATE VIEW](/docs/sql-reference/statements/create/view/#create-view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
 
