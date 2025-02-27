@@ -96,6 +96,6 @@ size_t QueryConditionCache::QueryConditionCacheEntryWeight::operator()(const Ent
 {
     /// Estimate the memory size of `std::vector<bool>`, for bool values, only 1 bit per element.
     size_t dynamic_memory = (entry.matching_marks.capacity() + 7) / 8; /// Round up to bytes.
-    return sizeof(entry.matching_marks) + dynamic_memory;
+    return sizeof(decltype(entry.matching_marks)) + dynamic_memory;
 }
 }
