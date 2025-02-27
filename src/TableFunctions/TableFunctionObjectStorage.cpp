@@ -133,11 +133,11 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
         columns = cached_columns;
 
     StoragePtr storage;
-    const auto & settings = context->getSettingsRef();
+    const auto & settings2 = context->getSettingsRef();
 
-    const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto parallel_replicas_cluster_name = settings2[Setting::cluster_for_parallel_replicas].toString();
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && settings[Setting::parallel_replicas_for_cluster_engines]
+        && settings2[Setting::parallel_replicas_for_cluster_engines]
         && context->canUseTaskBasedParallelReplicas()
         && !context->isDistributed();
 
