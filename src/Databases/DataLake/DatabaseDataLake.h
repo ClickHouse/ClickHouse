@@ -64,7 +64,7 @@ private:
 
     void validateSettings();
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
-    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseIcebergStorageType type) const;
+    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(DatabaseDataLakeStorageType type) const;
     std::string getStorageEndpointForTable(const DataLake::TableMetadata & table_metadata) const;
 
 

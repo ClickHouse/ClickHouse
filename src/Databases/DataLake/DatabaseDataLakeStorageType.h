@@ -4,7 +4,7 @@
 namespace DB
 {
 
-enum class DatabaseIcebergStorageType : uint8_t
+enum class DatabaseDataLakeStorageType : uint8_t
 {
     S3,
     Azure,

@@ -3,12 +3,12 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
 #include <Databases/DataLake/StorageCredentials.h>
-#include <Databases/DataLake/DatabaseIcebergStorageType.h>
+#include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 
 namespace DataLake
 {
 
-using StorageType = DB::DatabaseIcebergStorageType;
+using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 
 /// A class representing table metadata,

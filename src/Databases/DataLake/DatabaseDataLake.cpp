@@ -129,7 +129,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
     return catalog_impl;
 }
 
-std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfiguration(DatabaseIcebergStorageType type) const
+std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfiguration(DatabaseDataLakeStorageType type) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -141,28 +141,28 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
             switch (type)
             {
 #if USE_AWS_S3
-                case DB::DatabaseIcebergStorageType::S3:
+                case DB::DatabaseDataLakeStorageType::S3:
                 {
                     return std::make_shared<StorageS3IcebergConfiguration>();
                 }
 #endif
 #if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseIcebergStorageType::Azure:
+                case DB::DatabaseDataLakeStorageType::Azure:
                 {
                     return std::make_shared<StorageAzureIcebergConfiguration>();
                 }
 #endif
 #if USE_HDFS
-                case DB::DatabaseIcebergStorageType::HDFS:
+                case DB::DatabaseDataLakeStorageType::HDFS:
                 {
                     return std::make_shared<StorageHDFSIcebergConfiguration>();
                 }
 #endif
-                case DB::DatabaseIcebergStorageType::Local:
+                case DB::DatabaseDataLakeStorageType::Local:
                 {
                     return std::make_shared<StorageLocalIcebergConfiguration>();
                 }
-                case DB::DatabaseIcebergStorageType::Other:
+                case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalIcebergConfiguration>();
                 }
@@ -179,16 +179,16 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
             switch (type)
             {
 #if USE_AWS_S3
-                case DB::DatabaseIcebergStorageType::S3:
+                case DB::DatabaseDataLakeStorageType::S3:
                 {
                     return std::make_shared<StorageS3DeltaLakeConfiguration>();
                 }
 #endif
-                case DB::DatabaseIcebergStorageType::Local:
+                case DB::DatabaseDataLakeStorageType::Local:
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>();
                 }
-                case DB::DatabaseIcebergStorageType::Other:
+                case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>();
                 }
@@ -292,7 +292,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto columns = ColumnsDescription(table_metadata.getSchema());
     LOG_DEBUG(log, "Got columns {}", columns.toString());
 
-    DatabaseIcebergStorageType storage_type = DatabaseIcebergStorageType::Other;
+    DatabaseDataLakeStorageType storage_type = DatabaseDataLakeStorageType::Other;
     auto storage_type_from_catalog = catalog->getStorageType();
     if (storage_type_from_catalog.has_value())
     {
