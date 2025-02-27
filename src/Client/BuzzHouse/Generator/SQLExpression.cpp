@@ -559,7 +559,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 64);
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
     const uint32_t nfuncs = static_cast<uint32_t>(
-        (nallow_funcs ? funcs_size : 0) + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - 1)) : 0));
+        (nallow_funcs ? funcs_size : 0) + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - 6)) : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
 
@@ -1059,7 +1059,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             }
             this->width -= nclauses;
         }
-        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
+        if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
         {
             generateOrderBy(rg, 0, true, wdf->mutable_order_by());
         }
