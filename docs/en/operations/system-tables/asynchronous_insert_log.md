@@ -14,7 +14,7 @@ To start logging configure parameters in the [asynchronous_insert_log](../../ope
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview#system-tables-introduction) for more details.
 
 Columns:
 
@@ -25,7 +25,7 @@ Columns:
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `format` ([String](/docs/sql-reference/data-types/string.md)) — Format name.
+- `format` ([String](/sql-reference/data-types/string.md)) — Format name.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query.
 - `bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of inserted bytes.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.

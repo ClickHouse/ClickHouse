@@ -1613,7 +1613,7 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         // All parts which are dropped in that operations are not removed until failpoint is released
         // If we would set this failpoint before grabOldParts, it leads us to a case when
         // background thread already passed the failpoint but did not reach grabOldParts yet
-        // if failpoint is enabled at that time, background thead could grab parts from those operations and remove them regardless enabled failpoint
+        // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
     }
 

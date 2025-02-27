@@ -74,7 +74,7 @@ public:
         [[maybe_unused]] auto &v = thread_frame_pointers;
     }
 
-    static ThreadFramePointersBase getThreadFramePointers();
+    static const ThreadFramePointersBase & getThreadFramePointers();
     static void setThreadFramePointers(ThreadFramePointersBase frame_pointers);
     static void clearThreadFramePointers();
 
@@ -95,6 +95,7 @@ protected:
         ThreadFramePointersBase frame_pointers;
     };
     static thread_local ThreadFramePointers thread_frame_pointers;
+    static const ThreadFramePointersBase dummy_frame_pointers;
 
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
     struct MessageMasked
@@ -336,11 +337,11 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool
 
 template <typename T>
 requires std::is_pointer_v<T>
-T exception_cast(std::exception_ptr e)
+T current_exception_cast()
 {
     try
     {
-        std::rethrow_exception(e);
+        throw;
     }
     catch (std::remove_pointer_t<T> & concrete)
     {

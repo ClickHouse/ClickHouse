@@ -1,17 +1,19 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/quantiles
 sidebar_position: 177
+title: "quantiles Functions"
+description: "quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK"
 ---
 
 # quantiles Functions
 
-## quantiles
+## quantiles {#quantiles}
 
 Syntax: `quantiles(level1, level2, ...)(x)`
 
 All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantileExactWeightedInterpolated`, `quantileInterpolatedWeighted`, `quantilesTDigest`, `quantilesBFloat16`, `quantilesDD`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
 
-## quantilesExactExclusive
+## quantilesExactExclusive {#quantilesexactexclusive}
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -63,7 +65,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesExactInclusive
+## quantilesExactInclusive {#quantilesexactinclusive}
 
 Exactly computes the [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -115,7 +117,7 @@ Result:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## quantilesGK
+## quantilesGK {#quantilesgk}
 
 `quantilesGK` works similarly with `quantileGK` but allows us to calculate quantities at different levels simultaneously and returns an array.
 
