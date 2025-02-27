@@ -3029,7 +3029,7 @@ Result:
 
 ## getSetting {#getsetting}
 
-Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings).
+Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings).
 
 **Syntax**
 
