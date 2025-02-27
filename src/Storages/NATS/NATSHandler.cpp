@@ -30,7 +30,7 @@ NATSHandler::NATSHandler(LoggerPtr log_)
     auto error = uv_async_init(loop.getLoop(), &execute_tasks_scheduler, processTasks);
     if (error)
     {
-        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not create scheduler");
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot create scheduler, received error {}", error);
     }
 
     execute_tasks_scheduler.data = this;
