@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about parts of MergeTree dropped tables from `system.dropped_tables`"
-slug: /en/operations/system-tables/dropped_tables_parts
-title: "dropped_tables_parts"
+slug: /operations/system-tables/dropped_tables_parts
+title: "system.dropped_tables_parts"
 keywords: ["system table", "dropped_tables_parts"]
 ---
 

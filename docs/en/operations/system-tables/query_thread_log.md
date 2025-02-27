@@ -1,10 +1,10 @@
 ---
 description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
-slug: /en/operations/system-tables/query_thread_log
-title: "query_thread_log"
+slug: /operations/system-tables/query_thread_log
+title: "system.query_thread_log"
 keywords: ["system table", "query_thread_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -12,12 +12,12 @@ Contains information about threads that execute queries, for example, thread nam
 
 To start logging:
 
-1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#query_thread_log) section.
+1.  Configure parameters in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) section.
 2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
 You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
@@ -68,7 +68,7 @@ Columns:
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
 - `quota_key` ([String](../../sql-reference/data-types/string.md)) — The "quota key" specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
-- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/docs/en/operations/system-tables/events).
+- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/operations/system-tables/events).
 
 **Example**
 

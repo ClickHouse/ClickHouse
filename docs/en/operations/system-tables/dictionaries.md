@@ -1,10 +1,10 @@
 ---
 description: "System table containing information about dictionaries"
-slug: /en/operations/system-tables/dictionaries
-title: "dictionaries"
+slug: /operations/system-tables/dictionaries
+title: "system.dictionaries"
 keywords: ["system table", "dictionaries"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
