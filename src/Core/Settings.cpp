@@ -359,8 +359,11 @@ Each time this number of parts was uploaded to S3, s3_min_upload_part_size is mu
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
 Maximum part number number for s3 upload part.
 )", 0) \
+    DECLARE(Bool, s3_allow_multipart_copy, true, R"(
+Allow multipart copy in S3.
+)", 0) \
     DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
-Maximum size for a single copy operation in s3
+Maximum size for single-operation copy in s3. This setting is used only if s3_allow_multipart_copy is true.
 )", 0) \
     DECLARE(UInt64, azure_upload_part_size_multiply_factor, 2, R"(
 Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage.
@@ -5800,6 +5803,10 @@ Build local plan for local replica
 )", BETA) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+)", BETA) \
+    \
+    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
+The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
