@@ -255,23 +255,6 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     {
         join_and_sharding.sharding.resize(data.common_prefix);
         join_and_sharding.join->enableJoinByLayers(std::move(join_and_sharding.sharding));
-
-        // const auto & join = join_and_sharding.join->getJoin();
-        // const auto & table_join = join->getTableJoin();
-        // auto kind = table_join.kind();
-        // auto strictness = table_join.strictness();
-
-        // if (kind == JoinKind::Left && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti))
-        // {
-        //     const auto & headers = join_and_sharding.join->getInputHeaders();
-        //     const auto & left_stream_input_header = headers.front();
-        //     const auto & right_stream_input_header = headers.back();
-
-        //     auto updated_table_join = std::make_shared<TableJoin>(table_join);
-        //     updated_table_join->swapSides();
-        //     auto updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
-        //     join_and_sharding.join->setJoin(std::move(updated_join), /* swap_streams= */ true);
-        // }
     }
 
     for (const auto & sorting_step : data.sorting_steps)
@@ -350,6 +333,10 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             {
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
                 // std::cerr << frame.results.back()->dag.dumpDAG() << std::endl;
+
+                /// Note: join_use_nulls is not supported.
+                /// This is because we append toNullable function.
+                /// We can remove this function from the DAG or mark is as identity later.
 
                 sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
