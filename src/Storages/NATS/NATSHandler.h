@@ -38,8 +38,6 @@ private:
 
     NATSOptionsPtr createOptions();
 
-    void setLoopState(UInt8 loop_state_);
-
     void resetThreadLocalLoop();
 
     UVLoop loop;

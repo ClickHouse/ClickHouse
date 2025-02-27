@@ -44,21 +44,26 @@ void NATSHandler::runLoop()
         {
             return;
         }
-    }
 
-    natsLibuv_Init();
-    natsLibuv_SetThreadLocalLoop(loop.getLoop());
+        natsLibuv_Init();
+        natsLibuv_SetThreadLocalLoop(loop.getLoop());
+
+        loop_state = Loop::RUN;
+    }
 
     SCOPE_EXIT({
         nats_ReleaseThreadMemory();
         resetThreadLocalLoop();
     });
 
-    setLoopState(Loop::RUN);
     LOG_DEBUG(log, "Background loop started");
 
     uv_run(loop.getLoop(), UV_RUN_DEFAULT);
-    setLoopState(Loop::CLOSED);
+
+    {
+        std::lock_guard lock(loop_state_mutex);
+        loop_state = Loop::CLOSED;
+    }
 
     LOG_DEBUG(log, "Background loop ended");
 }
@@ -196,12 +201,6 @@ NATSOptionsPtr NATSHandler::createOptions()
     natsOptions_SetSendAsap(result.get(), true);
 
     return result;
-}
-
-void NATSHandler::setLoopState(UInt8 loop_state_)
-{
-    std::lock_guard lock(loop_state_mutex);
-    loop_state = loop_state_;
 }
 
 void NATSHandler::resetThreadLocalLoop()
