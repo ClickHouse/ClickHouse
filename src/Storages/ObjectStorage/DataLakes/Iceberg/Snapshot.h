@@ -7,36 +7,40 @@
 namespace Iceberg
 {
 
-class ManifestList
+struct ManifestListFileEntry
 {
-public:
-    explicit ManifestList(std::vector<ManifestFileEntry> manifest_files_) : manifest_files(std::move(manifest_files_)) { }
-    const std::vector<ManifestFileEntry> & getManifestFiles() const { return manifest_files; }
-
-private:
-    std::vector<ManifestFileEntry> manifest_files;
+    ManifestFileIterator manifest_file;
+    Int64 added_sequence_number;
 };
 
-using ManifestListsByName = std::map<String, ManifestList>;
+using ManifestList = std::vector<ManifestListFileEntry>;
 
-class IcebergSnapshot
+
+using ManifestListsStorage = std::map<String, ManifestList>;
+
+template <typename CreationFunction>
+using ManifestListIterator = IteratorWrapper<ManifestList>;
+
+struct IcebergSnapshot
 {
 public:
-    explicit IcebergSnapshot(const ManifestListsByName::const_iterator & reference_, int64_t snapshot_id_)
-        : reference(reference_)
+    explicit IcebergSnapshot(const ManifestListIterator & manifest_list_iterator_, Int64 snapshot_id_, Int32 schema_id_)
+        : manifest_list_iterator(manifest_list_iterator_)
         , snapshot_id(snapshot_id_)
+        , schema_id(schema_id_)
     {
     }
 
-    const ManifestList & getManifestList() const { return reference->second; }
-    const String & getName() const { return reference->first; }
-
+    const ManifestList & getManifestList() const { return *manifest_list_iterator; }
+    const String & getManifestListName() const { return manifest_list_iterator.getName(); }
+    Int64 getSnapshotId() const { return snapshot_id; }
+    Int32 getSchemaId() const { return schema_id; }
 
 private:
-    ManifestListsByName::const_iterator reference;
-    int64_t snapshot_id;
+    ManifestListIterator manifest_list_iterator;
+    Int64 snapshot_id;
+    Int32 schema_id;
 };
-
 }
 
 #endif

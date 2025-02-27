@@ -5,7 +5,7 @@ title: "workloads"
 keywords: ["system table", "workloads"]
 ---
 
-Contains information for [workloads](/docs/operations/workload-scheduling.md#workload_entity_storage) residing on the local server. The table contains a row for every workload.
+Contains information for [workloads](/operations/workload-scheduling.md#workload_entity_storage) residing on the local server. The table contains a row for every workload.
 
 Example:
 

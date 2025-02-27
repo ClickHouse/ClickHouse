@@ -35,49 +35,19 @@ struct IcebergTableState
 class MetadataResolver
 {
 public:
-    std::optional<IcebergTableState> getSchemaVersionByFileIfOutdated(const ContextPtr & local_context) const;
+    using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
 
-
-    Int64 getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata)
+    Iceberg::IcebergSnapshot getRelevantIcebergSnapshot() const
     {
-        auto configuration_ptr = configuration.lock();
-
-        Int64 snapshot_id = -1;
-        Int32 schema_id = -1;
-
-        std::optional<String> manifest_list_file;
-
-        bool timestamp_changed = local_context->getSettingsRef()[Settings::iceberg_query_at_timestamp_ms].changed;
-        bool snapshot_id_changed = local_context->getSettingsRef()[Settings::iceberg_snapshot_id].changed;
-        if (timestamp_changed && snapshot_id_changed)
+        if (!current_snapshot.has_value())
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot id and timestamp cannot be changed simultaneously");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot found");
         }
-        if (timestamp_changed)
-        {
-            Int64 closest_timestamp = 0;
-            Int64 query_timestamp = local_context->getSettingsRef()[Settings::iceberg_timestamp_ms];
-            for (size_t i = 0; i < snapshots->size(); ++i)
-            {
-                const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
-                Int64 snapshot_timestamp = snapshot->getValue<Int64>("timestamp-ms");
-                if (snapshot_timestamp <= query_timestamp && snapshot_timestamp > closest_timestamp)
-                {
-                    closest_timestamp = snapshot_timestamp;
-                    const auto path = snapshot->getValue<String>("manifest-list");
-                    manifest_list_file = std::filesystem::path(path) / "metadata" / std::filesystem::path(path).filename();
-                    snapshot_id = snapshot->getValue<Int64>("snapshot-id");
-                }
-            }
-        }
-        else if (snapshot_id_changed)
-        {
-            snapshot_id = local_context->getSettingsRef()[Settings::iceberg_snapshot_id];
-            return std::make_tuple(schema_id, snapshot_id);
-        }
+        return current_snapshot.value();
     }
 
 private:
+    const ConfigurationObserverPtr configuration;
     const ObjectStoragePtr object_storage;
     const std::string path;
 };

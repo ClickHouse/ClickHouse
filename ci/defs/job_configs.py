@@ -1,6 +1,6 @@
 from praktika import Job
 
-from ci.workflows.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
+from ci.defs.defs import ArtifactNames, BuildTypes, JobNames, RunnerLabels
 
 
 class JobConfigs:
@@ -93,21 +93,7 @@ class JobConfigs:
             BuildTypes.AMD_BINARY,
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
-            # special builds
-            BuildTypes.AMD_COVERAGE,
-            BuildTypes.ARM_BINARY,
             BuildTypes.AMD_TIDY,
-            BuildTypes.AMD_DARWIN,
-            BuildTypes.ARM_DARWIN,
-            BuildTypes.ARM_V80COMPAT,
-            BuildTypes.AMD_FREEBSD,
-            BuildTypes.PPC64LE,
-            BuildTypes.AMD_COMPAT,
-            BuildTypes.AMD_MUSL,
-            BuildTypes.RISCV64,
-            BuildTypes.S390X,
-            BuildTypes.LOONGARCH64,
-            # BuildTypes.FUZZERS,
         ],
         provides=[
             [
@@ -156,10 +142,60 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
             ],
-            # special builds
+            [ArtifactNames.CH_TIDY_BIN],
+        ],
+        runs_on=[
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_ARM,
+            RunnerLabels.BUILDER_AMD,
+        ],
+    )
+    special_build_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=["...from params..."],
+        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./docker/packager/packager",
+                "./rust",
+                "./tests/ci/build_check.py",
+                "./tests/performance",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_COVERAGE,
+            BuildTypes.ARM_BINARY,
+            BuildTypes.AMD_DARWIN,
+            BuildTypes.ARM_DARWIN,
+            BuildTypes.ARM_V80COMPAT,
+            BuildTypes.AMD_FREEBSD,
+            BuildTypes.PPC64LE,
+            BuildTypes.AMD_COMPAT,
+            BuildTypes.AMD_MUSL,
+            BuildTypes.RISCV64,
+            BuildTypes.S390X,
+            BuildTypes.LOONGARCH64,
+            # BuildTypes.FUZZERS,
+        ],
+        provides=[
             [ArtifactNames.DEB_AMD_COV, ArtifactNames.CH_AMD_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
-            [ArtifactNames.CH_TIDY_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
             [ArtifactNames.CH_ARM_DARWIN_BIN],
             [ArtifactNames.CH_ARM_V80COMPAT],
@@ -173,19 +209,8 @@ class JobConfigs:
             # [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_AMD,
-            RunnerLabels.BUILDER_ARM,
-            RunnerLabels.BUILDER_ARM,
-            # special builds
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_TIDY,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.ARM_V80COMPAT,

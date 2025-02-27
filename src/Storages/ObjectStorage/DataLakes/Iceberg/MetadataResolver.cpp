@@ -61,4 +61,10 @@ void IcebergMetadata::updateState(const ContextPtr & local_context)
 }
 
 
-    std::optional<Int32> getSchemaVersionByFileIfOutdated(const ContextPtr & local_context) const 
+std::optional<Int32> MetadataResolver::getSchemaVersionByFileIfOutdated(const ContextPtr & local_context) const
+{
+    if (!current_snapshot.has_value())
+    {
+        return std::nullopt;
+    }
+}
