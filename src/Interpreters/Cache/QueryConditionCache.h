@@ -50,7 +50,12 @@ private:
         size_t operator()(const Key & key) const;
     };
 
-    using Cache = CacheBase<Key, Entry, KeyHasher>;
+    struct QueryConditionCacheEntryWeight
+    {
+        size_t operator()(const Entry & entry) const;
+    };
+
+    using Cache = CacheBase<Key, Entry, KeyHasher, QueryConditionCacheEntryWeight>;
     Cache cache;
 
     LoggerPtr logger = getLogger("QueryConditionCache");
