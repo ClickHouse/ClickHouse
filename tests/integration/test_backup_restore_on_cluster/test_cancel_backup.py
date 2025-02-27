@@ -127,7 +127,7 @@ def wait_status(
     restore_id=None,
     timeout=None,
 ):
-    print(f"Waiting for status {status}")
+    logging.info(f"Waiting for status {status}")
     id = backup_id if backup_id is not None else restore_id
     operation_name = "backup" if backup_id is not None else "restore"
     current_status = get_status(initiator, backup_id=backup_id, restore_id=restore_id)
@@ -150,7 +150,7 @@ def wait_status(
         .splitlines()[0]
         .split("\t")
     )
-    print(
+    logging.info(
         f"{get_node_name(initiator)} : Got status {current_status} for {operation_name} {id} after waiting {waited} seconds "
         f"(start_time = {start_time}, end_time = {end_time})"
     )
@@ -192,7 +192,7 @@ def wait_num_system_processes(
     is_initial_query=None,
     timeout=None,
 ):
-    print(f"Waiting for number of system processes = {num_system_processes}")
+    logging.info(f"Waiting for number of system processes = {num_system_processes}")
     id = backup_id if backup_id is not None else restore_id
     operation_name = "backup" if backup_id is not None else "restore"
     current_count = get_num_system_processes(
@@ -219,7 +219,7 @@ def wait_num_system_processes(
             is_initial_query=is_initial_query,
         )
     if is_current_count_ok():
-        print(
+        logging.info(
             f"Got {current_count} system processes for {operation_name} {id} after waiting {waited} seconds"
         )
     else:
@@ -230,7 +230,7 @@ def wait_num_system_processes(
             count = get_num_system_processes(
                 node, backup_id=backup_id, restore_id=restore_id
             )
-            print(
+            logging.warning(
                 f"{get_node_name(node)}: Got {count} system processes for {operation_name} {id} after waiting {waited} seconds"
             )
         assert False
@@ -245,7 +245,7 @@ def kill_query(
     id = backup_id if backup_id is not None else restore_id
     query_kind = "Backup" if backup_id is not None else "Restore"
     operation_name = "backup" if backup_id is not None else "restore"
-    print(f"{get_node_name(node)}: Cancelling {operation_name} {id}")
+    logging.info(f"{get_node_name(node)}: Cancelling {operation_name} {id}")
     filter_for_is_initial_query = (
         f" AND (is_initial_query = {is_initial_query})"
         if is_initial_query is not None
@@ -256,7 +256,7 @@ def kill_query(
         f"KILL QUERY WHERE (query_kind='{query_kind}') AND (query LIKE '%{id}%'){filter_for_is_initial_query} SYNC"
     )
     waited = time.monotonic() - old_time
-    print(
+    logging.info(
         f"{get_node_name(node)}: Cancelled {operation_name} {id} after {waited} seconds"
     )
     if timeout is not None:
@@ -265,20 +265,20 @@ def kill_query(
 
 # Stops all ZooKeeper servers.
 def stop_zookeeper_servers(zoo_nodes):
-    print(f"Stopping ZooKeeper servers {zoo_nodes}")
+    logging.info(f"Stopping ZooKeeper servers {zoo_nodes}")
     old_time = time.monotonic()
     cluster.stop_zookeeper_nodes(zoo_nodes)
-    print(
+    logging.info(
         f"Stopped ZooKeeper servers {zoo_nodes} in {time.monotonic() - old_time} seconds"
     )
 
 
 # Starts all ZooKeeper servers back.
 def start_zookeeper_servers(zoo_nodes):
-    print(f"Starting ZooKeeper servers {zoo_nodes}")
+    logging.debug(f"Starting ZooKeeper servers {zoo_nodes}")
     old_time = time.monotonic()
     cluster.start_zookeeper_nodes(zoo_nodes)
-    print(
+    logging.debug(
         f"Started ZooKeeper servers {zoo_nodes} in {time.monotonic() - old_time} seconds"
     )
 
@@ -290,7 +290,7 @@ def random_sleep(max_seconds):
 
 
 def sleep(seconds):
-    print(f"Sleeping {seconds} seconds")
+    logging.debug(f"Sleeping {seconds} seconds")
     time.sleep(seconds)
 
 
@@ -330,15 +330,15 @@ class NoTrashChecker:
         )
         new_znodes = list_of_znodes.difference(self.__previous_list_of_znodes)
         if new_znodes:
-            print(f"Found nodes in ZooKeeper: {new_znodes}")
+            logging.info(f"Found nodes in ZooKeeper: {new_znodes}")
             for node in new_znodes:
-                print(
+                logging.info(
                     f"Nodes in '/clickhouse/backups/{node}':\n"
                     + node1.query(
                         f"SELECT name FROM system.zookeeper WHERE path = '/clickhouse/backups/{node}'"
                     )
                 )
-                print(
+                logging.info(
                     f"Nodes in '/clickhouse/backups/{node}/stage':\n"
                     + node1.query(
                         f"SELECT name FROM system.zookeeper WHERE path = '/clickhouse/backups/{node}/stage'"
@@ -362,9 +362,9 @@ class NoTrashChecker:
             backup for backup in new_backups if backup not in unfinished_backups
         )
         if new_backups:
-            print(f"Found new backups: {new_backups}")
+            logging.info(f"Found new backups: {new_backups}")
         if unfinished_backups:
-            print(f"Found unfinished backups: {unfinished_backups}")
+            logging.info(f"Found unfinished backups: {unfinished_backups}")
         assert new_backups == set(self.expect_backups)
         assert unfinished_backups.difference(self.allow_unfinished_backups) == set()
 
@@ -382,8 +382,8 @@ class NoTrashChecker:
             )
             errors = errors_query_result.splitlines()
             if errors:
-                print(f"{get_node_name(node)}: Found errors: {errors}")
-                print(
+                logging.warning(f"{get_node_name(node)}: Found errors: {errors}")
+                logging.warning(
                     node.query(
                         "SELECT name, last_error_message FROM system.errors WHERE last_error_time >= toDateTime('"
                         + start_time
@@ -396,7 +396,7 @@ class NoTrashChecker:
 
         not_found_expected_errors = set(self.expect_errors).difference(all_errors)
         if not_found_expected_errors:
-            print(f"Not found expected errors: {not_found_expected_errors}")
+            logging.warning(f"Not found expected errors: {not_found_expected_errors}")
             assert False
 
 
@@ -409,11 +409,11 @@ def get_backup_id_of_successful_backup():
     if __backup_id_of_successful_backup is None:
         __backup_id_of_successful_backup = random_id()
         with NoTrashChecker() as no_trash_checker:
-            print("Will make backup successfully")
+            logging.info("Will make backup successfully")
             backup_id = __backup_id_of_successful_backup
             create_and_fill_table(random_node())
             initiator = random_node()
-            print(f"Using {get_node_name(initiator)} as initiator")
+            logging.info(f"Using {get_node_name(initiator)} as initiator")
             initiator.query(
                 f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {get_backup_name(backup_id)} SETTINGS id='{backup_id}' ASYNC"
             )
@@ -436,7 +436,7 @@ def test_cancel_backup():
         create_and_fill_table(random_node())
 
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         backup_id = random_id()
         initiator.query(
@@ -460,7 +460,7 @@ def test_cancel_backup():
             is_initial_query=cancel_as_initiator,
         )
 
-        print(
+        logging.info(
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)}"
         )
 
@@ -489,9 +489,9 @@ def test_cancel_restore():
 
     # Cancel restoring.
     with NoTrashChecker() as no_trash_checker:
-        print("Will cancel restoring")
+        logging.info("Will cancel restoring")
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         restore_id = random_id()
         initiator.query(
@@ -515,7 +515,7 @@ def test_cancel_restore():
             is_initial_query=cancel_as_initiator,
         )
 
-        print(
+        logging.info(
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)}"
         )
 
@@ -538,10 +538,10 @@ def test_cancel_restore():
 
     # Restore successfully.
     with NoTrashChecker() as no_trash_checker:
-        print("Will restore from backup successfully")
+        logging.info("Will restore from backup successfully")
         restore_id = random_id()
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         initiator.query(
             f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {get_backup_name(backup_id)} SETTINGS id='{restore_id}' ASYNC"
@@ -557,7 +557,7 @@ def test_shutdown_cancels_backup():
         create_and_fill_table(random_node())
 
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         backup_id = random_id()
         initiator.query(
@@ -573,9 +573,9 @@ def test_shutdown_cancels_backup():
         node_to_restart = random.choice([node1, node2])
         wait_num_system_processes(node_to_restart, "1+", backup_id=backup_id)
 
-        print(f"{get_node_name(node_to_restart)}: Restarting...")
+        logging.info(f"{get_node_name(node_to_restart)}: Restarting...")
         node_to_restart.restart_clickhouse()  # Must cancel the backup.
-        print(f"{get_node_name(node_to_restart)}: Restarted")
+        logging.info(f"{get_node_name(node_to_restart)}: Restarted")
 
         wait_num_system_processes(nodes, 0, backup_id=backup_id)
 
@@ -601,7 +601,7 @@ def test_error_leaves_no_trash():
         create_and_fill_table(random_node(), on_cluster=False)
 
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         backup_id = random_id()
         initiator.query(
@@ -625,7 +625,7 @@ def test_long_disconnection_stops_backup():
         create_and_fill_table(random_node(), num_parts=100)
 
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         backup_id = random_id()
         initiator.query(
@@ -653,7 +653,7 @@ def test_long_disconnection_stops_backup():
             time_before_disconnection = time.monotonic()
 
             node_to_drop_zk_connection = random_node()
-            print(
+            logging.info(
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
@@ -663,11 +663,11 @@ def test_long_disconnection_stops_backup():
 
             time_to_fail = time.monotonic() - time_before_disconnection
             error = get_error(initiator, backup_id=backup_id)
-            print(f"error={error}")
+            logging.info(f"error={error}")
             assert "Lost connection" in error
 
             # A backup is expected to fail, but it isn't expected to fail too soon.
-            print(f"Backup failed after {time_to_fail} seconds disconnection")
+            logging.info(f"Backup failed after {time_to_fail} seconds disconnection")
             assert time_to_fail > 3
             assert time_to_fail < 45
 
@@ -677,7 +677,7 @@ def test_short_disconnection_doesnt_stop_backup():
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
         use_faster_zk_disconnect_detect = random.choice([True, False])
         if use_faster_zk_disconnect_detect:
-            print("Using faster_zk_disconnect_detect.xml")
+            logging.info("Using faster_zk_disconnect_detect.xml")
             config_manager.add_main_config(
                 nodes, "configs/faster_zk_disconnect_detect.xml"
             )
@@ -685,7 +685,7 @@ def test_short_disconnection_doesnt_stop_backup():
         create_and_fill_table(random_node())
 
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         backup_id = random_id()
         initiator.query(
@@ -700,12 +700,12 @@ def test_short_disconnection_doesnt_stop_backup():
         with PartitionManager() as pm:
             random_sleep(4)
             node_to_drop_zk_connection = random_node()
-            print(
+            logging.info(
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
             random_sleep(4)
-            print(
+            logging.info(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
             )
 
@@ -732,13 +732,13 @@ def test_short_disconnection_doesnt_stop_restore():
     with NoTrashChecker() as no_trash_checker, ConfigManager() as config_manager:
         use_faster_zk_disconnect_detect = random.choice([True, False])
         if use_faster_zk_disconnect_detect:
-            print("Using faster_zk_disconnect_detect.xml")
+            logging.info("Using faster_zk_disconnect_detect.xml")
             config_manager.add_main_config(
                 nodes, "configs/faster_zk_disconnect_detect.xml"
             )
 
         initiator = random_node()
-        print(f"Using {get_node_name(initiator)} as initiator")
+        logging.info(f"Using {get_node_name(initiator)} as initiator")
 
         restore_id = random_id()
         initiator.query(
@@ -753,12 +753,12 @@ def test_short_disconnection_doesnt_stop_restore():
         with PartitionManager() as pm:
             random_sleep(3)
             node_to_drop_zk_connection = random_node()
-            print(
+            logging.info(
                 f"Dropping connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
             )
             pm.drop_instance_zk_connections(node_to_drop_zk_connection)
             random_sleep(3)
-            print(
+            logging.info(
                 f"Restoring connection between {get_node_name(node_to_drop_zk_connection)} and ZooKeeper"
             )
 
