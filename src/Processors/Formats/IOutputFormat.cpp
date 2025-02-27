@@ -74,8 +74,6 @@ void IOutputFormat::work()
         if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
             setRowsBeforeAggregation(rows_before_aggregation_counter->get());
         finalize();
-        if (auto_flush)
-            flush();
         return;
     }
 
@@ -128,6 +126,10 @@ void IOutputFormat::finalize()
     writePrefixIfNeeded();
     writeSuffixIfNeeded();
     finalizeImpl();
+
+    if (auto_flush)
+        flush();
+
     finalizeBuffers();
     finalized = true;
 }
