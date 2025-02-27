@@ -613,7 +613,7 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func` — [Lambda function](../../sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` — [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -655,7 +655,7 @@ mapFilter(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](../../sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`  - [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -772,7 +772,7 @@ Result:
 Returns 1 if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than 0. Otherwise, it returns 0.
 
 :::note
-`mapExists` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions).
+`mapExists` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -797,7 +797,7 @@ Result:
 Returns 1 if `func(key, value)` returns something other than 0 for all key-value pairs in `map`. Otherwise, it returns 0.
 
 :::note
-Note that the `mapAll` is a [higher-order function](../../sql-reference/functions/overview#higher-order-functions).
+Note that the `mapAll` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -858,7 +858,7 @@ mapPartialSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
@@ -919,7 +919,7 @@ mapPartialReverseSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 

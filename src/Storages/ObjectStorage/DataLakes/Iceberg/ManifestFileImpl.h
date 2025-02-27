@@ -47,16 +47,17 @@ public:
         const String & common_path,
         const DB::FormatSettings & format_settings,
         Int32 schema_id_,
-        const DB::IcebergSchemaProcessor & schema_processor);
+        const DB::IcebergSchemaProcessor & schema_processor,
+        Int64 inherited_sequence_number);
 
     Int32 schema_id;
+
 
     // Size - number of supported partition columns
     std::vector<PartitionColumnInfo> partition_column_infos;
 
-
     // Size - number of files
-    std::vector<DataFileEntry> data_files;
+    std::vector<ManifestFileEntry> files;
 };
 
 }

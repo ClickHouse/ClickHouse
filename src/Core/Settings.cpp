@@ -1680,7 +1680,7 @@ Possible values:
 
 **See Also**
 
-- [max_concurrent_queries](/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
+- [max_concurrent_queries](/operations/server-configuration-parameters/settings#max_concurrent_queries)
 )", 0) \
     DECLARE(UInt64, max_concurrent_queries_for_user, 0, R"(
 The maximum number of simultaneously processed queries per user.
@@ -1715,7 +1715,7 @@ For async INSERT queries in the replicated table, specifies that deduplication o
     \
     DECLARE(UInt64Auto, insert_quorum, 0, R"(
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1752,7 +1752,7 @@ See also:
 )", 0) \
     DECLARE(Bool, insert_quorum_parallel, true, R"(
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1770,7 +1770,7 @@ See also:
 )", 0) \
     DECLARE(UInt64, select_sequential_consistency, 0, R"(
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -2572,7 +2572,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity.md/#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity#settings-max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -3025,7 +3025,7 @@ Use virtual row while reading in order of primary key or its monotonic function 
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
-Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
 Possible values:
 
@@ -3034,7 +3034,7 @@ Possible values:
 
 **See Also**
 
-- [GROUP BY optimization](../../sql-reference/statements/select/group-by.md/#aggregation-in-order)
+- [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
@@ -3241,7 +3241,7 @@ Restriction on deleting tables in query time. The value 0 means that you can del
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
@@ -3250,7 +3250,7 @@ Restriction on dropping partitions in query time. The value 0 means that you can
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
 :::
 )", 0) \
     \

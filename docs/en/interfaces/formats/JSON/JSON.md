@@ -1,7 +1,7 @@
 ---
 title : JSON
 slug: /interfaces/formats/JSON
-keywords : [JSON]
+keywords: [JSON]
 input_format: true
 output_format: true
 alias: []

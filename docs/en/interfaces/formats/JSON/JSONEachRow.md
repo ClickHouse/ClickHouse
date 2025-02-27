@@ -1,7 +1,7 @@
 ---
-title : JSONEachRow
+title: JSONEachRow
 slug: /interfaces/formats/JSONEachRow
-keywords : [JSONEachRow]
+keywords: [JSONEachRow]
 ---
 
 ## Description {#description}

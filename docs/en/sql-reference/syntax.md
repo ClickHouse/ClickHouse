@@ -323,8 +323,8 @@ now()
 ```
 
 There are also:
-- [Regular functions](../sql-reference/functions/overview).
-- [Aggregate functions](../sql-reference/aggregate-functions/index.md).
+- [Regular functions](/sql-reference/functions/overview).
+- [Aggregate functions](/sql-reference/aggregate-functions).
 
 Some aggregate functions can contain two lists of arguments in brackets. For example: 
 

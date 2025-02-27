@@ -1,9 +1,9 @@
 ---
 slug: /en/operations/system-tables/histogram_metrics
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-# histogram_metrics
+# histogram_metrics {#histogram_metrics}
 
 <SystemTableCloud/>
 
@@ -31,9 +31,9 @@ FROM system.histogram_metrics
 FORMAT Prometheus
 ```
 
-## Metric descriptions
+## Metric descriptions {#metric_descriptions}
 
-### keeper_response_time_ms_bucket
+### keeper_response_time_ms_bucket {#keeper_response_time_ms_bucket}
 The response time of Keeper, in milliseconds.
 
 **See Also**

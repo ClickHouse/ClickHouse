@@ -1,7 +1,7 @@
 ---
-title : RowBinary
+title: RowBinary
 slug: /interfaces/formats/RowBinary
-keywords : [RowBinary]
+keywords: [RowBinary]
 input_format: true
 output_format: true
 alias: []

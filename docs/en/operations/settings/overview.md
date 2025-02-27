@@ -1,7 +1,7 @@
 ---
 title: "Settings Overview"
 sidebar_position: 1
-slug: /en/operations/settings/overview
+slug: /operations/settings/overview
 description: "Overview page for settings."
 ---
 
