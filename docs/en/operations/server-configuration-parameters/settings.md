@@ -1334,7 +1334,7 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](../../operations/settings/overview#custom_settings). The prefixes must be separated with commas.
+List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
 
 **Example**
 
@@ -1344,7 +1344,7 @@ List of prefixes for [custom settings](../../operations/settings/overview#custom
 
 **See Also**
 
-- [Custom settings](../../operations/settings/overview#custom_settings)
+- [Custom settings](/operations/settings/query-level#custom_settings)
 
 ## core_dump {#core_dump}
 
@@ -1486,7 +1486,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Executable User Defined Functions](../../sql-reference/functions/overview#executable-user-defined-functions).".
+- "[Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).".
 
 **Example**
 
@@ -3291,7 +3291,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 ## user_scripts_path {#user_scripts_path}
 
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/overview#executable-user-defined-functions).
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
 
 **Example**
 
