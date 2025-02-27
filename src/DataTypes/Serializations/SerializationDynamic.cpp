@@ -125,7 +125,7 @@ void SerializationDynamic::serializeBinaryBulkStatePrefix(
         writeVarUInt(dynamic_state->num_dynamic_types, *stream);
 
     writeVarUInt(dynamic_state->num_dynamic_types, *stream);
-    if (settings.data_types_binary_encoding)
+    if (settings.native_format && settings.format_settings && settings.format_settings->native.encode_types_in_binary_format)
     {
         const auto & variants = assert_cast<const DataTypeVariant &>(*dynamic_state->variant_type).getVariants();
         for (const auto & variant: variants)
@@ -262,7 +262,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         DataTypes variants;
         readVarUInt(structure_state->num_dynamic_types, *structure_stream);
         variants.reserve(structure_state->num_dynamic_types + 1); /// +1 for shared variant.
-        if (settings.data_types_binary_encoding)
+        if (settings.native_format && settings.format_settings && settings.format_settings->native.decode_types_in_binary_format)
         {
             for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 variants.push_back(decodeDataType(*structure_stream));
