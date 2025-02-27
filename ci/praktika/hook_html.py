@@ -151,8 +151,9 @@ class HtmlRunnerHooks:
             "git_branch", info.git_branch
         ).dump()
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = Info().get_report_url(latest=bool(info.pr_number))
-        print(f"CI Status page url [{page_url}]")
+        report_url_latest_sha = Info().get_report_url(latest=True)
+        report_url_current_sha = Info().get_report_url(latest=False)
+        print(f"CI Status page url [{report_url_current_sha}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
             from praktika.gh_auth_deprecated import GHAuth
@@ -162,14 +163,14 @@ class HtmlRunnerHooks:
             GHAuth.auth(app_key=pem, app_id=app_id)
 
         res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
+            comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
             or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=page_url,
+            url=report_url_current_sha,
         )
         if not (res1 or res2):
             Utils.raise_with_error(
@@ -296,5 +297,5 @@ class HtmlRunnerHooks:
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=bool(Info().pr_number)),
+                url=Info().get_report_url(latest=False),
             )

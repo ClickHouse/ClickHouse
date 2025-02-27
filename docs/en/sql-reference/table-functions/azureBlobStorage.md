@@ -83,7 +83,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 **See Also**
 
-- [AzureBlobStorage Table Engine](/docs/engines/table-engines/integrations/azureBlobStorage.md)
+- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
