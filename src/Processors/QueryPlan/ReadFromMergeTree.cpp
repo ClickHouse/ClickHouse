@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -1331,8 +1332,34 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// can use parallel select on such parts.
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 && !reader_settings.read_in_order;
+
+        // if do_not_merge_across_partitions_select_final = 1 and the partition contains a single part,
+        // there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
+        if (no_merging_final && !data.merging_params.is_deleted_column.empty())
+        {
+            auto equal_function = FunctionFactory::instance().get("equals", context);
+
+            if (!prewhere_info)
+            {
+                prewhere_info = std::make_shared<PrewhereInfo>();
+            }
+
+            const auto * constant_node = &prewhere_info->prewhere_actions.addColumn(
+                ColumnWithTypeAndName{
+                    ColumnUInt8::create(0),
+                    std::make_shared<DataTypeUInt8>(),
+                    ""
+                });
+
+            prewhere_info->prewhere_column_name = data.merging_params.is_deleted_column;
+
+            const auto & input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
+
+            ActionsDAG::NodeRawConstPtrs children = { input, constant_node };
+
+            prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_info->prewhere_actions.addFunction(equal_function, std::move(children), data.merging_params.is_deleted_column));
+        }
 
         if (no_merging_final)
         {
