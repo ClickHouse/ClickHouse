@@ -75,9 +75,11 @@ namespace
 
         String old_database_comment = db->getDatabaseComment();
         db->setDatabaseComment(command.comment.value());
-        try{
+        try
+        {
             DatabaseCatalog::instance().updateDatabaseComment(db);
-        }catch(...) {
+        }
+        catch(...) {
             db->setDatabaseComment(old_database_comment);
         }
     }
