@@ -1,6 +1,5 @@
 #include <Storages/IStorage.h>
 
-#include <Disks/IStoragePolicy.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -21,18 +20,12 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool parallelize_output_from_storages;
-}
-
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
     extern const int CANNOT_RESTORE_TABLE;
-    extern const int TABLE_IS_BEING_RESTARTED;
 }
 
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
@@ -68,13 +61,12 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
 TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
-    auto table_id = getStorageID();
-    if (!table_id.hasUUID() && (is_dropped || is_detached))
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
 
-    if (is_being_restarted)
-        throw Exception(
-            ErrorCodes::TABLE_IS_BEING_RESTARTED, "Table {}.{} is being restarted", table_id.database_name, table_id.table_name);
+    if (is_dropped || is_detached)
+    {
+        auto table_id = getStorageID();
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped or detached", table_id.database_name, table_id.table_name);
+    }
     return result;
 }
 
@@ -82,10 +74,12 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
-    auto table_id = getStorageID();
-    if (is_being_restarted || (!table_id.hasUUID() && (is_dropped || is_detached)))
-        // Table was dropped or is being restarted while acquiring the lock
+    if (is_dropped || is_detached)
+    {
+        // Table was dropped while acquiring the lock
         result = nullptr;
+    }
+
     return result;
 }
 
@@ -102,20 +96,16 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
     return lock;
 }
 
-void IStorage::updateExternalDynamicMetadata(ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateExternalDynamicMetadata is not supported by storage {}", getName());
-}
-
 IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
-    auto lock = tryLockForAlter(acquire_timeout);
-    if (lock == std::nullopt)
+
+    if (auto lock = tryLockForAlter(acquire_timeout); lock == std::nullopt)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
                         getStorageID().getFullTableName(), acquire_timeout.count());
-    return std::move(*lock);
+    else
+        return std::move(*lock);
 }
 
 
@@ -153,24 +143,6 @@ Pipe IStorage::read(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method read is not supported by storage {}", getName());
 }
 
-SinkToStoragePtr IStorage::write(
-    const ASTPtr & /*query*/,
-    const StorageMetadataPtr & /*metadata_snapshot*/,
-    ContextPtr /*context*/,
-    bool /*async_insert*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not supported by storage {}", getName());
-}
-
-void IStorage::truncate(
-    const ASTPtr & /*query*/,
-    const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr /* context */,
-    TableExclusiveLockHolder &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Truncate is not supported by storage {}", getName());
-}
-
 void IStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -185,11 +157,11 @@ void IStorage::read(
 
     /// parallelize processing if not yet
     const size_t output_ports = pipe.numOutputPorts();
-    const bool parallelize_output = context->getSettingsRef()[Setting::parallelize_output_from_storages];
+    const bool parallelize_output = context->getSettingsRef().parallelize_output_from_storages;
     if (parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0 && output_ports < num_streams)
         pipe.resize(num_streams);
 
-    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
+    readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
 }
 
 void IStorage::readFromPipe(
@@ -199,7 +171,7 @@ void IStorage::readFromPipe(
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr context,
-    std::shared_ptr<IStorage> storage_)
+    std::string storage_name)
 {
     if (pipe.empty())
     {
@@ -208,7 +180,7 @@ void IStorage::readFromPipe(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_, context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), storage_name, context, query_info);
         query_plan.addStep(std::move(read_step));
     }
 }
@@ -257,44 +229,6 @@ void IStorage::checkAlterPartitionIsPossible(
     ContextPtr /*context*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitioning", getName());
-}
-
-bool IStorage::optimize(
-        const ASTPtr & /*query*/,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
-        const ASTPtr & /*partition*/,
-        bool /*final*/,
-        bool /*deduplicate*/,
-        const Names & /* deduplicate_by_columns */,
-        bool /*cleanup*/,
-        ContextPtr /*context*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method optimize is not supported by storage {}", getName());
-}
-
-void IStorage::mutate(const MutationCommands &, ContextPtr)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
-}
-
-CancellationCode IStorage::killMutation(const String & /*mutation_id*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
-}
-
-void IStorage::waitForMutation(const String & /*mutation_id*/, bool /*wait_for_another_mutation*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
-}
-
-void IStorage::setMutationCSN(const String & /*mutation_id*/, UInt64 /*csn*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
-}
-
-CancellationCode IStorage::killPartMoveToShard(const UUID & /*task_uuid*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Part moves between shards are not supported by storage {}", getName());
 }
 
 StorageID IStorage::getStorageID() const

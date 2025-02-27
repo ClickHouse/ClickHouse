@@ -93,7 +93,6 @@ TEST(ColumnVector, Filter)
     testFilter<Int64>();
     testFilter<UInt128>();
     testFilter<Int256>();
-    testFilter<BFloat16>();
     testFilter<Float32>();
     testFilter<Float64>();
     testFilter<UUID>();

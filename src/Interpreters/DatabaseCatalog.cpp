@@ -13,7 +13,6 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Disks/IDisk.h>
-#include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
@@ -31,13 +30,17 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <base/scope_guard.h>
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
 
 #include "config.h"
+
+#if USE_MYSQL
+#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
+#    include <Storages/StorageMaterializedMySQL.h>
+#endif
 
 #if USE_LIBPQXX
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -52,20 +55,10 @@ namespace CurrentMetrics
 namespace DB
 {
 
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 database_atomic_delay_before_drop_table_sec;
-    extern const ServerSettingsUInt64 database_catalog_drop_error_cooldown_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_cleanup_period_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_hide_timeout_sec;
-    extern const ServerSettingsUInt64 database_catalog_unused_dir_rm_timeout_sec;
-}
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
-    extern const int TABLE_UUID_MISMATCH;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
@@ -139,7 +132,7 @@ TemporaryTableHolder::TemporaryTableHolder(
         context_,
         [&](const StorageID & table_id)
         {
-            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{}, MemorySettings{});
+            auto storage = std::make_shared<StorageMemory>(table_id, ColumnsDescription{columns}, ConstraintsDescription{constraints}, String{});
 
             if (create_for_global_subquery)
                 storage->delayReadForGlobalSubqueries();
@@ -202,7 +195,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 void DatabaseCatalog::createBackgroundTasks()
 {
     /// It has to be done before databases are loaded (to avoid a race condition on initialization)
-    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec])
+    if (Context::getGlobalContextInstance()->getApplicationType() == Context::ApplicationType::SERVER && getContext()->getServerSettings().database_catalog_unused_dir_cleanup_period_sec)
     {
         auto cleanup_task_holder
             = getContext()->getSchedulePool().createTask("DatabaseCatalogCleanupStoreDirectoryTask", [this]() { this->cleanupStoreDirectoryTask(); });
@@ -223,7 +216,7 @@ void DatabaseCatalog::startupBackgroundTasks()
     {
         (*cleanup_task)->activate();
         /// Do not start task immediately on server startup, it's not urgent.
-        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]) * 1000);
+        (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_hide_timeout_sec) * 1000);
     }
 
     (*drop_task)->activate();
@@ -362,17 +355,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        else
-        {
-            const auto & table_storage_id = db_and_table.second->getStorageID();
-            if (db_and_table.first->getDatabaseName() != table_id.database_name ||
-                std::tie(table_storage_id.database_name, table_storage_id.table_name) != std::tie(table_id.database_name, table_id.table_name))
-            {
-                if (exception)
-                    exception->emplace(Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {} does not match {}", table_id.getNameForLogs(), table_storage_id.getNameForLogs()));
-                return {};
-            }
-        }
 
         /// Wait for table to be started because we are going to return StoragePtr
         db_and_table.first->waitTableStarted(table_id.getTableName());
@@ -386,6 +368,13 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         }
 #endif
 
+#if USE_MYSQL
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
+        if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
+        {
+            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+        }
+#endif
         return db_and_table;
     }
 
@@ -529,12 +518,10 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
     }
 }
 
@@ -591,12 +578,10 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
     }
     if (check_empty)
     {
@@ -618,7 +603,6 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
     if (drop)
     {
-        auto db_disk = getContext()->getDatabaseDisk();
         UUID db_uuid = db->getUUID();
 
         /// Delete the database.
@@ -626,10 +610,10 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 
         /// Old ClickHouse versions did not store database.sql files
         /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
-        fs::path database_metadata_dir = fs::path("metadata") / escapeForFileName(database_name);
-        db_disk->removeDirectoryIfExists(database_metadata_dir);
-        fs::path database_metadata_file = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
-        db_disk->removeFileIfExists(database_metadata_file);
+        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::remove(database_metadata_dir);
+        fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
+        fs::remove(database_metadata_file);
 
         if (db_uuid != UUIDHelpers::Nil)
             removeUUIDMappingFinally(db_uuid);
@@ -675,12 +659,10 @@ DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
         {
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
         }
-
-        throw Exception(
-            ErrorCodes::UNKNOWN_DATABASE,
-            "Database {} does not exist. Maybe you meant {}?",
-            backQuoteIfNeed(database_name),
-            backQuoteIfNeed(names[0]));
+        else
+        {
+            throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist. Maybe you meant {}?", backQuoteIfNeed(database_name), backQuoteIfNeed(names[0]));
+        }
     }
     return db;
 }
@@ -804,7 +786,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    it->second = {nullptr, nullptr};
+    it->second = {};
 }
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)
@@ -998,8 +980,6 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
     assert(!cleanup_task);
 
-    auto db_disk = getContext()->getDatabaseDisk();
-
     /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
     /// which where marked as dropped by Atomic databases.
     /// Data directories of such tables still exists in store/
@@ -1008,42 +988,43 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
     /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
 
     std::map<String, StorageID> dropped_metadata;
-    String path = fs::path("metadata_dropped") / "";
+    String path = std::filesystem::path(getContext()->getPath()) / "metadata_dropped" / "";
 
-    if (!db_disk->existsDirectory(path))
+    if (!std::filesystem::exists(path))
+    {
         return;
+    }
 
-    for (const auto it = db_disk->iterateDirectory(path); it->isValid(); it->next())
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
         /// File name has the following format:
         /// database_name.table_name.uuid.sql
 
-        auto sub_path_filename = it->name();
-
         /// Ignore unexpected files
-        if (!sub_path_filename.ends_with(".sql"))
+        if (!it.name().ends_with(".sql"))
             continue;
 
         /// Process .sql files with metadata of tables which were marked as dropped
         StorageID dropped_id = StorageID::createEmpty();
-        size_t dot_pos = sub_path_filename.find('.');
+        size_t dot_pos = it.name().find('.');
         if (dot_pos == std::string::npos)
             continue;
-        dropped_id.database_name = unescapeForFileName(sub_path_filename.substr(0, dot_pos));
+        dropped_id.database_name = unescapeForFileName(it.name().substr(0, dot_pos));
 
         size_t prev_dot_pos = dot_pos;
-        dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
         if (dot_pos == std::string::npos)
             continue;
-        dropped_id.table_name = unescapeForFileName(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+        dropped_id.table_name = unescapeForFileName(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
         prev_dot_pos = dot_pos;
-        dot_pos = sub_path_filename.find('.', prev_dot_pos + 1);
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
         if (dot_pos == std::string::npos)
             continue;
-        dropped_id.uuid = parse<UUID>(sub_path_filename.substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+        dropped_id.uuid = parse<UUID>(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
 
-        String full_path = path + sub_path_filename;
+        String full_path = path + it.name();
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 
@@ -1059,12 +1040,11 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
 String DatabaseCatalog::getPathForDroppedMetadata(const StorageID & table_id) const
 {
-    return fs::path("metadata_dropped")
-        / fmt::format(
-               "{}.{}.{}.sql",
-               escapeForFileName(table_id.getDatabaseName()),
-               escapeForFileName(table_id.getTableName()),
-               toString(table_id.uuid));
+    return std::filesystem::path(getContext()->getPath()) / "metadata_dropped" /
+        fmt::format("{}.{}.{}.sql",
+            escapeForFileName(table_id.getDatabaseName()),
+            escapeForFileName(table_id.getTableName()),
+            toString(table_id.uuid));
 }
 
 String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
@@ -1087,8 +1067,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     assert(table_id.hasUUID());
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
-
-    auto db_disk = getContext()->getDatabaseDisk();
 
     /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
@@ -1134,7 +1112,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         addUUIDMapping(table_id.uuid);
-        drop_time = db_disk->getLastModified(dropped_metadata_path).epochTime();
+        drop_time = FS::getModificationTime(dropped_metadata_path);
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
@@ -1151,7 +1129,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             table_id,
             table,
             dropped_metadata_path,
-            drop_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec])
+            drop_time + static_cast<time_t>(getContext()->getServerSettings().database_atomic_delay_before_drop_table_sec)
         });
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
@@ -1167,8 +1145,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
 void DatabaseCatalog::undropTable(StorageID table_id)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
     {
@@ -1206,7 +1182,7 @@ void DatabaseCatalog::undropTable(StorageID table_id)
         /// a table is successfully marked undropped,
         /// if and only if its metadata file was moved to a database.
         /// This maybe throw exception.
-        db_disk->moveFile(latest_metadata_dropped_path, table_metadata_path);
+        renameNoReplace(latest_metadata_dropped_path, table_metadata_path);
 
         if (first_async_drop_in_queue == it_dropped_table)
             ++first_async_drop_in_queue;
@@ -1345,7 +1321,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
                         ++first_async_drop_in_queue;
 
                     tables_marked_dropped.splice(tables_marked_dropped.end(), tables_marked_dropped, table_iterator);
-                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings()[ServerSetting::database_catalog_drop_error_cooldown_sec];
+                    table_iterator->drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()) + getContext()->getServerSettings().database_catalog_drop_error_cooldown_sec;
 
                     if (first_async_drop_in_queue == tables_marked_dropped.end())
                         --first_async_drop_in_queue;
@@ -1389,8 +1365,6 @@ void DatabaseCatalog::dropTableDataTask()
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 {
-    auto db_disk = getContext()->getDatabaseDisk();
-
     if (table.table)
     {
         table.table->drop();
@@ -1400,7 +1374,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     for (const auto & [disk_name, disk] : getContext()->getDisksMap())
     {
         String data_path = "store/" + getPathForUUID(table.table_id.uuid);
-        if (disk->isReadOnly() || !disk->existsDirectory(data_path))
+        if (disk->isReadOnly() || !disk->exists(data_path))
             continue;
 
         LOG_INFO(log, "Removing data directory {} of dropped table {} from disk {}", data_path, table.table_id.getNameForLogs(), disk_name);
@@ -1408,7 +1382,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     }
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
-    db_disk->removeFileIfExists(fs::path(table.metadata_path));
+    fs::remove(fs::path(table.metadata_path));
 
     removeUUIDMappingFinally(table.table_id.uuid);
     CurrentMetrics::sub(CurrentMetrics::TablesToDropQueueSize, 1);
@@ -1683,7 +1657,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
         for (auto it = disk->iterateDirectory("store"); it->isValid(); it->next())
         {
             String prefix = it->name();
-            bool expected_prefix_dir = disk->existsDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
+            bool expected_prefix_dir = disk->isDirectory(it->path()) && prefix.size() == 3 && isHexDigit(prefix[0]) && isHexDigit(prefix[1])
                 && isHexDigit(prefix[2]);
 
             if (!expected_prefix_dir)
@@ -1700,7 +1674,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
                 UUID uuid;
                 bool parsed = tryParse(uuid, uuid_str);
 
-                bool expected_dir = disk->existsDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
+                bool expected_dir = disk->isDirectory(jt->path()) && parsed && uuid != UUIDHelpers::Nil && uuid_str.starts_with(prefix);
 
                 if (!expected_dir)
                 {
@@ -1729,7 +1703,7 @@ void DatabaseCatalog::cleanupStoreDirectoryTask()
             LOG_TEST(log, "Nothing to clean up from store/ on disk {}", disk_name);
     }
 
-    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_cleanup_period_sec]) * 1000);
+    (*cleanup_task)->scheduleAfter(static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_cleanup_period_sec) * 1000);
 }
 
 bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskPtr & disk, const String & unused_dir)
@@ -1749,11 +1723,11 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
             return false;
         }
 
-        time_t max_modification_time = std::max({st.st_atime, st.st_mtime, st.st_ctime});
+        time_t max_modification_time = std::max(st.st_atime, std::max(st.st_mtime, st.st_ctime));
         time_t current_time = time(nullptr);
         if (st.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO))
         {
-            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_hide_timeout_sec]))
+            if (current_time <= max_modification_time + static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_hide_timeout_sec))
                 return false;
 
             LOG_INFO(log, "Removing access rights for unused directory {} from disk {} (will remove it when timeout exceed)", unused_dir, disk_name);
@@ -1767,23 +1741,25 @@ bool DatabaseCatalog::maybeRemoveDirectory(const String & disk_name, const DiskP
 
             return true;
         }
+        else
+        {
+            auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings().database_catalog_unused_dir_rm_timeout_sec);
 
-        auto unused_dir_rm_timeout_sec = static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_catalog_unused_dir_rm_timeout_sec]);
+            if (!unused_dir_rm_timeout_sec)
+                return false;
 
-        if (!unused_dir_rm_timeout_sec)
-            return false;
+            if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
+                return false;
 
-        if (current_time <= max_modification_time + unused_dir_rm_timeout_sec)
-            return false;
+            LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
 
-        LOG_INFO(log, "Removing unused directory {} from disk {}", unused_dir, disk_name);
+            /// We have to set these access rights to make recursive removal work
+            disk->chmod(unused_dir, S_IRWXU);
 
-        /// We have to set these access rights to make recursive removal work
-        disk->chmod(unused_dir, S_IRWXU);
+            disk->removeRecursive(unused_dir);
 
-        disk->removeRecursive(unused_dir);
-
-        return true;
+            return true;
+        }
     }
     catch (...)
     {
@@ -1825,21 +1801,6 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     std::lock_guard lock{reload_disks_mutex};
     disks_to_reload.insert(new_added_disks.begin(), new_added_disks.end());
     (*reload_disks_task)->schedule();
-}
-
-void DatabaseCatalog::stopReplicatedDDLQueries()
-{
-    replicated_ddl_queries_enabled = false;
-}
-
-void DatabaseCatalog::startReplicatedDDLQueries()
-{
-    replicated_ddl_queries_enabled = true;
-}
-
-bool DatabaseCatalog::canPerformReplicatedDDLQueries() const
-{
-    return replicated_ddl_queries_enabled;
 }
 
 static void maybeUnlockUUID(UUID uuid)

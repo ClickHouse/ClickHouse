@@ -1,5 +1,4 @@
-#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
-#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
+#include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -40,17 +39,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_materialized_postgresql_table;
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
-}
-
-namespace MaterializedPostgreSQLSetting
-{
-    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
-}
 
 namespace ErrorCodes
 {
@@ -85,7 +73,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 
-    (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
+    replication_settings->materialized_postgresql_tables_list = remote_table_name_;
 
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             remote_database_name,
@@ -295,7 +283,7 @@ void StorageMaterializedPostgreSQL::read(
     readFinalFromNestedStorage(query_plan, nested_table, column_names,
             query_info, context_, processed_stage, max_block_size, num_streams);
 
-    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto lock = lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef().lock_acquire_timeout);
     query_plan.addTableLock(lock);
     query_plan.addStorageHolder(shared_from_this());
 }
@@ -586,7 +574,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         metadata.setComment(args.comment);
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_materialized_postgresql_table])
+            && !args.getLocalContext()->getSettingsRef().allow_experimental_materialized_postgresql_table)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "MaterializedPostgreSQL is an experimental table engine."
                                 " You can enable it with the `allow_experimental_materialized_postgresql_table` setting");
 
@@ -603,12 +591,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
-            configuration.database,
-            configuration.host,
-            configuration.port,
-            configuration.username,
-            configuration.password,
-            args.getContext()->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
+            configuration.database, configuration.host, configuration.port,
+            configuration.username, configuration.password,
+            args.getContext()->getSettingsRef().postgresql_connection_attempt_timeout);
 
         bool has_settings = args.storage_def->settings;
         auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
@@ -623,14 +608,13 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     };
 
     factory.registerStorage(
-        "MaterializedPostgreSQL",
-        creator_fn,
-        StorageFactory::StorageFeatures{
-            .supports_settings = true,
-            .supports_sort_order = true,
-            .source_access_type = AccessType::POSTGRES,
-            .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
-        });
+            "MaterializedPostgreSQL",
+            creator_fn,
+            StorageFactory::StorageFeatures{
+                .supports_settings = true,
+                .supports_sort_order = true,
+                .source_access_type = AccessType::POSTGRES,
+    });
 }
 
 }

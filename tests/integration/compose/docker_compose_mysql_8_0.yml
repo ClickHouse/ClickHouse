@@ -1,11 +1,12 @@
+version: '2.3'
 services:
     mysql80:
         image: mysql:8.0
         restart: always
         environment:
             MYSQL_ROOT_PASSWORD: clickhouse
-            MYSQL_ROOT_HOST: ${MYSQL8_ROOT_HOST}
-            DATADIR: /var/log/mysql/
+            MYSQL_ROOT_HOST: ${MYSQL_ROOT_HOST}
+            DATADIR: /mysql/
         expose:
             - ${MYSQL8_PORT:-3306}
         command: --server_id=100 --log-bin='mysql-bin-1.log'
@@ -13,15 +14,11 @@ services:
             --default-time-zone='+3:00' --gtid-mode="ON"
             --enforce-gtid-consistency
             --log-error-verbosity=3
-            --log-error=/var/log/mysql/error.log
+            --log-error=/mysql/error.log
             --general-log=ON
-            --general-log-file=/var/log/mysql/general.log
-            --ssl-ca=/etc/mysql/certs/ca.pem
-            --ssl-cert=/etc/mysql/certs/server-cert.pem
-            --ssl-key=/etc/mysql/certs/server-key.pem
+            --general-log-file=/mysql/general.log
         volumes:
             - type: ${MYSQL8_LOGS_FS:-tmpfs}
               source: ${MYSQL8_LOGS:-}
-              target: /var/log/mysql/
-            - ../helpers/mysql_cert:/etc/mysql/certs
+              target: /mysql/
         user: ${MYSQL8_DOCKER_USER}

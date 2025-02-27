@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/data-types-binary-encoding
+slug: /en/sql-reference/data-types/data-types-binary-encoding
 sidebar_position: 56
 sidebar_label: Data types binary encoding specification.
 ---
@@ -66,7 +66,7 @@ The table below describes how each data type is represented in binary format. Ea
 
 For type `JSON` byte `uint8_serialization_version` indicates the version of the serialization. Right now the version is always 0 but can change in future if new arguments will be introduced for `JSON` type.
 
-### Interval kind binary encoding {#interval-kind-binary-encoding}
+### Interval kind binary encoding
 
 The table below describes how different interval kinds of `Interval` data type are encoded.
 
@@ -84,9 +84,9 @@ The table below describes how different interval kinds of `Interval` data type a
 | `Quarter`     | `0x09`          |
 | `Year`        | `0x1A`          |
 
-### Aggregate function parameter binary encoding {#aggregate-function-parameter-binary-encoding}
+### Aggregate function parameter binary encoding
 
-The table below describes how parameters of `AggregateFunction` and `SimpleAggregateFunction` are encoded.
+The table below describes how parameters of `AggragateFunction` and `SimpleAggregateFunction` are encoded.
 The encoding of a parameter consists of 1 byte indicating the type of the parameter and the value itself.
 
 | Parameter type           | Binary encoding                                                                                                                |
@@ -106,7 +106,7 @@ The encoding of a parameter consists of 1 byte indicating the type of the parame
 | `String`                 | `0x0C<var_uint_size><data>`                                                                                                    |
 | `Array`                  | `0x0D<var_uint_size><value_encoding_1>...<value_encoding_N>`                                                                   |
 | `Tuple`                  | `0x0E<var_uint_size><value_encoding_1>...<value_encoding_N>`                                                                   |
-| `Map`                    | `0x0F<var_uint_size><key_encoding_1><value_encoding_1>...<key_encoding_N><value_encoding_N>`                                   |
+| `Map`                    | `0x0F<var_uint_size><key_encoding_1><value_encoding_1>...<key_endoding_N><value_encoding_N>`                                   |
 | `IPv4`                   | `0x10<uint32_little_endian_value>`                                                                                             |
 | `IPv6`                   | `0x11<uint128_little_endian_value>`                                                                                            |
 | `UUID`                   | `0x12<uuid_value>`                                                                                                             |

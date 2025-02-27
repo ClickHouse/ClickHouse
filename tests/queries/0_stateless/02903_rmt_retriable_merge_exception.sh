@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-shared-merge-tree
+# Tags: no-ordinary-database
 # Tag no-ordinary-database: requires UUID
-# Tag no-shared-merge-tree -- unrelated test
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -57,8 +56,7 @@ for _ in {0..50}; do
             (
                 (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
                 (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
-            )
-        SETTINGS max_rows_to_read = 0;
+            );
     ")
     if [[ $no_active_repilica_messages -gt 0 ]]; then
         break
@@ -80,6 +78,5 @@ $CLICKHOUSE_CLIENT -m -q "
             (logger_name = 'MergeTreeBackgroundExecutor' and message like '%{$table_uuid::$part_name}%No active replica has part $part_name or covering part%') or
             (logger_name like '$table_uuid::$part_name (MergeFromLogEntryTask)' and message like '%No active replica has part $part_name or covering part%')
         )
-    group by level
-    SETTINGS max_rows_to_read = 0;
+    group by level;
 "

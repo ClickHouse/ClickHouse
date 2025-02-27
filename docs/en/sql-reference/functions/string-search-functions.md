@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/string-search-functions
+slug: /en/sql-reference/functions/string-search-functions
 sidebar_position: 160
 sidebar_label: Searching in Strings
 ---
@@ -21,7 +21,7 @@ results are undefined. Note that no automatic Unicode normalization is performed
 
 [General strings functions](string-functions.md) and [functions for replacing in strings](string-replace-functions.md) are described separately.
 
-## position {#position}
+## position
 
 Returns the position (in bytes, starting at 1) of a substring `needle` in a string `haystack`.
 
@@ -36,8 +36,8 @@ Alias:
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/string.md).
-- `needle` — Substring to be searched. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -126,7 +126,7 @@ Result:
 └─────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┘
 ```
 
-## locate {#locate}
+## locate
 
 Like [position](#position) but with arguments `haystack` and `locate` switched.
 
@@ -141,7 +141,7 @@ The behavior of this function depends on the ClickHouse version:
 locate(needle, haystack[, start_pos])
 ```
 
-## positionCaseInsensitive {#positioncaseinsensitive}
+## positionCaseInsensitive
 
 A case insensitive invariant of [position](#position).
 
@@ -161,7 +161,7 @@ Result:
 └───────────────────────────────────────────────────┘
 ```
 
-## positionUTF8 {#positionutf8}
+## positionUTF8
 
 Like [position](#position) but assumes `haystack` and `needle` are UTF-8 encoded strings.
 
@@ -183,11 +183,11 @@ Result:
 └────────────────────────────┘
 ```
 
-## positionCaseInsensitiveUTF8 {#positioncaseinsensitiveutf8}
+## positionCaseInsensitiveUTF8
 
 Like [positionUTF8](#positionutf8) but searches case-insensitively.
 
-## multiSearchAllPositions {#multisearchallpositions}
+## multiSearchAllPositions
 
 Like [position](#position) but returns an array of positions (in bytes, starting at 1) for multiple `needle` substrings in a `haystack` string.
 
@@ -203,7 +203,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -226,7 +226,7 @@ Result:
 │ [0,13,0]                                                          │
 └───────────────────────────────────────────────────────────────────┘
 ```
-## multiSearchAllPositionsCaseInsensitive {#multisearchallpositionscaseinsensitive}
+## multiSearchAllPositionsCaseInsensitive
 
 Like [multiSearchAllPositions](#multisearchallpositions) but ignores case.
 
@@ -238,7 +238,7 @@ multiSearchAllPositionsCaseInsensitive(haystack, [needle1, needle2, ..., needleN
 
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -260,7 +260,7 @@ Result:
 ["1","6"]
 ```
 
-## multiSearchAllPositionsUTF8 {#multisearchallpositionsutf8}
+## multiSearchAllPositionsUTF8
 
 Like [multiSearchAllPositions](#multisearchallpositions) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
 
@@ -272,7 +272,7 @@ multiSearchAllPositionsUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — UTF-8 encoded string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 encoded string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — UTF-8 encoded substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -296,7 +296,7 @@ Result:
 ["1","6"]
 ```
 
-## multiSearchAllPositionsCaseInsensitiveUTF8 {#multisearchallpositionscaseinsensitiveutf8}
+## multiSearchAllPositionsCaseInsensitiveUTF8
 
 Like [multiSearchAllPositionsUTF8](#multisearchallpositionsutf8) but ignores case.
 
@@ -308,7 +308,7 @@ multiSearchAllPositionsCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., nee
 
 **Parameters**
 
-- `haystack` — UTF-8 encoded string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 encoded string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — UTF-8 encoded substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -332,7 +332,7 @@ Result:
 ["1","6"]
 ```
 
-## multiSearchFirstPosition {#multisearchfirstposition}
+## multiSearchFirstPosition
 
 Like [`position`](#position) but returns the leftmost offset in a `haystack` string which matches any of multiple `needle` strings.
 
@@ -346,7 +346,7 @@ multiSearchFirstPosition(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` —  Substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -368,7 +368,7 @@ Result:
 3
 ```
 
-## multiSearchFirstPositionCaseInsensitive {#multisearchfirstpositioncaseinsensitive}
+## multiSearchFirstPositionCaseInsensitive
 
 Like [`multiSearchFirstPosition`](#multisearchfirstposition) but ignores case.
 
@@ -380,7 +380,7 @@ multiSearchFirstPositionCaseInsensitive(haystack, [needle1, needle2, ..., needle
 
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Array of substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -402,7 +402,7 @@ Result:
 2
 ```
 
-## multiSearchFirstPositionUTF8 {#multisearchfirstpositionutf8}
+## multiSearchFirstPositionUTF8
 
 Like [`multiSearchFirstPosition`](#multisearchfirstposition) but assumes `haystack` and `needle` to be UTF-8 strings.
 
@@ -414,7 +414,7 @@ multiSearchFirstPositionUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Array of UTF-8 substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -438,7 +438,7 @@ Result:
 2
 ```
 
-## multiSearchFirstPositionCaseInsensitiveUTF8 {#multisearchfirstpositioncaseinsensitiveutf8}
+## multiSearchFirstPositionCaseInsensitiveUTF8
 
 Like [`multiSearchFirstPosition`](#multisearchfirstposition) but assumes `haystack` and `needle` to be UTF-8 strings and ignores case.
 
@@ -450,7 +450,7 @@ multiSearchFirstPositionCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., ne
 
 **Parameters**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Array of UTF-8 substrings to be searched. [Array](../data-types/array.md)
 
 **Returned value**
@@ -474,7 +474,7 @@ Result:
 2
 ```
 
-## multiSearchFirstIndex {#multisearchfirstindex}
+## multiSearchFirstIndex
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise.
 
@@ -487,7 +487,7 @@ multiSearchFirstIndex(haystack, [needle1, needle2, ..., needleN])
 ```
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -508,7 +508,7 @@ Result:
 1
 ```
 
-## multiSearchFirstIndexCaseInsensitive {#multisearchfirstindexcaseinsensitive}
+## multiSearchFirstIndexCaseInsensitive
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Ignores case.
 
@@ -520,7 +520,7 @@ multiSearchFirstIndexCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -541,7 +541,7 @@ Result:
 1
 ```
 
-## multiSearchFirstIndexUTF8 {#multisearchfirstindexutf8}
+## multiSearchFirstIndexUTF8
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Assumes `haystack` and `needle` are UTF-8 encoded strings.
 
@@ -553,7 +553,7 @@ multiSearchFirstIndexUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Array of UTF-8 substrings to be searched. [Array](../data-types/array.md)
 
 **Returned value**
@@ -576,7 +576,7 @@ Result:
 1
 ```
 
-## multiSearchFirstIndexCaseInsensitiveUTF8 {#multisearchfirstindexcaseinsensitiveutf8}
+## multiSearchFirstIndexCaseInsensitiveUTF8
 
 Returns the index `i` (starting from 1) of the leftmost found needle<sub>i</sub> in the string `haystack` and 0 otherwise. Assumes `haystack` and `needle` are UTF-8 encoded strings. Ignores case.
 
@@ -588,7 +588,7 @@ multiSearchFirstIndexCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needl
 
 **Parameters**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Array of UTF-8 substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -611,7 +611,7 @@ Result:
 1
 ```
 
-## multiSearchAny {#multisearchany}
+## multiSearchAny
 
 Returns 1, if at least one string needle<sub>i</sub> matches the string `haystack` and 0 otherwise.
 
@@ -625,7 +625,7 @@ multiSearchAny(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -647,7 +647,7 @@ Result:
 1
 ```
 
-## multiSearchAnyCaseInsensitive {#multisearchanycaseinsensitive}
+## multiSearchAnyCaseInsensitive
 
 Like [multiSearchAny](#multisearchany) but ignores case.
 
@@ -659,7 +659,7 @@ multiSearchAnyCaseInsensitive(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — Substrings to be searched. [Array](../data-types/array.md)
 
 **Returned value**
@@ -681,7 +681,7 @@ Result:
 1
 ```
 
-## multiSearchAnyUTF8 {#multisearchanyutf8}
+## multiSearchAnyUTF8
 
 Like [multiSearchAny](#multisearchany) but assumes `haystack` and the `needle` substrings are UTF-8 encoded strings.
 
@@ -693,7 +693,7 @@ multiSearchAnyUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — UTF-8 substrings to be searched. [Array](../data-types/array.md).
 
 **Returned value**
@@ -717,7 +717,7 @@ Result:
 1
 ```
 
-## multiSearchAnyCaseInsensitiveUTF8 {#multisearchanycaseinsensitiveutf8}
+## multiSearchAnyCaseInsensitiveUTF8
 
 Like [multiSearchAnyUTF8](#multisearchanyutf8) but ignores case.
 
@@ -729,7 +729,7 @@ multiSearchAnyCaseInsensitiveUTF8(haystack, [needle1, needle2, ..., needleN])
 
 **Parameters**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `needle` — UTF-8 substrings to be searched. [Array](../data-types/array.md)
 
 **Returned value**
@@ -755,7 +755,7 @@ Result:
 
 ## match {#match}
 
-Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
+Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular syntax](https://github.com/google/re2/wiki/Syntax).
 
 Matching is based on UTF-8, e.g. `.` matches the Unicode code point `¥` which is represented in UTF-8 using two bytes. The regular
 expression must not contain null bytes. If the haystack or the pattern are not valid UTF-8, then the behavior is undefined.
@@ -772,7 +772,7 @@ match(haystack, pattern)
 
 Alias: `haystack REGEXP pattern operator`
 
-## multiMatchAny {#multimatchany}
+## multiMatchAny
 
 Like `match` but returns 1 if at least one of the patterns match and 0 otherwise.
 
@@ -796,7 +796,7 @@ If you only want to search multiple substrings in a string, you can use function
 multiMatchAny(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
-## multiMatchAnyIndex {#multimatchanyindex}
+## multiMatchAnyIndex
 
 Like `multiMatchAny` but returns any index that matches the haystack.
 
@@ -806,7 +806,7 @@ Like `multiMatchAny` but returns any index that matches the haystack.
 multiMatchAnyIndex(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
-## multiMatchAllIndices {#multimatchallindices}
+## multiMatchAllIndices
 
 Like `multiMatchAny` but returns the array of all indices that match the haystack in any order.
 
@@ -816,7 +816,7 @@ Like `multiMatchAny` but returns the array of all indices that match the haystac
 multiMatchAllIndices(haystack, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
-## multiFuzzyMatchAny {#multifuzzymatchany}
+## multiFuzzyMatchAny
 
 Like `multiMatchAny` but returns 1 if any pattern matches the haystack within a constant [edit distance](https://en.wikipedia.org/wiki/Edit_distance). This function relies on the experimental feature of [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) library, and can be slow for some corner cases. The performance depends on the edit distance value and patterns used, but it's always more expensive compared to a non-fuzzy variants.
 
@@ -830,7 +830,7 @@ Like `multiMatchAny` but returns 1 if any pattern matches the haystack within a 
 multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
-## multiFuzzyMatchAnyIndex {#multifuzzymatchanyindex}
+## multiFuzzyMatchAnyIndex
 
 Like `multiFuzzyMatchAny` but returns any index that matches the haystack within a constant edit distance.
 
@@ -840,7 +840,7 @@ Like `multiFuzzyMatchAny` but returns any index that matches the haystack within
 multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
-## multiFuzzyMatchAllIndices {#multifuzzymatchallindices}
+## multiFuzzyMatchAllIndices
 
 Like `multiFuzzyMatchAny` but returns the array of all indices in any order that match the haystack within a constant edit distance.
 
@@ -850,12 +850,11 @@ Like `multiFuzzyMatchAny` but returns the array of all indices in any order that
 multiFuzzyMatchAllIndices(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, ..., pattern<sub>n</sub>\])
 ```
 
-## extract {#extract}
+## extract
 
-Returns the first match of a regular expression in a string.
-If `haystack` does not match the `pattern` regex, an empty string is returned. 
+Extracts a fragment of a string using a regular expression. If `haystack` does not match the `pattern` regex, an empty string is returned.
 
-If the regular expression has capturing groups, the function matches the input string against the first capturing group.
+For regex without subpatterns, the function uses the fragment that matches the entire regex. Otherwise, it uses the fragment that matches the first subpattern.
 
 **Syntax**
 
@@ -863,36 +862,13 @@ If the regular expression has capturing groups, the function matches the input s
 extract(haystack, pattern)
 ```
 
-*Arguments**
+## extractAll
 
-- `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
+Extracts all fragments of a string using a regular expression. If `haystack` does not match the `pattern` regex, an empty string is returned.
 
-**Returned value**
+Returns an array of strings consisting of all matches of the regex.
 
-- The first match of the regular expression in the haystack string. [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT extract('number: 1, number: 2, number: 3', '\\d+') AS result;
-```
-
-Result:
-
-```response
-┌─result─┐
-│ 1      │
-└────────┘
-```
-
-## extractAll {#extractall}
-
-Returns an array of all matches of a regular expression in a string. If `haystack` does not match the `pattern` regex, an empty string is returned.
-
-The behavior with respect to sub-patterns is the same as in function [`extract`](#extract).
+The behavior with respect to subpatterns is the same as in function `extract`.
 
 **Syntax**
 
@@ -900,32 +876,7 @@ The behavior with respect to sub-patterns is the same as in function [`extract`]
 extractAll(haystack, pattern)
 ```
 
-*Arguments**
-
-- `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
-
-**Returned value**
-
-- Array of matches of the regular expression in the haystack string. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
-**Example**
-
-Query:
-
-```sql
-SELECT extractAll('number: 1, number: 2, number: 3', '\\d+') AS result;
-```
-
-Result:
-
-```response
-┌─result────────┐
-│ ['1','2','3'] │
-└───────────────┘
-```
-
-## extractAllGroupsHorizontal {#extractallgroupshorizontal}
+## extractAllGroupsHorizontal
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where the first array includes all fragments matching the first group, the second array - matching the second group, etc.
 
@@ -940,7 +891,7 @@ extractAllGroupsHorizontal(haystack, pattern)
 **Arguments**
 
 - `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -964,40 +915,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## extractGroups {#extractgroups}
-
-Match all groups of given input string with a given regular expression, returns an array of arrays of matches.
-
-**Syntax**
-
-``` sql
-extractGroups(haystack, pattern)
-```
-
-**Arguments**
-
-- `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
-
-**Returned value**
-
-- Array of arrays of matches. [Array](../data-types/array.md).
-
-**Example**
-
-``` sql
-SELECT extractGroups('hello abc=111 world', '("[^"]+"|\\w+)=("[^"]+"|\\w+)') AS result;
-```
-
-Result:
-
-``` text
-┌─result────────┐
-│ ['abc','111'] │
-└───────────────┘
-```
-
-## extractAllGroupsVertical {#extractallgroupsvertical}
+## extractAllGroupsVertical
 
 Matches all groups of the `haystack` string using the `pattern` regular expression. Returns an array of arrays, where each array includes matching fragments from every group. Fragments are grouped in order of appearance in the `haystack`.
 
@@ -1010,7 +928,7 @@ extractAllGroupsVertical(haystack, pattern)
 **Arguments**
 
 - `haystack` — Input string. [String](../data-types/string.md).
-- `pattern` — Regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
+- `pattern` — Regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). Must contain groups, each group enclosed in parentheses. If `pattern` contains no groups, an exception is thrown. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1034,7 +952,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## like {#like}
+## like
 
 Returns whether string `haystack` matches the LIKE expression `pattern`.
 
@@ -1071,19 +989,19 @@ Like `like` but negates the result.
 
 Alias: `haystack NOT LIKE pattern` (operator)
 
-## ilike {#ilike}
+## ilike
 
 Like `like` but searches case-insensitively.
 
 Alias: `haystack ILIKE pattern` (operator)
 
-## notILike {#notilike}
+## notILike
 
 Like `ilike` but negates the result.
 
 Alias: `haystack NOT ILIKE pattern` (operator)
 
-## ngramDistance {#ngramdistance}
+## ngramDistance
 
 Calculates the 4-gram distance between a `haystack` string and a `needle` string. For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a [Float32](../data-types/float.md/#float32-float64) between 0 and 1. The smaller the result is, the more similar the strings are to each other.
 
@@ -1139,7 +1057,7 @@ Result:
 0.5555556
 ```
 
-## ngramDistanceCaseInsensitive {#ngramdistancecaseinsensitive}
+## ngramDistanceCaseInsensitive
 
 Provides a case-insensitive variant of [ngramDistance](#ngramdistance).
 
@@ -1188,7 +1106,7 @@ Result:
 0
 ```
 
-## ngramDistanceUTF8 {#ngramdistanceutf8}
+## ngramDistanceUTF8
 
 Provides a UTF-8 variant of [ngramDistance](#ngramdistance). Assumes that `needle` and `haystack` strings are UTF-8 encoded strings.
 
@@ -1221,7 +1139,7 @@ Result:
 0.5
 ```
 
-## ngramDistanceCaseInsensitiveUTF8 {#ngramdistancecaseinsensitiveutf8}
+## ngramDistanceCaseInsensitiveUTF8
 
 Provides a case-insensitive variant of [ngramDistanceUTF8](#ngramdistanceutf8).
 
@@ -1254,7 +1172,7 @@ Result:
 0.5
 ```
 
-## ngramSearch {#ngramsearch}
+## ngramSearch
 
 Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a [Float32](../data-types/float.md/#float32-float64) between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function [`soundex`](../../sql-reference/functions/string-functions#soundex).
 
@@ -1295,7 +1213,7 @@ Result:
 0.5
 ```
 
-## ngramSearchCaseInsensitive {#ngramsearchcaseinsensitive}
+## ngramSearchCaseInsensitive
 
 Provides a case-insensitive variant of [ngramSearch](#ngramsearch).
 
@@ -1330,7 +1248,7 @@ Result:
 1
 ```
 
-## ngramSearchUTF8 {#ngramsearchutf8}
+## ngramSearchUTF8
 
 Provides a UTF-8 variant of [ngramSearch](#ngramsearch) in which `needle` and `haystack` are assumed to be UTF-8 encoded strings.
 
@@ -1365,7 +1283,7 @@ Result:
 0.5
 ```
 
-## ngramSearchCaseInsensitiveUTF8 {#ngramsearchcaseinsensitiveutf8}
+## ngramSearchCaseInsensitiveUTF8
 
 Provides a case-insensitive variant of [ngramSearchUTF8](#ngramsearchutf8) in which `needle` and `haystack`.
 
@@ -1400,7 +1318,7 @@ Result:
 0.57142854
 ```
 
-## countSubstrings {#countsubstrings}
+## countSubstrings
 
 Returns how often a substring `needle` occurs in a string `haystack`.
 
@@ -1414,8 +1332,8 @@ countSubstrings(haystack, needle[, start_pos])
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
-- `needle` — Substring to be searched. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -1449,7 +1367,7 @@ Result:
 │                                      1 │
 └────────────────────────────────────────┘
 ```
-## countSubstringsCaseInsensitive {#countsubstringscaseinsensitive}
+## countSubstringsCaseInsensitive
 
 Returns how often a substring `needle` occurs in a string `haystack`. Ignores case.
 
@@ -1461,8 +1379,8 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
-- `needle` — Substring to be searched. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -1501,7 +1419,7 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## countSubstringsCaseInsensitiveUTF8 {#countsubstringscaseinsensitiveutf8}
+## countSubstringsCaseInsensitiveUTF8
 
 Returns how often a substring `needle` occurs in a string `haystack`. Ignores case and assumes that `haystack` is a UTF8 string.
 
@@ -1513,8 +1431,8 @@ countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Arguments**
 
-- `haystack` — UTF-8 string in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
-- `needle` — Substring to be searched. [String](../data-types/string.md).
+- `haystack` — UTF-8 string in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Substring to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `start_pos` – Position (1-based) in `haystack` at which the search starts. [UInt](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -1553,7 +1471,7 @@ Result:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## countMatches {#countmatches}
+## countMatches
 
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 
@@ -1565,8 +1483,8 @@ countMatches(haystack, pattern)
 
 **Arguments**
 
-- `haystack` — The string to search in. [String](../data-types/string.md).
-- `pattern` — The regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1598,7 +1516,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## countMatchesCaseInsensitive {#countmatchescaseinsensitive}
+## countMatchesCaseInsensitive
 
 Returns the number of regular expression matches for a pattern in a haystack like [`countMatches`](#countmatches) but matching ignores the case.
 
@@ -1610,8 +1528,8 @@ countMatchesCaseInsensitive(haystack, pattern)
 
 **Arguments**
 
-- `haystack` — The string to search in. [String](../data-types/string.md).
-- `pattern` — The regular expression with [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
+- `haystack` — The string to search in. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — The regular expression with [re2 syntax](https://github.com/google/re2/wiki/Syntax). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -1633,7 +1551,7 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## regexpExtract {#regexpextract}
+## regexpExtract
 
 Extracts the first string in `haystack` that matches the regexp pattern and corresponds to the regex group index.
 
@@ -1647,8 +1565,8 @@ Alias: `REGEXP_EXTRACT(haystack, pattern[, index])`.
 
 **Arguments**
 
-- `haystack` — String, in which regexp pattern will to be matched. [String](../data-types/string.md).
-- `pattern` — String, regexp expression, must be constant. [String](../data-types/string.md).
+- `haystack` — String, in which regexp pattern will to be matched. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `pattern` — String, regexp expression, must be constant. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `index` – An integer number greater or equal 0 with default 1. It represents which regex group to extract. [UInt or Int](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -1673,7 +1591,7 @@ Result:
 └──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-## hasSubsequence {#hassubsequence}
+## hasSubsequence
 
 Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
@@ -1687,8 +1605,8 @@ hasSubsequence(haystack, needle)
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
-- `needle` — Subsequence to be searched. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned value**
 
@@ -1710,7 +1628,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## hasSubsequenceCaseInsensitive {#hassubsequencecaseinsensitive}
+## hasSubsequenceCaseInsensitive
 
 Like [hasSubsequence](#hassubsequence) but searches case-insensitively.
 
@@ -1722,8 +1640,8 @@ hasSubsequenceCaseInsensitive(haystack, needle)
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. [String](../data-types/string.md).
-- `needle` — Subsequence to be searched. [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned value**
 
@@ -1745,7 +1663,7 @@ Result:
 └─────────────────────────────────────────────────┘
 ```
 
-## hasSubsequenceUTF8 {#hassubsequenceutf8}
+## hasSubsequenceUTF8
 
 Like [hasSubsequence](#hassubsequence) but assumes `haystack` and `needle` are UTF-8 encoded strings.
 
@@ -1757,8 +1675,8 @@ hasSubsequenceUTF8(haystack, needle)
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. UTF-8 encoded [String](../data-types/string.md).
-- `needle` — Subsequence to be searched. UTF-8 encoded [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned value**
 
@@ -1780,7 +1698,7 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## hasSubsequenceCaseInsensitiveUTF8 {#hassubsequencecaseinsensitiveutf8}
+## hasSubsequenceCaseInsensitiveUTF8
 
 Like [hasSubsequenceUTF8](#hassubsequenceutf8) but searches case-insensitively.
 
@@ -1792,8 +1710,8 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 
 **Arguments**
 
-- `haystack` — String in which the search is performed. UTF-8 encoded [String](../data-types/string.md).
-- `needle` — Subsequence to be searched. UTF-8 encoded [String](../data-types/string.md).
+- `haystack` — String in which the search is performed. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
+- `needle` — Subsequence to be searched. UTF-8 encoded [String](../../sql-reference/syntax.md#syntax-string-literal).
 
 **Returned value**
 
@@ -1815,7 +1733,7 @@ Result:
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## hasToken {#hastoken}
+## hasToken
 
 Returns 1 if a given token is present in a haystack, or 0 otherwise.
 
@@ -1827,7 +1745,7 @@ hasToken(haystack, token)
 
 **Parameters**
 
-- `haystack`: String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
 
 **Returned value**
@@ -1850,7 +1768,7 @@ SELECT hasToken('Hello World','Hello');
 1
 ```
 
-## hasTokenOrNull {#hastokenornull}
+## hasTokenOrNull
 
 Returns 1 if a given token is present, 0 if not present, and null if the token is ill-formed.
 
@@ -1862,12 +1780,12 @@ hasTokenOrNull(haystack, token)
 
 **Parameters**
 
-- `haystack`: String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
 
 **Returned value**
 
-- 1, if the token is present in the haystack, 0 if it is not present, and null if the token is ill formed.
+- 1, if the token is present in the haystack, 0 if it is not present, and null if the token is ill formed. 
 
 **Implementation details**
 
@@ -1887,7 +1805,7 @@ SELECT hasTokenOrNull('Hello World','Hello,World');
 null
 ```
 
-## hasTokenCaseInsensitive {#hastokencaseinsensitive}
+## hasTokenCaseInsensitive
 
 Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case.
 
@@ -1899,7 +1817,7 @@ hasTokenCaseInsensitive(haystack, token)
 
 **Parameters**
 
-- `haystack`: String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
 
 **Returned value**
@@ -1922,7 +1840,7 @@ SELECT hasTokenCaseInsensitive('Hello World','hello');
 1
 ```
 
-## hasTokenCaseInsensitiveOrNull {#hastokencaseinsensitiveornull}
+## hasTokenCaseInsensitiveOrNull
 
 Returns 1 if a given token is present in a haystack, 0 otherwise. Ignores case and returns null if the token is ill-formed.
 
@@ -1934,7 +1852,7 @@ hasTokenCaseInsensitiveOrNull(haystack, token)
 
 **Parameters**
 
-- `haystack`: String in which the search is performed. [String](../data-types/string.md) or [Enum](../data-types/enum.md).
+- `haystack`: String in which the search is performed. [String](../../sql-reference/syntax.md#syntax-string-literal).
 - `token`: Maximal length substring between two non alphanumeric ASCII characters (or boundaries of haystack).
 
 **Returned value**

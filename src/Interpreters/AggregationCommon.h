@@ -1,11 +1,16 @@
 #pragma once
 
+#include <array>
+
+#include <Common/SipHash.h>
+#include <Common/memcpySmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
 #include <base/StringRef.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/KeysNullMap.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnLowCardinality.h>
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
 #include <tmmintrin.h>
@@ -37,6 +42,23 @@ using Sizes = std::vector<size_t>;
 /// 2,1,1
 ///
 
+template <typename T>
+constexpr auto getBitmapSize()
+{
+    return
+        (sizeof(T) == 32) ?
+            4 :
+        (sizeof(T) == 16) ?
+            2 :
+        ((sizeof(T) == 8) ?
+            1 :
+        ((sizeof(T) == 4) ?
+            1 :
+        ((sizeof(T) == 2) ?
+            1 :
+        0)));
+}
+
 template<typename T, size_t step>
 void fillFixedBatch(size_t num_rows, const T * source, T * dest)
 {
@@ -66,7 +88,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             out.resize_fill(num_rows);
 
             /// Note: here we violate strict aliasing.
-            /// It should be ok as long as we do not refer to any value from `out` before filling.
+            /// It should be ok as log as we do not reffer to any value from `out` before filling.
             const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
             fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
@@ -87,6 +109,9 @@ void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
 }
+
+template <typename T>
+using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
 /// binary blob, they are disposed in it consecutively.
@@ -221,6 +246,18 @@ static inline T ALWAYS_INLINE packFixed(
     }
 
     return key;
+}
+
+
+/// Hash a set of keys into a UInt128 value.
+static inline UInt128 ALWAYS_INLINE hash128( /// NOLINT
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
+{
+    SipHash hash;
+    for (size_t j = 0; j < keys_size; ++j)
+        key_columns[j]->updateHashWithValue(i, hash);
+
+    return hash.get128();
 }
 
 /** Serialize keys into a continuous chunk of memory.

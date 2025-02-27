@@ -1,9 +1,7 @@
 ---
-description: "System table containing the role grants for users and roles."
-slug: /operations/system-tables/role-grants
-title: "role_grants"
-keywords: ["system table", "role_grants"]
+slug: /en/operations/system-tables/role-grants
 ---
+# role_grants 
 
 Contains the role grants for users and roles. To add entries to this table, use `GRANT role TO user`.
 

@@ -1,8 +1,5 @@
 <clickhouse>
     <path>/var/lib/clickhouse/</path>
-    <logger>
-        <clickhouse-disks>/clickhouse-disks.log</clickhouse-disks>
-    </logger>
     <storage_configuration>
         <disks>
             <test1>
@@ -18,14 +15,7 @@
                 <endpoint>http://minio1:9001/root/data/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
-                <remove_shared_recursive_file_limit>4</remove_shared_recursive_file_limit>
             </test3>
-            <test4>
-                <type>s3</type>
-                <endpoint>http://minio1:9001/root/data/</endpoint>
-                <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
-            </test4>
         </disks>
         <policies>
             <test1>
@@ -49,13 +39,6 @@
                     </main>
                 </volumes>
             </test3>
-            <test4>
-                <volumes>
-                    <main>
-                        <disk>test4</disk>
-                    </main>
-                </volumes>
-            </test4>
         </policies>
     </storage_configuration>
 </clickhouse>

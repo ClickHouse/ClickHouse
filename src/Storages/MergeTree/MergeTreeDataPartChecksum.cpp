@@ -7,7 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <optional>
@@ -66,12 +65,12 @@ void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, cons
     if (isGinFile(name))
         return;
 
-    // This is a projection, no need to check its size.
-    if (storage.existsDirectory(name))
-        return;
-
-    if (!storage.existsFile(name))
+    if (!storage.exists(name))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
+
+    // This is a projection, no need to check its size.
+    if (storage.isDirectory(name))
+        return;
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FST.h>
+#include <Core/Block.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -160,7 +161,6 @@ public:
 
     /// Do last segment writing
     void finalize();
-    void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
     void writeSegment();

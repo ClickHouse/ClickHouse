@@ -1,14 +1,14 @@
-import logging
 import time
-from multiprocessing.dummy import Pool
 
 import psycopg2
 import pymysql.cursors
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import logging
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -51,9 +51,9 @@ create_table_sql_nullable_template = """
     """
 
 
-def skip_test_sanitizers(instance):
-    if instance.is_built_with_sanitizer():
-        pytest.skip("Sanitizers cannot work with third-party shared libraries")
+def skip_test_msan(instance):
+    if instance.is_built_with_memory_sanitizer():
+        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
 
 def get_mysql_conn():
@@ -208,7 +208,7 @@ def started_cluster():
 
 
 def test_mysql_odbc_select_nullable(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
     mysql_setup = node1.odbc_drivers["MySQL"]
 
     table_name = "test_insert_nullable_select"
@@ -248,7 +248,7 @@ def test_mysql_odbc_select_nullable(started_cluster):
 
 
 def test_mysql_simple_select_works(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     mysql_setup = node1.odbc_drivers["MySQL"]
 
@@ -331,7 +331,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nulla
 
 
 def test_mysql_insert(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     mysql_setup = node1.odbc_drivers["MySQL"]
     table_name = "test_insert"
@@ -374,7 +374,7 @@ def test_mysql_insert(started_cluster):
 
 
 def test_sqlite_simple_select_function_works(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
@@ -438,7 +438,7 @@ def test_sqlite_simple_select_function_works(started_cluster):
 
 
 def test_sqlite_table_function(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
@@ -470,7 +470,7 @@ def test_sqlite_table_function(started_cluster):
 
 
 def test_sqlite_simple_select_storage_works(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
@@ -503,7 +503,7 @@ def test_sqlite_simple_select_storage_works(started_cluster):
 
 
 def test_sqlite_odbc_hashed_dictionary(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
     node1.exec_in_container(
@@ -586,7 +586,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
 
 
 def test_sqlite_odbc_cached_dictionary(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
     node1.exec_in_container(
@@ -635,7 +635,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 
 
 def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -663,19 +663,17 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
 
 
 def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
         cursor = conn.cursor()
         cursor.execute("insert into clickhouse.test_table values(3, 3, 'xxx')")
-        # for first reload dictionary, we will wait for odbc-bridge start-up
-        node1.query("system reload dictionary postgres_odbc_hashed", timeout=120)
         for i in range(100):
             try:
                 node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
             except Exception as ex:
-                assert False, "Exception occurred -- odbc-bridge hangs: " + str(ex)
+                assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
 
         assert_eq_with_retry(
             node1,
@@ -687,7 +685,7 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
 
 
 def test_no_connection_pooling(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -719,7 +717,7 @@ def test_no_connection_pooling(started_cluster):
 
 
 def test_postgres_insert(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     conn = get_postgres_conn(started_cluster)
 
@@ -756,7 +754,7 @@ def test_postgres_insert(started_cluster):
 
 
 def test_odbc_postgres_date_data_type(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -785,7 +783,7 @@ def test_odbc_postgres_date_data_type(started_cluster):
 
 
 def test_odbc_postgres_conversions(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     try:
         conn = get_postgres_conn(started_cluster)
@@ -843,7 +841,7 @@ def test_odbc_postgres_conversions(started_cluster):
 
 
 def test_odbc_cyrillic_with_varchar(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -870,7 +868,7 @@ def test_odbc_cyrillic_with_varchar(started_cluster):
 
 
 def test_many_connections(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -896,7 +894,7 @@ def test_many_connections(started_cluster):
 
 
 def test_concurrent_queries(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -950,7 +948,7 @@ def test_concurrent_queries(started_cluster):
 
 
 def test_odbc_long_column_names(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
@@ -988,7 +986,7 @@ def test_odbc_long_column_names(started_cluster):
 
 
 def test_odbc_long_text(started_cluster):
-    skip_test_sanitizers(node1)
+    skip_test_msan(node1)
 
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()

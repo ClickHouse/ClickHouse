@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
-import time
-
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry

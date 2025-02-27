@@ -1,8 +1,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -13,10 +11,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
-#include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -243,24 +239,24 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
-    std::set<size_t> constant_positions;
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    std::map<String, size_t> partition_column_name_to_value_index;
+    if (partition_columns)
     {
-        if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
-            constant_positions.insert(i);
+        for (auto i : collections::range(partition_columns->children.size()))
+            partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
     }
-    result.sample_block.erase(constant_positions);
 
     const auto & analysis_result = select.getAnalysisResult();
     if (analysis_result.need_aggregate)
     {
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
         {
-            if (result.sample_block.has(key.name))
-            {
-                result.sample_block_for_keys.insert({nullptr, key.type, key.name});
-                result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
-            }
+            result.sample_block_for_keys.insert({nullptr, key.type, key.name});
+            auto it = partition_column_name_to_value_index.find(key.name);
+            if (it == partition_column_name_to_value_index.end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "minmax_count projection can only have keys about partition columns. It's a bug");
+            result.partition_value_indices.push_back(it->second);
         }
     }
 
@@ -298,22 +294,8 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
 
-    ASTPtr query_ast_copy = nullptr;
-    /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
-    {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
-
-        select_row_exists->setExpression(
-            ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
-    }
-
     auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
+                       query_ast,
                        mut_context,
                        Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{

@@ -1,17 +1,13 @@
 ---
-slug: /sql-reference/data-types/object-data-type
+slug: /en/sql-reference/data-types/object-data-type
 sidebar_position: 26
 sidebar_label: Object Data Type
 keywords: [object, data type]
 ---
 
-import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
+# Object Data Type (deprecated)
 
-# Object Data Type 
-
-<DeprecatedBadge/>
-
-**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/docs/sql-reference/data-types/newjson).
+**This feature is not production-ready and is now deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/en/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in progress and can be tracked [here](https://github.com/ClickHouse/ClickHouse/issues/54864).
 
 <hr />
 
@@ -19,7 +15,7 @@ Stores JavaScript Object Notation (JSON) documents in a single column.
 
 `JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](../../operations/settings/settings.md#usejsonaliasforoldobjecttype) is enabled.
 
-## Example {#example}
+## Example
 
 **Example 1**
 
@@ -67,7 +63,7 @@ SELECT parseDateTimeBestEffort(JSONExtractString(json, 'timestamp')), json
 FROM file('access.json.gz', JSONAsString)
 ```
 
-## Displaying JSON columns {#displaying-json-columns}
+## Displaying JSON columns
 
 When displaying a `JSON` column, ClickHouse only shows the field values by default (because internally, it is represented as a tuple). You can also display the field names by setting `output_format_json_named_tuples_as_objects = 1`:
 
@@ -81,7 +77,8 @@ SELECT * FROM json FORMAT JSONEachRow
 {"o":{"a":1,"b":{"c":2,"d":[1,2,3]}}}
 ```
 
-## Related Content {#related-content}
+## Related Content
 
-- [Using JSON in ClickHouse](/integrations/data-formats/json/overview)
+- [Using JSON in ClickHouse](/docs/en/integrations/data-formats/json)
 - [Getting Data Into ClickHouse - Part 2 - A JSON detour](https://clickhouse.com/blog/getting-data-into-clickhouse-part-2-json)
+- 

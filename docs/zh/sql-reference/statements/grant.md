@@ -170,23 +170,14 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     -   `addressToSymbol`
     -   `demangle`
 -   [SOURCES](#grant-sources)
-    -   `AZURE`
     -   `FILE`
-    -   `HDFS`
-    -   `HIVE`
-    -   `JDBC`
-    -   `KAFKA`
-    -   `MONGO`
-    -   `MYSQL`
-    -   `NATS`
-    -   `ODBC`
-    -   `POSTGRES`
-    -   `RABBITMQ`
-    -   `REDIS`
-    -   `REMOTE`
-    -   `S3`
-    -   `SQLITE`
     -   `URL`
+    -   `REMOTE`
+    -   `YSQL`
+    -   `ODBC`
+    -   `JDBC`
+    -   `HDFS`
+    -   `S3`
 -   [dictGet](#grant-dictget)
 
 如何对待该层级的示例：
@@ -437,23 +428,14 @@ GRANT INSERT(x,y) ON db.table TO john
 允许在 [table engines](../../engines/table-engines/index.md) 和 [table functions](../../sql-reference/table-functions/index.md#table-functions)中使用外部数据源。
 
 -   `SOURCES`. 级别: `GROUP`
-    -   `AZURE`. 级别: `GLOBAL`
     -   `FILE`. 级别: `GLOBAL`
-    -   `HDFS`. 级别: `GLOBAL`
-    -   `HIVE`. 级别: `GLOBAL`
-    -   `JDBC`. 级别: `GLOBAL`
-    -   `KAFKA`. 级别: `GLOBAL`
-    -   `MONGO`. 级别: `GLOBAL`
-    -   `MYSQL`. 级别: `GLOBAL`
-    -   `NATS`. 级别: `GLOBAL`
-    -   `ODBC`. 级别: `GLOBAL`
-    -   `POSTGRES`. 级别: `GLOBAL`
-    -   `RABBITMQ`. 级别: `GLOBAL`
-    -   `REDIS`. 级别: `GLOBAL`
-    -   `REMOTE`. 级别: `GLOBAL`
-    -   `S3`. 级别: `GLOBAL`
-    -   `SQLITE`. 级别: `GLOBAL`
     -   `URL`. 级别: `GLOBAL`
+    -   `REMOTE`. 级别: `GLOBAL`
+    -   `YSQL`. 级别: `GLOBAL`
+    -   `ODBC`. 级别: `GLOBAL`
+    -   `JDBC`. 级别: `GLOBAL`
+    -   `HDFS`. 级别: `GLOBAL`
+    -   `S3`. 级别: `GLOBAL`
 
 `SOURCES` 权限允许使用所有数据源。当然也可以单独对每个数据源进行授权。要使用数据源时，还需要额外的权限。
 

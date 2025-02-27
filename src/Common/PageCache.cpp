@@ -112,7 +112,8 @@ bool AtomicBitSet::set(size_t i, bool val) const
 {
     if (val)
         return set(i);
-    return unset(i);
+    else
+        return unset(i);
 }
 
 bool AtomicBitSet::unset(size_t i) const
@@ -525,7 +526,7 @@ PageChunk * PageCache::getFreeChunk()
     PageChunk * chunk = &lru.front();
     lru.erase(lru.iterator_to(*chunk));
 
-    size_t prev_pin_count = chunk->pin_count.fetch_add(1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    size_t prev_pin_count = chunk->pin_count.fetch_add(1);
     chassert(prev_pin_count == 0);
 
     evictChunk(chunk);
@@ -537,7 +538,7 @@ void PageCache::evictChunk(PageChunk * chunk)
 {
     if (chunk->key.has_value())
     {
-        size_t erased = chunk_by_key.erase(chunk->key.value());  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+        size_t erased = chunk_by_key.erase(chunk->key.value());
         chassert(erased);
         chunk->key.reset();
     }

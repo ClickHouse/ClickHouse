@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/lagInFrame
+slug: /en/sql-reference/window-functions/lagInFrame
 sidebar_label: lagInFrame
 sidebar_position: 9
 ---
@@ -8,17 +8,11 @@ sidebar_position: 9
 
 Returns a value evaluated at the row that is at a specified physical offset row before the current row within the ordered frame.
 
-:::warning
-`lagInFrame` behavior differs from the standard SQL `lag` window function.
-Clickhouse window function `lagInFrame` respects the window frame.
-To get behavior identical to the `lag`, use `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`.
-:::
-
 **Syntax**
 
 ```sql
 lagInFrame(x[, offset[, default]])
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
@@ -27,7 +21,7 @@ WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
 For more detail on window function syntax see: [Window Functions - Syntax](./index.md/#syntax).
 
 **Parameters**
-- `x` — Column name.
+- `x` — Column name. 
 - `offset` — Offset to apply. [(U)Int*](../data-types/int-uint.md). (Optional - `1` by default).
 - `default` — Value to return if calculated row exceeds the boundaries of the window frame. (Optional - default value of column type when omitted).
 
@@ -65,13 +59,11 @@ INSERT INTO stock_prices FORMAT Values
 SELECT
     date,
     close,
-    lagInFrame(close, 1, close) OVER (ORDER BY date ASC
-       ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
-     ) AS previous_day_close,
+    lagInFrame(close, 1, close) OVER (ORDER BY date ASC) AS previous_day_close,
     COALESCE(ROUND(close - previous_day_close, 2)) AS delta,
     COALESCE(ROUND((delta / previous_day_close) * 100, 2)) AS percent_change
 FROM stock_prices
-ORDER BY date DESC
+ORDER BY date DESC;
 ```
 
 Result:

@@ -1,7 +1,7 @@
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, List, Literal, Optional, Union
+from typing import List, Union, Iterable, Optional, Literal, Any
 
 from ci_utils import WithIter
 from integration_test_images import IMAGES
@@ -22,7 +22,6 @@ class Labels:
     PR_CHERRYPICK = "pr-cherrypick"
     PR_CI = "pr-ci"
     PR_FEATURE = "pr-feature"
-    PR_PERFORMANCE = "pr-performance"
     PR_SYNCED_TO_CLOUD = "pr-synced-to-cloud"
     PR_SYNC_UPSTREAM = "pr-sync-upstream"
     RELEASE = "release"
@@ -50,8 +49,6 @@ class WorkflowStages(metaclass=WithIter):
     TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
     TESTS_2 = "Tests_2"
-    BUILDS_0 = "Builds_0"
-    TESTS_0 = "Tests_0"
 
 
 class Runners(metaclass=WithIter):
@@ -60,11 +57,12 @@ class Runners(metaclass=WithIter):
     """
 
     BUILDER = "builder"
-    BUILDER_AARCH64 = "builder-aarch64"
+    BUILDER_ARM = "builder-aarch64"
     STYLE_CHECKER = "style-checker"
-    STYLE_CHECKER_AARCH64 = "style-checker-aarch64"
+    STYLE_CHECKER_ARM = "style-checker-aarch64"
     FUNC_TESTER = "func-tester"
-    FUNC_TESTER_AARCH64 = "func-tester-aarch64"
+    FUNC_TESTER_ARM = "func-tester-aarch64"
+    STRESS_TESTER = "stress-tester"
     FUZZER_UNIT_TESTER = "fuzzer-unit-tester"
 
 
@@ -80,7 +78,7 @@ class Tags(metaclass=WithIter):
     # to upload all binaries from build jobs
     UPLOAD_ALL_ARTIFACTS = "upload_all"
     CI_SET_SYNC = "ci_set_sync"
-    CI_SET_AARCH64 = "ci_set_aarch64"
+    CI_SET_ARM = "ci_set_arm"
     CI_SET_REQUIRED = "ci_set_required"
     CI_SET_BUILDS = "ci_set_builds"
 
@@ -94,7 +92,6 @@ class WorkFlowNames(metaclass=WithIter):
 
     JEPSEN = "JepsenWorkflow"
     CreateRelease = "CreateRelease"
-    NIGHTLY = "NightlyBuilds"
 
 
 class BuildNames(metaclass=WithIter):
@@ -103,13 +100,12 @@ class BuildNames(metaclass=WithIter):
     """
 
     PACKAGE_RELEASE = "package_release"
+    PACKAGE_AARCH64 = "package_aarch64"
     PACKAGE_ASAN = "package_asan"
     PACKAGE_UBSAN = "package_ubsan"
     PACKAGE_TSAN = "package_tsan"
     PACKAGE_MSAN = "package_msan"
     PACKAGE_DEBUG = "package_debug"
-    PACKAGE_AARCH64 = "package_aarch64"
-    PACKAGE_AARCH64_ASAN = "package_aarch64_asan"
     PACKAGE_RELEASE_COVERAGE = "package_release_coverage"
     BINARY_RELEASE = "binary_release"
     BINARY_TIDY = "binary_tidy"
@@ -137,27 +133,38 @@ class JobNames(metaclass=WithIter):
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
     INSTALL_TEST_AMD = "Install packages (release)"
-    INSTALL_TEST_AARCH64 = "Install packages (aarch64)"
+    INSTALL_TEST_ARM = "Install packages (aarch64)"
 
     STATELESS_TEST_DEBUG = "Stateless tests (debug)"
     STATELESS_TEST_RELEASE = "Stateless tests (release)"
     STATELESS_TEST_RELEASE_COVERAGE = "Stateless tests (coverage)"
     STATELESS_TEST_AARCH64 = "Stateless tests (aarch64)"
     STATELESS_TEST_ASAN = "Stateless tests (asan)"
-    STATELESS_TEST_AARCH64_ASAN = "Stateless tests (aarch64, asan)"
     STATELESS_TEST_TSAN = "Stateless tests (tsan)"
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
         "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
-    STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
-        "Stateless tests (release, ParallelReplicas, s3 storage)"
-    )
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
-    STATELESS_TEST_FLAKY_ASAN = "Stateless tests (asan, flaky check)"
+    STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
+
+    STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
+    STATEFUL_TEST_RELEASE = "Stateful tests (release)"
+    STATEFUL_TEST_RELEASE_COVERAGE = "Stateful tests (coverage)"
+    STATEFUL_TEST_AARCH64 = "Stateful tests (aarch64)"
+    STATEFUL_TEST_ASAN = "Stateful tests (asan)"
+    STATEFUL_TEST_TSAN = "Stateful tests (tsan)"
+    STATEFUL_TEST_MSAN = "Stateful tests (msan)"
+    STATEFUL_TEST_UBSAN = "Stateful tests (ubsan)"
+    STATEFUL_TEST_PARALLEL_REPL_RELEASE = "Stateful tests (release, ParallelReplicas)"
+    STATEFUL_TEST_PARALLEL_REPL_DEBUG = "Stateful tests (debug, ParallelReplicas)"
+    STATEFUL_TEST_PARALLEL_REPL_ASAN = "Stateful tests (asan, ParallelReplicas)"
+    STATEFUL_TEST_PARALLEL_REPL_MSAN = "Stateful tests (msan, ParallelReplicas)"
+    STATEFUL_TEST_PARALLEL_REPL_UBSAN = "Stateful tests (ubsan, ParallelReplicas)"
+    STATEFUL_TEST_PARALLEL_REPL_TSAN = "Stateful tests (tsan, ParallelReplicas)"
 
     STRESS_TEST_ASAN = "Stress test (asan)"
     STRESS_TEST_TSAN = "Stress test (tsan)"
@@ -171,15 +178,15 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN = "Integration tests (asan)"
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
-    INTEGRATION_TEST_AARCH64 = "Integration tests (aarch64)"
-    INTEGRATION_TEST_FLAKY = "Integration tests (asan, flaky check)"
+    INTEGRATION_TEST_ARM = "Integration tests (aarch64)"
+    INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
     UPGRADE_TEST_ASAN = "Upgrade check (asan)"
     UPGRADE_TEST_TSAN = "Upgrade check (tsan)"
     UPGRADE_TEST_MSAN = "Upgrade check (msan)"
 
-    UNIT_TEST = "Unit tests (binary)"
+    UNIT_TEST = "Unit tests (release)"
     UNIT_TEST_ASAN = "Unit tests (asan)"
     UNIT_TEST_MSAN = "Unit tests (msan)"
     UNIT_TEST_TSAN = "Unit tests (tsan)"
@@ -191,17 +198,11 @@ class JobNames(metaclass=WithIter):
     AST_FUZZER_TEST_TSAN = "AST fuzzer (tsan)"
     AST_FUZZER_TEST_UBSAN = "AST fuzzer (ubsan)"
 
-    BUZZHOUSE_TEST_DEBUG = "BuzzHouse (debug)"
-    BUZZHOUSE_TEST_ASAN = "BuzzHouse (asan)"
-    BUZZHOUSE_TEST_MSAN = "BuzzHouse (msan)"
-    BUZZHOUSE_TEST_TSAN = "BuzzHouse (tsan)"
-    BUZZHOUSE_TEST_UBSAN = "BuzzHouse (ubsan)"
-
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
 
     PERFORMANCE_TEST_AMD64 = "Performance Comparison (release)"
-    PERFORMANCE_TEST_AARCH64 = "Performance Comparison (aarch64)"
+    PERFORMANCE_TEST_ARM64 = "Performance Comparison (aarch64)"
 
     # SQL_LOGIC_TEST = "Sqllogic test (release)"
 
@@ -210,10 +211,10 @@ class JobNames(metaclass=WithIter):
     SQLTEST = "SQLTest"
 
     COMPATIBILITY_TEST = "Compatibility check (release)"
-    COMPATIBILITY_TEST_AARCH64 = "Compatibility check (aarch64)"
+    COMPATIBILITY_TEST_ARM = "Compatibility check (aarch64)"
 
     CLICKBENCH_TEST = "ClickBench (release)"
-    CLICKBENCH_TEST_AARCH64 = "ClickBench (aarch64)"
+    CLICKBENCH_TEST_ARM = "ClickBench (aarch64)"
 
     LIBFUZZER_TEST = "libFuzzer tests"
 
@@ -239,7 +240,7 @@ class StatusNames(metaclass=WithIter):
     # mergeable status
     MERGEABLE = "Mergeable Check"
     # status of a sync pr
-    SYNC = "CH Inc sync"
+    SYNC = "Cloud fork sync (only for ClickHouse Inc. employees)"
     # PR formatting check status
     PR_CHECK = "PR Check"
 
@@ -335,7 +336,7 @@ class JobConfig:
     # sets number of batches for a multi-batch job
     num_batches: int = 1
     # label that enables job in CI, if set digest isn't used
-    run_by_labels: List[str] = field(default_factory=list)
+    run_by_label: str = ""
     # to run always regardless of the job digest or/and label
     run_always: bool = False
     # disables CI await for a given job
@@ -383,7 +384,7 @@ class CommonJobConfigs:
                 "./tests/ci/upload_result_helper.py",
             ],
         ),
-        runner_type=Runners.STYLE_CHECKER_AARCH64,
+        runner_type=Runners.STYLE_CHECKER_ARM,
         disable_await=True,
     )
     COMPATIBILITY_TEST = JobConfig(
@@ -414,7 +415,6 @@ class CommonJobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stateless-test"],
@@ -422,32 +422,49 @@ class CommonJobConfigs:
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
     )
+    STATEFUL_TEST = JobConfig(
+        job_name_keyword="stateful",
+        digest=DigestConfig(
+            include_paths=[
+                "./tests/ci/functional_test_check.py",
+                "./tests/queries/1_stateful/",
+                "./tests/clickhouse-test",
+                "./tests/config",
+                "./tests/*.txt",
+            ],
+            exclude_files=[".md"],
+            docker=["clickhouse/stateful-test"],
+        ),
+        run_command='functional_test_check.py "$CHECK_NAME"',
+        runner_type=Runners.FUNC_TESTER,
+        timeout=3600,
+    )
     STRESS_TEST = JobConfig(
         job_name_keyword="stress",
         digest=DigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
+                "./tests/queries/1_stateful/",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
-                "./tests/docker_scripts/",
             ],
             exclude_files=[".md"],
             docker=["clickhouse/stress-test"],
         ),
         run_command="stress_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
         timeout=9000,
     )
     UPGRADE_TEST = JobConfig(
         job_name_keyword="upgrade",
         digest=DigestConfig(
-            include_paths=["./tests/ci/upgrade_check.py", "./tests/docker_scripts/"],
+            include_paths=["./tests/ci/upgrade_check.py"],
             exclude_files=[".md"],
-            docker=["clickhouse/stress-test"],
+            docker=["clickhouse/upgrade-check"],
         ),
         run_command="upgrade_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
         timeout=3600,
     )
     INTEGRATION_TEST = JobConfig(
@@ -462,29 +479,17 @@ class CommonJobConfigs:
             docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
     )
     ASTFUZZER_TEST = JobConfig(
         job_name_keyword="ast",
         digest=DigestConfig(
             include_paths=[
-                "./tests/ci/ci_fuzzer_check.py",
+                "./tests/ci/ast_fuzzer_check.py",
             ],
             docker=["clickhouse/fuzzer"],
         ),
-        run_command="ci_fuzzer_check.py",
-        run_always=True,
-        runner_type=Runners.FUZZER_UNIT_TESTER,
-    )
-    BUZZHOUSE_TEST = JobConfig(
-        job_name_keyword="buzzhouse",
-        digest=DigestConfig(
-            include_paths=[
-                "./tests/ci/ci_fuzzer_check.py",
-            ],
-            docker=["clickhouse/fuzzer"],
-        ),
-        run_command="ci_fuzzer_check.py",
+        run_command="ast_fuzzer_check.py",
         run_always=True,
         runner_type=Runners.FUZZER_UNIT_TESTER,
     )
@@ -509,7 +514,7 @@ class CommonJobConfigs:
             docker=["clickhouse/performance-comparison"],
         ),
         run_command="performance_comparison_check.py",
-        runner_type=Runners.FUNC_TESTER,
+        runner_type=Runners.STRESS_TESTER,
     )
     SQLLANCER_TEST = JobConfig(
         job_name_keyword="lancer",
@@ -559,7 +564,6 @@ class CommonJobConfigs:
                 "tests/ci/docker_server.py",
                 "tests/ci/docker_images_helper.py",
                 "./docker/server",
-                "./docker/keeper",
             ]
         ),
         runner_type=Runners.STYLE_CHECKER,
@@ -581,7 +585,16 @@ class CommonJobConfigs:
         digest=DigestConfig(
             include_paths=[
                 "./src",
-                "./contrib",
+                "./contrib/*-cmake",
+                "./contrib/consistent-hashing",
+                "./contrib/murmurhash",
+                "./contrib/libfarmhash",
+                "./contrib/pdqsort",
+                "./contrib/cityhash102",
+                "./contrib/sparse-checkout",
+                "./contrib/libmetrohash",
+                "./contrib/update-submodules.sh",
+                "./contrib/CMakeLists.txt",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -591,7 +604,6 @@ class CommonJobConfigs:
                 "./docker/packager/packager",
                 "./rust",
                 "./tests/ci/version_helper.py",
-                "./tests/ci/build_check.py",
                 # FIXME: This is a WA to rebuild the CH and recreate the Performance.tar.zst artifact
                 # when there are changes in performance test scripts.
                 # Due to the current design of the perf test we need to rebuild CH when the performance test changes,
@@ -609,13 +621,15 @@ class CommonJobConfigs:
 
 REQUIRED_CHECKS = [
     StatusNames.PR_CHECK,
+    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,
+    JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
     JobNames.STATELESS_TEST_ASAN,
-    JobNames.STATELESS_TEST_AARCH64_ASAN,
     JobNames.STATELESS_TEST_FLAKY_ASAN,
+    JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,
     JobNames.UNIT_TEST_ASAN,
     JobNames.UNIT_TEST_MSAN,
@@ -623,11 +637,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
-    JobNames.INTEGRATION_TEST_FLAKY,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
-    JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
-    JobNames.INSTALL_TEST_AMD,
-    JobNames.INSTALL_TEST_AARCH64,
 ]
 
 # Jobs that run in Merge Queue if it's enabled

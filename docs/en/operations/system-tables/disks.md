@@ -1,12 +1,7 @@
 ---
-description: "System table containing information about disks defined in the server configuration"
-slug: /operations/system-tables/disks
-title: "disks"
-keywords: ["system table", "disks"]
+slug: /en/operations/system-tables/disks
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# disks
 
 Contains information about disks defined in the [server configuration](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 

@@ -13,14 +13,14 @@ class TotalsHavingStep : public ITransformingStep
 {
 public:
     TotalsHavingStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         const AggregateDescriptions & aggregates_,
         bool overflow_row_,
         std::optional<ActionsDAG> actions_dag_,
         const std::string & filter_column_,
         bool remove_filter_,
         TotalsMode totals_mode_,
-        float auto_include_threshold_,
+        double auto_include_threshold_,
         bool final_);
 
     String getName() const override { return "TotalsHaving"; }
@@ -32,13 +32,8 @@ public:
 
     const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
-    void serialize(Serialization & ctx) const override;
-
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     const AggregateDescriptions aggregates;
 
@@ -47,7 +42,7 @@ private:
     String filter_column_name;
     bool remove_filter;
     TotalsMode totals_mode;
-    float auto_include_threshold;
+    double auto_include_threshold;
     bool final;
 };
 

@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/stddevpop
+slug: /en/sql-reference/aggregate-functions/reference/stddevpop
 sidebar_position: 188
-title: "stddevPop"
-description: "The result is equal to the square root of varPop."
 ---
 
 # stddevPop

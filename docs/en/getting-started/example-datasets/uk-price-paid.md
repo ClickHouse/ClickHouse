@@ -1,10 +1,10 @@
 ---
-description: "Learn how to use projections to improve the performance of queries that you run frequently using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales"
-slug: /getting-started/example-datasets/uk-price-paid
+slug: /en/getting-started/example-datasets/uk-price-paid
 sidebar_label: UK Property Prices
 sidebar_position: 1
-title: "The UK property prices dataset"
 ---
+
+# The UK property prices dataset
 
 Projections are a great way to improve the performance of queries that you run frequently. We will demonstrate the power of projections
 using the UK property dataset, which contains data about prices paid for real-estate property in England and Wales. The data is available since 1995, and the size of the dataset in uncompressed form is about 4 GiB (which will only take about 278 MiB in ClickHouse).
@@ -447,4 +447,4 @@ With projection: 100 rows in set. Elapsed: 0.336 sec. Processed 17.32 thousand r
 
 ### Test it in the Playground {#playground}
 
-The dataset is also available in the [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX).
+The dataset is also available in the [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==).

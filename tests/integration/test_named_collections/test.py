@@ -1,12 +1,10 @@
 import logging
+import pytest
 import os
 import time
-from contextlib import nullcontext as does_not_raise
-
-import pytest
-
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from contextlib import nullcontext as does_not_raise
+from helpers.client import QueryRuntimeException
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NAMED_COLLECTIONS_CONFIG = os.path.join(

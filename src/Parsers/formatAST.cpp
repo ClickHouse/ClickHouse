@@ -1,15 +1,14 @@
 #include <Parsers/formatAST.h>
 
-#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
 
 void formatAST(const IAST & ast, WriteBuffer & buf, bool hilite, bool one_line, bool show_secrets)
 {
-    IAST::FormatSettings settings(one_line, hilite);
+    IAST::FormatSettings settings(buf, one_line, hilite);
     settings.show_secrets = show_secrets;
-    ast.format(buf, settings);
+    ast.format(settings);
 }
 
 String serializeAST(const IAST & ast)

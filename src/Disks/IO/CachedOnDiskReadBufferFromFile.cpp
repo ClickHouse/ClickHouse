@@ -10,7 +10,6 @@
 #include <base/hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/assert_cast.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -29,7 +28,6 @@ extern const Event CachedReadBufferReadFromCacheMicroseconds;
 extern const Event CachedReadBufferCacheWriteMicroseconds;
 extern const Event CachedReadBufferReadFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
-extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
 
@@ -139,7 +137,7 @@ bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()
         CreateFileSegmentSettings create_settings(FileSegmentKind::Regular);
         file_segments = cache->getOrSet(
             cache_key, file_offset_of_buffer_end, size, file_size.value(),
-            create_settings, settings.filesystem_cache_segments_batch_size, user, settings.filesystem_cache_boundary_alignment);
+            create_settings, settings.filesystem_cache_segments_batch_size, user);
     }
 
     return !file_segments->empty();
@@ -296,10 +294,12 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
             read_type = ReadType::CACHED;
             return getCacheReadBuffer(file_segment);
         }
-
-        LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
-        read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-        return getRemoteReadBuffer(file_segment, read_type);
+        else
+        {
+            LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
+            read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+            return getRemoteReadBuffer(file_segment, read_type);
+        }
     }
 
     while (true)
@@ -402,13 +402,14 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     read_type = ReadType::CACHED;
                     return getCacheReadBuffer(file_segment);
                 }
-
-                LOG_TRACE(
-                    log,
-                    "Bypassing cache because file segment state is "
-                    "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
-                read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-                return getRemoteReadBuffer(file_segment, read_type);
+                else
+                {
+                    LOG_TRACE(
+                        log, "Bypassing cache because file segment state is "
+                        "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
+                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    return getRemoteReadBuffer(file_segment, read_type);
+                }
             }
         }
     }
@@ -536,7 +537,7 @@ bool CachedOnDiskReadBufferFromFile::completeFileSegmentAndGetNext()
     chassert(file_offset_of_buffer_end > completed_range.right);
     cache_file_reader.reset();
 
-    file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
+    file_segments->popFront();
     if (file_segments->empty() && !nextFileSegmentsBatch())
         return false;
 
@@ -556,12 +557,6 @@ CachedOnDiskReadBufferFromFile::~CachedOnDiskReadBufferFromFile()
     if (cache_log && file_segments && !file_segments->empty())
     {
         appendFilesystemCacheLog(file_segments->front(), read_type);
-    }
-
-    if (file_segments && !file_segments->empty() && !file_segments->front().isCompleted())
-    {
-        file_segments->completeAndPopFront(settings.filesystem_cache_allow_background_download);
-        file_segments = {};
     }
 }
 
@@ -649,11 +644,9 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
             size_t current_predownload_size = std::min(current_impl_buffer_size, bytes_to_predownload);
 
             ProfileEvents::increment(ProfileEvents::CachedReadBufferReadFromSourceBytes, current_impl_buffer_size);
-            ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, current_impl_buffer_size);
 
-            std::string failure_reason;
             bool continue_predownload = file_segment.reserve(
-                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
+                current_predownload_size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
             if (continue_predownload)
             {
                 LOG_TEST(log, "Left to predownload: {}, buffer size: {}", bytes_to_predownload, current_impl_buffer_size);
@@ -791,7 +784,6 @@ bool CachedOnDiskReadBufferFromFile::writeCache(char * data, size_t size, size_t
             LOG_INFO(log, "Insert into cache is skipped due to insufficient disk space. ({})", e.displayText());
             return false;
         }
-        chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         throw;
     }
 
@@ -1010,8 +1002,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         {
             chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
 
-            std::string failure_reason;
-            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
+            bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds);
             if (success)
             {
                 chassert(file_segment.getCurrentWriteOffset() == static_cast<size_t>(implementation_buffer->getPosition()));
@@ -1037,8 +1028,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
             }
             else
-                LOG_TRACE(log, "No space left in cache to reserve {} bytes, reason: {}, "
-                          "will continue without cache download", size, failure_reason);
+                LOG_TRACE(log, "No space left in cache to reserve {} bytes, will continue without cache download", size);
 
             if (!success)
             {

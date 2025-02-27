@@ -135,7 +135,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().safeGet<Array>();
+        current_array = &current_array->back().safeGet<Array &>();
     }
 
     return array;
@@ -313,7 +313,7 @@ static bool hasDifferentStructureInPrefix(const PathInData::Parts & lhs, const P
     {
         if (lhs[i].key != rhs[i].key)
             return false;
-        if (lhs[i] != rhs[i])
+        else if (lhs[i] != rhs[i])
             return true;
     }
     return false;
@@ -521,7 +521,7 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
     throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
 }
 
-bool hasDynamicSubcolumnsDeprecated(const ColumnsDescription & columns)
+bool hasDynamicSubcolumns(const ColumnsDescription & columns)
 {
     return std::any_of(columns.begin(), columns.end(),
         [](const auto & column)
@@ -715,7 +715,7 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
     {
         return node.data;
     }
-    if (node.kind == Node::NESTED)
+    else if (node.kind == Node::NESTED)
     {
         auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
 
@@ -782,24 +782,26 @@ ColumnWithTypeAndDimensions createTypeFromNode(const Node & node)
 
         return {result_column, result_type, tuple_columns[0].array_dimensions};
     }
-
-    auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
-
-    size_t num_elements = tuple_columns.size();
-    Columns tuple_elements_columns(num_elements);
-    DataTypes tuple_elements_types(num_elements);
-
-    for (size_t i = 0; i < tuple_columns.size(); ++i)
+    else
     {
-        assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
-        tuple_elements_columns[i] = tuple_columns[i].column;
-        tuple_elements_types[i] = tuple_columns[i].type;
+        auto [tuple_names, tuple_columns] = collect_tuple_elemets(node.children);
+
+        size_t num_elements = tuple_columns.size();
+        Columns tuple_elements_columns(num_elements);
+        DataTypes tuple_elements_types(num_elements);
+
+        for (size_t i = 0; i < tuple_columns.size(); ++i)
+        {
+            assert(tuple_columns[i].array_dimensions == tuple_columns[0].array_dimensions);
+            tuple_elements_columns[i] = tuple_columns[i].column;
+            tuple_elements_types[i] = tuple_columns[i].type;
+        }
+
+        auto result_column = ColumnTuple::create(tuple_elements_columns);
+        auto result_type = std::make_shared<DataTypeTuple>(tuple_elements_types, tuple_names);
+
+        return {result_column, result_type, tuple_columns[0].array_dimensions};
     }
-
-    auto result_column = ColumnTuple::create(tuple_elements_columns);
-    auto result_type = std::make_shared<DataTypeTuple>(tuple_elements_types, tuple_names);
-
-    return {result_column, result_type, tuple_columns[0].array_dimensions};
 }
 
 }

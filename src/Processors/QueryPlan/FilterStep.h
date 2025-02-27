@@ -10,7 +10,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const Header & input_header_,
+        const DataStream & input_stream_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
@@ -26,14 +26,8 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    static bool canUseType(const DataTypePtr & type);
-
-    void serialize(Serialization & ctx) const override;
-
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
-
 private:
-    void updateOutputHeader() override;
+    void updateOutputStream() override;
 
     ActionsDAG actions_dag;
     String filter_column_name;

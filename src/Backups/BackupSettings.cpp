@@ -7,7 +7,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-#include <Backups/SettingsFieldOptionalUInt64.h>
 
 namespace DB
 {
@@ -38,12 +37,9 @@ namespace ErrorCodes
     M(Bool, check_parts) \
     M(Bool, check_projection_parts) \
     M(Bool, allow_backup_broken_projections) \
-    M(Bool, write_access_entities_dependents) \
-    M(Bool, allow_checksums_from_remote_paths) \
     M(Bool, internal) \
-    M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
-    M(OptionalUUID, backup_uuid) \
+    M(OptionalUUID, backup_uuid)
     /// M(Int64, compression_level)
 
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
@@ -58,17 +54,13 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
             if (setting.name == "compression_level")
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
             else
-#define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
+#define GET_SETTINGS_FROM_BACKUP_QUERY_HELPER(TYPE, NAME) \
             if (setting.name == #NAME) \
                 res.NAME = SettingField##TYPE{setting.value}.value; \
             else
 
-            LIST_OF_BACKUP_SETTINGS(GET_BACKUP_SETTINGS_FROM_QUERY)
-            /// else
-            {
-                /// (if setting.name is not the name of a field of BackupSettings)
-                res.core_settings.emplace_back(setting);
-            }
+            LIST_OF_BACKUP_SETTINGS(GET_SETTINGS_FROM_BACKUP_QUERY_HELPER)
+            throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Unknown setting {}", setting.name);
         }
     }
 
@@ -81,35 +73,24 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     return res;
 }
 
-bool BackupSettings::isAsync(const ASTBackupQuery & query)
-{
-    if (query.settings)
-    {
-        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
-        if (field)
-            return field->safeGet<bool>();
-    }
-    return false; /// `async` is false by default.
-}
-
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
     auto query_settings = std::make_shared<ASTSetQuery>();
     query_settings->is_standalone = false;
 
-    /// Copy the fields of the BackupSettings to the query.
     static const BackupSettings default_settings;
+    bool all_settings_are_default = true;
 
-#define COPY_BACKUP_SETTINGS_TO_QUERY(TYPE, NAME) \
+#define SET_SETTINGS_IN_BACKUP_QUERY_HELPER(TYPE, NAME) \
     if ((NAME) != default_settings.NAME) \
+    { \
         query_settings->changes.emplace_back(#NAME, static_cast<Field>(SettingField##TYPE{NAME})); \
+        all_settings_are_default = false; \
+    }
 
-    LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
+    LIST_OF_BACKUP_SETTINGS(SET_SETTINGS_IN_BACKUP_QUERY_HELPER)
 
-    /// Copy the core settings to the query too.
-    query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
-
-    if (query_settings->changes.empty())
+    if (all_settings_are_default)
         query_settings = nullptr;
 
     query.settings = query_settings;
@@ -145,7 +126,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-            const auto & replicas = array_of_replicas->value.safeGet<Array>();
+            const auto & replicas = array_of_replicas->value.safeGet<const Array &>();
             res[i].resize(replicas.size());
             for (size_t j = 0; j != replicas.size(); ++j)
             {
@@ -154,7 +135,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                         "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.safeGet<String>();
+                res[i][j] = replica.safeGet<const String &>();
             }
         }
     }

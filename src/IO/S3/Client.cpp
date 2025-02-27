@@ -51,10 +51,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool s3_use_adaptive_timeouts;
-}
 
 namespace ErrorCodes
 {
@@ -83,22 +79,10 @@ bool Client::RetryStrategy::ShouldRetry(const Aws::Client::AWSError<Aws::Client:
         return false;
 
     if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
-
-    /// It does not make sense to retry when GCS suggest to use Rewrite
-    if (useGCSRewrite(error))
-        return false;
+            return false;
 
     return error.ShouldRetry();
 }
-
-bool Client::RetryStrategy::useGCSRewrite(const Aws::Client::AWSError<Aws::Client::CoreErrors>& error)
-{
-    return error.GetResponseCode() == Aws::Http::HttpResponseCode::GATEWAY_TIMEOUT
-        && error.GetExceptionName() == "InternalError"
-        && error.GetMessage().contains("use the Rewrite method in the JSON API");
-}
-
 
 /// NOLINTNEXTLINE(google-runtime-int)
 long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWSError<Aws::Client::CoreErrors>&, long attemptedRetries) const
@@ -168,10 +152,10 @@ namespace
 
 ProviderType deduceProviderType(const std::string & url)
 {
-    if (url.contains(".amazonaws.com"))
+    if (url.find(".amazonaws.com") != std::string::npos)
         return ProviderType::AWS;
 
-    if (url.contains("storage.googleapis.com"))
+    if (url.find("storage.googleapis.com") != std::string::npos)
         return ProviderType::GCS;
 
     return ProviderType::UNKNOWN;
@@ -657,7 +641,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             try
             {
                 /// S3 does retries network errors actually.
-                /// But it does matter when errors occur.
+                /// But it is matter when errors occur.
                 /// This code retries a specific case when
                 /// network error happens when XML document is being read from the response body.
                 /// Hence, the response body is a stream, network errors are possible at reading.
@@ -668,9 +652,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
                 return request_fn_(request_);
             }
-            catch (Poco::Net::NetException &)
+            catch (Poco::Net::ConnectionResetException &)
             {
-                /// This includes "connection reset", "malformed message", and possibly other exceptions.
 
                 if constexpr (IsReadMethod)
                 {
@@ -999,10 +982,10 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
 {
     auto context = Context::getGlobalContextInstance();
     chassert(context);
-    auto proxy_configuration_resolver = ProxyConfigurationResolverProvider::get(ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
+    auto proxy_configuration_resolver = DB::ProxyConfigurationResolverProvider::get(DB::ProxyConfiguration::protocolFromString(protocol), context->getConfigRef());
 
-    auto per_request_configuration = [=]{ return proxy_configuration_resolver->resolve(); };
-    auto error_report = [=](const ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
+    auto per_request_configuration = [=] () { return proxy_configuration_resolver->resolve(); };
+    auto error_report = [=] (const DB::ProxyConfiguration & req) { proxy_configuration_resolver->errorReport(req); };
 
     auto config = PocoHTTPClientConfiguration(
         per_request_configuration,
@@ -1012,7 +995,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         s3_retry_attempts,
         enable_s3_requests_logging,
         for_disk_s3,
-        context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
+        context->getGlobalContext()->getSettingsRef().s3_use_adaptive_timeouts,
         get_request_throttler,
         put_request_throttler,
         error_report);

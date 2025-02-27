@@ -11,65 +11,74 @@ struct Settings;
 
 struct QueryPlanOptimizationSettings
 {
-    explicit QueryPlanOptimizationSettings(const Settings & from);
-    explicit QueryPlanOptimizationSettings(ContextPtr from);
-
     /// Allows to globally disable all plan-level optimizations.
-    /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
-    bool optimize_plan;
+    /// Note: Even if '= true', individual optimizations may still be disabled via below settings.
+    bool optimize_plan = true;
 
     /// If not zero, throw if too many optimizations were applied to query plan.
     /// It helps to avoid infinite optimization loop.
-    size_t max_optimizations_to_apply;
+    size_t max_optimizations_to_apply = 0;
 
-    /// ------------------------------------------------------
-    /// Enable/disable plan-level optimizations
+    /// If moving-up-of-array-join optimization is enabled.
+    bool lift_up_array_join = true;
 
-    /// --- Zero-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
-    bool remove_redundant_sorting;
+    /// If moving-limit-down optimization is enabled.
+    bool push_down_limit = true;
 
-    /// --- First-pass optimizations
-    bool lift_up_array_join;
-    bool push_down_limit;
-    bool split_filter;
-    bool merge_expressions;
-    bool merge_filters;
-    bool filter_push_down;
-    bool convert_outer_join_to_inner_join;
-    bool execute_functions_after_sorting;
-    bool reuse_storage_ordering_for_window_functions;
-    bool lift_up_union;
-    bool aggregate_partitions_independently;
-    bool remove_redundant_distinct;
-    bool try_use_vector_search;
+    /// If split-filter optimization is enabled.
+    bool split_filter = true;
 
-    /// If we can swap probe/build tables in join
-    /// true/false - always/never swap
-    /// nullopt - swap if it's beneficial
-    std::optional<bool> join_swap_table;
+    /// If merge-expressions optimization is enabled.
+    bool merge_expressions = true;
 
-    /// --- Second-pass optimizations
-    bool optimize_prewhere;
-    bool read_in_order;
-    bool distinct_in_order;
-    bool optimize_sorting_by_input_stream_properties;
-    bool aggregation_in_order;
-    bool optimize_projection;
+    /// If merge-filters optimization is enabled.
+    bool merge_filters = false;
 
-    /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
-    bool build_sets = true; /// this one doesn't have a corresponding setting
+    /// If filter push down optimization is enabled.
+    bool filter_push_down = true;
 
-    /// ------------------------------------------------------
+    /// If convert OUTER JOIN to INNER JOIN optimization is enabled.
+    bool convert_outer_join_to_inner_join = true;
 
-    /// Other settings related to plan-level optimizations
+    /// If reorder-functions-after-sorting optimization is enabled.
+    bool execute_functions_after_sorting = true;
 
-    bool optimize_use_implicit_projections;
-    bool force_use_projection;
+    /// If window-functions-can-use-storage-sorting optimization is enabled.
+    bool reuse_storage_ordering_for_window_functions = true;
+
+    /// If lifting-unions-up optimization is enabled.
+    bool lift_up_union = true;
+
+    /// if distinct in order optimization is enabled
+    bool distinct_in_order = false;
+
+    /// If read-in-order optimization is enabled
+    bool read_in_order = true;
+
+    /// If aggregation-in-order optimization is enabled
+    bool aggregation_in_order = false;
+
+    /// If removing redundant sorting is enabled, for example, ORDER BY clauses in subqueries
+    bool remove_redundant_sorting = true;
+
+    /// If aggregate-partitions-independently optimization is enabled.
+    bool aggregate_partitions_independently = false;
+
+    /// If remove-redundant-distinct-steps optimization is enabled.
+    bool remove_redundant_distinct = true;
+
+    bool optimize_prewhere = true;
+
+    /// If reading from projection can be applied
+    bool optimize_projection = false;
+    bool force_use_projection = false;
     String force_projection_name;
-    size_t max_limit_for_ann_queries;
+    bool optimize_use_implicit_projections = false;
 
-    bool keep_logical_steps;
-    bool is_explain;
+    bool build_sets = true;
+
+    static QueryPlanOptimizationSettings fromSettings(const Settings & from);
+    static QueryPlanOptimizationSettings fromContext(ContextPtr from);
 };
 
 }

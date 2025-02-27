@@ -5,6 +5,7 @@
 #include <base/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/ISimpleTransform.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 

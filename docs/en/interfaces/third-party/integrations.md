@@ -1,5 +1,5 @@
 ---
-slug: /interfaces/third-party/integrations
+slug: /en/interfaces/third-party/integrations
 sidebar_position: 27
 sidebar_label: Integrations
 ---
@@ -7,7 +7,7 @@ sidebar_label: Integrations
 # Integration Libraries from Third-party Developers
 
 :::note Disclaimer
-ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven't done extensive testing to ensure their quality.
+ClickHouse, Inc. does **not** maintain the tools and libraries listed below and haven’t done extensive testing to ensure their quality.
 :::
 
 ## Infrastructure Products {#infrastructure-products}

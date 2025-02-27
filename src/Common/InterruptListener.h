@@ -80,7 +80,8 @@ public:
         {
             if (errno == EAGAIN)
                 return false;
-            throw ErrnoException(ErrorCodes::CANNOT_WAIT_FOR_SIGNAL, "Cannot poll signal (sigtimedwait)");
+            else
+                throw ErrnoException(ErrorCodes::CANNOT_WAIT_FOR_SIGNAL, "Cannot poll signal (sigtimedwait)");
         }
 
         return true;

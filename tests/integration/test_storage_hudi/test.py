@@ -1,37 +1,29 @@
-import json
 import logging
-import os
-import shutil
-from datetime import datetime
-
-import pyspark
 import pytest
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
-from pyspark.sql.types import (
-    ArrayType,
-    BooleanType,
-    DateType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
-from pyspark.sql.window import Window
+import os
+import json
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_tools import (
-    get_file_contents,
-    prepare_s3_bucket,
-    remove_directory,
-    upload_directory,
-)
 from helpers.test_tools import TSV
+from helpers.s3_tools import prepare_s3_bucket, upload_directory, get_file_contents
+
+import pyspark
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    StringType,
+    IntegerType,
+    DateType,
+    TimestampType,
+    BooleanType,
+    ArrayType,
+)
+from pyspark.sql.functions import current_timestamp
+from datetime import datetime
+from pyspark.sql.functions import monotonically_increasing_id, row_number
+from pyspark.sql.window import Window
+
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -160,7 +152,7 @@ def create_initial_data_file(
             file('{table_name}.parquet')
         SETTINGS
             output_format_parquet_compression_method='{compression_method}',
-            engine_file_truncate_on_insert=1 {query}
+            s3_truncate_on_insert=1 {query}
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
@@ -186,13 +178,11 @@ def test_single_hudi_file(started_cluster):
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 1
     assert files[0].endswith(".parquet")
+
     create_hudi_table(instance, TABLE_NAME)
     assert instance.query(f"SELECT a, b FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
-
-    shutil.rmtree(f"/{TABLE_NAME}")
-    remove_directory(minio_client, bucket, TABLE_NAME)
 
 
 def test_multiple_hudi_files(started_cluster):
@@ -264,9 +254,6 @@ def test_multiple_hudi_files(started_cluster):
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1000000
 
-    shutil.rmtree(f"/{TABLE_NAME}")
-    remove_directory(minio_client, bucket, TABLE_NAME)
-
 
 def test_types(started_cluster):
     instance = started_cluster.instances["node1"]
@@ -326,6 +313,3 @@ def test_types(started_cluster):
             ["e", "Nullable(Bool)"],
         ]
     )
-
-    shutil.rmtree(f"/{TABLE_NAME}")
-    remove_directory(minio_client, bucket, TABLE_NAME)

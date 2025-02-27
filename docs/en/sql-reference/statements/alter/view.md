@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/alter/view
+slug: /en/sql-reference/statements/alter/view
 sidebar_position: 50
 sidebar_label: VIEW
 ---
@@ -41,7 +41,7 @@ ORDER BY ts, event_type;
 │ 2020-01-02 00:00:00 │ imp        │               2 │
 └─────────────────────┴────────────┴─────────────────┘
 
--- Let's add the new measurement `cost`
+-- Let's add the new measurment `cost`
 -- and the new dimension `browser`.
 
 ALTER TABLE events
@@ -191,10 +191,10 @@ SELECT * FROM mv;
 └───┘
 ```
 
-## ALTER LIVE VIEW Statement {#alter-live-view-statement}
+## ALTER LIVE VIEW Statement
 
 `ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](../create/view.md#live-view). See [Force Live View Refresh](../create/view.md#live-view-alter-refresh).
 
-## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
+## ALTER TABLE ... MODIFY REFRESH Statement
 
 `ALTER TABLE ... MODIFY REFRESH` statement changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view). See [Changing Refresh Parameters](../create/view.md#changing-refresh-parameters).

@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraymovingavg
-sidebar_position: 144
-title: "groupArrayMovingAvg"
-description: "Calculates the moving average of input values."
+slug: /en/sql-reference/aggregate-functions/reference/grouparraymovingavg
+sidebar_position: 143
 ---
 
 # groupArrayMovingAvg

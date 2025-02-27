@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <type_traits>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -15,10 +14,10 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include "Common/FieldVisitors.h"
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -52,10 +51,6 @@ struct IndexOfAction
     using ResultType = UInt64;
     static constexpr const bool resume_execution = false;
     static constexpr void apply(ResultType& current, size_t j) noexcept { current = j + 1; }
-};
-
-struct IndexOfAssumeSorted : public IndexOfAction
-{
 };
 
 struct CountEqualAction
@@ -116,139 +111,13 @@ private:
         return 0 == left.compareAt(i, RightArgIsConstant ? 0 : j, right, 1);
     }
 
-    static bool compare(const Array & arr, const Field& rhs, size_t pos, size_t)
-    {
-        return applyVisitor(FieldVisitorAccurateEquals(), arr[pos], rhs);
-    }
-
-    static constexpr bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t) noexcept
-    {
-        return left[i] >= right;
-    }
-
-    static constexpr bool lessOrEqual(const IColumn & left, const Result & right, size_t i, size_t) noexcept { return left[i] >= right; }
-
-    static constexpr bool lessOrEqual(const Array& arr, const Field& rhs, size_t pos, size_t) noexcept {
-        return applyVisitor(FieldVisitorAccurateLessOrEqual(), rhs, arr[pos]);
-    }
-
 #pragma clang diagnostic pop
-
-public:
-    /** Assuming that the array is sorted, use a binary search */
-    template <typename Data, typename Target>
-    static constexpr ResultType lowerBound(const Data & data, const Target & target, size_t array_size, ArrOffset current_offset)
-    {
-        ResultType current = 0;
-        size_t low = 0;
-        size_t high = array_size;
-        while (high - low > 0)
-        {
-            auto middle = low + ((high - low) >> 1);
-            auto compare_result = lessOrEqual(data, target, current_offset + middle, 0);
-            /// avoid conditional branching
-            high = compare_result ? middle : high;
-            low = compare_result ? low : middle + 1;
-        }
-        if (low < array_size && compare(data, target, current_offset + low, 0))
-        {
-            ConcreteAction::apply(current, low);
-        }
-        return current;
-    }
-
-    template <size_t Case, typename Data, typename Target>
-    static constexpr ResultType linearSearch(
-        const Data & data,
-        const Target & target,
-        size_t array_size,
-        const NullMap * const null_map_data,
-        const NullMap * const null_map_item,
-        size_t row_index,
-        ArrOffset current_offset)
-    {
-        ResultType current = 0;
-        for (size_t j = 0; j < array_size; ++j)
-        {
-            if constexpr (Case == 2) /// Right arg is Nullable
-                if (hasNull(null_map_item, row_index))
-                    continue;
-
-            if constexpr (Case == 3) /// Left arg is an array of Nullables
-                if (hasNull(null_map_data, current_offset + j))
-                    continue;
-
-            if constexpr (Case == 4) /// Both args are nullable
-            {
-                const bool right_is_null = hasNull(null_map_data, current_offset + j);
-                const bool left_is_null = hasNull(null_map_item, row_index);
-
-                if (right_is_null != left_is_null)
-                    continue;
-
-                if (!right_is_null && !compare(data, target, current_offset + j, row_index))
-                    continue;
-            }
-            else if (!compare(data, target, current_offset + j, row_index))
-                continue;
-
-            ConcreteAction::apply(current, j);
-
-            if constexpr (!ConcreteAction::resume_execution)
-                break;
-        }
-        return current;
-    }
-
-    static ResultType linearSearchConst(const Array & arr, const Field & value)
-    {
-        ResultType current = 0;
-        for (size_t i = 0, size = arr.size(); i < size; ++i)
-        {
-            if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                continue;
-
-            ConcreteAction::apply(current, i);
-
-            if constexpr (!ConcreteAction::resume_execution)
-                break;
-        }
-        return current;
-    }
-
-private:
-    /** Looking for the target element index in the data (array) */
-    template <size_t Case, typename Data, typename Target>
-    static constexpr ResultType getIndex(
-        const Data & data,
-        const Target & target,
-        size_t array_size,
-        const NullMap * const null_map_data,
-        const NullMap * const null_map_item,
-        size_t row_index,
-        ArrOffset current_offset)
-    {
-        /** Use binary search if the following conditions are met.
-          *   1. The array type is not nullable. (Case = 1)
-          *   2. Target is not a column or an array.
-          */
-        if constexpr (
-            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, PaddedPODArray<Result>>
-            && !std::is_same_v<Target, IColumn> && Case == 1)
-        {
-            return lowerBound(data, target, array_size, current_offset);
-        }
-        return linearSearch<Case>(data, target, array_size, null_map_data, null_map_item, row_index, current_offset);
-    }
 
     static constexpr bool hasNull(const NullMap * const null_map, size_t i) noexcept { return (*null_map)[i]; }
 
     template <size_t Case, typename Data, typename Target>
     static void process(
-        const Data & data,
-        const ArrOffsets & offsets,
-        const Target & target,
-        ResultArr & result,
+        const Data & data, const ArrOffsets & offsets, const Target & target, ResultArr & result,
         [[maybe_unused]] const NullMap * const null_map_data,
         [[maybe_unused]] const NullMap * const null_map_item)
     {
@@ -260,6 +129,7 @@ private:
         }
 
         const size_t size = offsets.size();
+
         result.resize(size);
 
         ArrOffset current_offset = 0;
@@ -267,7 +137,39 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             const size_t array_size = offsets[i] - current_offset;
-            result[i] = getIndex<Case>(data, target, array_size, null_map_data, null_map_item, i, current_offset);
+            ResultType current = 0;
+
+            for (size_t j = 0; j < array_size; ++j)
+            {
+                if constexpr (Case == 2) /// Right arg is Nullable
+                     if (hasNull(null_map_item, i))
+                        continue;
+
+                if constexpr (Case == 3) /// Left arg is an array of Nullables
+                    if (hasNull(null_map_data, current_offset + j))
+                        continue;
+
+                if constexpr (Case == 4) /// Both args are nullable
+                {
+                    const bool right_is_null = hasNull(null_map_data, current_offset + j);
+                    const bool left_is_null = hasNull(null_map_item, i);
+
+                    if (right_is_null != left_is_null)
+                        continue;
+
+                    if (!right_is_null && !compare(data, target, current_offset + j, i))
+                        continue;
+                }
+                else if (!compare(data, target, current_offset + j, i))
+                    continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+
+            result[i] = current;
             current_offset = offsets[i];
         }
     }
@@ -595,55 +497,63 @@ private:
         {
             return executeOnNonNullable(arguments, result_type);
         }
-
-        /**
+        else
+        {
+            /**
              * To correctly process the Nullable values (either #col_array, #arg_column or both) we create a new columns
              * and operate on it. The columns structure follows:
              * {0, 1, 2, 3, 4}
              * {data (array) argument, "value" argument, data null map, "value" null map, function result}.
              */
-        ColumnsWithTypeAndName source_columns(4);
+            ColumnsWithTypeAndName source_columns(4);
 
-        if (nullable)
-        {
-            const auto & nested_col = nullable->getNestedColumnPtr();
+            if (nullable)
+            {
+                const auto & nested_col = nullable->getNestedColumnPtr();
 
-            auto & data = source_columns[0];
+                auto & data = source_columns[0];
 
-            data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
-            data.type = std::make_shared<DataTypeArray>(
-                static_cast<const DataTypeNullable &>(*static_cast<const DataTypeArray &>(*arguments[0].type).getNestedType())
-                    .getNestedType());
+                data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
+                data.type = std::make_shared<DataTypeArray>(
+                    static_cast<const DataTypeNullable &>(
+                        *static_cast<const DataTypeArray &>(
+                            *arguments[0].type
+                        ).getNestedType()
+                    ).getNestedType());
 
-            auto & null_map = source_columns[2];
+                auto & null_map = source_columns[2];
 
-            null_map.column = nullable->getNullMapColumnPtr();
-            null_map.type = std::make_shared<DataTypeUInt8>();
+                null_map.column = nullable->getNullMapColumnPtr();
+                null_map.type = std::make_shared<DataTypeUInt8>();
+            }
+            else
+            {
+                auto & data = source_columns[0];
+                data = arguments[0];
+            }
+
+            if (arg_nullable)
+            {
+                auto & arg = source_columns[1];
+                arg.column = arg_nullable->getNestedColumnPtr();
+                arg.type =
+                    static_cast<const DataTypeNullable &>(
+                        *arguments[1].type
+                    ).getNestedType();
+
+                auto & null_map = source_columns[3];
+                null_map.column = arg_nullable->getNullMapColumnPtr();
+                null_map.type = std::make_shared<DataTypeUInt8>();
+            }
+            else
+            {
+                auto & arg = source_columns[1];
+                arg = arguments[1];
+            }
+
+            /// Now perform the function.
+            return executeOnNonNullable(source_columns, result_type);
         }
-        else
-        {
-            auto & data = source_columns[0];
-            data = arguments[0];
-        }
-
-        if (arg_nullable)
-        {
-            auto & arg = source_columns[1];
-            arg.column = arg_nullable->getNestedColumnPtr();
-            arg.type = static_cast<const DataTypeNullable &>(*arguments[1].type).getNestedType();
-
-            auto & null_map = source_columns[3];
-            null_map.column = arg_nullable->getNullMapColumnPtr();
-            null_map.type = std::make_shared<DataTypeUInt8>();
-        }
-        else
-        {
-            auto & arg = source_columns[1];
-            arg = arguments[1];
-        }
-
-        /// Now perform the function.
-        return executeOnNonNullable(source_columns, result_type);
     }
 
 #define INTEGRAL_PACK UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64
@@ -952,62 +862,67 @@ private:
         {
             ResultType current = 0;
             const auto & value = (*item_arg)[0];
-            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+
+            for (size_t i = 0, size = arr.size(); i < size; ++i)
             {
-                current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
-            }
-            else
-            {
-                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
-            }
+                if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                    continue;
 
-            return result_type->createColumnConst(item_arg->size(), current);
-        }
-
-        /// Null map of the 2nd function argument, if it applies.
-        const NullMap * null_map = nullptr;
-
-        if (arguments.size() > 2)
-            if (const auto & col = arguments[3].column; col)
-                null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
-
-        const size_t size = item_arg->size();
-        auto col_res = ResultColumnType::create(size);
-
-        auto & data = col_res->getData();
-
-        for (size_t row = 0; row < size; ++row)
-        {
-            const auto & value = (*item_arg)[row];
-
-            data[row] = 0;
-
-            for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
-            {
-                if (arr[i].isNull())
-                {
-                    if (!null_map)
-                        continue;
-
-                    if (!(*null_map)[row])
-                        continue;
-                }
-                else
-                {
-                    if (null_map && (*null_map)[row])
-                        continue;
-                    if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
-                        continue;
-                }
-
-                ConcreteAction::apply(data[row], i);
+                ConcreteAction::apply(current, i);
 
                 if constexpr (!ConcreteAction::resume_execution)
                     break;
             }
-        }
 
-        return col_res;
+            return result_type->createColumnConst(item_arg->size(), current);
+        }
+        else
+        {
+            /// Null map of the 2nd function argument, if it applies.
+            const NullMap * null_map = nullptr;
+
+            if (arguments.size() > 2)
+                if (const auto & col = arguments[3].column; col)
+                    null_map = &assert_cast<const ColumnUInt8 &>(*col).getData();
+
+            const size_t size = item_arg->size();
+            auto col_res = ResultColumnType::create(size);
+
+            auto & data = col_res->getData();
+
+            for (size_t row = 0; row < size; ++row)
+            {
+                const auto & value = (*item_arg)[row];
+
+                data[row] = 0;
+
+                for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
+                {
+                    if (arr[i].isNull())
+                    {
+                        if (!null_map)
+                            continue;
+
+                        if (!(*null_map)[row])
+                            continue;
+                    }
+                    else
+                    {
+                        if (null_map && (*null_map)[row])
+                            continue;
+                        if (!applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
+                            continue;
+                    }
+
+                    ConcreteAction::apply(data[row], i);
+
+                    if constexpr (!ConcreteAction::resume_execution)
+                        break;
+                }
+            }
+
+            return col_res;
+        }
     }
 
     static ColumnPtr executeNothing(const ColumnsWithTypeAndName & arguments)

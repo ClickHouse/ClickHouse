@@ -12,7 +12,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -139,7 +138,11 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                ThreadGroupSwitcher switcher(thread_group, "SystemReplicas");
+                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
+                setThreadName("SystemReplicas");
 
                 try
                 {
@@ -245,7 +248,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
     };
 
     description.setAliases({
-        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
+        {"readonly_duration", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "if(isNull(readonly_start_time), NULL, now() - readonly_start_time)"},
     });
 
     StorageInMemoryMetadata storage_metadata;
@@ -272,7 +275,7 @@ public:
         size_t max_block_size_,
         std::shared_ptr<StorageSystemReplicasImpl> impl_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -418,7 +421,7 @@ private:
 
 void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto header = getOutputHeader();
+    auto header = getOutputStream().header;
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
@@ -477,8 +480,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         if (query_status)
             query_status->checkTimeLimit();
 
-        auto & storage = replicated_tables[(*col_database)[i].safeGet<String>()]
-            [(*col_table)[i].safeGet<String>()];
+        auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
+            [(*col_table)[i].safeGet<const String &>()];
 
         auto [request_id, future] = get_status_requests.addRequest(storage, with_zk_fields);
         futures.emplace_back(future);
@@ -540,9 +543,9 @@ Chunk SystemReplicasSource::generate()
         res_columns[col_num++]->insert(status.is_session_expired);
         res_columns[col_num++]->insert(status.queue.future_parts);
         res_columns[col_num++]->insert(status.parts_to_check);
-        res_columns[col_num++]->insert(status.zookeeper_info.zookeeper_name);
-        res_columns[col_num++]->insert(status.zookeeper_info.path);
-        res_columns[col_num++]->insert(status.zookeeper_info.replica_name);
+        res_columns[col_num++]->insert(status.zookeeper_name);
+        res_columns[col_num++]->insert(status.zookeeper_path);
+        res_columns[col_num++]->insert(status.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
         res_columns[col_num++]->insert(status.columns_version);
         res_columns[col_num++]->insert(status.queue.queue_size);

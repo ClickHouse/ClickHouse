@@ -8,11 +8,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-settings="--log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1 --allow_deprecated_syntax_for_merge_tree=1 --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 --max_bytes_before_external_sort 0 --max_bytes_ratio_before_external_sort 0"
+settings="--log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1 --allow_deprecated_syntax_for_merge_tree=1 --max_bytes_before_external_group_by 0 --max_bytes_before_external_sort 0"
 
 # Test insert logging on each block and checkPacket() method
 
-$CLICKHOUSE_CLIENT $settings -q "
+$CLICKHOUSE_CLIENT $settings -n -q "
 DROP TABLE IF EXISTS merge_tree_table;
 CREATE TABLE merge_tree_table (id UInt64, date Date, uid UInt32) ENGINE = MergeTree(date, id, 8192);"
 

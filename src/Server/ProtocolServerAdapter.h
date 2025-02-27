@@ -21,20 +21,10 @@ class ProtocolServerAdapter
 public:
     ProtocolServerAdapter(ProtocolServerAdapter && src) = default;
     ProtocolServerAdapter & operator =(ProtocolServerAdapter && src) = default;
-    ProtocolServerAdapter(
-        const std::string & listen_host_,
-        const char * port_name_,
-        const std::string & description_,
-        std::unique_ptr<TCPServer> tcp_server_,
-        bool supports_runtime_reconfiguration_ = true);
+    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<TCPServer> tcp_server_);
 
 #if USE_GRPC
-    ProtocolServerAdapter(
-        const std::string & listen_host_,
-        const char * port_name_,
-        const std::string & description_,
-        std::unique_ptr<GRPCServer> grpc_server_,
-        bool supports_runtime_reconfiguration_ = true);
+    ProtocolServerAdapter(const std::string & listen_host_, const char * port_name_, const std::string & description_, std::unique_ptr<GRPCServer> grpc_server_);
 #endif
 
     /// Starts the server. A new thread will be created that waits for and accepts incoming connections.
@@ -55,8 +45,6 @@ public:
 
     /// Returns the port this server is listening to.
     UInt16 portNumber() const { return impl->portNumber(); }
-
-    bool supportsRuntimeReconfiguration() const { return supports_runtime_reconfiguration; }
 
     const std::string & getListenHost() const { return listen_host; }
 
@@ -84,7 +72,6 @@ private:
     std::string port_name;
     std::string description;
     std::unique_ptr<Impl> impl;
-    bool supports_runtime_reconfiguration = true;
 };
 
 }

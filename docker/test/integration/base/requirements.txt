@@ -17,6 +17,7 @@ pipdeptree==2.23.0
 pycurl==7.45.3
 PyJWT==2.3.0
 pyparsing==2.4.7
+python-apt==2.4.0+ubuntu3
 SecretStorage==3.3.1
 setuptools==59.6.0
 six==1.16.0

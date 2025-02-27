@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
+#include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/SharedMutex.h>
@@ -18,10 +20,6 @@ struct Range;
 class Context;
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
-using Sizes = std::vector<size_t>;
-
-struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -63,8 +61,6 @@ public:
     bool isCreated() const { return is_created.load(); }
 
     void checkIsCreated() const;
-
-    void processDateTime64Column(const ColumnWithTypeAndName & column_to_cast, ColumnPtr & result, ColumnPtr & null_map_holder, ConstNullMapPtr & null_map) const;
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -242,8 +238,6 @@ public:
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types, bool single_point = false) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
-
-    const std::vector<KeyTuplePositionMapping> & getIndexesMapping() const { return indexes_mapping; }
 
 private:
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.

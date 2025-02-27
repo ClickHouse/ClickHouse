@@ -44,110 +44,6 @@ ${CLICKHOUSE_CLIENT} -q "
     ;"
 }
 
-function check_query_settings()
-{
-result=$(${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
-    SELECT attribute['clickhouse.setting.min_compress_block_size'],
-           attribute['clickhouse.setting.max_block_size'],
-           attribute['clickhouse.setting.max_execution_time']
-    FROM system.opentelemetry_span_log
-    WHERE finish_date                      >= yesterday()
-    AND   operation_name                   = 'query'
-    AND   attribute['clickhouse.query_id'] = '${1}'
-    FORMAT JSONEachRow;
-  ")
-
-    local min_present="not found"
-    local max_present="not found"
-    local execution_time_present="not found"
-
-    if [[ $result == *"min_compress_block_size"* ]]; then
-       min_present="present"
-    fi
-    if [[ $result == *"max_block_size"* ]]; then
-       max_present="present"
-    fi
-    if [[ $result == *"max_execution_time"* ]]; then
-       execution_time_present="present"
-    fi
-
-    echo "{\"min_compress_block_size\":\"$min_present\",\"max_block_size\":\"$max_present\",\"max_execution_time\":\"$execution_time_present\"}"
-}
-
-function check_tcp_attributes()
-{
-  local query_id="$1"
-  local result
-  local client_version="not found"
-
-  result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS;
-      SELECT attribute['client.version']
-      FROM system.opentelemetry_span_log
-      WHERE finish_date >= yesterday()
-      AND operation_name = 'query'
-      AND attribute['clickhouse.query_id'] = '${query_id}'
-      FORMAT JSONEachRow;
-    ")
-
-  if [[ -z "$result" ]]; then
-    echo "Error: No result returned from ClickHouse server"
-    return 1
-  fi
-  
-  if [[ $result == *"client.version"* ]]; then
-    client_version="present"
-  fi
-
-  echo "{\"client.version\":\"$client_version\"}"
-}
-
-function execute_query_HTTP()
-{
-    ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&database=${CLICKHOUSE_DATABASE}&query_id=$1" -d "$2"
-}
-
-function check_http_attributes()
-{
-  local query_id="$1"
-  local result
-  local referer="not found"
-  local agent="not found"
-  local method="not found"
-  
-  result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS;
-      SELECT attribute['http.referer'],
-             attribute['http.user.agent'],
-             attribute['http.method']
-      FROM system.opentelemetry_span_log
-      WHERE finish_date >= yesterday()
-      AND operation_name = 'query'
-      AND attribute['clickhouse.query_id'] = '${query_id}'
-      FORMAT JSONEachRow;
-    ")
-
-  if [[ -z "$result" ]]; then
-    echo "Error: No result returned from ClickHouse server"
-    return 1
-  fi
-  
-  if [[ $result == *"http.referer"* ]]; then
-    referer="present"
-  fi
-  
-  if [[ $result == *"http.user.agent"* ]]; then
-    agent="present"
-  fi
-
-  if [[ $result == *"http.method"* ]]; then
-    method="present"
-  fi
-
-  echo "{\"http.referer\":\"$referer\",\"http.user.agent\":\"$agent\",\"http.method\":\"$method\"}"
-}
-
 #
 # Set up
 #
@@ -177,22 +73,7 @@ query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()");
 execute_query $query_id 'select * from opentelemetry_test format Null'
 check_query_span $query_id
 
-# Test 5: A normal select query with a setting
-query_id=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4() SETTINGS max_execution_time=3600")
-execute_query "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
-check_query_span "$query_id"
-check_query_settings "$query_id" "max_execution_time"
 
-# Test 6: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
-query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query $query_id 'select * from opentelemetry_test format Null'
-check_tcp_attributes $query_id
-
-# Test 7: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
-query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query "$query_id" 'set opentelemetry_start_trace_probability=1'
-execute_query_HTTP "$query_id" 'select * from opentelemetry_test FORMAT Null'
-check_http_attributes "$query_id"
 #
 # Tear down
 #

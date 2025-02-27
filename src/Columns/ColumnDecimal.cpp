@@ -8,10 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 
-#include <Core/DecimalFunctions.h>
-#include <Core/TypeId.h>
-
-#include <base/TypeName.h>
 #include <base/sort.h>
 
 #include <IO/WriteHelpers.h>
@@ -35,19 +31,6 @@ namespace ErrorCodes
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::getFamilyName() const
-{
-    return TypeName<T>.data();
-}
-
-template <is_decimal T>
-TypeIndex ColumnDecimal<T>::getDataType() const
-{
-    return TypeToTypeIndex<T>;
-}
-
-
-template <is_decimal T>
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 #else
@@ -61,12 +44,6 @@ int ColumnDecimal<T>::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int)
     if (scale == other.scale)
         return a > b ? 1 : (a < b ? -1 : 0);
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
-}
-
-template <is_decimal T>
-Float64 ColumnDecimal<T>::getFloat64(size_t n) const
-{
-    return DecimalUtils::convertTo<Float64>(data[n], scale);
 }
 
 template <is_decimal T>
@@ -478,7 +455,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 }
 
 template <is_decimal T>
-ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
+ColumnPtr ColumnDecimal<T>::compress() const
 {
     const size_t data_size = data.size();
     const size_t source_size = data_size * sizeof(T);
@@ -487,7 +464,7 @@ ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());

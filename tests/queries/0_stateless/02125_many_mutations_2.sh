@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel, no-shared-merge-tree
-# no-shared-merge-tree -- this test is too slow
+# Tags: long, no-tsan, no-debug, no-asan, no-msan, no-ubsan, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
