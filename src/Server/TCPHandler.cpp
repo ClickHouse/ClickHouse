@@ -2363,25 +2363,6 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
         {
             if (auto codec = getCompressionCodec(query_settings, state.compression))
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
-
-            std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
-            std::optional<int> level;
-            if (method == "ZSTD")
-                level = query_settings[Setting::network_zstd_compression_level];
-
-            if (state.compression == Protocol::Compression::Enable)
-            {
-                CompressionCodecFactory::instance().validateCodec(
-                    method,
-                    level,
-                    !query_settings[Setting::allow_suspicious_codecs],
-                    query_settings[Setting::allow_experimental_codecs],
-                    query_settings[Setting::enable_deflate_qpl_codec],
-                    query_settings[Setting::enable_zstd_qat_codec]);
-
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
-            }
             else
                 state.maybe_compressed_out = out;
         }
@@ -2477,6 +2458,7 @@ static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 clie
         return block;
 
     Block res;
+    res.info = block.info;
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;

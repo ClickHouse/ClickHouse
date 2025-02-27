@@ -1354,6 +1354,7 @@ Block Connection::receiveLogData()
 static Block convertBlobColumns(const Block & block)
 {
     Block res;
+    res.info = block.info;
     for (const auto & elem : block)
     {
         ColumnWithTypeAndName column = elem;
