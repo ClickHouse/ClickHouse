@@ -86,10 +86,16 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     for (const auto & predicate : join_info.expression.condition.predicates)
     {
         const Header & left_header = parent_node->children.front()->step->getOutputHeader();
-        left_predicate_header.insert(left_header.getByName(predicate.left_node.getColumn().name));
+        const auto * left_column = left_header.findByName(predicate.left_node.getColumn().name);
+        if (!left_column)
+            return 0;
+        left_predicate_header.insert(*left_column);
 
         const Header & right_header = parent_node->children.back()->step->getOutputHeader();
-        right_predicate_header.insert(right_header.getByName(predicate.right_node.getColumn().name));
+        const auto * right_column = right_header.findByName(predicate.right_node.getColumn().name);
+        if (!right_column)
+            return 0;
+        right_predicate_header.insert(*right_column);
     }
 
     std::optional<ActionsDAG> dag = ActionsDAG(left_predicate_header.getColumnsWithTypeAndName());
