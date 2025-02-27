@@ -13,6 +13,8 @@
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 
+#include <fmt/ranges.h>
+
 namespace fs = std::filesystem;
 
 namespace DB::ErrorCodes
