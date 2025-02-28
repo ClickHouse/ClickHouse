@@ -9,13 +9,12 @@
 #include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
-#include <Common/PageCache.h>
-#include <Common/quoteString.h>
-
 #include <Databases/IDatabase.h>
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
+#include <Common/PageCache.h>
+#include <Common/quoteString.h>
 
 #include "config.h"
 #if USE_AWS_S3
@@ -98,12 +97,12 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
     if (auto page_cache = getContext()->getPageCache())
     {
-        auto rss = page_cache->getResidentSetSize();
-        new_values["PageCacheBytes"] = { rss.page_cache_rss, "Userspace page cache memory usage in bytes" };
-        new_values["PageCachePinnedBytes"] = { page_cache->getPinnedSize(), "Userspace page cache memory that's currently in use and can't be evicted" };
-
-        if (rss.unreclaimable_rss.has_value())
-            new_values["UnreclaimableRSS"] = { *rss.unreclaimable_rss, "The amount of physical memory used by the server process, in bytes, excluding memory reclaimable by the OS (MADV_FREE)" };
+        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
+            "Current limit on the size of userspace page cache, in bytes." };
+        new_values["PageCacheBytes"] = { page_cache->sizeInBytes(),
+            "Total size of userspace page cache in bytes." };
+        new_values["PageCacheCells"] = { page_cache->count(),
+            "Total number of entries in the userspace page cache." };
     }
 
     if (auto uncompressed_cache = getContext()->getUncompressedCache())
