@@ -644,7 +644,7 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
       * executed to stage `WithMergeableStateAfterAggregationAndLimit` on replicas
       * we must send hostName() column to initiator.
       */
-    if (planner_query_processing_info.isToMergeableState())
+    if (planner_query_processing_info.isToAggregationState())
     {
         for (auto & column : project_names_input)
             column.column = nullptr;
