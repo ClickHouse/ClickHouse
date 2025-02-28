@@ -79,6 +79,12 @@ public:
         return to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
     }
 
+    bool isToMergeableState() const
+    {
+        return to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation
+            || to_stage == QueryProcessingStage::WithMergeableState;
+    }
+
     bool isFromAggregationState() const
     {
         return from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
