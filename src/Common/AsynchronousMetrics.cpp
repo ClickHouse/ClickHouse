@@ -1,10 +1,11 @@
 #include <IO/MMappedFileCache.h>
 #include <IO/ReadHelpers.h>
+#include <IO/UncompressedCache.h>
+#include <Interpreters/Context.h>
 #include <base/cgroupsv2.h>
 #include <base/find_symbols.h>
 #include <sys/resource.h>
 #include <Common/AsynchronousMetrics.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
 #include <Common/formatReadable.h>
@@ -72,12 +73,14 @@ AsynchronousMetrics::AsynchronousMetrics(
     unsigned update_period_seconds,
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
-    bool update_rss_)
+    bool update_rss_,
+    const ContextPtr & context_)
     : update_period(update_period_seconds)
     , log(getLogger("AsynchronousMetrics"))
     , protocol_server_metrics_func(protocol_server_metrics_func_)
     , update_jemalloc_epoch(update_jemalloc_epoch_)
     , update_rss(update_rss_)
+    , context(context_)
 {
 #if defined(OS_LINUX)
     openFileIfExists("/proc/cpuinfo", cpuinfo);
@@ -327,6 +330,12 @@ AsynchronousMetricValues AsynchronousMetrics::getValues() const
 {
     SharedLockGuard lock(values_mutex);
     return values;
+}
+
+auto AsynchronousMetrics::tryGetMetricValue(const AsynchronousMetricValues & metric_values, const String & metric, size_t default_value)
+{
+    const auto it = metric_values.find(metric);
+    return it != metric_values.end() ? it->second.value : default_value;
 }
 
 namespace
@@ -727,6 +736,41 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
            "non-uniform, and still get the average resource utilization metric."};
 }
 #endif
+
+// Warnings for pending and stuck mutations
+void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
+{
+    // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
+    // Warnings for part mutations
+    auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
+    auto num_stuck_mutations = tryGetMetricValue(new_values, "NumberOfStuckMutations");
+    auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
+    auto max_stuck_mutations_to_warn = context->getMaxStuckMutationsToWarn();
+
+    if (num_pending_mutations > max_pending_mutations_to_warn)
+    {
+        constexpr auto message_format_string = "The number of pending mutations is more than {}.";
+        context->addOrUpdateWarningMessage(
+            Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
+            Context::Warning{
+                .message = fmt::format(message_format_string, max_pending_mutations_to_warn),
+                .message_format_string = message_format_string});
+    }
+    if (num_pending_mutations <= max_pending_mutations_to_warn)
+        context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
+
+    if (num_stuck_mutations > max_stuck_mutations_to_warn)
+    {
+        constexpr auto message_format_string = "The number of stuck mutations is more than {}.";
+        context->addOrUpdateWarningMessage(
+            Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT,
+            Context::Warning{
+                .message = fmt::format(message_format_string, max_pending_mutations_to_warn),
+                .message_format_string = message_format_string});
+    }
+    if (num_stuck_mutations <= max_stuck_mutations_to_warn)
+        context->removeWarningMessage(Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT);
+}
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 {
@@ -1811,10 +1855,14 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 
     first_run = false;
 
-    // Finally, update the current metrics.
+    // Finally, update the current metrics and warnings
     {
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
+
+        // These methods look at Asynchronous metrics and add,update or remove warnings
+        // which later get inserted into the system.warnings table:
+        processWarningForMutationStats(new_values);
     }
 }
 
