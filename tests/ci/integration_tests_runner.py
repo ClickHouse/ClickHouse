@@ -15,7 +15,7 @@ import sys
 import time
 from collections import OrderedDict, defaultdict
 from itertools import chain
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Final, List, Optional, Set, Tuple
 
 import yaml  # type: ignore[import-untyped]
 
@@ -251,40 +251,38 @@ class ClickhouseIntegrationTestsRunner:
     def _parse_report(
         report_path: str,
     ) -> Tuple[Dict[str, Set[str]], Dict[str, float]]:
+        def worst_status(current: Optional[str], new: str) -> str:
+            new = new.upper()  # report["outcome"] is in lower case
+            if current is None:
+                return new
+            for status in statuses:
+                if status in (current, new):
+                    return status
+            raise ValueError(
+                f"The previous `{current}` and new `{new}` statuses are unexpected"
+            )
+
         tests_results = {}  # type: Dict[str,str]
-        counters = {
-            "ERROR": set(),
-            "PASSED": set(),
-            "FAILED": set(),
-            "SKIPPED": set(),
-        }  # type: Dict[str, Set[str]]
+        statuses = ["ERROR", "FAILED", "SKIPPED", "PASSED"]  # type: Final
+        counters = {key: set() for key in statuses}  # type: Dict[str, Set[str]]
         times = {}  # type: Dict[str, float]
         with open(report_path, "r", encoding="utf-8") as rfd:
             reports = [json.loads(l) for l in rfd]
         for report in reports:
             if report["$report_type"] != "TestReport":
                 continue
-            # Report file contains a few reports for the same nideir:
-            # setup, call, teardown
+            # Report file contains a few reports for same test: setup, call, teardown
             test_name = report["nodeid"]
-            # Parse test reslut
-            if test_name in tests_results:
-                statuses = (report["outcome"], tests_results[test_name])
-                # statuses from the highest to lowest priority
-                # Preserve and prioritize error, failed, or skipped
-                for status in ["error", "failed", "skipped", "passed"]:
-                    if status in statuses:
-                        tests_results[test_name] = status
-                        break
-            else:
-                tests_results[test_name] = report["outcome"]
 
+            # Parse test result status
+            tests_results[test_name] = worst_status(
+                tests_results.get(test_name), report["outcome"]
+            )
             # Parse test times
-            times[test_name] = times.get(test_name, 0)
-            times[test_name] += report["duration"]
+            times[test_name] = times.get(test_name, 0) + report["duration"]
 
         for test, result in tests_results.items():
-            counters[result.upper()].add(test)
+            counters[result].add(test)
         return (counters, times)
 
     @staticmethod
