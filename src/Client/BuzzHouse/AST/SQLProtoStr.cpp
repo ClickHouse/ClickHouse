@@ -1734,20 +1734,6 @@ CONV_FN(JoinedDerivedQuery, tos)
     }
 }
 
-CONV_FN(JoinedTable, jt)
-{
-    ExprSchemaTableToString(ret, jt.est());
-    if (jt.has_table_alias())
-    {
-        ret += " ";
-        TableToString(ret, jt.table_alias());
-    }
-    if (jt.final())
-    {
-        ret += " FINAL";
-    }
-}
-
 CONV_FN(FileFunc, ff)
 {
     ret += "file('";
@@ -1814,34 +1800,51 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
+CONV_FN(TableFunction, tf);
+
 CONV_FN(RemoteFunc, rfunc)
 {
+    const TableOrFunction & tof = rfunc.tof();
+
     ret += "remote('";
     ret += rfunc.address();
-    ret += "'";
-    if (rfunc.has_rdatabase())
+    ret += "', ";
+    if (tof.has_est())
     {
+        const ExprSchemaTable & est = tof.est();
+
         ret += ", '";
-        ret += rfunc.rdatabase();
+        if (est.has_database())
+        {
+            DatabaseToString(ret, est.database());
+        }
+        else
+        {
+            ret += "default";
+        }
+        ret += "', '";
+        TableToString(ret, est.table());
         ret += "'";
+        if (rfunc.has_user() && !rfunc.user().empty())
+        {
+            ret += ", '";
+            ret += rfunc.user();
+            ret += "'";
+        }
+        if (rfunc.has_password())
+        {
+            ret += ", '";
+            ret += rfunc.password();
+            ret += "'";
+        }
     }
-    if (rfunc.has_rtable())
+    else if (tof.has_tfunc())
     {
-        ret += ", '";
-        ret += rfunc.rtable();
-        ret += "'";
+        TableFunctionToString(ret, tof.tfunc());
     }
-    if (rfunc.has_user() && !rfunc.user().empty())
+    else
     {
-        ret += ", '";
-        ret += rfunc.user();
-        ret += "'";
-    }
-    if (rfunc.has_password())
-    {
-        ret += ", '";
-        ret += rfunc.password();
-        ret += "'";
+        ret += "numbers(10)";
     }
     ret += ")";
 }
@@ -2036,13 +2039,30 @@ CONV_FN(TableFunction, tf)
     }
 }
 
-CONV_FN(JoinedTableFunction, jtf)
+CONV_FN(JoinedTableOrFunction, jtf)
 {
-    TableFunctionToString(ret, jtf.tfunc());
+    const TableOrFunction & tof = jtf.tof();
+
+    if (tof.has_est())
+    {
+        ExprSchemaTableToString(ret, tof.est());
+    }
+    else if (tof.has_tfunc())
+    {
+        TableFunctionToString(ret, tof.tfunc());
+    }
+    else
+    {
+        ret += "numbers(10)";
+    }
     if (jtf.has_table_alias())
     {
         ret += " ";
         TableToString(ret, jtf.table_alias());
+    }
+    if (tof.has_est() && jtf.final())
+    {
+        ret += " FINAL";
     }
 }
 
@@ -2052,13 +2072,10 @@ CONV_FN(TableOrSubquery, tos)
     switch (tos.tos_oneof_case())
     {
         case JoinedType::kJoinedTable:
-            JoinedTableToString(ret, tos.joined_table());
+            JoinedTableOrFunctionToString(ret, tos.joined_table());
             break;
         case JoinedType::kJoinedDerivedQuery:
             JoinedDerivedQueryToString(ret, tos.joined_derived_query());
-            break;
-        case JoinedType::kJoinedTableFunction:
-            JoinedTableFunctionToString(ret, tos.joined_table_function());
             break;
         case JoinedType::kJoinedQuery:
             JoinedQueryToString(ret, tos.joined_query());

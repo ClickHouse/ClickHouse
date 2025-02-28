@@ -2373,12 +2373,6 @@ message JoinedDerivedQuery {
     optional Table table_alias = 2;
 }
 
-message JoinedTable {
-    required ExprSchemaTable est = 1;
-    optional Table table_alias = 2;
-    optional bool final = 3;
-}
-
 enum FileCompression {
     COMPgz = 1;
     COMPbr = 2;
@@ -2416,12 +2410,18 @@ message GenerateSeriesFunc {
     optional Expr expr3 = 4;
 }
 
+message TableOrFunction {
+    oneof jtf_oneof {
+        ExprSchemaTable est = 1;
+        TableFunction tfunc = 2;
+    }
+}
+
 message RemoteFunc {
     required string address = 1;
-    optional string rdatabase = 2;
-    optional string rtable = 3;
-    optional string user = 4;
-    optional string password = 5;
+    required TableOrFunction tof = 2;
+    optional string user = 3;
+    optional string password = 4;
 }
 
 message MySQLFunc {
@@ -2500,17 +2500,17 @@ message TableFunction {
     }
 }
 
-message JoinedTableFunction {
-    required TableFunction tfunc = 1;
+message JoinedTableOrFunction {
+    required TableOrFunction tof = 1;
     optional Table table_alias = 2;
+    optional bool final = 3;
 }
 
 message TableOrSubquery {
     oneof tos_oneof {
-        JoinedTable joined_table = 1;
+        JoinedTableOrFunction joined_table = 1;
         JoinedDerivedQuery joined_derived_query = 2;
-        JoinedTableFunction joined_table_function = 3;
-        JoinedQuery joined_query = 4;
+        JoinedQuery joined_query = 3;
     }
 }
 
