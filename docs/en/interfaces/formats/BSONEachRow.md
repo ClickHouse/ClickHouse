@@ -1,7 +1,7 @@
 ---
-title : BSONEachRow
+title: BSONEachRow
 slug: /interfaces/formats/BSONEachRow
-keywords : [BSONEachRow]
+keywords: [BSONEachRow]
 input_format: true
 output_format: true
 alias: []
