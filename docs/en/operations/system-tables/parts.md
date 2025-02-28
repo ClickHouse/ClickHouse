@@ -1,6 +1,6 @@
 ---
 slug: /operations/system-tables/parts
-title: "parts"
+title: "system.parts"
 keywords: ["system table", "parts"]
 ---
 

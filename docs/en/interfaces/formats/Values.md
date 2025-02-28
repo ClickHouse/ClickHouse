@@ -1,7 +1,7 @@
 ---
-title : Values
+title: Values
 slug: /interfaces/formats/Values
-keywords : [Values]
+keywords: [Values]
 input_format: true
 output_format: true
 alias: []

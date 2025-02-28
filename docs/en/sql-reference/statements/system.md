@@ -68,7 +68,7 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 
 ## RELOAD FUNCTIONS {#reload-functions}
 
-Reloads all registered [executable user defined functions](../functions/overview#executable-user-defined-functions) or one of them from a configuration file.
+Reloads all registered [executable user defined functions](/sql-reference/functions/udf#executable-user-defined-functions) or one of them from a configuration file.
 
 **Syntax**
 
@@ -434,7 +434,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA {#sync-database-replica}
 
-Waits until the specified [replicated database](/docs/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
+Waits until the specified [replicated database](/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql
