@@ -50,6 +50,7 @@ Upcoming meetups
 * [Shanghai Meetup](https://www.huodongxing.com/event/3794544969111?td=3894807410019) - March 1, 2025
 * [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/305792997) - March 4, 2025
 * [Seattle Meetup](https://www.meetup.com/clickhouse-seattle-user-group/events/305916325) - March 5, 2025
+* [Los Gatos Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/306445660) - March 12, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/306046697) - March 19, 2025
 * [Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/306253492/) - March 22, 2025
 * [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/306435122/) - March 24, 2025
@@ -57,6 +58,7 @@ Upcoming meetups
 * [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/305882607) - March 25, 2025
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/306434754/) - March 26, 2025
 * [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/305916369) - March 26, 2025
+* [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/306439995) - March 27, 2025
 * [Oslo Meetup](https://www.meetup.com/open-source-real-time-data-warehouse-real-time-analytics/events/306414327/) - April 8, 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
 
