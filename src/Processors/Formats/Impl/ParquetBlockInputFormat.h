@@ -6,6 +6,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <queue>
 
@@ -23,6 +24,8 @@ namespace DB
 
 class ArrowColumnToCHColumn;
 class ParquetRecordReader;
+class ParquetReader;
+class SubRowGroupRangeReader;
 
 // Parquet files contain a metadata block with the following information:
 //  * list of columns,
@@ -72,6 +75,9 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
+    void setKeyCondition(const std::optional<ActionsDAG> & expr, ContextPtr context) override;
+
+    void setKeyCondition(const std::shared_ptr<const KeyCondition> & key_condition_) override;
 private:
     Chunk read() override;
 
@@ -231,6 +237,7 @@ private:
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
         std::unique_ptr<RowGroupPrefetchIterator> prefetch_iterator;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
+        std::unique_ptr<SubRowGroupRangeReader> row_group_chunk_reader;
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     };
 
@@ -338,6 +345,11 @@ private:
     std::exception_ptr background_exception = nullptr;
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
+    std::shared_ptr<ParquetReader> new_native_reader = nullptr;
+    std::optional<ActionsDAG> filter = std::nullopt;
+
+    // For native reader read from stdin
+    std::shared_ptr<ReadBufferFromMemory> memory_buffer_reader = nullptr;
 };
 
 class ParquetSchemaReader : public ISchemaReader
