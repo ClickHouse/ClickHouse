@@ -396,6 +396,7 @@ bool StatementGenerator::joinedTableOrFunction(
             /// This is the tricky part
             RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
 
+            rfunc->set_address(fc.getConnectionHostAndPort());
             /// Here don't care about the returned result
             auto u = joinedTableOrFunction(rg, rel_name, true, rfunc->mutable_tof());
             UNUSED(u);
