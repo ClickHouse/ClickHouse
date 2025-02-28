@@ -1,5 +1,4 @@
 #pragma once
-#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -17,8 +16,6 @@
 #include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
 #include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
-
-#include <tuple>
 
 
 namespace DB
@@ -39,7 +36,7 @@ public:
         const DB::ContextPtr & context_,
         Int32 metadata_version_,
         Int32 format_version_,
-        const Poco::JSON::Object::Ptr & metadata_object);
+        const Poco::JSON::Object::Ptr & object);
 
 
     /// Get data files. On first request it reads manifest_list file and iterates through manifest files to find all data files.
@@ -48,11 +45,7 @@ public:
     Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema() const override
-    {
-        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata table query"), "getTableSchema: {}", current_snapshot_schema_id);
-        return *schema_processor.getClickhouseTableSchemaById(current_snapshot_schema_id);
-    }
+    NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_schema_id); }
 
     bool operator==(const IDataLakeMetadata & other) const override
     {
@@ -66,6 +59,7 @@ public:
         const ContextPtr & local_context,
         bool allow_experimental_delta_kernel_rs);
 
+    size_t getVersion() const { return current_metadata_version; }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
     {
@@ -77,7 +71,7 @@ public:
     {
         auto version_if_outdated = getSchemaVersionByFileIfOutdated(data_path);
         return version_if_outdated.has_value()
-            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_snapshot_schema_id)
+            ? schema_processor.getSchemaTransformationDagByIds(version_if_outdated.value(), current_schema_id)
             : nullptr;
     }
 
@@ -106,34 +100,21 @@ private:
     mutable Iceberg::ManifestListsStorage manifest_lists_by_name;
     mutable ManifestEntryByDataFile manifest_file_by_data_file;
 
-    std::tuple<Int32, Int64, Int32> getVersion() const
-    {
-        return std::make_tuple(
-            current_metadata_version, current_snapshot.has_value() ? current_snapshot->getSnapshotId() : -1, current_snapshot_schema_id);
-    }
-
     Int32 current_metadata_version;
     Int32 format_version;
-    Int32 current_snapshot_schema_id;
-    Poco::JSON::Object::Ptr metadata_object;
+    Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
+    String table_location;
 
-    mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
+    mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 
-    bool updateState(const ContextPtr & local_context);
+    mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
     Iceberg::ManifestList initializeManifestList(const String & filename) const;
-    mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
     Iceberg::ManifestListIterator getManifestList(const String & filename) const;
 
-    Int64 getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata, const ContextPtr & local_context) const;
-
-    bool needUpdateSnapshot(Int64 snapshot_id, Int32 current_schema_id) const;
-
-    void addTableSchemaById(Int32 schema_id);
-
-    Iceberg::IcebergSnapshot getSnapshot(Int64 snapshot_id) const;
+    Iceberg::IcebergSnapshot getSnapshot(const String & filename) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
@@ -148,8 +129,6 @@ private:
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
-
-    std::string getManifestListBySnapshotId(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id) const;
 };
 
 }
