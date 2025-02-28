@@ -5,6 +5,7 @@
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
@@ -27,7 +28,6 @@ extern const Metric BackgroundMessageBrokerSchedulePoolSize;
 namespace DB
 {
 
-// clang-format off
 
 #define LIST_OF_SERVER_SETTINGS(DECLARE, ALIAS) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
@@ -1128,7 +1128,20 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
              {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
-    };
+            {"max_io_thread_pool_size", {std::to_string(getIOThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_io_thread_pool_free_size", {std::to_string(getIOThreadPool().get().getMaxFreeThreads()), ChangeableWithoutRestart::Yes}},
+            {"io_thread_pool_queue_size", {std::to_string(getIOThreadPool().get().getQueueSize()), ChangeableWithoutRestart::Yes}},
+            {"max_backups_io_thread_pool_size", {std::to_string(getBackupsIOThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_backups_io_thread_pool_free_size", {std::to_string(getBackupsIOThreadPool().get().getMaxFreeThreads()), ChangeableWithoutRestart::Yes}},
+            {"backups_io_thread_pool_queue_size", {std::to_string(getBackupsIOThreadPool().get().getQueueSize()), ChangeableWithoutRestart::Yes}},
+            {"max_fetch_partition_thread_pool_size", {std::to_string(getFetchPartitionThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_active_parts_loading_thread_pool_size", {std::to_string(getActivePartsLoadingThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_outdated_parts_loading_thread_pool_size", {std::to_string(getOutdatedPartsLoadingThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_parts_cleaning_thread_pool_size", {std::to_string(getPartsCleaningThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_prefixes_deserialization_thread_pool_size", {std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxThreads()), ChangeableWithoutRestart::Yes}},
+            {"max_prefixes_deserialization_thread_pool_free_size", {std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxFreeThreads()), ChangeableWithoutRestart::Yes}},
+            {"prefixes_deserialization_thread_pool_thread_pool_queue_size", {std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getQueueSize()), ChangeableWithoutRestart::Yes}},
+        };
 
     if (context->areBackgroundExecutorsInitialized())
     {
