@@ -69,7 +69,7 @@ private:
         const std::string & table_name,
         TableMetadata & result) const;
 };
-   
+
 }
 
 #endif
