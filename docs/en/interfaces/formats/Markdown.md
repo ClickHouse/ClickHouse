@@ -1,7 +1,7 @@
 ---
-title : Markdown
+title: Markdown
 slug: /interfaces/formats/Markdown
-keywords : [Markdown]
+keywords: [Markdown]
 ---
 
 ## Description {#description}

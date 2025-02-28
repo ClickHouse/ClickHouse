@@ -1,7 +1,7 @@
 ---
 description: "System table containing all active roles at the moment, including the current role of the current user and the granted roles for the current role"
 slug: /operations/system-tables/enabled-roles
-title: "enabled_roles"
+title: "system.enabled_roles"
 keywords: ["system table", "enabled_roles"]
 ---
 
