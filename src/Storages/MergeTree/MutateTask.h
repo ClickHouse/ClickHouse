@@ -54,9 +54,14 @@ private:
 
     bool prepare();
 
+    void prepareProjections();
+
+    void processProjectionsWithLightweightDelete(std::vector<MutationCommands> & projection_commands);
+
     enum class State : uint8_t
     {
         NEED_PREPARE,
+        NEED_PREPARE_PROJECTIONS,
         NEED_EXECUTE
     };
 
