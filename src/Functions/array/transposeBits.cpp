@@ -95,13 +95,19 @@ bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const Column
         PaddedPODArray<T> & res_vec = typeid_cast<ColumnVector<T> &>(res_data).getData();
         res_vec.resize(src_data.size());
         
-        using BitType = std::conditional_t<std::is_same_v<T, float>, uint32_t, uint64_t>;
+        using BitType = std::conditional_t<std::is_same_v<T, Float32>, uint32_t, uint64_t>;
         BitType bits;
         BitType tgt_bits;
         int numbits = static_cast<int>(sizeof(T)) * 8;
 
         size_t size = src_offsets.size();
         ColumnArray::Offset src_prev_offset = 0;
+
+        size_t ind = 0;
+        while (ind < src_offsets[size-1])
+        {
+            res_vec[ind]=0;
+        }
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -110,7 +116,7 @@ bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const Column
             const auto * curr = src;
             const auto * src_end = &src_vec[src_offsets[i]];
 
-            uint64_t array_size = static_cast<int>(src_end - src);
+            size_t array_size = static_cast<int>(src_end - src);
 
             if (src == src_end)
                 continue;
@@ -119,11 +125,11 @@ bool FunctionTransposeBits::executeNumber(const IColumn & src_data, const Column
             {
                 memcpy(&bits, curr, sizeof(bits));
                 for(int j=0; j < numbits; j++){
-                    uint64_t ind = static_cast<int>(curr - src);
-                    auto * tgt = &res_vec[((ind + j * array_size) / numbits)];
+                    ind = curr - src;
+                    auto * tgt = &res_vec[src_prev_offset + ((ind + j * array_size) / numbits)];
                     bool bit_to_set = (bits & (static_cast<BitType>(1) << j));
                     memcpy(&tgt_bits, tgt, sizeof(bits));
-                    tgt_bits |= (static_cast<BitType>(bit_to_set) << (static_cast<int>(sizeof(T)) * 8 - 1 - ((ind + j * array_size) % numbits)));
+                    tgt_bits |= (static_cast<BitType>(bit_to_set) << (numbits - 1 - ((ind + j * array_size) % numbits)));
                     memcpy(tgt, &tgt_bits, sizeof(bits));
                 }
                 curr++;
