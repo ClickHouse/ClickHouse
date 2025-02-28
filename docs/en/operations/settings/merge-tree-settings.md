@@ -757,6 +757,15 @@ Default value: 25
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
+
+Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions down to a single part. Requires `allow_experimental_replacing_merge_with_cleanup`, `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only` to be enabled.
+
+Possible values:
+
+- true, false
+
+Default value: false
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
@@ -1205,3 +1214,11 @@ Default: true
 When enabled, unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.
 
 Default: 0.
+
+## allow_experimental_replacing_merge_with_cleanup {#allow_experimental_replacing_merge_with_cleanup}
+
+Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted` column. When enabled, allows using `OPTIMIZE ... FINAL CLEANUP` to manually merge all parts in a partition down to a single part and removing any deleted rows.
+
+Also allows enabling such merges to happen automatically in the background with settings `min_age_to_force_merge_seconds`, `min_age_to_force_merge_on_partition_only` and `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`.
+
+Default value: false
