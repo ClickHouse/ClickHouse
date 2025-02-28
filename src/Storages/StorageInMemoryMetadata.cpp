@@ -17,6 +17,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 

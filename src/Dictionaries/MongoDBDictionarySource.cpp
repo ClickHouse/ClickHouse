@@ -5,6 +5,7 @@
 #include "MongoDBDictionarySource.h"
 #include "DictionaryStructure.h"
 
+#include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>

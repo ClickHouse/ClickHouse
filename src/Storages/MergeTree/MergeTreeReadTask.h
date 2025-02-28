@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
-#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 
 namespace DB
 {
@@ -24,6 +23,8 @@ using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 using VirtualFields = std::unordered_map<String, Field>;
 
+class DeserializationPrefixesCache;
+using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
 
 enum class MergeTreeReadType : uint8_t
 {
