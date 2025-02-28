@@ -198,6 +198,7 @@ def get_creation_expression(
     table_name,
     cluster,
     format="Parquet",
+    structure=None,
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
     run_on_cluster=False,
@@ -209,6 +210,12 @@ def get_creation_expression(
         else ""
     )
 
+    format_and_structure = ""
+    if format:
+        format_and_structure = f", format='{format}'"
+    if structure:
+        format_and_structure += f", structure='{structure}'"
+
     if storage_type == "s3":
         if "bucket" in kwargs:
             bucket = kwargs["bucket"]
@@ -217,16 +224,16 @@ def get_creation_expression(
 
         if run_on_cluster:
             assert table_function
-            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+            return f"icebergS3Cluster('cluster_simple', s3, filename = 'iceberg_data/default/{table_name}/'{format_and_structure}, url = 'http://minio1:9001/{bucket}/')"
         else:
             if table_function:
-                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                return f"icebergS3(s3, filename = 'iceberg_data/default/{table_name}/'{format_and_structure}, url = 'http://minio1:9001/{bucket}/')"
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
-                    ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
+                    ENGINE=IcebergS3(s3, filename = 'iceberg_data/default/{table_name}/'{format_and_structure}, url = 'http://minio1:9001/{bucket}/')"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
@@ -234,19 +241,19 @@ def get_creation_expression(
         if run_on_cluster:
             assert table_function
             return f"""
-                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/'{format_and_structure})
             """
         else:
             if table_function:
                 return f"""
-                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})
+                    icebergAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/'{format_and_structure})
                 """
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
-                    ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/', format={format})"""
+                    ENGINE=IcebergAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/iceberg_data/default/{table_name}/'{format_and_structure})"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
@@ -255,14 +262,14 @@ def get_creation_expression(
 
         if table_function:
             return f"""
-                icebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})
+                icebergLocal(local, path = '/iceberg_data/default/{table_name}/'{format_and_structure})
             """
         else:
             return (
                 f"""
                 DROP TABLE IF EXISTS {table_name};
                 CREATE TABLE {table_name}
-                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/', format={format})"""
+                ENGINE=IcebergLocal(local, path = '/iceberg_data/default/{table_name}/'{format_and_structure})"""
                 + allow_dynamic_metadata_for_datalakes_suffix
             )
 
@@ -525,14 +532,45 @@ def test_types(started_cluster, format_version, storage_type):
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
-    assert instance.query(f"DESCRIBE {table_function_expr} FORMAT TSV") == TSV(
-        [
-            ["a", "Nullable(Int32)"],
-            ["b", "Nullable(String)"],
-            ["c", "Nullable(Date)"],
-            ["d", "Array(Nullable(String))"],
-            ["e", "Nullable(Bool)"],
-        ]
+    structure = [
+        ["a", "Nullable(Int32)"],
+        ["b", "Nullable(String)"],
+        ["c", "Nullable(Date)"],
+        ["d", "Array(Nullable(String))"],
+        ["e", "Nullable(Bool)"],
+    ]
+
+    structure_str = ",".join(f"`{c[0]}` {c[1]}" for c in structure)
+
+    assert instance.query(f"DESCRIBE {table_function_expr} FORMAT TSV") == TSV(structure)
+
+    # Test without format
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True, format=None,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    # Test without format, with structure
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True, format=None,
+        structure = structure_str,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    # Test with format and structure
+    table_function_expr = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True,
+        structure = structure_str,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
     )
 
 
@@ -634,6 +672,58 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
             f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
         )
         assert len(cluster_secondary_queries) == 1
+
+    # Cluster Query without format
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+        format=None,
+    )
+    select_cluster = (
+        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+    )
+
+    # Checks
+    assert len(select_cluster) == 600
+    assert select_cluster == select_regular
+
+    # Cluster Query without format, with structure
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+        format=None,
+        structure="`a` Int32, `b` String",
+    )
+    select_cluster = (
+        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+    )
+
+    # Checks
+    assert len(select_cluster) == 600
+    assert select_cluster == select_regular
+
+    # Cluster Query with format and structure
+    table_function_expr_cluster = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+        structure="`a` Int32, `b` String",
+    )
+    select_cluster = (
+        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+    )
+
+    # Checks
+    assert len(select_cluster) == 600
+    assert select_cluster == select_regular
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
