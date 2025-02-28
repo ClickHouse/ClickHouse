@@ -132,7 +132,7 @@ def create_clickhouse_iceberg_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_iceberg=true;
-CREATE DATABASE {name} ENGINE = IcebergRestCatalog('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
