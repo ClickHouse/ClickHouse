@@ -3,7 +3,7 @@ SELECT '#02136_scalar_subquery_2', (SELECT max(number) FROM numbers(1000)) as n,
 SELECT '#02136_scalar_subquery_3', (SELECT max(number) FROM numbers(1000)) as n, (SELECT max(number) FROM numbers(1000)) as n2; -- Cached
 SELECT '#02136_scalar_subquery_4', (SELECT max(number) FROM numbers(1000)) as n FROM system.numbers LIMIT 2; -- Cached
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows, query FROM system.query_log
 WHERE
       event_date >= yesterday()
