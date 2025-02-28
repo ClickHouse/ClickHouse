@@ -67,16 +67,13 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
     return Identifier(std::move(res->as<ASTIdentifier>()->name_parts));
 }
 
-TableNode * resolveTable(const Identifier & identifier, const ContextPtr & context)
+std::shared_ptr<TableNode> resolveTable(const Identifier & identifier, const ContextPtr & context)
 {
-    auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(identifier, context);
+    auto resolve_result = IdentifierResolver::tryResolveTableIdentifier(identifier, context);
     if (!resolve_result)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Unknown table {}", identifier.getFullName());
 
-    auto * table_node_ptr = resolve_result.resolved_identifier->as<TableNode>();
-    chassert(table_node_ptr != nullptr);
-
-    return table_node_ptr;
+    return resolve_result;
 }
 
 static QueryTreeNodePtr resolveTableFunction(const ASTPtr & table_function, const ContextPtr & context)
