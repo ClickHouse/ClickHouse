@@ -1,3 +1,4 @@
+#include <Parsers/ASTSQLSecurity.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/AccessControl.h>
