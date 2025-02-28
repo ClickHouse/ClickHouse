@@ -1790,6 +1790,48 @@ CONV_FN(GenerateSeriesFunc, gsf)
 
 CONV_FN(TableFunction, tf);
 
+void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
+{
+    using TableOrFunctionType = TableOrFunction::JtfOneofCase;
+    switch (tof.jtf_oneof_case())
+    {
+        case TableOrFunctionType::kEst:
+            if (tudf)
+            {
+                const ExprSchemaTable & est = tof.est();
+
+                ret += "'";
+                if (est.has_database())
+                {
+                    DatabaseToString(ret, est.database());
+                }
+                else
+                {
+                    ret += "default";
+                }
+                ret += "', '";
+                TableToString(ret, est.table());
+                ret += "'";
+            }
+            else
+            {
+                ExprSchemaTableToString(ret, tof.est());
+            }
+            break;
+        case TableOrFunctionType::kTfunc:
+            TableFunctionToString(ret, tof.tfunc());
+            break;
+        case TableOrFunctionType::kSelect:
+            ret += tudf ? "view" : "";
+            ret += "(";
+            ExplainQueryToString(ret, tof.select());
+            ret += ")";
+            break;
+        default:
+            ret += "numbers(10)";
+    }
+}
+
 CONV_FN(RemoteFunc, rfunc)
 {
     const TableOrFunction & tof = rfunc.tof();
@@ -1797,49 +1839,21 @@ CONV_FN(RemoteFunc, rfunc)
     ret += "remote('";
     ret += rfunc.address();
     ret += "', ";
-
-    using TableOrFunctionType = TableOrFunction::JtfOneofCase;
-    switch (tof.jtf_oneof_case())
+    TableOrFunctionToString(ret, true, tof);
+    if (tof.has_est())
     {
-        case TableOrFunctionType::kEst: {
-            const ExprSchemaTable & est = tof.est();
-
+        if (rfunc.has_user() && !rfunc.user().empty())
+        {
+            ret += ", '";
+            ret += rfunc.user();
             ret += "'";
-            if (est.has_database())
-            {
-                DatabaseToString(ret, est.database());
-            }
-            else
-            {
-                ret += "default";
-            }
-            ret += "', '";
-            TableToString(ret, est.table());
-            ret += "'";
-            if (rfunc.has_user() && !rfunc.user().empty())
-            {
-                ret += ", '";
-                ret += rfunc.user();
-                ret += "'";
-            }
-            if (rfunc.has_password())
-            {
-                ret += ", '";
-                ret += rfunc.password();
-                ret += "'";
-            }
         }
-        break;
-        case TableOrFunctionType::kTfunc:
-            TableFunctionToString(ret, tof.tfunc());
-            break;
-        case TableOrFunctionType::kSelect:
-            ret += "view(";
-            ExplainQueryToString(ret, tof.select());
-            ret += ")";
-            break;
-        default:
-            ret += "numbers(10)";
+        if (rfunc.has_password())
+        {
+            ret += ", '";
+            ret += rfunc.password();
+            ret += "'";
+        }
     }
     ret += ")";
 }
@@ -1962,43 +1976,12 @@ CONV_FN(ClusterFunc, cluster)
     ret += "('";
     ret += cluster.ccluster();
     ret += "',";
-
-    using TableOrFunctionType = TableOrFunction::JtfOneofCase;
-    switch (tof.jtf_oneof_case())
+    TableOrFunctionToString(ret, true, tof);
+    if (tof.has_est() && cluster.has_sharding_key())
     {
-        case TableOrFunctionType::kEst: {
-            const ExprSchemaTable & est = tof.est();
-
-            ret += "'";
-            if (est.has_database())
-            {
-                DatabaseToString(ret, est.database());
-            }
-            else
-            {
-                ret += "default";
-            }
-            ret += "', '";
-            TableToString(ret, est.table());
-            ret += "'";
-            if (cluster.has_sharding_key())
-            {
-                ret += ", '";
-                ret += cluster.sharding_key();
-                ret += "'";
-            }
-        }
-        break;
-        case TableOrFunctionType::kTfunc:
-            TableFunctionToString(ret, tof.tfunc());
-            break;
-        case TableOrFunctionType::kSelect:
-            ret += "view(";
-            ExplainQueryToString(ret, tof.select());
-            ret += ")";
-            break;
-        default:
-            ret += "numbers(10)";
+        ret += ", '";
+        ret += cluster.sharding_key();
+        ret += "'";
     }
     ret += ")";
 }
@@ -2059,6 +2042,11 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kMtindex:
             MergeTreeIndexFuncToString(ret, tf.mtindex());
             break;
+        case TableFunctionType::kLoop:
+            ret += "loop(";
+            TableOrFunctionToString(ret, true, tf.loop());
+            ret += ")";
+            break;
         default:
             ret += "numbers(10)";
     }
@@ -2068,23 +2056,7 @@ CONV_FN(JoinedTableOrFunction, jtf)
 {
     const TableOrFunction & tof = jtf.tof();
 
-    using TableOrFunctionType = TableOrFunction::JtfOneofCase;
-    switch (tof.jtf_oneof_case())
-    {
-        case TableOrFunctionType::kEst:
-            ExprSchemaTableToString(ret, tof.est());
-            break;
-        case TableOrFunctionType::kTfunc:
-            TableFunctionToString(ret, tof.tfunc());
-            break;
-        case TableOrFunctionType::kSelect:
-            ret += "(";
-            ExplainQueryToString(ret, tof.select());
-            ret += ")";
-            break;
-        default:
-            ret += "numbers(10)";
-    }
+    TableOrFunctionToString(ret, false, tof);
     if (jtf.has_table_alias())
     {
         ret += " ";

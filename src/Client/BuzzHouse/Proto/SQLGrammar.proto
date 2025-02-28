@@ -2492,6 +2492,7 @@ message TableFunction {
         MergeFunc merge = 10;
         ClusterFunc cluster = 11;
         MergeTreeIndexFunc mtindex = 12;
+        TableOrFunction loop = 13;
     }
 }
 
