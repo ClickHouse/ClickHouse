@@ -222,7 +222,7 @@ void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration
 {
     Poco::Util::AbstractConfiguration::Keys cache_names;
     config.keys(FILECACHE_DEFAULT_CONFIG_PATH, cache_names);
-    auto * log = getLogger("FileCacheFactory");
+    auto log = getLogger("FileCacheFactory");
     LOG_DEBUG(log, "Will load {} caches from default cache config", cache_names.size());
     for (const auto & name : cache_names)
     {

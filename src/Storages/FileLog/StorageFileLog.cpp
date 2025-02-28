@@ -221,7 +221,7 @@ StorageFileLog::StorageFileLog(
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getSchedulePool().createTask(log->get_logger_name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(std::string{log->getName()}, [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)

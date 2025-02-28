@@ -17,22 +17,68 @@ class Logger;
 using LoggerPtr = std::shared_ptr<Logger>;
 }
 
+namespace quill
+{
+inline namespace v8
+{
+class FrontendOptions;
+
+template <typename TFrontendOptions>
+class LoggerImpl;
+}
+}
+
+using QuillLoggerPtr =  quill::v8::LoggerImpl<quill::v8::FrontendOptions> *;
+
+namespace DB
+{
+class OwnSplitChannel;
+}
+
 using PocoLoggerPtr = std::shared_ptr<Poco::Logger>;
-using LoggerRawPtr = Poco::Logger *;
 
-/** RAII wrappers around Poco/Logger.h.
-  *
-  * You should use this functions in case Logger instance lifetime needs to be properly
-  * managed, because otherwise it will leak memory.
-  *
-  * For example when Logger is created when table is created and Logger contains table name.
-  * Then it must be destroyed when underlying table is destroyed.
-  */
+class OwnPatternFormatter;
 
-/** Get Logger with specified name. If the Logger does not exist, it is created.
-  * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
-  */
-LoggerPtr getLogger(const std::string & name);
+class Logger
+{
+public:
+    Logger(std::string_view name_, QuillLoggerPtr logger_);
+    Logger(std::string name_, QuillLoggerPtr logger_);
+
+    QuillLoggerPtr getLogger()
+    {
+        return logger;
+    }
+
+    std::string_view getName()
+    {
+        return name;
+    }
+
+    static DB::OwnSplitChannel & getTextLogChannel();
+    static OwnPatternFormatter * getFormatter();
+    static void setFormatter(std::unique_ptr<OwnPatternFormatter> formatter);
+private:
+    std::string_view name;
+    std::string name_holder;
+    QuillLoggerPtr logger;
+};
+
+using LoggerPtr = std::shared_ptr<Logger>;
+using LoggerRawPtr = Logger *;
+
+
+LoggerPtr getLogger(const char * name);
+LoggerPtr getLogger(std::string_view name);
+LoggerPtr getLogger(std::string name);
+
+template <size_t n>
+LoggerPtr getLogger(const char (&name)[n])
+{
+    return getLogger(std::string_view{name, n});
+}
+
+QuillLoggerPtr getQuillLogger(const std::string & name);
 
 PocoLoggerPtr getPocoLogger(const std::string & name);
 
@@ -41,19 +87,6 @@ PocoLoggerPtr getPocoLogger(const std::string & name);
   * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
   */
 PocoLoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
-
-/** Create raw Poco::Logger that will not be destroyed before program termination.
-  * This can be used in cases when specific Logger instance can be singletone.
-  *
-  * For example you need to pass Logger into low-level libraries as raw pointer, and using
-  * RAII wrapper is inconvenient.
-  *
-  * Generally you should always use getLogger functions.
-  */
-
-LoggerRawPtr getRawLogger(const std::string & name);
-
-LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
 
 /** Returns true, if currently Logger with specified name is created.
   * Otherwise, returns false.

@@ -1,14 +1,6 @@
 #pragma once
 
-namespace quill
-{
-inline namespace v8
-{
-class FrontendOptions;
+#include <memory>
 
-template <typename TFrontendOptions>
-class LoggerImpl;
-}
-}
-
-using LoggerPtr =  quill::v8::LoggerImpl<quill::v8::FrontendOptions> *;
+class Logger;
+using LoggerPtr = std::shared_ptr<Logger>;

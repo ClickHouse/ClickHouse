@@ -16,7 +16,7 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     , check_period_ms(local_disk_check_period_ms)
     , log(getLogger(fmt::format("DiskLocalCheckThread({})", disk->getName())))
 {
-    task = getContext()->getSchedulePool().createTask(log->get_logger_name(), [this] { run(); });
+    task = getContext()->getSchedulePool().createTask(std::string{log->getName()}, [this] { run(); });
 }
 
 void DiskLocalCheckThread::startup()

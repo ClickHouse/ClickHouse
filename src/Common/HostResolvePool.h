@@ -222,8 +222,6 @@ protected:
 
     Poco::Timestamp last_resolve_time TSA_GUARDED_BY(mutex) = Poco::Timestamp::TIMEVAL_MIN;
     Records records TSA_GUARDED_BY(mutex);
-
-    Poco::Logger * log = &Poco::Logger::get("ConnectionPool");
 };
 
 class HostResolversPool

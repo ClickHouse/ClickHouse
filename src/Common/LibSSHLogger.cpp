@@ -23,7 +23,7 @@ namespace
 
 void libssh_logger_callback(int priority, const char *, const char * buffer, void *)
 {
-    auto * logger = getLogger("LibSSH");
+    auto logger = getLogger("LibSSH");
 
     switch (priority)
     {

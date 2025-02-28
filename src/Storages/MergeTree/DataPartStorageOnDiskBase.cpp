@@ -450,7 +450,7 @@ void DataPartStorageOnDiskBase::backup(
         backup_entries.emplace_back(filepath_in_backup, std::move(backup_entry));
     };
 
-    auto * log = getLogger("DataPartStorageOnDiskBase::backup");
+    auto log = getLogger("DataPartStorageOnDiskBase::backup");
 
     for (const auto & filepath : files_to_backup)
     {

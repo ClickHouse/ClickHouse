@@ -117,8 +117,8 @@ void NATSConnectionManager::connectImpl()
     }
     natsOptions_SetMaxReconnect(options, configuration.max_reconnect);
     natsOptions_SetReconnectWait(options, configuration.reconnect_wait);
-    natsOptions_SetDisconnectedCB(options, disconnectedCallback, log);
-    natsOptions_SetReconnectedCB(options, reconnectedCallback, log);
+    natsOptions_SetDisconnectedCB(options, disconnectedCallback, log.get());
+    natsOptions_SetReconnectedCB(options, reconnectedCallback, log.get());
     natsStatus status;
     {
         auto lock = event_handler.setThreadLocalLoop();
@@ -148,12 +148,12 @@ void NATSConnectionManager::reconnectedCallback(natsConnection * nc, void * log)
     char buffer[CONNECTED_TO_BUFFER_SIZE];
     buffer[0] = '\0';
     natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
-    LOG_DEBUG(static_cast<LoggerPtr>(log), "Got reconnected to NATS server: {}.", buffer);
+    LOG_DEBUG(static_cast<Logger *>(log), "Got reconnected to NATS server: {}.", buffer);
 }
 
 void NATSConnectionManager::disconnectedCallback(natsConnection *, void * log)
 {
-    LOG_DEBUG(static_cast<LoggerPtr>(log), "Got disconnected from NATS server.");
+    LOG_DEBUG(static_cast<Logger *>(log), "Got disconnected from NATS server.");
 }
 
 }

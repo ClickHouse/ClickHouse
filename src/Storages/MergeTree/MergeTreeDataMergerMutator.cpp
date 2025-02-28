@@ -383,7 +383,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
-    auto *series_log = log;
+    auto series_log = log;
 
     auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
     if (ranges.empty())

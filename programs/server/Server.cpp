@@ -417,7 +417,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    auto * logger = getLogger("Server");
+    auto logger = getLogger("Server");
     auto address = makeSocketAddress(host, port, logger);
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
     /// If caller requests any available port from the OS, discover it after binding.
@@ -911,7 +911,7 @@ try
 
     Stopwatch startup_watch;
 
-    auto * log = getLogger("Server");
+    auto log = getLogger("Server");
 
     UseSSL use_ssl;
 

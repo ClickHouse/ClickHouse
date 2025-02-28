@@ -2,7 +2,6 @@
 
 
 #include <Poco/PatternFormatter.h>
-#include <Common/DateLUT.h>
 #include "ExtendedLogChannel.h"
 
 
@@ -20,6 +19,7 @@
   * Also it's made a bit more efficient (unimportant).
   */
 
+class DateLUTImpl;
 class Loggers;
 
 class OwnPatternFormatter : public Poco::PatternFormatter
@@ -31,6 +31,6 @@ public:
     virtual void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const;
 
 private:
-    const DateLUTImpl & server_timezone = DateLUT::serverTimezoneInstance();
+    const DateLUTImpl & server_timezone;
     bool color;
 };

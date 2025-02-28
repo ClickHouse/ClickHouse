@@ -205,7 +205,7 @@ StorageKafka::StorageKafka(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(log->get_logger_name(), [this, i]{ threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool().createTask(std::string{log->getName()}, [this, i]{ threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }

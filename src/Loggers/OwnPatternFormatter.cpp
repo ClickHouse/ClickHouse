@@ -8,7 +8,9 @@
 
 
 OwnPatternFormatter::OwnPatternFormatter(bool color_)
-    : Poco::PatternFormatter(""), color(color_)
+    : Poco::PatternFormatter("")
+    , server_timezone(DateLUT::serverTimezoneInstance())
+    , color(color_)
 {
 }
 

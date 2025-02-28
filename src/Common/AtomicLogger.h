@@ -36,7 +36,7 @@ public:
 
     void store(const std::string & new_log_name)
     {
-        auto * new_logger = getLogger(new_log_name);
+        auto new_logger = getLogger(new_log_name);
         store(std::move(new_logger));
     }
 
@@ -49,7 +49,7 @@ public:
     String loadName() const
     {
         DB::SharedLockGuard lock(log_mutex);
-        return logger->get_logger_name();
+        return std::string{logger->getName()};
     }
 private:
     mutable DB::SharedMutex log_mutex;

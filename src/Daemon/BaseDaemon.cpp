@@ -56,11 +56,6 @@
 
 #include <Common/config_version.h>
 
-#include <quill/Backend.h>
-#include <quill/Frontend.h>
-#include <quill/sinks/ConsoleSink.h>
-#include <quill/sinks/RotatingFileSink.h>
-
 #if defined(OS_DARWIN)
 #   pragma clang diagnostic ignored "-Wunused-macros"
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
@@ -68,61 +63,6 @@
 #endif
 #include <ucontext.h>
 
-template<typename TBase>
-class CompressedRotatingSink : public quill::RotatingSink<TBase>
-{
-    using Base = quill::RotatingSink<TBase>;
-public:
-    
-    using Base::Base;
-
-    QUILL_ATTRIBUTE_HOT void write_log(
-        quill::MacroMetadata const * log_metadata,
-        uint64_t log_timestamp,
-        std::string_view thread_id,
-        std::string_view thread_name,
-        std::string const & process_id,
-        std::string_view logger_name,
-        quill::LogLevel log_level,
-        std::string_view log_level_description,
-        std::string_view log_level_short_code,
-        std::vector<std::pair<std::string, std::string>> const * named_args,
-        std::string_view log_message,
-        std::string_view log_statement) override
-    {
-        Base::write_log(
-            log_metadata,
-            log_timestamp,
-            thread_id,
-            thread_name,
-            process_id,
-            logger_name,
-            log_level,
-            log_level_description,
-            log_level_short_code,
-            named_args,
-            log_message,
-            log_statement);
-
-        for (auto & file_info : Base::_created_files)
-        {
-            if (file_info.index > 0)
-            {
-                if (file_info.base_filename.extension() == ".log")
-                {
-                    auto const [stem, ext] = Base::extract_stem_and_extension(file_info.base_filename);
-                    auto path_with_index = stem + "." + std::to_string(file_info.index) + ext;
-                    auto new_path_with_index = std::string{file_info.base_filename} + "." + std::to_string(file_info.index) + ".gz";
-                    std::error_code ec;
-
-                    std::filesystem::rename(path_with_index, new_path_with_index, ec);
-                    if (!ec)
-                        file_info.base_filename = std::string{file_info.base_filename} + ".gz";
-                }
-            }
-        }
-    }
-};
 
 namespace fs = std::filesystem;
 
@@ -430,28 +370,6 @@ void BaseDaemon::initialize(Application & self)
             && chdir("/tmp") != 0)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
-    quill::Backend::start();
-
-    auto rotating_file_sink = quill::Frontend::create_or_get_sink<CompressedRotatingSink<quill::FileSink>>(
-        "rotating_file.log",
-        []()
-        {
-            // See RotatingFileSinkConfig for more options
-            quill::RotatingFileSinkConfig cfg;
-            cfg.set_open_mode('a');
-            cfg.set_rotation_naming_scheme(quill::RotatingFileSinkConfig::RotationNamingScheme::Index);
-            cfg.set_rotation_max_file_size(1024); // small value to demonstrate the example
-            cfg.set_max_backup_files(10);
-            return cfg;
-        }());
-
-    [[maybe_unused]] quill::Logger * quill_logger = quill::Frontend::create_or_get_logger(
-        "root",
-        {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("sink_id_1", quill::ConsoleSink::ColourMode::Never), rotating_file_sink},
-        quill::PatternFormatterOptions{
-            "%(time) [ %(thread_id) ] %(message)",
-            "%Y.%m.%d %H:%M:%S.%Qus",
-            quill::Timezone::LocalTime});
 
     /// sensitive data masking rules are not used here
     buildLoggers(config(), logger(), self.commandName());

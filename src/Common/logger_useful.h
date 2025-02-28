@@ -12,6 +12,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
+#include <Loggers/OwnSplitChannel.h>
+#include <Loggers/OwnPatternFormatter.h>
 
 #define QUILL_DISABLE_NON_PREFIXED_MACROS 1
 
@@ -23,11 +25,21 @@
 namespace impl
 {
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(LoggerPtr logger) { return logger; }
+    [[maybe_unused]] inline QuillLoggerPtr getLoggerHelper(QuillLoggerPtr logger) { return logger; }
+    [[maybe_unused]] inline LoggerRawPtr getLoggerHelper(LoggerRawPtr logger) { return logger; }
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     //[[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
     //[[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
     //[[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
     //[[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
+
+    [[maybe_unused]] inline std::string_view getLoggerName(LoggerPtr logger) { return logger->getName(); }
+    [[maybe_unused]] inline std::string_view getLoggerName(LoggerRawPtr logger) { return logger->getName(); }
+    [[maybe_unused]] inline std::string_view getLoggerName(QuillLoggerPtr logger) { return logger->get_logger_name(); }
+
+    [[maybe_unused]] inline QuillLoggerPtr getRawLogger(LoggerPtr logger) { return logger->getLogger(); }
+    [[maybe_unused]] inline QuillLoggerPtr getRawLogger(LoggerRawPtr logger) { return logger->getLogger(); }
+    [[maybe_unused]] inline QuillLoggerPtr getRawLogger(QuillLoggerPtr logger) { return logger; }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -77,10 +89,15 @@ constexpr std::string_view levelToString(quill::LogLevel level)
 /// If only one argument is provided, it is treated as a message without substitutions.
 #define LOG_IMPL(logger, quill_log_macro, priority, ...) do  \
 {  \
+    if (!isLoggingEnabled()) \
+        break; \
     auto _logger = ::impl::getLoggerHelper(logger);\
     if (!_logger) \
         break; \
     \
+    auto * _formatter = Logger::getFormatter();\
+    if (!_formatter) \
+        break;\
                                                                                                                     \
     Stopwatch _logger_watch;                                                                                        \
     try                                                                                                             \
@@ -108,15 +125,16 @@ constexpr std::string_view levelToString(quill::LogLevel level)
         {                                                                                                           \
              _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
-                       \
-        std::string _query_id; \
-        if (DB::current_thread) \
-        {\
-            auto _query_id_ref = DB::CurrentThread::getQueryId(); \
-            if (!_query_id_ref.empty()) \
-                _query_id = fmt::format(" {} ", _query_id_ref); \
-        }\
-        quill_log_macro(_logger, "{{{}}} <{}> {}: {}", _query_id, levelToString(priority), _logger->get_logger_name(), _formatted_message);   \
+        \
+        std::string _file_function = __FILE__ "; ";                                                                 \
+        _file_function += __PRETTY_FUNCTION__;                                                                      \
+        Poco::Message _poco_message(std::string{::impl::getLoggerName(_logger)}, std::move(_formatted_message),                       \
+            Poco::Message::PRIO_INFORMATION, _file_function.c_str(), __LINE__, _format_string, _format_string_args); \
+        DB::ExtendedLogMessage _msg_ext = DB::ExtendedLogMessage::getFrom(_poco_message); \
+        std::string _text;\
+        _formatter->formatExtended(_msg_ext, _text);\
+        quill_log_macro(::impl::getRawLogger(_logger), "{}", _text);   \
+        Logger::getTextLogChannel().log(_poco_message);\
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
     {                                                                                                               \

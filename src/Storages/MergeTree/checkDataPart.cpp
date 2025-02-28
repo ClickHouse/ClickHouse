@@ -161,7 +161,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
       */
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
-    auto * log = getLogger("checkDataPart");
+    auto log = getLogger("checkDataPart");
 
     NamesAndTypesList columns_txt;
 

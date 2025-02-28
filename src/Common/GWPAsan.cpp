@@ -157,7 +157,7 @@ void printHeader(gwp_asan::Error error, uintptr_t fault_address, const gwp_asan:
 
 void printReport([[maybe_unused]] uintptr_t fault_address)
 {
-    auto * logger = getLogger("GWPAsan");
+    auto logger = getLogger("GWPAsan");
     const auto * state = GuardedAlloc.getAllocatorState();
     /// Previously the function `__gwp_asan_get_internal_crash_address`
     /// was used to identify the failure address, but its interface was changed in this commit:

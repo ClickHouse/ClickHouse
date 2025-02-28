@@ -181,7 +181,7 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(log->get_logger_name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool.createTask(std::string{log->getName()} + "/Bg", [this]{ backgroundFlush(); });
 }
 
 

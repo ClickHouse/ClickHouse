@@ -509,7 +509,7 @@ Chain buildPushingToViewsChain(
     auto table_id = storage->getStorageID();
     auto views = DatabaseCatalog::instance().getDependentViews(table_id);
 
-    auto *log = getLogger("buildPushingToViewsChain");
+    auto log = getLogger("buildPushingToViewsChain");
     LOG_TEST(log, "Views: {}", views.size());
 
     if (no_destination && views.empty())

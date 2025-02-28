@@ -1,17 +1,71 @@
 #include <Poco/Logger.h>
 #include <Common/Logger.h>
+#include "Loggers/OwnPatternFormatter.h"
+#include "Loggers/OwnSplitChannel.h"
 
 #include <quill/Frontend.h>
+#include <iostream>
 
+namespace
+{
+std::unique_ptr<OwnPatternFormatter> formatter;
+std::atomic<OwnPatternFormatter *> formatter_ptr = nullptr;
+}
 
-LoggerPtr getLogger(const std::string & name)
+Logger::Logger(std::string_view name_, QuillLoggerPtr logger_)
+    : name(name_)
+    , logger(logger_)
+{
+}
+
+Logger::Logger(std::string name_, QuillLoggerPtr logger_)
+{
+    name_holder = std::move(name_);
+    name = name_holder;
+    logger = logger_;
+}
+
+OwnPatternFormatter * Logger::getFormatter()
+{
+    return formatter_ptr.load(std::memory_order_relaxed);
+}
+
+void Logger::setFormatter(std::unique_ptr<OwnPatternFormatter> formatter_)
+{
+    formatter = std::move(formatter_);
+    formatter_ptr.store(formatter.get(), std::memory_order_relaxed);
+}
+
+DB::OwnSplitChannel & Logger::getTextLogChannel()
+{
+    static DB::OwnSplitChannel split_channel;
+    return split_channel;
+}
+
+LoggerPtr getLogger(const char * name)
+{
+    return getLogger(std::string_view{name});
+}
+
+LoggerPtr getLogger(std::string_view name)
 {
     auto * root = quill::Frontend::get_logger("root");
 
     if (!root)
         return nullptr;
 
-    return quill::Frontend::create_or_get_logger(name, root);
+    return std::make_shared<Logger>(name, root);
+}
+
+LoggerPtr getLogger(std::string name)
+{
+    auto * root = quill::Frontend::get_logger("root");
+
+    if (!root)
+        return nullptr;
+
+    return std::make_shared<Logger>(std::move(name), root);
+
 }
 
 PocoLoggerPtr getPocoLogger(const std::string & name)
@@ -24,14 +78,14 @@ PocoLoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Po
     return Poco::Logger::createShared(name, channel, level);
 }
 
-LoggerRawPtr getRawLogger(const std::string & name)
+QuillLoggerPtr getQuillLogger(const std::string & name)
 {
-    return &Poco::Logger::get(name);
-}
+    auto * root = quill::Frontend::get_logger("root");
 
-LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
-{
-    return &Poco::Logger::create(name, channel, level);
+    if (!root)
+        return nullptr;
+
+    return quill::Frontend::create_or_get_logger(name, root);
 }
 
 bool hasLogger(const std::string & name)

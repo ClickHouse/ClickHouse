@@ -41,7 +41,7 @@ namespace ErrorCodes
 
 void abortOnFailedAssertion(const String & description, void * const * trace, size_t trace_offset, size_t trace_size)
 {
-    auto * logger = getLogger("root");
+    auto logger = getLogger("root");
     LOG_FATAL(logger, "Logical error: '{}'.", description);
     if (trace)
         LOG_FATAL(logger, "Stack trace (when copying this message, always include the lines below):\n\n{}", StackTrace::toString(trace, trace_offset, trace_size));

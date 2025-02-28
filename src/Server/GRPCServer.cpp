@@ -96,7 +96,7 @@ namespace
         {
             gpr_set_log_function([](gpr_log_func_args* args)
             {
-                auto * logger = getLogger("grpc");
+                auto logger = getLogger("grpc");
                 if (args->severity == GPR_LOG_SEVERITY_DEBUG)
                     LOG_DEBUG(logger, "{} ({}:{})", args->message, args->file, args->line);
                 else if (args->severity == GPR_LOG_SEVERITY_INFO)

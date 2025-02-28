@@ -100,7 +100,7 @@ namespace ErrorCodes
 
 Poco::Net::SocketAddress Keeper::socketBindListen(Poco::Net::ServerSocket & socket, const std::string & host, UInt16 port, [[maybe_unused]] bool secure) const
 {
-    auto * logger = getLogger("Server");
+    auto logger = getLogger("Server");
     auto address = makeSocketAddress(host, port, logger);
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
     socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
@@ -312,7 +312,7 @@ try
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
 #endif
-    auto * log = getLogger("Keeper");
+    auto log = getLogger("Keeper");
 
     UseSSL use_ssl;
 

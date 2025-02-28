@@ -69,7 +69,7 @@ WithRetries::FaultyKeeper WithRetries::getFaultyZooKeeper() const
         settings.fault_injection_probability,
         settings.fault_injection_seed,
         current_zookeeper,
-        log->get_logger_name(),
+        std::string{log->getName()},
         log);
 
     return faulty_zookeeper;
