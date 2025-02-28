@@ -72,7 +72,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
             query_id.remove_suffix(query_id.size() - QUERY_ID_MAX_LEN);
 
         thread_id = CurrentThread::get().thread_id;
-        parent_thread_id = DB::Exception::parent_thread_id.load(std::memory_order_relaxed);
+        parent_thread_id = 42; //DB::Exception::parent_thread_id.load(std::memory_order_relaxed);
     }
     else
     {
