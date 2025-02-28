@@ -38,7 +38,7 @@ void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
 #if USE_AVRO
-void registerDatabaseIceberg(DatabaseFactory & factory);
+void registerDatabaseDataLake(DatabaseFactory & factory);
 #endif
 
 void registerDatabaseBackup(DatabaseFactory & factory);
@@ -76,7 +76,7 @@ void registerDatabases()
 #endif
 
 #if USE_AVRO
-    registerDatabaseIceberg(factory);
+    registerDatabaseDataLake(factory);
 #endif
 
     registerDatabaseBackup(factory);

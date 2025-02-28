@@ -3,7 +3,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Databases/Iceberg/DatabaseIcebergSettings.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 #define DATABASE_ICEBERG_RELATED_SETTINGS(DECLARE, ALIAS) \
-    DECLARE(DatabaseIcebergCatalogType, catalog_type, DatabaseIcebergCatalogType::REST, "Catalog type", 0) \
+    DECLARE(DatabaseDataLakeCatalogType, catalog_type, DatabaseDataLakeCatalogType::ICEBERG_REST, "Catalog type", 0) \
     DECLARE(String, catalog_credential, "", "", 0)             \
     DECLARE(Bool, vended_credentials, true, "Use vended credentials (storage credentials) from catalog", 0)             \
     DECLARE(String, auth_scope, "PRINCIPAL_ROLE:ALL", "Authorization scope for client credentials or token exchange", 0)             \
@@ -27,48 +27,48 @@ namespace ErrorCodes
 #define LIST_OF_DATABASE_ICEBERG_SETTINGS(M, ALIAS) \
     DATABASE_ICEBERG_RELATED_SETTINGS(M, ALIAS)
 
-DECLARE_SETTINGS_TRAITS(DatabaseIcebergSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(DatabaseIcebergSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
+DECLARE_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(DatabaseDataLakeSettingsTraits, LIST_OF_DATABASE_ICEBERG_SETTINGS)
 
-struct DatabaseIcebergSettingsImpl : public BaseSettings<DatabaseIcebergSettingsTraits>
+struct DatabaseDataLakeSettingsImpl : public BaseSettings<DatabaseDataLakeSettingsTraits>
 {
 };
 
 #define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
-    DatabaseIcebergSettings##TYPE NAME = &DatabaseIcebergSettingsImpl ::NAME;
+    DatabaseDataLakeSettings##TYPE NAME = &DatabaseDataLakeSettingsImpl ::NAME;
 
-namespace DatabaseIcebergSetting
+namespace DatabaseDataLakeSetting
 {
 LIST_OF_DATABASE_ICEBERG_SETTINGS(INITIALIZE_SETTING_EXTERN, SKIP_ALIAS)
 }
 
 #undef INITIALIZE_SETTING_EXTERN
 
-DatabaseIcebergSettings::DatabaseIcebergSettings() : impl(std::make_unique<DatabaseIcebergSettingsImpl>())
+DatabaseDataLakeSettings::DatabaseDataLakeSettings() : impl(std::make_unique<DatabaseDataLakeSettingsImpl>())
 {
 }
 
-DatabaseIcebergSettings::DatabaseIcebergSettings(const DatabaseIcebergSettings & settings)
-    : impl(std::make_unique<DatabaseIcebergSettingsImpl>(*settings.impl))
+DatabaseDataLakeSettings::DatabaseDataLakeSettings(const DatabaseDataLakeSettings & settings)
+    : impl(std::make_unique<DatabaseDataLakeSettingsImpl>(*settings.impl))
 {
 }
 
-DatabaseIcebergSettings::DatabaseIcebergSettings(DatabaseIcebergSettings && settings) noexcept
-    : impl(std::make_unique<DatabaseIcebergSettingsImpl>(std::move(*settings.impl)))
+DatabaseDataLakeSettings::DatabaseDataLakeSettings(DatabaseDataLakeSettings && settings) noexcept
+    : impl(std::make_unique<DatabaseDataLakeSettingsImpl>(std::move(*settings.impl)))
 {
 }
 
-DatabaseIcebergSettings::~DatabaseIcebergSettings() = default;
+DatabaseDataLakeSettings::~DatabaseDataLakeSettings() = default;
 
-DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseIcebergSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
+DATABASE_ICEBERG_SETTINGS_SUPPORTED_TYPES(DatabaseDataLakeSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 
-void DatabaseIcebergSettings::applyChanges(const SettingsChanges & changes)
+void DatabaseDataLakeSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
 }
 
-void DatabaseIcebergSettings::loadFromQuery(const ASTStorage & storage_def)
+void DatabaseDataLakeSettings::loadFromQuery(const ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
