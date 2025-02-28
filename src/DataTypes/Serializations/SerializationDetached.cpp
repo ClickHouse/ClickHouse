@@ -1,16 +1,20 @@
 #include <DataTypes/Serializations/SerializationDetached.h>
 
 #include <Columns/ColumnBlob.h>
+#include <Columns/IColumn.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/VarInt.h>
-#include "Common/Exception.h"
-#include "Common/assert_cast.h"
-#include "Common/typeid_cast.h"
-#include "Columns/IColumn.h"
-#include "Compression/CompressedWriteBuffer.h"
-#include "DataTypes/Serializations/ISerialization.h"
+#include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
 SerializationDetached::SerializationDetached(const SerializationPtr & nested_) : nested(nested_)
 {
 }
