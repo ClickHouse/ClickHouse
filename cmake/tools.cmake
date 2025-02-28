@@ -13,19 +13,11 @@ execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version
 message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
-set (CLANG_MINIMUM_VERSION 18)
-set (XCODE_MINIMUM_VERSION 12.0)
-set (APPLE_CLANG_MINIMUM_VERSION 12.0.0)
-
+set (CLANG_MINIMUM_VERSION 19)
 if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
     # (Experimental!) Specify "-DALLOW_APPLECLANG=ON" when running CMake configuration step, if you want to experiment with using it.
     if (NOT ALLOW_APPLECLANG AND NOT DEFINED ENV{ALLOW_APPLECLANG})
         message (FATAL_ERROR "Compilation with AppleClang is unsupported. Please use vanilla Clang, e.g. from Homebrew.")
-    endif ()
-
-    # For a mapping between XCode / AppleClang / vanilla Clang versions, see https://en.wikipedia.org/wiki/Xcode
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${APPLE_CLANG_MINIMUM_VERSION})
-        message (FATAL_ERROR "Compilation with AppleClang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${APPLE_CLANG_MINIMUM_VERSION} (Xcode ${XCODE_MINIMUM_VERSION}).")
     endif ()
 else ()
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
