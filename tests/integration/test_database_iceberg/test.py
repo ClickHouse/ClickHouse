@@ -121,7 +121,7 @@ def create_clickhouse_iceberg_database(
     started_cluster, node, name, additional_settings={}
 ):
     settings = {
-        "catalog_type": "rest",
+        "catalog_type": "iceberg_rest",
         "warehouse": "demo",
         "storage_endpoint": "http://minio:9000/warehouse",
     }
@@ -132,7 +132,7 @@ def create_clickhouse_iceberg_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_iceberg=true;
-CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = IcebergRestCatalog('{BASE_URL}', 'minio', 'minio123')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )

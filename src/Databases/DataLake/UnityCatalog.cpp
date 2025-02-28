@@ -14,7 +14,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int ICEBERG_CATALOG_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace DataLake
@@ -23,8 +23,6 @@ namespace DataLake
 static const auto SCHEMAS_ENDPOINT = "schemas";
 static const auto TABLES_ENDPOINT = "tables";
 static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
-
-//static const auto READABLE_SCHEMAS = "SCHEMA_DB_STORAGE";
 static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
 static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
@@ -87,7 +85,7 @@ void UnityCatalog::getTableMetadata(
     TableMetadata & result) const
 {
     if (!tryGetTableMetadata(namespace_name, table_name, result))
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "No response from iceberg catalog");
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
 void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & metadata) const
@@ -98,7 +96,6 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
     {
         case StorageType::S3:
         {
-            LOG_DEBUG(log, "We are S3");
             auto callback = [table_id] (std::ostream & os)
             {
                 Poco::JSON::Object obj;
@@ -117,13 +114,9 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
                 std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
                 std::string session_token = creds_object->get("session_token").extract<String>();
 
-                LOG_DEBUG(log, "KEY ID {}", access_key_id);
                 auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
                 metadata.setStorageCredentials(creds);
             }
-            std::string storage_endpoint = object->get("url").extract<String>();
-            LOG_DEBUG(log, "ENDPOINT {}", storage_endpoint);
-
             break;
         }
         default:
@@ -150,7 +143,6 @@ bool UnityCatalog::tryGetTableMetadata(
             {
                 location = object->get("storage_location").extract<String>();
                 result.setLocation(location);
-                LOG_TEST(log, "Location for table {}: {}", table_name, location);
             }
 
             if (object->has("securable_kind") && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))

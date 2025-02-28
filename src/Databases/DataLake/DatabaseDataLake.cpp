@@ -24,6 +24,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -42,6 +43,7 @@ namespace DatabaseDataLakeSetting
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
+    extern const SettingsBool allow_experimental_database_unity_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
 
@@ -123,10 +125,6 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
-        default:
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown catalog type specified {}", settings[DatabaseDataLakeSetting::catalog_type].value);
-        }
     }
     return catalog_impl;
 }
@@ -164,6 +162,14 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 {
                     return std::make_shared<StorageLocalIcebergConfiguration>();
                 }
+                /// Fake storage in case when catalog store not only
+                /// primary-type tables (DeltaLake or Iceberg), but for
+                /// examples something else like INFORMATION_SCHEMA.
+                /// Such tables are unreadable, but at least we can show
+                /// them in SHOW CREATE TABLE, as well we can show their
+                /// schema.
+                /// We use local as substituion for fake because it has 0
+                /// dependencies and the most ligthweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalIcebergConfiguration>();
@@ -190,6 +196,14 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>();
                 }
+                /// Fake storage in case when catalog store not only
+                /// primary-type tables (DeltaLake or Iceberg), but for
+                /// examples something else like INFORMATION_SCHEMA.
+                /// Such tables are unreadable, but at least we can show
+                /// them in SHOW CREATE TABLE, as well we can show their
+                /// schema.
+                /// We use local as substituion for fake because it has 0
+                /// dependencies and the most ligthweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>();
@@ -199,12 +213,6 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                                     "Server does not contain support for storage type {}",
                                     type);
             }
-        }
-        default:
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Server does not contain support for catalog type {}",
-                            catalog->getCatalogType());
         }
     }
 }
@@ -262,8 +270,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
         auto table_endpoint = getStorageEndpointForTable(table_metadata);
         LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
-        if (table_endpoint.starts_with("file:/"))
-            table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+        if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
+            table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
         args[0] = std::make_shared<ASTLiteral>(table_endpoint);
     }
 
@@ -404,7 +412,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->kind = ASTFunction::Kind::TABLE_ENGINE;
     if (!table_metadata.isDefaultReadableTable())
-        storage->engine->name = "Other";
+        storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
 
     storage->settings = {};
 
@@ -438,8 +446,8 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
                 storage_engine_arguments->children.size());
         }
         auto table_endpoint = getStorageEndpointForTable(table_metadata);
-        if (table_endpoint.starts_with("file:/"))
-            table_endpoint = table_endpoint.substr(std::string_view{"file:/"}.length());
+        if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
+            table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
 
         LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
         storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
@@ -456,14 +464,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
     {
-        if (!args.create_query.attach
-            && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
-        {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "DatabaseDataLake engine is experimental. "
-                            "To allow its usage, enable setting allow_experimental_database_iceberg");
-        }
-
         const auto * database_engine_define = args.create_query.storage;
         const auto & database_engine_name = args.engine_name;
 
@@ -484,51 +484,39 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define);
 
-        if (database_engine_name == "IcebergRestCatalog")
-        {
-            database_settings[DB::DatabaseDataLakeSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
-        }
-        else if (database_engine_name == "UnityCatalog")
-        {
-            database_settings[DB::DatabaseDataLakeSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::UNITY;
-        }
-        else if (database_engine_name == "DataLakeCatalog")
-        {
-            if (database_settings[DB::DatabaseDataLakeSetting::catalog_type] == DB::DatabaseDataLakeCatalogType::UNKNOWN)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "If generic database engine is specified (`{}`), the catalog implementation must be speicified in `SETTINGS catalog_type = 'XXX'`",
-                    database_engine_name);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine name {}", database_engine_name);
-        }
-
         auto engine_for_tables = database_engine_define->clone();
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
-
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Database engine name {}", database_engine_name);
 
         switch (database_settings[DB::DatabaseDataLakeSetting::catalog_type].value)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with Icerberg Rest catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_iceberg");
+                }
+
                 engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY:
             {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DataLake database with Unity catalog catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_unity_catalog");
+                }
+
                 engine_func->name = "DeltaLake";
                 break;
             }
-            default:
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine name {}", database_engine_name);
-            }
         }
 
-        LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Database engine name {}", database_engine_name);
         return std::make_shared<DatabaseDataLake>(
             args.database_name,
             url,
@@ -536,8 +524,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_engine_define->clone(),
             std::move(engine_for_tables));
     };
-    factory.registerDatabase("UnityCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
-    factory.registerDatabase("IcebergRestCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
     factory.registerDatabase("DataLakeCatalog", create_fn, { .supports_arguments = true, .supports_settings = true });
 }
 

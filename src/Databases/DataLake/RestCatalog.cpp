@@ -29,7 +29,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int ICEBERG_CATALOG_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -417,7 +417,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             "Code: {}, status: {}, message: {}",
             e.code(), e.getHTTPStatus(), e.displayText());
 
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "{}", message);
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", message);
     }
 }
 
@@ -540,7 +540,7 @@ void RestCatalog::getTableMetadata(
     TableMetadata & result) const
 {
     if (!getTableMetadataImpl(namespace_name, table_name, result))
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "No response from iceberg catalog");
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
 bool RestCatalog::getTableMetadataImpl(
@@ -589,7 +589,7 @@ bool RestCatalog::getTableMetadataImpl(
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
     std::string location;
-    if (result.requiresLocation())
+    if (result.requiresLocation() || (result.requiresLocationIfExists() && metadata_object->has("location")))
     {
         location = metadata_object->get("location").extract<String>();
         result.setLocation(location);

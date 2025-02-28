@@ -361,7 +361,6 @@ DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
 {
-    UNKNOWN,
     ICEBERG_REST,
     UNITY,
 };

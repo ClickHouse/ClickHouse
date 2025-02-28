@@ -93,7 +93,7 @@ std::string TableMetadata::getLocation() const
 
 std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
 {
-    if (!with_location)
+    if (!with_location && !with_location_if_exists)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (endpoint_.empty())

@@ -2,6 +2,7 @@
 #include "config.h"
 
 #if USE_AVRO
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -21,7 +22,7 @@ public:
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_);
 
-    String getEngineName() const override { return "DataLake"; }
+    String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
 
     bool canContainMergeTreeTables() const override { return false; }
     bool canContainDistributedTables() const override { return false; }
