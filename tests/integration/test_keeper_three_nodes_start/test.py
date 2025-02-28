@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import uuid
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
@@ -11,7 +12,8 @@ def get_fake_zk(cluster, nodename, timeout=30.0):
 
 
 def test_smoke():
-    cluster = ClickHouseCluster(__file__)
+    run_uuid = uuid.uuid4()
+    cluster = ClickHouseCluster(__file__, str(run_uuid))
     cluster.add_instance(
         "node1", main_configs=["configs/enable_keeper1.xml"], stay_alive=True
     )
