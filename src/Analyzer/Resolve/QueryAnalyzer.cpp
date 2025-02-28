@@ -112,6 +112,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_not_comparable_types_in_order_by;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool nullify_invalid_identifier;
 }
 
 
@@ -3748,6 +3749,19 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
+                if (scope.context->getSettingsRef()[Setting::nullify_invalid_identifier])
+                {
+                    // create Node to represent "NULL as identifier" for the missing identifier
+                    auto constNullNode= scope.runtimeNodeReplacement = std::make_shared<ConstantNode>(Field());
+                    constNullNode->setAlias(unresolved_identifier.getFullName());
+
+                    // pop the identifier (currently processed) node
+                    scope.popExpressionNode();
+
+                    // resolve this NULL as alias
+                    return resolveExpressionNode(constNullNode, scope, false, false);
+                }
+
                 std::string message_clarification;
                 if (allow_lambda_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);
@@ -3971,6 +3985,14 @@ ProjectionNames QueryAnalyzer::resolveExpressionNodeList(QueryTreeNodePtr & node
         auto node_to_resolve = node;
         auto expression_node_projection_names = resolveExpressionNode(node_to_resolve, scope, allow_lambda_expression, allow_table_expression);
         size_t expected_projection_names_size = 1;
+
+        // resolveExpressionNode asked to replace node_to_resolve with a dynamically created one?
+        if (unlikely(scope.runtimeNodeReplacement))
+        {
+            node_to_resolve = scope.runtimeNodeReplacement;
+            scope.runtimeNodeReplacement = nullptr;
+        }
+
         if (auto * expression_list = node_to_resolve->as<ListNode>())
         {
             expected_projection_names_size = expression_list->getNodes().size();
