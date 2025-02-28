@@ -1,7 +1,7 @@
 ---
-title : RowBinaryWithDefaults
+title: RowBinaryWithDefaults
 slug: /interfaces/formats/RowBinaryWithDefaults
-keywords : [RowBinaryWithDefaults]
+keywords: [RowBinaryWithDefaults]
 input_format: true
 output_format: false
 alias: []

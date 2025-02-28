@@ -1,7 +1,7 @@
 ---
 description: "System table containing a list of user accounts configured on the server."
 slug: /operations/system-tables/users
-title: "users"
+title: "system.users"
 keywords: ["system table", "users"]
 ---
 

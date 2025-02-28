@@ -135,7 +135,7 @@ You can control some format processing parameters with the ClickHouse settings. 
 
 ### TabSeparated {#tabseparated}
 
-See [TabSeparated](/interfaces/formats/TabSeparated/TabSeparated)
+See [TabSeparated](/interfaces/formats/TabSeparated)
 
 ### TabSeparatedRaw {#tabseparatedraw}
 
@@ -143,19 +143,19 @@ See [TabSeparatedRaw](/interfaces/formats/TabSeparatedRaw)
 
 ### TabSeparatedWithNames {#tabseparatedwithnames}
 
-See [TabSeparatedWithNames](/interfaces/formats/TabSeparated/TabSeparatedWithNames)
+See [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames)
 
 ### TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
-See [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparated/TabSeparatedWithNamesAndTypes)
+See [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
 
 ### TabSeparatedRawWithNames {#tabseparatedrawwithnames}
 
-See [TabSeparatedRawWithNames](/interfaces/formats/TabSeparated/TabSeparatedRawWithNames)
+See [TabSeparatedRawWithNames](/interfaces/formats/TabSeparatedRawWithNames)
 
 ### TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
-See [TabSeparatedRawWithNamesAndTypes](/interfaces/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)
+See [TabSeparatedRawWithNamesAndTypes](/interfaces/formats/TabSeparatedRawWithNamesAndTypes)
 
 ### Template {#format-template}
 
@@ -163,35 +163,35 @@ See [Template](/interfaces/formats/Template)
 
 ### TemplateIgnoreSpaces {#templateignorespaces}
 
-See [TemplateIgnoreSpaces](/interfaces/formats/Template/TemplateIgnoreSpaces)
+See [TemplateIgnoreSpaces](/interfaces/formats/TemplateIgnoreSpaces)
 
 ### TSKV {#tskv}
 
-See [TSKV](/interfaces/formats/TabSeparated/TSKV)
+See [TSKV](/interfaces/formats/TSKV)
 
 ### CSV {#csv}
 
-See [CSV](../interfaces/formats/CSV/CSV)
+See [CSV](../interfaces/formats/CSV)
 
 ### CSVWithNames {#csvwithnames}
 
-See [CSVWithNames](/interfaces/formats/CSV/CSVWithNames)
+See [CSVWithNames](/interfaces/formats/CSVWithNames)
 
 ### CSVWithNamesAndTypes {#csvwithnamesandtypes}
 
-See [CSVWithNamesAndTypes](/interfaces/formats/CSV/CSVWithNamesAndTypes)
+See [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
 
 ### CustomSeparated {#format-customseparated}
 
-See [CustomSeparated](/interfaces/formats/CustomSeparated/CustomSeparated)
+See [CustomSeparated](/interfaces/formats/CustomSeparated)
 
 ### CustomSeparatedWithNames {#customseparatedwithnames}
 
-See [CustomSeparatedWithNames](/interfaces/formats/CustomSeparated/CustomSeparatedWithNames)
+See [CustomSeparatedWithNames](/interfaces/formats/CustomSeparatedWithNames)
 
 ### CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
-See [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)
+See [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 ### SQLInsert {#sqlinsert}
 
@@ -199,75 +199,75 @@ See [SQLInsert](/interfaces/formats/SQLInsert)
 
 ### JSON {#json}
 
-See [JSON](/interfaces/formats/JSON/JSON)
+See [JSON](/interfaces/formats/JSON)
 
 ### JSONStrings {#jsonstrings}
 
-See [JSONStrings](/interfaces/formats/JSON/JSONStrings)
+See [JSONStrings](/interfaces/formats/JSONStrings)
 
 ### JSONColumns {#jsoncolumns}
 
-See [JSONColumns](/interfaces/formats/JSON/JSONColumns)
+See [JSONColumns](/interfaces/formats/JSONColumns)
 
 ### JSONColumnsWithMetadata {#jsoncolumnsmonoblock}
 
-See [JSONColumnsWithMetadata](/interfaces/formats/JSON/JSONColumnsWithMetadata)
+See [JSONColumnsWithMetadata](/interfaces/formats/JSONColumnsWithMetadata)
 
 ### JSONAsString {#jsonasstring}
 
-See [JSONAsString](/interfaces/formats/JSON/JSONAsString)
+See [JSONAsString](/interfaces/formats/JSONAsString)
 
 ### JSONAsObject {#jsonasobject}
 
-See [JSONAsObject](/interfaces/formats/JSON/JSONAsObject)
+See [JSONAsObject](/interfaces/formats/JSONAsObject)
 
 ### JSONCompact {#jsoncompact}
 
-See [JSONCompact](/interfaces/formats/JSON/JSONCompact)
+See [JSONCompact](/interfaces/formats/JSONCompact)
 
 ### JSONCompactStrings {#jsoncompactstrings}
 
-See [JSONCompactStrings](/interfaces/formats/JSON/JSONCompactStrings)
+See [JSONCompactStrings](/interfaces/formats/JSONCompactStrings)
 
 ### JSONCompactColumns {#jsoncompactcolumns}
 
-See [JSONCompactColumns](/interfaces/formats/JSON/JSONCompactColumns)
+See [JSONCompactColumns](/interfaces/formats/JSONCompactColumns)
 
 ### JSONEachRow {#jsoneachrow}
 
-See [JSONEachRow](/interfaces/formats/JSON/JSONEachRow)
+See [JSONEachRow](/interfaces/formats/JSONEachRow)
 
 ### PrettyJSONEachRow {#prettyjsoneachrow}
 
-See [PrettyJSONEachRow](/interfaces/formats/JSON/PrettyJSONEachRow)
+See [PrettyJSONEachRow](/interfaces/formats/PrettyJSONEachRow)
 
 ### JSONStringsEachRow {#jsonstringseachrow}
 
-See [JSONStringsEachRow](/interfaces/formats/JSON/JSONStringsEachRow)
+See [JSONStringsEachRow](/interfaces/formats/JSONStringsEachRow)
 
 ### JSONCompactEachRow {#jsoncompacteachrow}
 
-See [JSONCompactEachRow](/interfaces/formats/JSON/JSONCompactEachRow)
+See [JSONCompactEachRow](/interfaces/formats/JSONCompactEachRow)
 
 ### JSONCompactStringsEachRow {#jsoncompactstringseachrow}
 
-See [JSONCompactStringsEachRow](/interfaces/formats/JSON/JSONCompactStringsEachRow)
+See [JSONCompactStringsEachRow](/interfaces/formats/JSONCompactStringsEachRow)
 
 ### JSONEachRowWithProgress {#jsoneachrowwithprogress}
 
-See [JSONEachRowWithProgress](/interfaces/formats/JSON/JSONEachRowWithProgress)
+See [JSONEachRowWithProgress](/interfaces/formats/JSONEachRowWithProgress)
 
 ### JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
 
-See [JSONStringsEachRowWithProgress](/interfaces/formats/JSON/JSONStringsEachRowWithProgress)
+See [JSONStringsEachRowWithProgress](/interfaces/formats/JSONStringsEachRowWithProgress)
 
 ### JSONCompactEachRowWithNames {#jsoncompacteachrowwithnames}
 
-See [JSONCompactEachRowWithNames](/interfaces/formats/JSON/JSONCompactEachRowWithNames)
+See [JSONCompactEachRowWithNames](/interfaces/formats/JSONCompactEachRowWithNames)
 
 ### JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
-See [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSON/JSONCompactEachRowWithNamesAndTypes)
+See [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
 
 ### JSONCompactEachRowWithProgress {#jsoncompacteachrowwithprogress}
 
@@ -275,19 +275,19 @@ Similar to `JSONEachRowWithProgress` but outputs `row` events in a compact form,
 
 ### JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
 
-See [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSON/JSONCompactStringsEachRowWithNames)
+See [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSONCompactStringsEachRowWithNames)
 
 ### JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-See [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes)
+See [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
 
 ### JSONObjectEachRow {#jsonobjecteachrow}
 
-See [JSONObjectEachRow](/interfaces/formats/JSON/JSONObjectEachRow)
+See [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow)
 
 ### JSON Formats Settings {#json-formats-settings}
 
-See [JSON Format Settings](/interfaces/formats/JSON/format-settings)
+See [JSON Format Settings](/interfaces/formats/format-settings)
 
 ### BSONEachRow {#bsoneachrow}
 
@@ -303,39 +303,39 @@ See [Null](/interfaces/formats/Null)
 
 ### Pretty {#pretty}
 
-See [Pretty](/interfaces/formats/Pretty/Pretty)
+See [Pretty](/interfaces/formats/Pretty)
 
 ### PrettyNoEscapes {#prettynoescapes}
 
-See [PrettyNoEscapes](/interfaces/formats/Pretty/PrettyNoEscapes)
+See [PrettyNoEscapes](/interfaces/formats/PrettyNoEscapes)
 
 ### PrettyMonoBlock {#prettymonoblock}
 
-See [PrettyMonoBlock](/interfaces/formats/Pretty/PrettyMonoBlock)
+See [PrettyMonoBlock](/interfaces/formats/PrettyMonoBlock)
 
 ### PrettyNoEscapesMonoBlock {#prettynoescapesmonoblock}
 
-See [PrettyNoEscapesMonoBlock](/interfaces/formats/Pretty/PrettyNoEscapesMonoBlock)
+See [PrettyNoEscapesMonoBlock](/interfaces/formats/PrettyNoEscapesMonoBlock)
 
 ### PrettyCompact {#prettycompact}
 
-See [PrettyCompact](/interfaces/formats/Pretty/PrettyCompact)
+See [PrettyCompact](/interfaces/formats/PrettyCompact)
 
 ### PrettyCompactNoEscapes {#prettycompactnoescapes}
 
-See [PrettyCompactNoEscapes](/interfaces/formats/Pretty/PrettyCompactNoEscapes)
+See [PrettyCompactNoEscapes](/interfaces/formats/PrettyCompactNoEscapes)
 
 ### PrettyCompactMonoBlock {#prettycompactmonoblock}
 
-See [PrettyCompactMonoBlock](/interfaces/formats/Pretty/PrettyCompactMonoBlock)
+See [PrettyCompactMonoBlock](/interfaces/formats/PrettyCompactMonoBlock)
 
 ### PrettyCompactNoEscapesMonoBlock {#prettycompactnoescapesmonoblock}
 
-See [PrettyCompactNoEscapesMonoBlock](/interfaces/formats/Pretty/PrettyCompactNoEscapesMonoBlock)
+See [PrettyCompactNoEscapesMonoBlock](/interfaces/formats/PrettyCompactNoEscapesMonoBlock)
 
 ### PrettySpace {#prettyspace}
 
-See [PrettySpace](/interfaces/formats/Pretty/PrettySpace)
+See [PrettySpace](/interfaces/formats/PrettySpace)
 
 ### PrettySpaceNoEscapes {#prettyspacenoescapes}
 
@@ -343,27 +343,27 @@ See [PrettySpaceNoEscapes](/interfaces/formats/PrettySpaceNoEscapes)
 
 ### PrettySpaceMonoBlock {#prettyspacemonoblock}
 
-See [PrettySpaceMonoBlock](/interfaces/formats/Pretty/PrettySpaceMonoBlock)
+See [PrettySpaceMonoBlock](/interfaces/formats/PrettySpaceMonoBlock)
 
 ### PrettySpaceNoEscapesMonoBlock {#prettyspacenoescapesmonoblock}
 
-See [PrettySpaceNoEscapesMonoBlock](/interfaces/formats/Pretty/PrettySpaceNoEscapesMonoBlock)
+See [PrettySpaceNoEscapesMonoBlock](/interfaces/formats/PrettySpaceNoEscapesMonoBlock)
 
 ### RowBinary {#rowbinary}
 
-See [RowBinary](/interfaces/formats/RowBinary/RowBinary)
+See [RowBinary](/interfaces/formats/RowBinary)
 
 ### RowBinaryWithNames {#rowbinarywithnames}
 
-See [RowBinaryWithNames](/interfaces/formats/RowBinary/RowBinaryWithNames)
+See [RowBinaryWithNames](/interfaces/formats/RowBinaryWithNames)
 
 ### RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
-See [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinary/RowBinaryWithNamesAndTypes)
+See [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
 
 ### RowBinaryWithDefaults {#rowbinarywithdefaults}
 
-See [RowBinaryWithDefaults](/interfaces/formats/RowBinary/RowBinaryWithDefaults)
+See [RowBinaryWithDefaults](/interfaces/formats/RowBinaryWithDefaults)
 
 ### Values {#data-format-values}
 
@@ -391,35 +391,35 @@ See [Protobuf](/interfaces/formats/Protobuf/Protobuf)
 
 ### ProtobufSingle {#protobufsingle}
 
-See [ProtobufSingle](/interfaces/formats/Protobuf/ProtobufSingle)
+See [ProtobufSingle](/interfaces/formats/ProtobufSingle)
 
 ### ProtobufList {#protobuflist}
 
-See [ProtobufList](/interfaces/formats/Protobuf/ProtobufList)
+See [ProtobufList](/interfaces/formats/ProtobufList)
 
 ### Avro {#data-format-avro}
 
-See [Avro](/interfaces/formats/Avro/Avro)
+See [Avro](/interfaces/formats/Avro)
 
 ### AvroConfluent {#data-format-avro-confluent}
 
-See [AvroConfluent](/interfaces/formats/Avro/AvroConfluent)
+See [AvroConfluent](/interfaces/formats/AvroConfluent)
 
 ### Parquet {#data-format-parquet}
 
-See [Parquet](/interfaces/formats/Parquet/Parquet)
+See [Parquet](/interfaces/formats/Parquet)
 
 ### ParquetMetadata {#data-format-parquet-metadata}
 
-See [ParquetMetadata](/interfaces/formats/Parquet/ParquetMetadata)
+See [ParquetMetadata](/interfaces/formats/ParquetMetadata)
 
 ### Arrow {#data-format-arrow}
 
-See [Arrow](/interfaces/formats/Arrow/ArrowStream)
+See [Arrow](/interfaces/formats/ArrowStream)
 
 ### ArrowStream {#data-format-arrow-stream}
 
-See [ArrowStream](/interfaces/formats/Arrow/ArrowStream)
+See [ArrowStream](/interfaces/formats/ArrowStream)
 
 ### ORC {#data-format-orc}
 
@@ -436,9 +436,9 @@ See [Npy](/interfaces/formats/Npy)
 ### LineAsString {#lineasstring}
 
 See:
-- [LineAsString](/interfaces/formats/LineAsString/LineAsString.md)
-- [LineAsStringWithNames](/interfaces/formats/LineAsString/LineAsStringWithNames.md)
-- [LineAsStringWithNamesAndTypes](/interfaces/formats/LineAsString/LineAsStringWithNamesAndTypes.md)
+- [LineAsString](/interfaces/formats/LineAsString)
+- [LineAsStringWithNames](/interfaces/formats/LineAsStringWithNames)
+- [LineAsStringWithNamesAndTypes](/interfaces/formats/LineAsStringWithNamesAndTypes)
 
 ### Regexp {#data-format-regexp}
 
@@ -446,27 +446,27 @@ See [Regexp](/interfaces/formats/Regexp)
 
 ### RawBLOB {#rawblob}
 
-See [RawBLOB](/interfaces/formats/RawBLOB.md)
+See [RawBLOB](/interfaces/formats/RawBLOB)
 
 ### Markdown {#markdown}
 
-See [Markdown](/interfaces/formats/Markdown.md)
+See [Markdown](/interfaces/formats/Markdown)
 
 ### MsgPack {#msgpack}
 
-See [MsgPack](/interfaces/formats/MsgPack.md)
+See [MsgPack](/interfaces/formats/MsgPack)
 
 ### MySQLDump {#mysqldump}
 
-See [MySQLDump](/interfaces/formats/MySQLDump.md)
+See [MySQLDump](/interfaces/formats/MySQLDump)
 
 ### DWARF {#dwarf}
 
-See [Dwarf](/interfaces/formats/DWARF.md)
+See [Dwarf](/interfaces/formats/DWARF)
 
 ### Form {#form}
 
-See [Form](/interfaces/formats/Form.md)
+See [Form](/interfaces/formats/Form)
 
 ## Format Schema {#formatschema}
 
