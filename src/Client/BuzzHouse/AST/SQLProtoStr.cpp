@@ -1813,7 +1813,7 @@ CONV_FN(RemoteFunc, rfunc)
     {
         const ExprSchemaTable & est = tof.est();
 
-        ret += ", '";
+        ret += "'";
         if (est.has_database())
         {
             DatabaseToString(ret, est.database());
@@ -1961,19 +1961,42 @@ CONV_FN(MergeFunc, mfunc)
 
 CONV_FN(ClusterFunc, cluster)
 {
+    const TableOrFunction & tof = cluster.tof();
+
     ret += ClusterFunc_CName_Name(cluster.cname());
     ret += "('";
     ret += cluster.ccluster();
-    ret += "', '";
-    ret += cluster.cdatabase();
-    ret += "', '";
-    ret += cluster.ctable();
-    ret += "'";
-    if (cluster.has_sharding_key())
+    ret += "',";
+    if (tof.has_est())
     {
-        ret += ", '";
-        ret += cluster.sharding_key();
+        const ExprSchemaTable & est = tof.est();
+
         ret += "'";
+        if (est.has_database())
+        {
+            DatabaseToString(ret, est.database());
+        }
+        else
+        {
+            ret += "default";
+        }
+        ret += "', '";
+        TableToString(ret, est.table());
+        ret += "'";
+        if (cluster.has_sharding_key())
+        {
+            ret += ", '";
+            ret += cluster.sharding_key();
+            ret += "'";
+        }
+    }
+    else if (tof.has_tfunc())
+    {
+        TableFunctionToString(ret, tof.tfunc());
+    }
+    else
+    {
+        ret += "numbers(10)";
     }
     ret += ")";
 }

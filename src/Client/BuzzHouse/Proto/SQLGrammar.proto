@@ -2472,9 +2472,8 @@ message ClusterFunc {
     }
     required CName cname = 1;
     required string ccluster = 2;
-    required string cdatabase = 3;
-    required string ctable = 4;
-    optional string sharding_key = 5;
+    required TableOrFunction tof = 3;
+    optional string sharding_key = 4;
 }
 
 message MergeTreeIndexFunc {

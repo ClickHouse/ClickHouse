@@ -529,7 +529,8 @@ bool StatementGenerator::joinedTableOrFunction(
         ClusterFunc * cdf = tf->mutable_cluster();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
-        const uint32_t pspace = remote_table + remote_view;
+        const uint32_t recurse = 10;
+        const uint32_t pspace = remote_table + remote_view + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
 
@@ -537,10 +538,11 @@ bool StatementGenerator::joinedTableOrFunction(
         cdf->set_ccluster(rg.pickRandomlyFromVector(fc.clusters));
         if (remote_table && nopt2 < (remote_table + 1))
         {
+            ExprSchemaTable * est = cdf->mutable_tof()->mutable_est();
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
 
-            cdf->set_cdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-            cdf->set_ctable("t" + std::to_string(t.tname));
+            est->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
+            est->mutable_table()->set_table("t" + std::to_string(t.tname));
             if (rg.nextBool())
             {
                 /// Optional sharding key
@@ -552,15 +554,22 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
+            ExprSchemaTable * est = cdf->mutable_tof()->mutable_est();
             const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(has_view_lambda));
 
-            cdf->set_cdatabase("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
-            cdf->set_ctable("v" + std::to_string(v.tname));
+            est->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
+            est->mutable_table()->set_table("v" + std::to_string(v.tname));
             if (rg.nextBool())
             {
                 cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));
             }
             addViewRelation(rel_name, v);
+        }
+        else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
+        {
+            /// Here don't care about the returned result
+            auto u = joinedTableOrFunction(rg, rel_name, true, cdf->mutable_tof());
+            UNUSED(u);
         }
         else
         {
