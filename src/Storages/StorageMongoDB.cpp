@@ -2,12 +2,15 @@
 
 #if USE_MONGODB
 #include <memory>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/SortNode.h>
 #include <Formats/BSONTypes.h>
@@ -48,9 +51,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
-
-using BSONCXXHelper::fieldAsBSONValue;
-using BSONCXXHelper::fieldAsOID;
 
 StorageMongoDB::StorageMongoDB(
     const StorageID & table_id_,
@@ -100,12 +100,13 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     {
         if (named_collection->has("uri"))
         {
-            validateNamedCollection(*named_collection, {"collection"}, {"uri"});
+            validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
             configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
         }
         else
         {
-            validateNamedCollection(*named_collection, {"host", "port", "user", "password", "database", "collection"}, {"options"});
+            validateNamedCollection(*named_collection, {
+                "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
             if (!user.empty())
@@ -118,18 +119,20 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
                                                           named_collection->getOrDefault<String>("options", "")));
         }
         configuration.collection = named_collection->get<String>("collection");
+        if (named_collection->has("oid_columns"))
+            boost::split(configuration.oid_fields, named_collection->get<String>("oid_columns"), boost::is_any_of(","));
     }
     else
     {
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
-        if (engine_args.size() == 5 || engine_args.size() == 6)
+        if (engine_args.size() >= 5 && engine_args.size() <= 7)
         {
             configuration.collection = checkAndGetLiteralArgument<String>(engine_args[2], "collection");
 
             String options;
-            if (engine_args.size() == 6)
+            if (engine_args.size() >= 6)
                 options = checkAndGetLiteralArgument<String>(engine_args[5], "options");
 
             String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
@@ -143,16 +146,22 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
                                                               parsed_host_port.second,
                                                               checkAndGetLiteralArgument<String>(engine_args[1], "database"),
                                                               options));
+            if (engine_args.size() == 7)
+                boost::split(configuration.oid_fields,
+                    checkAndGetLiteralArgument<String>(engine_args[6], "oid_columns"), boost::is_any_of(","));
         }
-        else if (engine_args.size() == 2)
+        else if (engine_args.size() == 2 || engine_args.size() == 3)
         {
             configuration.collection = checkAndGetLiteralArgument<String>(engine_args[1], "database");
             configuration.uri =  std::make_unique<mongocxx::uri>(checkAndGetLiteralArgument<String>(engine_args[0], "host"));
+            if (engine_args.size() == 3)
+                boost::split(configuration.oid_fields,
+                    checkAndGetLiteralArgument<String>(engine_args[2], "oid_columns"), boost::is_any_of(","));
         }
         else
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                                "Storage MongoDB requires 2 or from to 5 to 6 parameters: "
-                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, 'options']) or MongoDB('uri', 'collection').");
+                                "Incorrect number of arguments. Example usage: "
+                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, options[, oid_columns]]) or MongoDB('uri', 'collection' [, oid columns]).");
     }
 
     configuration.checkHosts(context);
@@ -202,11 +211,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
     {
         // Skip unknown columns, which don't belong to the table.
         const auto & table = column->getColumnSource()->as<TableNode>();
-        if (!table)
+        const auto & table_function = column->getColumnSource()->as<TableFunctionNode>();
+        if (!table && !table_function)
             return {};
 
         // Skip columns from other tables in JOIN queries.
-        if (table->getStorage()->getStorageID() != this->getStorageID())
+        if (table && table->getStorage()->getStorageID() != this->getStorageID())
+            return {};
+        if (table_function && table_function->getStorage()->getStorageID() != this->getStorageID())
             return {};
         if (join_node && column->getColumnSource() != join_node->getLeftTableExpression())
             return {};
@@ -224,6 +236,7 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
         auto func_name = mongoFuncName(func->getFunctionName());
         if (func_name.empty())
         {
+            LOG_DEBUG(log, "MongoDB function name not found for '{}'", func->getFunctionName());
             on_error(func);
             return {};
         }
@@ -234,18 +247,14 @@ std::optional<bsoncxx::document::value> StorageMongoDB::visitWhereFunction(
 
             if (const auto & const_value = value->as<ConstantNode>())
             {
-                std::optional<bsoncxx::types::bson_value::value> func_value{};
-                if (column->getColumnName() == "_id")
-                    func_value = fieldAsOID(const_value->getValue());
-                else
-                    func_value = fieldAsBSONValue(const_value->getValue(), const_value->getResultType());
-
-                if (func_name == "$in" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
+                auto func_value = BSONCXXHelper::fieldAsBSONValue(const_value->getValue(), const_value->getResultType(),
+                    configuration.isOidColumn(column->getColumnName()));
+                if (func_name == "$in" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
                     func_name = "$eq";
-                if (func_name == "$nin" && func_value->view().type() != bsoncxx::v_noabi::type::k_array)
+                if (func_name == "$nin" && func_value.view().type() != bsoncxx::v_noabi::type::k_array)
                     func_name = "$ne";
 
-                return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(*func_value)))));
+                return make_document(kvp(column->getColumnName(), make_document(kvp(func_name, std::move(func_value)))));
             }
 
             if (const auto & func_value = value->as<FunctionNode>())
