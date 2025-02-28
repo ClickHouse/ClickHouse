@@ -109,14 +109,10 @@ IcebergMetadata::IcebergMetadata(
     , log(getLogger("IcebergMetadata"))
     , current_metadata_version(metadata_version_)
     , format_version(format_version_)
+    , current_snapshot_schema_id(-1)
     , metadata_object(metadata_object_)
 {
-    auto snapshot_id = getRelevantSnapshotId(metadata_object, context_);
-    if (snapshot_id >= 0)
-    {
-        current_snapshot = getSnapshot(snapshot_id);
-    }
-    current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
+    updateState(context_);
 }
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
@@ -162,10 +158,36 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
+
+void IcebergMetadata::addTableSchemaById(Int32 schema_id)
+{
+    if (schema_processor.hasClickhouseTableSchemaById(schema_id))
+        return;
+    if (!metadata_object->has("schemas"))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema with id `{}`: 'schemas' field is missing in metadata", schema_id);
+    }
+    auto schemas = metadata_object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+    for (uint32_t i = 0; i != schemas->size(); ++i)
+    {
+        auto current_schema = schemas->getObject(i);
+        if (current_schema->has("schema-id") && current_schema->getValue<int>("schema-id") == schema_id)
+        {
+            schema_processor.addIcebergTableSchema(current_schema);
+            return;
+        }
+    }
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Cannot parse Iceberg table schema with id `{}`: schema with such id is not found in metadata",
+        schema_id);
+}
+
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
 {
-    Int32 format_version = metadata_object->getValue<Int32>(FIELD_FORMAT_VERSION_NAME);
+    const auto format_version = metadata_object->getValue<Int32>(FIELD_FORMAT_VERSION_NAME);
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
@@ -276,36 +298,67 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     metadata_object = readJSON(metadata_file_path, local_context);
 
     chassert(format_version == metadata_object->getValue<int>(FIELD_FORMAT_VERSION_NAME));
-
-    auto snapshot_id = getRelevantSnapshotId(metadata_object, local_context);
-    if (snapshot_id >= 0
-        && (!current_snapshot.has_value() || (snapshot_id != current_snapshot->getSnapshotId())))
-    {
-        current_snapshot = getSnapshot(snapshot_id);
-        cached_unprunned_files_for_current_snapshot = std::nullopt;
-    }
-    current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
-    return true;
+    return updateState(local_context);
 }
 
-std::string IcebergMetadata::getManifestListBySnapshotId(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id) const
+
+bool IcebergMetadata::needUpdateSnapshot(Int64 snapshot_id, Int32 current_schema_id) const
 {
+    if (snapshot_id >= 0)
+    {
+        if (!current_snapshot.has_value() || (snapshot_id != current_snapshot->getSnapshotId()))
+        {
+            return true;
+        }
+    }
+    else
+    {
+        if (current_snapshot.has_value())
+        {
+            return current_snapshot_schema_id != current_schema_id;
+        }
+    }
+    return false;
+}
+
+bool IcebergMetadata::updateState(const ContextPtr & local_context)
+{
+    auto snapshot_id = getRelevantSnapshotId(metadata_object, local_context);
+    Int32 current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
+
+    if (!needUpdateSnapshot(snapshot_id, current_schema_id))
+    {
+        return false;
+    }
+
+    cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
     auto configuration_ptr = configuration.lock();
 
-    if (!metadata->has("snapshots"))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot set found in metadata for iceberg table `{}`, it is impossible to get manifest list by snapshot id `{}`", configuration_ptr->getPath(), snapshot_id);
-    auto snapshots = metadata->get("snapshots").extract<Poco::JSON::Array::Ptr>();
+    if (!metadata_object->has("snapshots"))
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "No snapshot set found in metadata for iceberg table `{}`, it is impossible to get manifest list by snapshot id `{}`",
+            configuration_ptr->getPath(),
+            snapshot_id);
+    auto snapshots = metadata_object->get("snapshots").extract<Poco::JSON::Array::Ptr>();
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         if (snapshot->getValue<Int64>("snapshot-id") == snapshot_id)
         {
-            const auto path = snapshot->getValue<String>("manifest-list");
-            return std::filesystem::path(configuration_ptr->getPath()) / "metadata" / std::filesystem::path(path).filename();
+            current_snapshot = IcebergSnapshot{getManifestList(snapshot->getValue<String>("manifest-list")), snapshot_id};
+            current_snapshot_schema_id = snapshot->getValue<Int32>("schema-id");
+            addTableSchemaById(current_snapshot_schema_id);
+            return true;
         }
     }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`", snapshot_id, configuration_ptr->getPath());
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`",
+        snapshot_id,
+        configuration_ptr->getPath());
 }
+
 
 Int64 IcebergMetadata::getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata, const ContextPtr & local_context) const
 {
@@ -362,7 +415,7 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
     }
     const ManifestFileContent & manifest_file = *manifest_file_it->second;
     auto schema_id = manifest_file.getSchemaId();
-    if (schema_id == current_schema_id)
+    if (schema_id == current_snapshot_schema_id)
         return std::nullopt;
     return std::optional{schema_id};
 }
@@ -529,14 +582,6 @@ ManifestListIterator IcebergMetadata::getManifestList(const String & filename) c
     return ManifestListIterator{manifest_file_iterator};
 }
 
-
-IcebergSnapshot IcebergMetadata::getSnapshot(Int64 snapshot_id) const
-{
-    std::string manifest_list_filename = getManifestListBySnapshotId(metadata_object, snapshot_id);
-    auto manifest_list_iterator = getManifestList(manifest_list_filename);
-    return IcebergSnapshot{manifest_list_iterator, snapshot_id};
-}
-
 std::vector<Int32>
 getRelevantPartitionColumnIds(const ManifestFileIterator & entry, const IcebergSchemaProcessor & schema_processor, Int32 current_schema_id)
 {
@@ -560,16 +605,16 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     if (!current_snapshot)
         return {};
 
-    if (!filter_dag && cached_unprunned_files_for_current_snapshot.has_value())
-        return cached_unprunned_files_for_current_snapshot.value();
+    if (!filter_dag && cached_unprunned_files_for_last_processed_snapshot.has_value())
+        return cached_unprunned_files_for_last_processed_snapshot.value();
 
     Strings data_files;
     for (const auto & manifest_list_entry : *(current_snapshot->manifest_list_iterator))
     {
         const auto & partition_columns_ids
-            = getRelevantPartitionColumnIds(manifest_list_entry.manifest_file, schema_processor, current_schema_id);
+            = getRelevantPartitionColumnIds(manifest_list_entry.manifest_file, schema_processor, current_snapshot_schema_id);
         const auto & partition_pruning_columns_names_and_types
-            = schema_processor.tryGetFieldsCharacteristics(current_schema_id, partition_columns_ids);
+            = schema_processor.tryGetFieldsCharacteristics(current_snapshot_schema_id, partition_columns_ids);
 
         ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
             ActionsDAG(partition_pruning_columns_names_and_types), ExpressionActionsSettings(getContext()));
@@ -598,7 +643,7 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 
 
     if (!filter_dag)
-        return (cached_unprunned_files_for_current_snapshot = data_files).value();
+        return (cached_unprunned_files_for_last_processed_snapshot = data_files).value();
 
     return data_files;
 }

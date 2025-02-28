@@ -134,7 +134,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "24.12",
         {
-            {"iceberg_query_at_timestamp_ms", 0, 0, "New setting."},
             /// Release closed. Please use 25.1
             {"allow_experimental_database_iceberg", false, false, "New setting."},
             {"shared_merge_tree_sync_parts_on_partition_operations", 1, 1, "New setting. By default parts are always synchronized"},
