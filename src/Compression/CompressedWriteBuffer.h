@@ -40,6 +40,8 @@ public:
         return offset();
     }
 
+    WriteBuffer & getImplBuffer() { return out; }
+
 private:
     void nextImpl() override;
     /// finalize call does not affect the out buffer.

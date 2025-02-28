@@ -19,7 +19,6 @@
 
 #include <Columns/ColumnBlob.h>
 #include <Poco/Logger.h>
-#include <Common/logger_useful.h>
 #include "DataTypes/Serializations/ISerialization.h"
 #include "base/types.h"
 
