@@ -1,4 +1,5 @@
 #pragma once
+#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -47,7 +48,11 @@ public:
     Strings getDataFiles() const override { return getDataFilesImpl(nullptr); }
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema() const override { return *schema_processor.getClickhouseTableSchemaById(current_snapshot_schema_id); }
+    NamesAndTypesList getTableSchema() const override
+    {
+        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata table query"), "getTableSchema: {}", current_snapshot_schema_id);
+        return *schema_processor.getClickhouseTableSchemaById(current_snapshot_schema_id);
+    }
 
     bool operator==(const IDataLakeMetadata & other) const override
     {

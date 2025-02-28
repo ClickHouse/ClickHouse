@@ -310,7 +310,7 @@ bool IcebergMetadata::needUpdateSnapshot(Int64 snapshot_id, Int32 current_schema
     }
     else
     {
-        if (current_snapshot.has_value())
+        if (!current_snapshot.has_value())
         {
             return current_snapshot_schema_id != current_schema_id;
         }
@@ -323,12 +323,26 @@ bool IcebergMetadata::updateState(const ContextPtr & local_context)
     auto snapshot_id = getRelevantSnapshotId(metadata_object, local_context);
     Int32 current_schema_id = parseTableSchema(metadata_object, schema_processor, log);
 
+    LOG_DEBUG(&Poco::Logger::get("updateState"), "current_schema_id: {}", current_schema_id);
+
     if (!needUpdateSnapshot(snapshot_id, current_schema_id))
     {
         return false;
     }
 
+    LOG_DEBUG(&Poco::Logger::get("updateState"), "NEED UPDATE");
+
+
     cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
+
+    if (snapshot_id == -1)
+    {
+        current_snapshot_schema_id = current_schema_id;
+        addTableSchemaById(current_snapshot_schema_id);
+        current_snapshot = std::nullopt;
+        return true;
+    }
+
     auto configuration_ptr = configuration.lock();
 
     if (!metadata_object->has("snapshots"))
@@ -345,6 +359,11 @@ bool IcebergMetadata::updateState(const ContextPtr & local_context)
         {
             current_snapshot = IcebergSnapshot{getManifestList(snapshot->getValue<String>("manifest-list")), snapshot_id};
             current_snapshot_schema_id = snapshot->getValue<Int32>("schema-id");
+            LOG_DEBUG(
+                &Poco::Logger::get("updateState"),
+                "current_snapshot: {}, current_snapshot_schema_id: {}",
+                snapshot_id,
+                current_snapshot_schema_id);
             addTableSchemaById(current_snapshot_schema_id);
             return true;
         }
@@ -400,6 +419,7 @@ Int64 IcebergMetadata::getRelevantSnapshotId(const Poco::JSON::Object::Ptr & met
     if (!metadata->has("current-snapshot-id"))
         return -1;
     snapshot_id =  metadata->getValue<Int64>("current-snapshot-id");
+    LOG_DEBUG(&Poco::Logger::get("getRelevantSnapshotId"), "current-snapshot-id: {}", snapshot_id);
     return snapshot_id;
 }
 
