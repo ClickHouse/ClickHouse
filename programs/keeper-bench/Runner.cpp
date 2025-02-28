@@ -2,6 +2,7 @@
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Columns/IColumn.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
