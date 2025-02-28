@@ -69,6 +69,9 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_ann_queries;
 
     bool keep_logical_steps;
+
+    /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
+    bool use_query_condition_cache = false;
     bool is_explain;
 };
 

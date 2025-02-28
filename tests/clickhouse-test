@@ -1086,6 +1086,7 @@ class SettingsRandomizer:
         "query_plan_join_swap_table": lambda: random.choice(["auto", "false", "true"]),
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
+        "use_query_condition_cache": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
