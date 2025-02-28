@@ -773,7 +773,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
         if (DB::Exception::enable_job_stack_trace)
             DB::Exception::setThreadFramePointers(std::move(job_data->frame_pointers));
 
-        DB::Exception::parent_thread_id.store(job_data->parent_thread_id, std::memory_order_relaxed);
+        //DB::Exception::parent_thread_id.store(job_data->parent_thread_id, std::memory_order_relaxed);
 
         /// Run the job.
         try
@@ -838,7 +838,7 @@ void ThreadPoolImpl<Thread>::ThreadFromThreadPool::worker()
             job_data.reset();
         }
 
-        DB::Exception::parent_thread_id.store(0, std::memory_order_relaxed);
+        //DB::Exception::parent_thread_id.store(0, std::memory_order_relaxed);
 
         DB::Exception::clearThreadFramePointers();
 
