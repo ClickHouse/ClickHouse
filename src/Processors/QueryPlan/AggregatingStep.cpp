@@ -24,8 +24,10 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include "Processors/QueryPlan/scatterDataByKeys.h"
 
 namespace DB
 {
@@ -137,7 +139,8 @@ AggregatingStep::AggregatingStep(
     SortDescription group_by_sort_description_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool memory_bound_merging_of_aggregation_results_enabled_,
-    bool explicit_sorting_required_for_aggregation_in_order_)
+    bool explicit_sorting_required_for_aggregation_in_order_,
+    bool group_by_use_sharding_)
     : ITransformingStep(
         input_header_,
         appendGroupingColumn(params_.getHeader(input_header_, final_), params_.keys, !grouping_sets_params_.empty(), group_by_use_nulls_),
@@ -157,6 +160,7 @@ AggregatingStep::AggregatingStep(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , memory_bound_merging_of_aggregation_results_enabled(memory_bound_merging_of_aggregation_results_enabled_)
     , explicit_sorting_required_for_aggregation_in_order(explicit_sorting_required_for_aggregation_in_order_)
+    , group_by_use_sharding(group_by_use_sharding_)
 {
 }
 
@@ -490,11 +494,25 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
 
     /// If there are several sources, then we perform parallel aggregation
-    if (pipeline.getNumStreams() > 1)
+    size_t streams = pipeline.getNumStreams();
+    if (streams > 1)
     {
+        bool use_sharding = group_by_use_sharding && transform_params->params.keys_size > 0 && merge_threads > 1;
+        if (use_sharding)
+        {
+            const auto & stream_header = pipeline.getHeader();
+
+            ColumnNumbers key_columns;
+            key_columns.reserve(transform_params->params.keys_size);
+            for (const auto & key : transform_params->params.keys)
+                key_columns.push_back(stream_header.getPositionByName(key));
+
+            scatterDataByKeysIfNeeded(pipeline, key_columns, merge_threads, streams);
+        }
+
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
-        if (!storage_has_evenly_distributed_read && !skip_merging)
+        if (!storage_has_evenly_distributed_read && !skip_merging && !use_sharding)
             pipeline.resize(pipeline.getNumStreams(), true, true);
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
@@ -511,7 +529,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     new_merge_threads,
                     new_temporary_data_merge_threads,
                     should_produce_results_in_order_of_bucket_number,
-                    skip_merging);
+                    skip_merging || use_sharding);
             });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, true /* force */);
@@ -887,6 +905,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         SortDescription{},
         ctx.settings[QueryPlanSerializationSetting::aggregation_in_order_memory_bound_merging],
         ctx.settings[QueryPlanSerializationSetting::aggregation_sort_result_by_bucket_number],
+        false,
         false);
 
     return aggregating_step;
