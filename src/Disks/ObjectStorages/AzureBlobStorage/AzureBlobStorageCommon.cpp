@@ -43,6 +43,8 @@ namespace Setting
     extern const SettingsUInt64 azure_sdk_retry_initial_backoff_ms;
     extern const SettingsUInt64 azure_sdk_retry_max_backoff_ms;
     extern const SettingsBool azure_check_objects_after_upload;
+    extern const SettingsUInt64 azure_check_objects_after_upload_max_attempts;
+    extern const SettingsUInt64 azure_check_objects_after_upload_initial_backoff_ms;
 }
 
 namespace ErrorCodes
@@ -424,6 +426,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_setti
     settings->sdk_retry_initial_backoff_ms = query_settings[Setting::azure_sdk_retry_initial_backoff_ms];
     settings->sdk_retry_max_backoff_ms = query_settings[Setting::azure_sdk_retry_max_backoff_ms];
     settings->check_objects_after_upload = query_settings[Setting::azure_check_objects_after_upload];
+    settings->check_objects_after_upload_max_attempts = query_settings[Setting::azure_check_objects_after_upload_max_attempts];
+    settings->check_objects_after_upload_initial_backoff_ms = query_settings[Setting::azure_check_objects_after_upload_initial_backoff_ms];
 
     return settings;
 }
@@ -462,6 +466,8 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
+    settings->check_objects_after_upload_max_attempts = config.getUInt64(config_prefix + ".check_objects_after_upload_max_attempts", settings_ref[Setting::azure_check_objects_after_upload_max_attempts]);
+    settings->check_objects_after_upload_initial_backoff_ms = config.getUInt64(config_prefix + ".check_objects_after_upload_initial_backoff_ms", settings_ref[Setting::azure_check_objects_after_upload_initial_backoff_ms]);
 
     if (config.has(config_prefix + ".curl_ip_resolve"))
     {
