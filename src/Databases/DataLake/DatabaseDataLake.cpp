@@ -168,8 +168,8 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 /// Such tables are unreadable, but at least we can show
                 /// them in SHOW CREATE TABLE, as well we can show their
                 /// schema.
-                /// We use local as substituion for fake because it has 0
-                /// dependencies and the most ligthweight
+                /// We use local as substitution for fake because it has 0
+                /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalIcebergConfiguration>();
@@ -202,8 +202,8 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 /// Such tables are unreadable, but at least we can show
                 /// them in SHOW CREATE TABLE, as well we can show their
                 /// schema.
-                /// We use local as substituion for fake because it has 0
-                /// dependencies and the most ligthweight
+                /// We use local as substitution for fake because it has 0
+                /// dependencies and the most lightweight
                 case DB::DatabaseDataLakeStorageType::Other:
                 {
                     return std::make_shared<StorageLocalDeltaLakeConfiguration>();
