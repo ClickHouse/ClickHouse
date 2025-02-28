@@ -9,7 +9,7 @@ keywords: ["groupArrayArray", "array_concat_agg"]
 # groupArrayArray
 
 Aggregates arrays into a larger array of those arrays.
-Combines the [`groupArray`](/docs/sql-reference/aggregate-functions/reference/grouparray) function with the [Array](/docs/sql-reference/aggregate-functions/combinators#-array) combinator.
+Combines the [`groupArray`](/sql-reference/aggregate-functions/reference/grouparray) function with the [Array](/sql-reference/aggregate-functions/combinators#-array) combinator.
 
 Alias: `array_concat_agg`
 
