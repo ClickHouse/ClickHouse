@@ -662,6 +662,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
+            {"refresh_parts_interval", 0, 0, "A new setting"},
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
