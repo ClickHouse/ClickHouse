@@ -271,3 +271,24 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
     node1.start_clickhouse()
     node1.query("drop database re sync")
     node2.query("drop database re sync")
+
+def test_replicated_db_startup_race(started_cluster):
+    for node in nodes:
+        node.query(
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        )
+    node1.query(
+            "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select number*10 as x from numbers(2);\
+            system wait view re.a"
+        )
+
+    # Drop a database before it's loaded.
+    # We stall DatabaseReplicated::startupDatabaseAsync task and expect the server to become responsive without waiting for it.
+    node1.replace_in_config("/etc/clickhouse-server/config.d/config.xml", "<database_replicated_startup_pause>false</database_replicated_startup_pause>", "<database_replicated_startup_pause>true</database_replicated_startup_pause>")
+    node1.restart_clickhouse()
+    node1.replace_in_config("/etc/clickhouse-server/config.d/config.xml", "<database_replicated_startup_pause>true</database_replicated_startup_pause>", "<database_replicated_startup_pause>false</database_replicated_startup_pause>")
+    drop_query_handle = node1.get_query_request("drop database re sync") # this will get stuck until we unpause loading
+    time.sleep(2)
+    node1.query("system disable failpoint database_replicated_startup_pause")
+    _, err = drop_query_handle.get_answer_and_error()
+    assert err == ""

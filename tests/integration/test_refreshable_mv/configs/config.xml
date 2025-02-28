@@ -1,1 +1,5 @@
-<clickhouse></clickhouse>
+<clickhouse>
+    <fail_points_active>
+        <database_replicated_startup_pause>false</database_replicated_startup_pause>
+    </fail_points_active>
+</clickhouse>
