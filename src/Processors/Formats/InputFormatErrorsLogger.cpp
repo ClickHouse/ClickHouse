@@ -23,6 +23,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -50,6 +51,10 @@ InputFormatErrorsLogger::InputFormatErrorsLogger(const ContextPtr & context) : m
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Cannot log errors in path `{}`, because it is not inside `{}`",
                             errors_file_path, user_files_path);
+    }
+    else if (context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cannot log errors, because client is running in embedded mode.");
     }
     else
     {
