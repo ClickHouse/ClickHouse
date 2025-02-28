@@ -123,6 +123,14 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
 
 void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
 {
+    LOG_TEST(
+        log,
+        "Set read until to {}, file_offset_of_buffer_end {}, working buffer size {}, working buffer available {}",
+        position,
+        file_offset_of_buffer_end,
+        working_buffer.size(),
+        available());
+
     if (!read_until_position || position != *read_until_position)
     {
         if (position < file_offset_of_buffer_end)
@@ -262,6 +270,14 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
+    LOG_TEST(
+        log,
+        "Seek to {}, read_until_position {}, file_offset_of_buffer_end {}, working buffer size {}, working buffer available {}",
+        offset,
+        read_until_position.value_or(0),
+        file_offset_of_buffer_end,
+        working_buffer.size(),
+        available());
 
     size_t new_pos;
     if (whence == SEEK_SET)
