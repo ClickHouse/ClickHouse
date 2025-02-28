@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about the dependent views executed when running a query, for example, the view type or the execution time."
 slug: /operations/system-tables/query_views_log
-title: "query_views_log"
+title: "system.query_views_log"
 keywords: ["system table", "query_views_log"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -17,7 +17,7 @@ To start logging:
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/overview#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
 You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_views_log` table.
 

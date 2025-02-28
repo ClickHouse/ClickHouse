@@ -1,7 +1,7 @@
 ---
-title : PrettySpaceNoEscapesMonoBlock
+title: PrettySpaceNoEscapesMonoBlock
 slug: /interfaces/formats/PrettySpaceNoEscapesMonoBlock
-keywords : [PrettySpaceNoEscapesMonoBlock]
+keywords: [PrettySpaceNoEscapesMonoBlock]
 input_format: false
 output_format: true
 alias: []

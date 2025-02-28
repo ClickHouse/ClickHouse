@@ -30,6 +30,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadPool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
