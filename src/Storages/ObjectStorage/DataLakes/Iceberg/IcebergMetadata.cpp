@@ -47,8 +47,8 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 
 namespace Setting
 {
-    extern const SettingsBool iceberg_timestamp_ms;
-    extern const SettingsBool iceberg_snapshot_id;
+extern const SettingsInt64 iceberg_timestamp_ms;
+extern const SettingsInt64 iceberg_snapshot_id;
 }
 
 
@@ -289,9 +289,6 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     auto configuration_ptr = configuration.lock();
 
     const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
-
-    if (metadata_version == current_metadata_version)
-        return false;
 
     current_metadata_version = metadata_version;
 
