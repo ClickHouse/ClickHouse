@@ -28,7 +28,7 @@ namespace DB::QueryPlanOptimizations
 bool findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    if (auto * source = dynamic_cast<ISourceStep *>(step))
+    if (dynamic_cast<ISourceStep *>(step))
     {
         /// might be more cases here
         if (typeid_cast<ReadFromSystemColumns *>(step))
