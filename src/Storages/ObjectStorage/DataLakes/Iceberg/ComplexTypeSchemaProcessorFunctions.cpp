@@ -1,4 +1,5 @@
-#include <sstream>
+#include <stack>
+
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 #include <Poco/SharedPtr.h>
