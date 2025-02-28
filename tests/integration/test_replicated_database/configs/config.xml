@@ -7,4 +7,11 @@
     <max_database_replicated_create_table_thread_pool_size>50</max_database_replicated_create_table_thread_pool_size>
     <allow_experimental_transactions>42</allow_experimental_transactions>
     <async_load_databases>false</async_load_databases>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>2000M</size>
+        <count>50</count>
+	</logger>
 </clickhouse>

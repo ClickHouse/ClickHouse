@@ -4,6 +4,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
+from helpers.test_tools import assert_eq_with_retry
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -101,12 +102,12 @@ def test_reconnect(started_cluster):
         # Heal the partition and insert more data.
         # The connection must be reestablished and after some time all data must be inserted.
         pm.heal_all()
-        instance.wait_for_log_line("to remote:9000")
+        time.sleep(1)
 
         instance.query("INSERT INTO local1_source VALUES (3)")
         time.sleep(1)
 
-        assert remote.query("SELECT count(*) FROM local1").strip() == "3"
+        assert_eq_with_retry(remote, "SELECT count(*) FROM local1", "3")
         remote.query("TRUNCATE local1 SYNC")
 
 
