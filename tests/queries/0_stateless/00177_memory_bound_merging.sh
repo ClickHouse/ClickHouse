@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 check_replicas_read_in_order() {
     # NOTE: lack of "current_database = '$CLICKHOUSE_DATABASE'" filter is made on purpose
     $CLICKHOUSE_CLIENT -q "
-        SYSTEM FLUSH LOGS;
+        SYSTEM FLUSH LOGS text_log;
 
         SELECT COUNT() > 0
         FROM system.text_log
