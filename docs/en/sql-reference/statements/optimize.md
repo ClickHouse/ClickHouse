@@ -5,7 +5,7 @@ sidebar_label: OPTIMIZE
 title: "OPTIMIZE Statement"
 ---
 
-This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/docs/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
+This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.
 
 :::note
 `OPTIMIZE` can't fix the `Too many parts` error.

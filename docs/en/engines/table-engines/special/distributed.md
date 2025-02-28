@@ -166,7 +166,7 @@ Clusters are configured in the [server configuration file](../../../operations/c
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
             <!-- Optional. The shard name.  Must be non-empty and unique among shards in the cluster. If not specified, will be empty. -->
-            <shard_name>shard_01</shard_name>
+            <name>shard_01</name>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
             <internal_replication>false</internal_replication>
             <replica>
@@ -182,7 +182,7 @@ Clusters are configured in the [server configuration file](../../../operations/c
         </shard>
         <shard>
             <weight>2</weight>
-            <shard_name>shard_02</shard_name>
+            <name>shard_02</name>
             <internal_replication>false</internal_replication>
             <replica>
                 <host>example01-02-1</host>
