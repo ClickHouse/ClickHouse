@@ -20,7 +20,7 @@ namespace DB
 /// Complex type schema evolution consists of multiple stages.
 /// First stage is reordering current elements.
 /// Second stage is deleting extra fields in tuple.
-/// Third stage is adding new fileds into tuple.
+/// Third stage is adding new fields into tuple.
 enum class ChangeType : uint8_t
 {
     DELETING,
