@@ -193,6 +193,13 @@ void StorageObjectStorage::Configuration::update(ObjectStoragePtr object_storage
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
+    updated = true;
+}
+
+void StorageObjectStorage::Configuration::updateIfRequired(ObjectStoragePtr object_storage_ptr, ContextPtr local_context)
+{
+    if (!updated)
+        update(object_storage_ptr, local_context);
 }
 
 bool StorageObjectStorage::hasExternalDynamicMetadata() const
