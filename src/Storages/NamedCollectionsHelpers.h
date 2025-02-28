@@ -4,10 +4,10 @@
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
-#include <unordered_set>
+
 #include <string_view>
 
-#include <fmt/base.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 
