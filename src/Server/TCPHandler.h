@@ -1,43 +1,186 @@
 #pragma once
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <memory>
 #include <optional>
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <base/getFQDNOrHostName.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
-#include <IO/Progress.h>
-#include <IO/TimeoutSetter.h>
-#include <QueryPipeline/BlockIO.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/ClientInfo.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
+#include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocketChunked.h>
+#include <IO/TimeoutSetter.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <QueryPipeline/BlockIO.h>
+#include <base/getFQDNOrHostName.h>
+#include "Common/CurrentThread.h"
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
 #include <IO/WriteBuffer.h>
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
 #include "Storages/MergeTree/RequestResponse.h"
+#include "base/defines.h"
 #include "base/types.h"
 
 
 namespace CurrentMetrics
 {
     extern const Metric TCPConnection;
+
+    extern const Metric AggregatorThreads;
+    extern const Metric AggregatorThreadsActive;
+    extern const Metric AggregatorThreadsScheduled;
 }
 
 namespace Poco { class Logger; }
 
 namespace DB
 {
+
+class BlockQueue
+{
+public:
+    using Job = std::function<Block(const Block &)>;
+
+    explicit BlockQueue(size_t max_queue_size_, Job job_)
+        : max_queue_size(max_queue_size_)
+        , job(std::move(job_))
+        , thread_pool(std::make_unique<ThreadPool>(
+              CurrentMetrics::AggregatorThreads,
+              CurrentMetrics::AggregatorThreadsActive,
+              CurrentMetrics::AggregatorThreadsScheduled,
+              max_queue_size))
+    {
+        try
+        {
+            for (size_t i = 0; i < max_queue_size; ++i)
+            {
+                thread_pool->scheduleOrThrow(
+                    [this, i, thread_group = CurrentThread::getGroup()]()
+                    {
+                        ThreadGroupSwitcher switcher(thread_group, fmt::format("BlockQ_{}", i).c_str());
+                        work();
+                    });
+            }
+        }
+        catch (...)
+        {
+            thread_pool->wait();
+        }
+    }
+
+    ~BlockQueue()
+    {
+        chassert(to_be_processed.empty());
+        chassert(processed.empty());
+
+        shutdown = true;
+        pop_condition.notify_all();
+
+        // Just in case
+        thread_pool->wait();
+        chassert(thread_pool->active() == 0);
+    }
+
+    void enqueueForProcessing(const Block & block)
+    {
+        {
+            std::unique_lock queue_lock(to_be_processed_mutex);
+
+            auto predicate = [&]() { return to_be_processed.size() < max_queue_size; };
+
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            push_condition.wait(queue_lock, predicate);
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            to_be_processed.push(block);
+            shutdown = !block;
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+        }
+        pop_condition.notify_one();
+    }
+
+    Block dequeueNextProcessed()
+    {
+        Block block;
+        {
+            std::unique_lock queue_lock(processed_mutex);
+
+            auto predicate = [&]() { return !processed.empty(); };
+
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            processed_condition.wait(queue_lock, predicate);
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            block = std::move(processed.front());
+            processed.pop();
+        }
+        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+        return block;
+    }
+
+    void work()
+    {
+        while (!shutdown)
+        {
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            Block block;
+            {
+                std::unique_lock queue_lock(to_be_processed_mutex);
+
+                auto predicate = [&]() { return shutdown || !to_be_processed.empty(); };
+
+                //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+                pop_condition.wait(queue_lock, predicate);
+
+                if (shutdown && to_be_processed.empty())
+                    break;
+
+                //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+                block = std::move(to_be_processed.front());
+                //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+                to_be_processed.pop();
+            }
+            push_condition.notify_one();
+
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            auto processed_block = job(block);
+            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+            {
+                std::unique_lock queue_lock(processed_mutex);
+                //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+                processed.push(std::move(processed_block));
+            }
+            processed_condition.notify_one();
+        }
+    }
+
+private:
+    const size_t max_queue_size;
+    Job job;
+    std::unique_ptr<ThreadPool> thread_pool;
+
+    std::atomic_bool shutdown{false};
+
+    std::condition_variable push_condition;
+    std::condition_variable pop_condition;
+    std::mutex to_be_processed_mutex;
+    std::queue<Block> to_be_processed;
+
+    std::condition_variable processed_condition;
+    std::mutex processed_mutex;
+    std::queue<Block> processed;
+};
 
 class Session;
 struct Settings;
@@ -75,6 +218,8 @@ struct QueryState
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
     std::unique_ptr<NativeWriter> block_out;
     Block block_for_insert;
+
+    std::unique_ptr<BlockQueue> block_queue;
 
     /// Query text.
     String query;
@@ -318,6 +463,7 @@ private:
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput(QueryState & state);
     void initBlockOutput(QueryState & state, const Block & block);
+    void initBlockQueue(QueryState & state);
     void initLogsBlockOutput(QueryState & state, const Block & block);
     void initProfileEventsBlockOutput(QueryState & state, const Block & block);
     static CompressionCodecPtr getCompressionCodec(const Settings & query_settings, Protocol::Compression compression);

@@ -2454,7 +2454,7 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 
 static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
-    if (!codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
         return block;
 
     Block res;
@@ -2479,14 +2479,28 @@ static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 clie
     return res;
 }
 
+void TCPHandler::initBlockQueue(QueryState & state)
+{
+    if (!state.block_queue)
+    {
+        state.block_queue = std::make_unique<BlockQueue>(
+            8,
+            [this, &state](const Block & block)
+            {
+                return prepare(
+                    block,
+                    getCompressionCodec(state.query_context->getSettingsRef(), state.compression),
+                    client_tcp_protocol_version,
+                    getFormatSettings(state.query_context));
+            });
+    }
+}
 
 void TCPHandler::sendData(QueryState & state, const Block & block_)
 {
-    auto block = prepare(
-        block_,
-        getCompressionCodec(state.query_context->getSettingsRef(), state.compression),
-        client_tcp_protocol_version,
-        getFormatSettings(state.query_context));
+    initBlockQueue(state);
+    state.block_queue->enqueueForProcessing(block_);
+    auto block = state.block_queue->dequeueNextProcessed();
 
     initBlockOutput(state, block);
 
