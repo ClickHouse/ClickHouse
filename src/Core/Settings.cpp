@@ -5694,9 +5694,6 @@ Only has an effect in ClickHouse Cloud. If a merged part is less than this many 
     DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
 Query Iceberg table using the snapshot that was current at a specific timestamp.
 )", 0) \
-    DECLARE(Int64, iceberg_snapshot_id, 0, R"(
-Query Iceberg table using the specific snapshot id.
-)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \

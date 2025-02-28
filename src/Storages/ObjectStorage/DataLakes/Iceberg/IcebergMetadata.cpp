@@ -44,6 +44,12 @@ extern const int LOGICAL_ERROR;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
+namespace Setting
+{
+extern const SettingsInt64 iceberg_timestamp_ms;
+}
+
+
 using namespace Iceberg;
 
 
@@ -186,14 +192,33 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
+
+Int32 getMetadataVersion(const String & path)
+{
+    std::string_view file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    std::string_view version_str;
+    /// v<V>.metadata.json
+    if (file_name.starts_with('v'))
+        version_str = file_name.substr(1, file_name.find_first_of('.') - 1);
+    /// <V>-<random-uuid>.metadata.json
+    else
+        version_str = file_name.substr(0, file_name.find_first_of('-'));
+
+    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+    return std::stoi(std::string(version_str));
+}
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-std::pair<Int32, String>
-getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
+std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorage::Configuration & configuration,
+    ContextPtr local_context,
+    LoggerPtr log)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -204,28 +229,61 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
 
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
+
     for (const auto & path : metadata_files)
     {
-        String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
-        String version_str;
-        /// v<V>.metadata.json
-        if (file_name.starts_with('v'))
-            version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
-        /// <V>-<random-uuid>.metadata.json
-        else
-            version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
-
-        if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
-        metadata_files_with_versions.emplace_back(std::stoi(version_str), path);
+        metadata_files_with_versions.emplace_back(getMetadataVersion(path), path);
     }
 
-    /// Get the latest version of metadata file: v<V>.metadata.json
-    return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
+    auto [version, path] = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
+
+    auto metadata_object = IcebergMetadata::readJSON(path, local_context, object_storage, log);
+    bool timestamp_changed = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].changed;
+    if (!timestamp_changed)
+    {
+        return {version, metadata_object};
+    }
+
+    auto timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].value;
+    std::optional<Int64> max_timestamp;
+    std::optional<Int32> max_version;
+    std::optional<String> metadata_path;
+    if (metadata_object->has("metadata-log"))
+    {
+        auto metadata_log = metadata_object->get("metadata-log").extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i < metadata_log->size(); ++i)
+        {
+            const auto metadata_log_entry = metadata_log->getObject(static_cast<UInt32>(i));
+            auto metadata_timestamp = metadata_log_entry->getValue<Int64>("timestamp-ms");
+            if (metadata_timestamp <= timestamp && (!max_timestamp || metadata_timestamp > max_timestamp))
+            {
+                max_timestamp = metadata_timestamp;
+                max_version = metadata_log_entry->getValue<Int32>("version");
+                metadata_path = metadata_log_entry->getValue<String>("metadata-file");
+            }
+        }
+    }
+    else
+    {
+        for (const auto & [current_version, current_path] : metadata_files_with_versions)
+        {
+            auto current_metadata_object = IcebergMetadata::readJSON(current_path, local_context, object_storage, log);
+            auto last_updated_ms = current_metadata_object->getValue<Int64>("last-updated-ms");
+            if (last_updated_ms <= timestamp && (!max_timestamp || last_updated_ms > max_timestamp))
+            {
+                max_timestamp = last_updated_ms;
+                max_version = current_version;
+                metadata_path = current_path;
+            }
+        }
+    }
+    if (!metadata_path)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find metadata file for timestamp: {}", timestamp);
+    return {max_version.value(), IcebergMetadata::readJSON(metadata_path.value(), local_context, object_storage, log)};
 }
 
-Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
+Poco::JSON::Object::Ptr IcebergMetadata::readJSON(
+    const String & metadata_file_path, const ContextPtr & local_context, const ObjectStoragePtr & object_storage, LoggerPtr log)
 {
     ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
@@ -242,17 +300,14 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+    const auto [metadata_version, metadata_object] = getMetadataFileAndVersion(object_storage, *configuration_ptr, local_context, log);
 
     if (metadata_version == current_metadata_version)
         return false;
 
     current_metadata_version = metadata_version;
 
-    auto metadata_object = readJSON(metadata_file_path, local_context);
-
     chassert(format_version == metadata_object->getValue<int>(FIELD_FORMAT_VERSION_NAME));
-
 
     auto manifest_list_file = getRelevantManifestList(metadata_object);
     if (manifest_list_file
@@ -302,33 +357,19 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 
 
 DataLakeMetadataPtr IcebergMetadata::create(
-    const ObjectStoragePtr & object_storage,
-    const ConfigurationObserverPtr & configuration,
-    const ContextPtr & local_context,
-    bool)
+    const ObjectStoragePtr & object_storage, const ConfigurationObserverPtr & configuration, const ContextPtr & local_context, bool)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
-
     auto log = getLogger("IcebergMetadata");
-
-    ObjectInfo object_info(metadata_file_path);
-    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
-
-    String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
-
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+    const auto [metadata_version, metadata_object] = getMetadataFileAndVersion(object_storage, *configuration_ptr, local_context, log);
 
     IcebergSchemaProcessor schema_processor;
 
-    auto format_version = object->getValue<int>(FIELD_FORMAT_VERSION_NAME);
+    auto format_version = metadata_object->getValue<int>(FIELD_FORMAT_VERSION_NAME);
 
-    auto ptr
-        = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
+    auto ptr = std::make_unique<IcebergMetadata>(
+        object_storage, configuration_ptr, local_context, metadata_version, format_version, metadata_object);
 
     return ptr;
 }
@@ -358,7 +399,9 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
             COLUMN_MANIFEST_FILE_PATH_NAME);
     if (format_version > 1 && name_to_index.find(COLUMN_SEQ_NUMBER_NAME) == name_to_index.end())
         throw Exception(
-            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: `{}`", COLUMN_SEQ_NUMBER_NAME);
+            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Required columns are not found in manifest file: `{}`",
+            COLUMN_SEQ_NUMBER_NAME);
 
 
     auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));

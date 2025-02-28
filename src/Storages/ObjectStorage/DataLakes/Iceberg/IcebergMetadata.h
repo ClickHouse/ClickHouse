@@ -124,8 +124,12 @@ private:
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
-    Poco::JSON::Object::Ptr readJSON(const String & metadata_file_path, const ContextPtr & local_context) const;
 
+public:
+    static Poco::JSON::Object::Ptr
+    readJSON(const String & metadata_file_path, const ContextPtr & local_context, const ObjectStoragePtr & object_storage, LoggerPtr log);
+
+private:
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
