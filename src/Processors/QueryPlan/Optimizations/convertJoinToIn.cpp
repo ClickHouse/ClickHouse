@@ -2,6 +2,10 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeSet.h>
@@ -9,6 +13,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/System/StorageSystemColumns.h>
 
 
 namespace DB::Setting
@@ -19,6 +24,29 @@ namespace DB::Setting
 
 namespace DB::QueryPlanOptimizations
 {
+
+bool findReadingStep(QueryPlan::Node & node)
+{
+    IQueryPlanStep * step = node.step.get();
+    if (auto * source = dynamic_cast<ISourceStep *>(step))
+    {
+        /// might be more cases here
+        if (typeid_cast<ReadFromSystemColumns *>(step))
+            return false;
+        return true;
+    }
+
+    if (node.children.size() != 1)
+        return false;
+
+    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+        return findReadingStep(*node.children.front());
+
+    if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
+        return findReadingStep(*node.children.front());
+
+    return false;
+}
 
 bool hasJoinNode(QueryPlan::Node * root, QueryPlan::Node * join)
 {
@@ -60,7 +88,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!join)
         return 0;
     auto & join_info = join->getJoinInfo();
-    if (/*join_info.strictness != JoinStrictness::All &&*/ join_info.strictness != JoinStrictness::Any)
+    if (join_info.strictness != JoinStrictness::All)
         return 0;
     if (join->getJoinSettings().join_use_nulls)
         return 0;
@@ -97,6 +125,10 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return 0;
         right_predicate_header.insert(*right_column);
     }
+
+    /// Steps like ReadFromSystemColumns would build set in place, different from here, so return.
+    if (!findReadingStep(*parent_node->children.front()))
+        return 0;
 
     std::optional<ActionsDAG> dag = ActionsDAG(left_predicate_header.getColumnsWithTypeAndName());
 
