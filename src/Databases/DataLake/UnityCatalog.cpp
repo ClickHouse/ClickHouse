@@ -15,6 +15,7 @@
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
