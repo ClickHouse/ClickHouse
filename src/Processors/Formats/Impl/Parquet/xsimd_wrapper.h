@@ -11,5 +11,6 @@ _Pragma("clang diagnostic ignored \"-Wshorten-64-to-32\"")
 _Pragma("clang diagnostic ignored \"-Wfloat-conversion\"")
 _Pragma("clang diagnostic ignored \"-Wunused-but-set-variable\"")
 _Pragma("clang diagnostic ignored \"-Wundef\"")
+_Pragma("clang diagnostic ignored \"-Wcast-qual\"")
 #include <xsimd/xsimd.hpp>
 _Pragma("clang diagnostic pop")
