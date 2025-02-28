@@ -50,7 +50,7 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     size_t min_bytes_for_seek_,
     AsyncReadCountersPtr async_read_counters_,
     FilesystemReadPrefetchesLogPtr prefetches_log_)
-    : ReadBufferFromFileBase(0, nullptr, 0)
+    : ReadBufferFromFileBase()
     , impl(std::move(impl_))
     , read_settings(settings_)
     , buffer_size(buffer_size_)
