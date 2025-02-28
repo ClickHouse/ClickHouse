@@ -17,14 +17,15 @@
 namespace DB
 {
 
+/// Complex type schema evolution consists of multiple stages.
+/// First stage is reordering current elements.
+/// Second stage is deleting extra fields in tuple.
+/// Third stage is adding new fileds into tuple.
 enum class ChangeType : uint8_t
 {
-    REORDERING,
     DELETING,
     ADDING,
-
-    /// Type below is used for casts and renamings
-    IDENTITY,
+    REORDERING,
 };
 
 class IcebergChangeSchemaOperation
@@ -36,22 +37,6 @@ public:
 
 protected:
     ChangeType change_type;
-};
-
-class IcebergReorderingOperation : public IcebergChangeSchemaOperation
-{
-public:
-    IcebergReorderingOperation(
-        const std::vector<std::string> & root_,
-        const std::vector<std::string> & initial_order_,
-        const std::vector<std::string> & final_order_)
-        : IcebergChangeSchemaOperation(ChangeType::REORDERING), root(root_), initial_order(initial_order_), final_order(final_order_)
-    {
-    }
-
-    std::vector<std::string> root;
-    std::vector<std::string> initial_order;
-    std::vector<std::string> final_order;
 };
 
 class IcebergDeletingOperation : public IcebergChangeSchemaOperation
@@ -78,10 +63,16 @@ public:
     std::string field_name;
 };
 
-class IcebergIdentityOperation : public IcebergChangeSchemaOperation
+class IcebergReorderingOperation : public IcebergChangeSchemaOperation
 {
 public:
-    IcebergIdentityOperation() : IcebergChangeSchemaOperation(ChangeType::IDENTITY) { }
+    IcebergReorderingOperation(const std::vector<std::string> & root_, const std::vector<size_t> & permutation_)
+        : IcebergChangeSchemaOperation(ChangeType::REORDERING), root(root_), permutation(permutation_)
+    {
+    }
+
+    std::vector<std::string> root;
+    std::vector<size_t> permutation;
 };
 
 struct IIcebergSchemaTransform
@@ -145,7 +136,6 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
 private:
-    IcebergIdentityOperation operation;
     DataTypes types;
     DataTypes old_types;
     Poco::SharedPtr<Poco::JSON::Object> old_json;

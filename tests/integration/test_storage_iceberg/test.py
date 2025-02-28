@@ -1405,21 +1405,82 @@ def test_tuple_evolved_simple(
         ],
     )
 
-    execute_spark_query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN b.e")
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN b.a")
 
     check_schema_and_data(
         instance,
         table_select_expression,
         [
             ['a', 'Int32'], 
-            ['b', 'Tuple(\\n    a Nullable(Int32),\\n    b Nullable(String))'],
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    b Nullable(String))'],
             ['c', 'Tuple(\\n    d Nullable(Int64))']
         ],
         [
-            ['1', "(NULL,'ABBA')", '(2)'],
-            ['2', "(5,'BACCARA')", '(3)']
+            ['1', "(1.23,'ABBA')", '(2)'],
+            ['2', "(1.23,'BACCARA')", '(3)']
         ],
     )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN b.b TO a;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    a Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(2)'],
+            ['2', "(1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN b.e TO b;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    b Nullable(Float32),\\n    a Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(2)'],
+            ['2', "(1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b.a FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(String),\\n    b Nullable(Float32))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "('ABBA',1.23)", '(2)'],
+            ['2', "('BACCARA',1.23)", '(3)']
+        ],
+    )
+
 
 @pytest.mark.parametrize("format_version", ["2"])
 @pytest.mark.parametrize("storage_type", ["local"])
