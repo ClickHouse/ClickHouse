@@ -80,6 +80,7 @@
 #include <memory>
 #include <random>
 
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace ProfileEvents
 {
