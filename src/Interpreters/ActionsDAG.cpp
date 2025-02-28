@@ -3257,11 +3257,7 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     }
 }
 
-static void serialzieConstant(
-    const IDataType & type,
-    const IColumn & value,
-    WriteBuffer & out,
-    SerializedSetsRegistry & registry)
+static void serializeConstant(const IDataType & type, const IColumn & value, WriteBuffer & out, SerializedSetsRegistry & registry)
 {
     if (WhichDataType(type).isSet())
     {
@@ -3329,7 +3325,7 @@ static void serialzieConstant(
         for (const auto & captured_column : captured_columns)
         {
             encodeDataType(captured_column.type, out);
-            serialzieConstant(*captured_column.type, *captured_column.column, out, registry);
+            serializeConstant(*captured_column.type, *captured_column.column, out, registry);
         }
 
         return;
@@ -3438,8 +3434,8 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        if (has_column)
-            serialzieConstant(*node.result_type, *node.column, out, registry);
+        if (has_column && !node.column->empty())
+            serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
         {

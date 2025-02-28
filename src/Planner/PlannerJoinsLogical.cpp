@@ -26,15 +26,16 @@
 #include <Analyzer/JoinNode.h>
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
