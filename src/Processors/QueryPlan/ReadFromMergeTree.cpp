@@ -1564,6 +1564,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
         /// can use parallel select on such parts.
+
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
             parts_to_merge_ranges[range_index]->data_part->info.level > 0 && !reader_settings.read_in_order;
@@ -1579,6 +1580,13 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 prewhere_info = std::make_shared<PrewhereInfo>();
             }
 
+            prewhere_info->prewhere_column_name = data.merging_params.is_deleted_column;
+
+            if (std::find(origin_column_names.begin(), origin_column_names.end(), data.merging_params.is_deleted_column) == origin_column_names.end())
+            {
+                origin_column_names.push_back(data.merging_params.is_deleted_column);
+            }
+
             const auto * constant_node = &prewhere_info->prewhere_actions.addColumn(
                 ColumnWithTypeAndName{
                     ColumnUInt8::create(0),
@@ -1586,11 +1594,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                     ""
                 });
 
-            prewhere_info->prewhere_column_name = data.merging_params.is_deleted_column;
-
             const auto & input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
 
-            ActionsDAG::NodeRawConstPtrs children = { input, constant_node };
+            ActionsDAG::NodeRawConstPtrs children = {input, constant_node};
 
             prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_info->prewhere_actions.addFunction(equal_function, std::move(children), data.merging_params.is_deleted_column));
         }
