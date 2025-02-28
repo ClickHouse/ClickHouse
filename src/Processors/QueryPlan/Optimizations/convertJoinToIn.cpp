@@ -14,6 +14,7 @@
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/System/StorageSystemColumns.h>
+#include <Storages/System/StorageSystemReplicas.h>
 
 
 namespace DB::Setting
@@ -31,7 +32,7 @@ bool findReadingStep(QueryPlan::Node & node)
     if (dynamic_cast<ISourceStep *>(step))
     {
         /// might be more cases here
-        if (typeid_cast<ReadFromSystemColumns *>(step))
+        if (typeid_cast<ReadFromSystemColumns *>(step) || typeid_cast<ReadFromSystemReplicas *>(step))
             return false;
         return true;
     }
