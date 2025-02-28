@@ -92,10 +92,10 @@ It is better to specify the remote and branch names explicitly, e.g. `git push o
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
 
-- [ClickHouse Architecture](/docs/development/architecture/).
-- [Code style guide](/docs/development/style/).
-- [Third-party libraries](/docs/development/contrib/#adding-third-party-libraries)
-- [Writing tests](/docs/development/tests/)
+- [ClickHouse Architecture](/development/architecture/).
+- [Code style guide](/development/style/).
+- [Third-party libraries](/development/contrib/#adding-third-party-libraries)
+- [Writing tests](/development/tests/)
 - [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
 ### IDE {#ide}

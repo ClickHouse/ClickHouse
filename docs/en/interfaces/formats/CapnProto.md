@@ -1,7 +1,7 @@
 ---
-title : CapnProto
+title: CapnProto
 slug: /interfaces/formats/CapnProto
-keywords : [CapnProto]
+keywords: [CapnProto]
 input_format: true
 output_format: true
 alias: []
@@ -23,33 +23,33 @@ See also [Format Schema](/interfaces/formats/#formatschema).
 
 ## Data Types Matching {#data_types-matching-capnproto}
 
-The table below shows supported data types and how they match ClickHouse [data types](/docs/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+The table below shows supported data types and how they match ClickHouse [data types](/sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
 
 | CapnProto data type (`INSERT`)                       | ClickHouse data type                                                                                                                                                           | CapnProto data type (`SELECT`)                       |
 |------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------|
-| `UINT8`, `BOOL`                                      | [UInt8](/docs/sql-reference/data-types/int-uint.md)                                                                                                                         | `UINT8`                                              |
-| `INT8`                                               | [Int8](/docs/sql-reference/data-types/int-uint.md)                                                                                                                          | `INT8`                                               |
-| `UINT16`                                             | [UInt16](/docs/sql-reference/data-types/int-uint.md), [Date](/docs/sql-reference/data-types/date.md)                                                                     | `UINT16`                                             |
-| `INT16`                                              | [Int16](/docs/sql-reference/data-types/int-uint.md)                                                                                                                         | `INT16`                                              |
-| `UINT32`                                             | [UInt32](/docs/sql-reference/data-types/int-uint.md), [DateTime](/docs/sql-reference/data-types/datetime.md)                                                             | `UINT32`                                             |
-| `INT32`                                              | [Int32](/docs/sql-reference/data-types/int-uint.md), [Decimal32](/docs/sql-reference/data-types/decimal.md)                                                              | `INT32`                                              |
-| `UINT64`                                             | [UInt64](/docs/sql-reference/data-types/int-uint.md)                                                                                                                        | `UINT64`                                             |
-| `INT64`                                              | [Int64](/docs/sql-reference/data-types/int-uint.md), [DateTime64](/docs/sql-reference/data-types/datetime.md), [Decimal64](/docs/sql-reference/data-types/decimal.md) | `INT64`                                              |
-| `FLOAT32`                                            | [Float32](/docs/sql-reference/data-types/float.md)                                                                                                                          | `FLOAT32`                                            |
-| `FLOAT64`                                            | [Float64](/docs/sql-reference/data-types/float.md)                                                                                                                          | `FLOAT64`                                            |
-| `TEXT, DATA`                                         | [String](/docs/sql-reference/data-types/string.md), [FixedString](/docs/sql-reference/data-types/fixedstring.md)                                                         | `TEXT, DATA`                                         |
-| `union(T, Void), union(Void, T)`                     | [Nullable(T)](/docs/sql-reference/data-types/date.md)                                                                                                                       | `union(T, Void), union(Void, T)`                     |
-| `ENUM`                                               | [Enum(8/16)](/docs/sql-reference/data-types/enum.md)                                                                                                                        | `ENUM`                                               |
-| `LIST`                                               | [Array](/docs/sql-reference/data-types/array.md)                                                                                                                            | `LIST`                                               |
-| `STRUCT`                                             | [Tuple](/docs/sql-reference/data-types/tuple.md)                                                                                                                            | `STRUCT`                                             |
-| `UINT32`                                             | [IPv4](/docs/sql-reference/data-types/ipv4.md)                                                                                                                              | `UINT32`                                             |
-| `DATA`                                               | [IPv6](/docs/sql-reference/data-types/ipv6.md)                                                                                                                              | `DATA`                                               |
-| `DATA`                                               | [Int128/UInt128/Int256/UInt256](/docs/sql-reference/data-types/int-uint.md)                                                                                                 | `DATA`                                               |
-| `DATA`                                               | [Decimal128/Decimal256](/docs/sql-reference/data-types/decimal.md)                                                                                                          | `DATA`                                               |
-| `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/docs/sql-reference/data-types/map.md)                                                                                                                                | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
+| `UINT8`, `BOOL`                                      | [UInt8](/sql-reference/data-types/int-uint.md)                                                                                                                         | `UINT8`                                              |
+| `INT8`                                               | [Int8](/sql-reference/data-types/int-uint.md)                                                                                                                          | `INT8`                                               |
+| `UINT16`                                             | [UInt16](/sql-reference/data-types/int-uint.md), [Date](/sql-reference/data-types/date.md)                                                                     | `UINT16`                                             |
+| `INT16`                                              | [Int16](/sql-reference/data-types/int-uint.md)                                                                                                                         | `INT16`                                              |
+| `UINT32`                                             | [UInt32](/sql-reference/data-types/int-uint.md), [DateTime](/sql-reference/data-types/datetime.md)                                                             | `UINT32`                                             |
+| `INT32`                                              | [Int32](/sql-reference/data-types/int-uint.md), [Decimal32](/sql-reference/data-types/decimal.md)                                                              | `INT32`                                              |
+| `UINT64`                                             | [UInt64](/sql-reference/data-types/int-uint.md)                                                                                                                        | `UINT64`                                             |
+| `INT64`                                              | [Int64](/sql-reference/data-types/int-uint.md), [DateTime64](/sql-reference/data-types/datetime.md), [Decimal64](/sql-reference/data-types/decimal.md) | `INT64`                                              |
+| `FLOAT32`                                            | [Float32](/sql-reference/data-types/float.md)                                                                                                                          | `FLOAT32`                                            |
+| `FLOAT64`                                            | [Float64](/sql-reference/data-types/float.md)                                                                                                                          | `FLOAT64`                                            |
+| `TEXT, DATA`                                         | [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md)                                                         | `TEXT, DATA`                                         |
+| `union(T, Void), union(Void, T)`                     | [Nullable(T)](/sql-reference/data-types/date.md)                                                                                                                       | `union(T, Void), union(Void, T)`                     |
+| `ENUM`                                               | [Enum(8/16)](/sql-reference/data-types/enum.md)                                                                                                                        | `ENUM`                                               |
+| `LIST`                                               | [Array](/sql-reference/data-types/array.md)                                                                                                                            | `LIST`                                               |
+| `STRUCT`                                             | [Tuple](/sql-reference/data-types/tuple.md)                                                                                                                            | `STRUCT`                                             |
+| `UINT32`                                             | [IPv4](/sql-reference/data-types/ipv4.md)                                                                                                                              | `UINT32`                                             |
+| `DATA`                                               | [IPv6](/sql-reference/data-types/ipv6.md)                                                                                                                              | `DATA`                                               |
+| `DATA`                                               | [Int128/UInt128/Int256/UInt256](/sql-reference/data-types/int-uint.md)                                                                                                 | `DATA`                                               |
+| `DATA`                                               | [Decimal128/Decimal256](/sql-reference/data-types/decimal.md)                                                                                                          | `DATA`                                               |
+| `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/sql-reference/data-types/map.md)                                                                                                                                | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
 
 - Integer types can be converted into each other during input/output.
-- For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comparising_mode](/docs/operations/settings/settings-formats.md/#format_capn_proto_enum_comparising_mode) setting.
+- For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comparising_mode](/operations/settings/settings-formats.md/#format_capn_proto_enum_comparising_mode) setting.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
 
 ## Example Usage {#example-usage}

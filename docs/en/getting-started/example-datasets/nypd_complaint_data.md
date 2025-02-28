@@ -651,4 +651,4 @@ Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
 
 ## Next Steps {#next-steps}
 
-[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/guides/best-practices/sparse-primary-indexes.md) discusses the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.

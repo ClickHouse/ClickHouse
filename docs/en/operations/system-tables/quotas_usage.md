@@ -1,7 +1,7 @@
 ---
 description: "System table containing formation about quota usage by all users."
 slug: /operations/system-tables/quotas_usage
-title: "quotas_usage"
+title: "system.quotas_usage"
 keywords: ["system table", "quotas_usage", "quota"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

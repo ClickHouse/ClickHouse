@@ -1,7 +1,7 @@
 ---
-title : ParquetMetadata
+title: ParquetMetadata
 slug: /interfaces/formats/ParquetMetadata
-keywords : [ParquetMetadata]
+keywords: [ParquetMetadata]
 ---
 
 ## Description {#description}
