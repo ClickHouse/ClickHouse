@@ -10,4 +10,4 @@ SET allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas
 
 SELECT c1, c2, c3 FROM alias_column_with_parallel_replicas_table ORDER BY c2 limit 6;
 
--- DROP TABLE alias_column_with_parallel_replicas_table;
+DROP TABLE alias_column_with_parallel_replicas_table;
