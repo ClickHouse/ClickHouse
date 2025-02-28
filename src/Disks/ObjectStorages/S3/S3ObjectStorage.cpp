@@ -1,5 +1,4 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include "Common/ObjectStorageKey.h"
 
 #if USE_AWS_S3
 
@@ -9,22 +8,18 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/IO/getThreadPoolReader.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/S3/copyS3File.h>
-#include <IO/S3/deleteFileFromS3.h>
 #include <Interpreters/Context.h>
-#include <Common/quoteString.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <Core/Settings.h>
 #include <IO/S3/BlobStorageLogWriter.h>
 
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
@@ -32,6 +27,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event S3DeleteObjects;
     extern const Event S3ListObjects;
     extern const Event DiskS3DeleteObjects;
     extern const Event DiskS3ListObjects;
@@ -47,10 +43,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool s3_validate_request_settings;
-}
 
 namespace ErrorCodes
 {
@@ -68,10 +60,21 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     if (!response.IsSuccess())
     {
         const auto & err = response.GetError();
-        throw S3Exception(
-            fmt::format("{} (Code: {}, S3 exception: '{}')",
-                        err.GetMessage(), static_cast<size_t>(err.GetErrorType()), err.GetExceptionName()),
-            err.GetErrorType());
+        throw S3Exception(fmt::format("{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType())), err.GetErrorType());
+    }
+}
+
+template <typename Result, typename Error>
+void throwIfUnexpectedError(const Aws::Utils::Outcome<Result, Error> & response, bool if_exists)
+{
+    /// In this case even if absence of key may be ok for us,
+    /// the log will be polluted with error messages from aws sdk.
+    /// Looks like there is no way to suppress them.
+
+    if (!response.IsSuccess() && (!if_exists || !S3::isNotFoundError(response.GetError().GetErrorType())))
+    {
+        const auto & err = response.GetError();
+        throw S3Exception(err.GetErrorType(), "{} (Code: {})", err.GetMessage(), static_cast<size_t>(err.GetErrorType()));
     }
 }
 
@@ -107,53 +110,45 @@ public:
             CurrentMetrics::ObjectStorageS3ThreadsScheduled,
             "ListObjectS3")
         , client(client_)
-        , request(std::make_unique<S3::ListObjectsV2Request>())
     {
-        request->SetBucket(bucket_);
-        request->SetPrefix(path_prefix);
-        request->SetMaxKeys(static_cast<int>(max_list_size));
-    }
-
-    ~S3IteratorAsync() override
-    {
-        /// Deactivate background threads before resetting the request to avoid data race.
-        deactivate();
-        request.reset();
-        client.reset();
+        request.SetBucket(bucket_);
+        request.SetPrefix(path_prefix);
+        request.SetMaxKeys(static_cast<int>(max_list_size));
     }
 
 private:
     bool getBatchAndCheckNext(RelativePathsWithMetadata & batch) override
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
-        ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
 
-        auto outcome = client->ListObjectsV2(*request);
-
+        bool result = false;
+        auto outcome = client->ListObjectsV2(request);
         /// Outcome failure will be handled on the caller side.
         if (outcome.IsSuccess())
         {
-            request->SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
-
             auto objects = outcome.GetResult().GetContents();
-            for (const auto & object : objects)
-            {
-                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}};
-                batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
-            }
 
-            /// It returns false when all objects were returned
-            return outcome.GetResult().GetIsTruncated();
+            result = !objects.empty();
+
+            for (const auto & object : objects)
+                batch.emplace_back(
+                    object.GetKey(),
+                    ObjectMetadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), {}}
+                );
+
+            if (result)
+                request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
+
+            return result;
         }
 
-        throw S3Exception(outcome.GetError().GetErrorType(),
-                          "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
-                          quoteString(request->GetBucket()), quoteString(request->GetPrefix()),
-                          backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
+        throw S3Exception(outcome.GetError().GetErrorType(), "Could not list objects in bucket {} with prefix {}, S3 exception: {}, message: {}",
+                quoteString(request.GetBucket()), quoteString(request.GetPrefix()),
+                backQuote(outcome.GetError().GetExceptionName()), quoteString(outcome.GetError().GetMessage()));
     }
 
     std::shared_ptr<const S3::Client> client;
-    std::unique_ptr<S3::ListObjectsV2Request> request;
+    S3::ListObjectsV2Request request;
 };
 
 }
@@ -161,7 +156,66 @@ private:
 bool S3ObjectStorage::exists(const StoredObject & object) const
 {
     auto settings_ptr = s3_settings.get();
-    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {});
+    return S3::objectExists(*client.get(), uri.bucket, object.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObjects( /// NOLINT
+    const StoredObjects & objects,
+    const ReadSettings & read_settings,
+    std::optional<size_t>,
+    std::optional<size_t>) const
+{
+    ReadSettings disk_read_settings = patchSettings(read_settings);
+    auto global_context = Context::getGlobalContextInstance();
+
+    auto settings_ptr = s3_settings.get();
+
+    auto read_buffer_creator =
+        [this, settings_ptr, disk_read_settings]
+        (bool restricted_seek, const std::string & path) -> std::unique_ptr<ReadBufferFromFileBase>
+    {
+        return std::make_unique<ReadBufferFromS3>(
+            client.get(),
+            uri.bucket,
+            path,
+            uri.version_id,
+            settings_ptr->request_settings,
+            disk_read_settings,
+            /* use_external_buffer */true,
+            /* offset */0,
+            /* read_until_position */0,
+            restricted_seek);
+    };
+
+    switch (read_settings.remote_fs_method)
+    {
+        case RemoteFSReadMethod::read:
+        {
+            return std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                "s3:" + uri.bucket + "/",
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */false);
+        }
+        case RemoteFSReadMethod::threadpool:
+        {
+            auto impl = std::make_unique<ReadBufferFromRemoteFSGather>(
+                std::move(read_buffer_creator),
+                objects,
+                "s3:" + uri.bucket + "/",
+                disk_read_settings,
+                global_context->getFilesystemCacheLog(),
+                /* use_external_buffer */true);
+
+            auto & reader = global_context->getThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER);
+            return std::make_unique<AsynchronousBoundedReadBuffer>(
+                std::move(impl), reader, disk_read_settings,
+                global_context->getAsyncReadCounters(),
+                global_context->getFilesystemReadPrefetchesLog());
+        }
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
@@ -177,12 +231,7 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         object.remote_path,
         uri.version_id,
         settings_ptr->request_settings,
-        patchSettings(read_settings),
-        read_settings.remote_read_buffer_use_external_buffer,
-        /* offset */0,
-        /* read_until_position */0,
-        read_settings.remote_read_buffer_restrict_seek,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt);
+        patchSettings(read_settings));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLINT
@@ -197,20 +246,11 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
     if (mode != WriteMode::Rewrite)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "S3 doesn't support append to files");
 
-    S3::S3RequestSettings request_settings = s3_settings.get()->request_settings;
-    /// NOTE: For background operations settings are not propagated from session or query. They are taken from
-    /// default user's .xml config. It's obscure and unclear behavior. For them it's always better
-    /// to rely on settings from disk.
-    if (auto query_context = CurrentThread::getQueryContext();
-        query_context && !query_context->isBackgroundOperationContext())
-    {
-        const auto & settings = query_context->getSettingsRef();
-        request_settings.updateFromSettings(settings, /* if_changed */ true, settings[Setting::s3_validate_request_settings]);
-    }
-
-    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
+    auto settings_ptr = s3_settings.get();
+    ThreadPoolCallbackRunner<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
+        scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "VFSWrite");
+
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     if (blob_storage_log)
@@ -220,8 +260,8 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
         client.get(),
         uri.bucket,
         object.remote_path,
-        write_settings.use_adaptive_write_buffer ? write_settings.adaptive_write_buffer_initial_size : buf_size,
-        request_settings,
+        buf_size,
+        settings_ptr->request_settings,
         std::move(blob_storage_log),
         attributes,
         std::move(scheduler),
@@ -229,24 +269,21 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 }
 
 
-ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix) const
 {
     auto settings_ptr = s3_settings.get();
-    if (!max_keys)
-        max_keys = settings_ptr->list_object_keys_size;
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), settings_ptr->list_object_keys_size);
 }
 
-void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
+void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const
 {
     auto settings_ptr = s3_settings.get();
 
     S3::ListObjectsV2Request request;
     request.SetBucket(uri.bucket);
-    if (path != "/")
-        request.SetPrefix(path);
+    request.SetPrefix(path);
     if (max_keys)
-        request.SetMaxKeys(static_cast<int>(max_keys));
+        request.SetMaxKeys(max_keys);
     else
         request.SetMaxKeys(settings_ptr->list_object_keys_size);
 
@@ -255,7 +292,6 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     {
         ProfileEvents::increment(ProfileEvents::S3ListObjects);
         ProfileEvents::increment(ProfileEvents::DiskS3ListObjects);
-
         outcome = client.get()->ListObjectsV2(request);
         throwIfError(outcome);
 
@@ -266,20 +302,19 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
             break;
 
         for (const auto & object : objects)
-            children.emplace_back(std::make_shared<RelativePathWithMetadata>(
+            children.emplace_back(
                 object.GetKey(),
                 ObjectMetadata{
                     static_cast<uint64_t>(object.GetSize()),
                     Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
-                    object.GetETag(),
-                    {}}));
+                    {}});
 
         if (max_keys)
         {
-            size_t keys_left = max_keys - children.size();
+            int keys_left = max_keys - static_cast<int>(children.size());
             if (keys_left <= 0)
                 break;
-            request.SetMaxKeys(static_cast<int>(keys_left));
+            request.SetMaxKeys(keys_left);
         }
 
         request.SetContinuationToken(outcome.GetResult().GetNextContinuationToken());
@@ -288,11 +323,20 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
 
 void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
-    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+    ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
+    ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
+    S3::DeleteObjectRequest request;
+    request.SetBucket(uri.bucket);
+    request.SetKey(object.remote_path);
+    auto outcome = client.get()->DeleteObject(request);
+    if (auto blob_storage_log = BlobStorageLogWriter::create(disk_name))
+        blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
+                                   uri.bucket, object.remote_path, object.local_path, object.bytes_size,
+                                   outcome.IsSuccess() ? nullptr : &outcome.GetError());
 
-    deleteFileFromS3(client.get(), uri.bucket, object.remote_path, if_exists,
-                      blob_storage_log, object.local_path, object.bytes_size,
-                      ProfileEvents::DiskS3DeleteObjects);
+    throwIfUnexpectedError(outcome, if_exists);
+
+    LOG_DEBUG(log, "Object with path {} was removed from S3", object.remote_path);
 }
 
 void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists)
@@ -300,36 +344,73 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
     if (objects.empty())
         return;
 
-    Strings keys;
-    keys.reserve(objects.size());
-    for (const auto & object : objects)
-        keys.push_back(object.remote_path);
-
-    auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
-    Strings local_paths_for_blob_storage_log;
-    std::vector<size_t> file_sizes_for_blob_storage_log;
-    if (blob_storage_log)
+    if (!s3_capabilities.support_batch_delete)
     {
-        local_paths_for_blob_storage_log.reserve(objects.size());
-        file_sizes_for_blob_storage_log.reserve(objects.size());
         for (const auto & object : objects)
+            removeObjectImpl(object, if_exists);
+    }
+    else
+    {
+        auto settings_ptr = s3_settings.get();
+
+        size_t chunk_size_limit = settings_ptr->objects_chunk_size_to_delete;
+        size_t current_position = 0;
+
+        auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
+        while (current_position < objects.size())
         {
-            local_paths_for_blob_storage_log.push_back(object.local_path);
-            file_sizes_for_blob_storage_log.push_back(object.bytes_size);
+            std::vector<Aws::S3::Model::ObjectIdentifier> current_chunk;
+            String keys;
+            for (; current_position < objects.size() && current_chunk.size() < chunk_size_limit; ++current_position)
+            {
+                Aws::S3::Model::ObjectIdentifier obj;
+                obj.SetKey(objects[current_position].remote_path);
+                current_chunk.push_back(obj);
+
+                if (!keys.empty())
+                    keys += ", ";
+                keys += objects[current_position].remote_path;
+            }
+
+            Aws::S3::Model::Delete delkeys;
+            delkeys.SetObjects(current_chunk);
+
+            ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
+            ProfileEvents::increment(ProfileEvents::DiskS3DeleteObjects);
+            S3::DeleteObjectsRequest request;
+            request.SetBucket(uri.bucket);
+            request.SetDelete(delkeys);
+            auto outcome = client.get()->DeleteObjects(request);
+
+            if (blob_storage_log)
+            {
+                const auto * outcome_error = outcome.IsSuccess() ? nullptr : &outcome.GetError();
+                auto time_now = std::chrono::system_clock::now();
+                for (const auto & object : objects)
+                    blob_storage_log->addEvent(BlobStorageLogElement::EventType::Delete,
+                                               uri.bucket, object.remote_path, object.local_path, object.bytes_size,
+                                               outcome_error, time_now);
+            }
+
+            LOG_DEBUG(log, "Objects with paths [{}] were removed from S3", keys);
+            throwIfUnexpectedError(outcome, if_exists);
         }
     }
+}
 
-    auto settings_ptr = s3_settings.get();
-
-    deleteFilesFromS3(client.get(), uri.bucket, keys, if_exists,
-                      s3_capabilities, settings_ptr->objects_chunk_size_to_delete,
-                      blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
-                      ProfileEvents::DiskS3DeleteObjects);
+void S3ObjectStorage::removeObject(const StoredObject & object)
+{
+    removeObjectImpl(object, false);
 }
 
 void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     removeObjectImpl(object, true);
+}
+
+void S3ObjectStorage::removeObjects(const StoredObjects & objects)
+{
+    removeObjectsImpl(objects, false);
 }
 
 void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
@@ -340,16 +421,14 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfo(
-        *client.get(), uri.bucket, path, {}, /* with_metadata= */ true, /* throw_on_error= */ false);
+    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true, /* throw_on_error= */ false);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
-    result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
-    result.etag = object_info.etag;
+    result.last_modified = object_info.last_modification_time;
     result.attributes = object_info.metadata;
 
     return result;
@@ -358,21 +437,11 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
 ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
 {
     auto settings_ptr = s3_settings.get();
-    S3::ObjectInfo object_info;
-    try
-    {
-        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true);
-    }
-    catch (DB::Exception & e)
-    {
-        e.addMessage("while reading " + path);
-        throw;
-    }
+    auto object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, settings_ptr->request_settings, /* with_metadata= */ true, /* for_disk_s3= */ true);
 
     ObjectMetadata result;
     result.size_bytes = object_info.size;
-    result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
-    result.etag = object_info.etag;
+    result.last_modified = object_info.last_modification_time;
     result.attributes = object_info.metadata;
 
     return result;
@@ -391,12 +460,9 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     {
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
-        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-        const auto read_settings_to_use = patchSettings(read_settings);
-
-        try
-        {
+        auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+        auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+        try {
             copyS3File(
                 /*src_s3_client=*/current_client,
                 /*src_bucket=*/uri.bucket,
@@ -407,11 +473,11 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
                 /*dest_bucket=*/dest_s3->uri.bucket,
                 /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
-                read_settings_to_use,
+                patchSettings(read_settings),
                 BlobStorageLogWriter::create(disk_name),
+                object_to_attributes,
                 scheduler,
-                [&, this]{ return readObject(object_from, read_settings_to_use);},
-                object_to_attributes);
+                /* for_disk_s3= */ true);
             return;
         }
         catch (S3Exception & exc)
@@ -437,9 +503,8 @@ void S3ObjectStorage::copyObject( // NOLINT
 {
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
-    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
-    const auto read_settings_to_use = patchSettings(read_settings);
+    auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {}, settings_ptr->request_settings, /* for_disk_s3= */ true);
+    auto scheduler = threadPoolCallbackRunner<void>(getThreadPoolWriter(), "S3ObjStor_copy");
 
     copyS3File(
         /*src_s3_client=*/current_client,
@@ -451,11 +516,11 @@ void S3ObjectStorage::copyObject( // NOLINT
         /*dest_bucket=*/uri.bucket,
         /*dest_key=*/object_to.remote_path,
         settings_ptr->request_settings,
-        read_settings_to_use,
+        patchSettings(read_settings),
         BlobStorageLogWriter::create(disk_name),
+        object_to_attributes,
         scheduler,
-        [&, this]{ return readObject(object_from, read_settings_to_use);},
-        object_to_attributes);
+        /* for_disk_s3= */ true);
 }
 
 void S3ObjectStorage::setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_)
@@ -478,43 +543,20 @@ void S3ObjectStorage::startup()
     const_cast<S3::Client &>(*client.get()).EnableRequestProcessing();
 }
 
-void S3ObjectStorage::applyNewSettings(
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context,
-    const ApplyNewSettingsOptions & options)
+void S3ObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    auto settings_from_config
-        = getSettings(config, config_prefix, context, uri.uri_str, context->getSettingsRef()[Setting::s3_validate_request_settings]);
-    auto modified_settings = std::make_unique<S3ObjectStorageSettings>(*s3_settings.get());
-    modified_settings->auth_settings.updateIfChanged(settings_from_config->auth_settings);
-    modified_settings->request_settings.updateIfChanged(settings_from_config->request_settings);
-
-    if (auto endpoint_settings = context->getStorageS3Settings().getSettings(uri.uri.toString(), context->getUserName()))
-    {
-        modified_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
-        modified_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
-    }
-
-    auto current_settings = s3_settings.get();
-    if (options.allow_client_change
-        && (current_settings->auth_settings.hasUpdates(modified_settings->auth_settings) || for_disk_s3))
-    {
-        auto new_client = getClient(uri, *modified_settings, context, for_disk_s3);
-        client.set(std::move(new_client));
-    }
-    s3_settings.set(std::move(modified_settings));
+    auto new_s3_settings = getSettings(config, config_prefix, context);
+    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    s3_settings.set(std::move(new_s3_settings));
+    client.set(std::move(new_client));
 }
 
 std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
-    const std::string & new_namespace,
-    const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix,
-    ContextPtr context)
+    const std::string & new_namespace, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
-    auto new_s3_settings = getSettings(config, config_prefix, context, uri.uri_str, settings[Setting::s3_validate_request_settings]);
-    auto new_client = getClient(uri, *new_s3_settings, context, for_disk_s3);
+    auto new_s3_settings = getSettings(config, config_prefix, context);
+    auto new_client = getClient(config, config_prefix, context, *new_s3_settings);
+    String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 
     auto new_uri{uri};
     new_uri.bucket = new_namespace;
@@ -523,17 +565,11 @@ std::unique_ptr<IObjectStorage> S3ObjectStorage::cloneObjectStorage(
         std::move(new_client), std::move(new_s3_settings), new_uri, s3_capabilities, key_generator, disk_name);
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path) const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
-
-    return key_generator->generate(path, /* is_directory */ false, key_prefix);
-}
-
-bool S3ObjectStorage::areObjectKeysRandom() const
-{
-    return key_generator->isRandom();
+    return key_generator->generate(path);
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
@@ -541,10 +577,6 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
     return client.get();
 }
 
-std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
-{
-    return client.get();
-}
 }
 
 #endif

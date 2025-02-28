@@ -20,7 +20,7 @@ friend class TableFunctionDictionary;
 
 public:
     /// Specifies where the table is located relative to the dictionary.
-    enum class Location : uint8_t
+    enum class Location
     {
         /// Table was created automatically as an element of a database with the Dictionary engine.
         DictionaryDatabase,
@@ -80,7 +80,7 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary() const;
 
-    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure, bool validate_id_type);
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
 
     bool isDictionary() const override { return true; }
     void shutdown(bool is_drop) override;

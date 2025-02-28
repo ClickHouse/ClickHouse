@@ -1,17 +1,16 @@
-#include <Access/ContextAccess.h>
-#include <Columns/ColumnString.h>
+#include <Databases/IDatabase.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
-#include <Storages/SelectQueryInfo.h>
+#include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Common/logger_useful.h>
+#include <Parsers/formatAST.h>
 
 
 namespace DB
@@ -74,14 +73,6 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
     return engine_full;
 }
 
-Block StorageSystemDatabases::getFilterSampleBlock() const
-{
-    return {
-        { {}, std::make_shared<DataTypeString>(), "engine" },
-        { {}, std::make_shared<DataTypeUUID>(), "uuid" },
-    };
-}
-
 static ColumnPtr getFilteredDatabases(const Databases & databases, const ActionsDAG::Node * predicate, ContextPtr context)
 {
     MutableColumnPtr name_column = ColumnString::create();
@@ -111,7 +102,7 @@ static ColumnPtr getFilteredDatabases(const Databases & databases, const Actions
 void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8> columns_mask) const
 {
     const auto access = context->getAccess();
-    const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+    const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     const auto databases = DatabaseCatalog::instance().getDatabases();
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
@@ -120,7 +111,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
     {
         auto database_name = filtered_databases_column->getDataAt(i).toString();
 
-        if (need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
+        if (check_access_for_databases && !access->isGranted(AccessType::SHOW_DATABASES, database_name))
             continue;
 
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

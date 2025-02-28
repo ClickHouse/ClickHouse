@@ -36,15 +36,17 @@ String ISerialization::kindToString(Kind kind)
         case Kind::SPARSE:
             return "Sparse";
     }
+    UNREACHABLE();
 }
 
 ISerialization::Kind ISerialization::stringToKind(const String & str)
 {
     if (str == "Default")
         return Kind::DEFAULT;
-    if (str == "Sparse")
+    else if (str == "Sparse")
         return Kind::SPARSE;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
+    else
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind '{}'", str);
 }
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
@@ -62,9 +64,6 @@ String ISerialization::Substream::toString() const
 
     if (type == VariantElement)
         return fmt::format("VariantElement({})", variant_element_name);
-
-    if (type == VariantElementNullMap)
-        return fmt::format("VariantElementNullMap({}.null)", variant_element_name);
 
     return String(magic_enum::enum_name(type));
 }
@@ -161,7 +160,7 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_for_file_name)
+    bool escape_tuple_delimiter)
 {
     using Substream = ISerialization::Substream;
 
@@ -186,7 +185,7 @@ String getNameForSubstreamPath(
             /// Because nested data may be represented not by Array of Tuple,
             /// but by separate Array columns with names in a form of a.b,
             /// and name is encoded as a whole.
-            if (it->type == Substream::TupleElement && escape_for_file_name)
+            if (it->type == Substream::TupleElement && escape_tuple_delimiter)
                 stream_name += escapeForFileName(substream_name);
             else
                 stream_name += substream_name;
@@ -197,16 +196,6 @@ String getNameForSubstreamPath(
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
             stream_name += "." + it->variant_element_name;
-        else if (it->type == Substream::VariantElementNullMap)
-            stream_name += "." + it->variant_element_name + ".null";
-        else if (it->type == SubstreamType::DynamicStructure)
-            stream_name += ".dynamic_structure";
-        else if (it->type == SubstreamType::ObjectStructure)
-            stream_name += ".object_structure";
-        else if (it->type == SubstreamType::ObjectSharedData)
-            stream_name += ".object_shared_data";
-        else if (it->type == SubstreamType::ObjectTypedPath || it->type == SubstreamType::ObjectDynamicPath)
-            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->object_path_name) : it->object_path_name);
     }
 
     return stream_name;
@@ -274,23 +263,6 @@ void ISerialization::addToSubstreamsCache(SubstreamsCache * cache, const Substre
 }
 
 ColumnPtr ISerialization::getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path)
-{
-    if (!cache || path.empty())
-        return nullptr;
-
-    auto it = cache->find(getSubcolumnNameForStream(path));
-    return it == cache->end() ? nullptr : it->second;
-}
-
-void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
-{
-    if (!cache || path.empty())
-        return;
-
-    cache->emplace(getSubcolumnNameForStream(path), state);
-}
-
-ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
 {
     if (!cache || path.empty())
         return nullptr;
@@ -405,67 +377,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
-            || path[last_elem].type == Substream::VariantElement
-            || path[last_elem].type == Substream::VariantElementNullMap
-            || path[last_elem].type == Substream::ObjectTypedPath;
-}
-
-bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
-{
-    if (prefix_len == 0 || prefix_len > path.size())
-        return false;
-
-    size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap;
-}
-
-bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
-{
-    if (prefix_len == 0 || prefix_len > path.size())
-        return false;
-
-    for (size_t i = 0; i != prefix_len; ++i)
-    {
-        if (path[i].type == SubstreamType::DynamicData || path[i].type == SubstreamType::DynamicStructure
-            || path[i].type == SubstreamType::ObjectData || path[i].type == SubstreamType::ObjectStructure)
-            return true;
-    }
-
-    return false;
-}
-
-bool ISerialization::isLowCardinalityDictionarySubcolumn(const DB::ISerialization::SubstreamPath & path)
-{
-    if (path.empty())
-        return false;
-
-    return path[path.size() - 1].type == SubstreamType::DictionaryKeys;
-}
-
-bool ISerialization::isDynamicOrObjectStructureSubcolumn(const DB::ISerialization::SubstreamPath & path)
-{
-    if (path.empty())
-        return false;
-
-    return path[path.size() - 1].type == SubstreamType::DynamicStructure || path[path.size() - 1].type == SubstreamType::ObjectStructure;
-}
-
-bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path)
-{
-    if (path.empty())
-        return false;
-
-    switch (path[path.size() - 1].type)
-    {
-        case SubstreamType::DynamicStructure: [[fallthrough]];
-        case SubstreamType::ObjectStructure: [[fallthrough]];
-        case SubstreamType::DeprecatedObjectStructure: [[fallthrough]];
-        case SubstreamType::DictionaryKeys: [[fallthrough]];
-        case SubstreamType::VariantDiscriminators:
-            return true;
-        default:
-            return false;
-    }
+            || path[last_elem].type == Substream::VariantElement;
 }
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
@@ -481,8 +393,8 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
         const auto & creator = path[i].creator;
         if (creator)
         {
-            res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
             res.type = res.type ? creator->create(res.type) : res.type;
+            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
             res.column = res.column ? creator->create(res.column) : res.column;
         }
     }

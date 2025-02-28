@@ -1,5 +1,4 @@
 #include <fstream>
-#include <Core/BackgroundSchedulePool.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -121,7 +120,8 @@ void RemoteCacheController::waitMoreData(size_t start_offset_, size_t end_offset
             lock.unlock();
             return;
         }
-        more_data_signal.wait(lock, [this, end_offset_] { return file_status == DOWNLOADED || current_offset >= end_offset_; });
+        else
+            more_data_signal.wait(lock, [this, end_offset_] { return file_status == DOWNLOADED || current_offset >= end_offset_; });
     }
     lock.unlock();
 }
@@ -206,7 +206,7 @@ void RemoteCacheController::close()
     // delete directory
     LOG_TRACE(log, "Removing the local cache. local path: {}", local_path.string());
     if (fs::exists(local_path))
-        (void)fs::remove_all(local_path);
+        fs::remove_all(local_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()

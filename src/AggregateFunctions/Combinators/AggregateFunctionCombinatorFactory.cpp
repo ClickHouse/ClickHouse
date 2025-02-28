@@ -1,6 +1,6 @@
 #include "AggregateFunctionCombinatorFactory.h"
 
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {

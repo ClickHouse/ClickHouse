@@ -1,14 +1,11 @@
-#include <Common/Exception.h>
 #include <IO/SeekableReadBuffer.h>
 
-#include <istream>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_FROM_ISTREAM;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -54,29 +51,6 @@ namespace
             return in.getPosition();
         }
     };
-}
-
-size_t SeekableReadBuffer::getFileOffsetOfBufferEnd() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFileOffsetOfBufferEnd() not implemented");
-}
-
-size_t SeekableReadBuffer::readBigAt(char * /*to*/, size_t /*n*/, size_t /*offset*/, const std::function<bool(size_t m)> & /*progress_callback*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method readBigAt() not implemented");
-}
-
-
-std::optional<off_t> SeekableReadBuffer::tryGetPosition()
-{
-    try
-    {
-        return getPosition();
-    }
-    catch (...)
-    {
-        return std::nullopt;
-    }
 }
 
 

@@ -2,8 +2,8 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Allocator.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 
 /** Replacement for std::vector<char> to use in buffers.
-  * Differs in that is doesn't do unnecessary memset. (And also tries to do as little as possible.)
+  * Differs in that is doesn't do unneeded memset. (And also tries to do as little as possible.)
   * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
   */
 template <typename Allocator = Allocator<false>>
@@ -44,7 +44,10 @@ struct Memory : boost::noncopyable, Allocator
     Memory() = default;
 
     /// If alignment != 0, then allocate memory aligned to specified value.
-    explicit Memory(size_t size_, size_t alignment_ = 0) : alignment(alignment_) { alloc(size_); }
+    explicit Memory(size_t size_, size_t alignment_ = 0) : alignment(alignment_)
+    {
+        alloc(size_);
+    }
 
     ~Memory()
     {
@@ -72,7 +75,7 @@ struct Memory : boost::noncopyable, Allocator
 
     size_t size() const { return m_size; }
     const char & operator[](size_t i) const { return m_data[i]; }
-    char & operator[](size_t i) { return m_data[i]; }  /// NOLINT(clang-analyzer-core.uninitialized.UndefReturn)
+    char & operator[](size_t i) { return m_data[i]; }
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 

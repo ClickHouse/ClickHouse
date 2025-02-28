@@ -5,7 +5,6 @@
 #   include <Formats/ProtobufWriter.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Formats/ProtobufSchemas.h>
-#   include <Processors/Port.h>
 
 namespace DB
 {
@@ -18,12 +17,11 @@ ProtobufListOutputFormat::ProtobufListOutputFormat(
     const String & google_protos_path)
     : IRowOutputFormat(header_, out_)
     , writer(std::make_unique<ProtobufWriter>(out))
-    , descriptor_holder(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-          schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
-          descriptor_holder,
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           defaults_for_nullable_google_wrappers_,
@@ -62,7 +60,6 @@ void registerOutputFormatProtobufList(FormatFactory & factory)
                 settings.protobuf.output_nullables_with_google_wrappers,
                 settings.protobuf.google_protos_path);
         });
-    factory.markOutputFormatNotTTYFriendly("ProtobufList");
 }
 
 }

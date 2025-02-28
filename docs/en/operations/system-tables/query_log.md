@@ -1,12 +1,7 @@
 ---
-description: "System table containing information about executed queries, for example, start time, duration of processing, error messages."
-slug: /operations/system-tables/query_log
-title: "system.query_log"
-keywords: ["system table", "query_log"]
+slug: /en/operations/system-tables/query_log
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# query_log
 
 Contains information about executed queries, for example, start time, duration of processing, error messages.
 
@@ -14,13 +9,13 @@ Contains information about executed queries, for example, start time, duration o
 This table does not contain the ingested data for `INSERT` queries.
 :::
 
-You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) section of the server configuration.
+You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) section of the server configuration.
 
 You can disable queries logging by setting [log_queries = 0](../../operations/settings/settings.md#log-queries). We do not recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
 The `system.query_log` table registers two kinds of queries:
 
@@ -51,8 +46,8 @@ Columns:
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
 - `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
-- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
-- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
+- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it’s `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
+- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it’s `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
 - `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
 - `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes (uncompressed). For other queries, the column value is 0.
 - `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
@@ -61,7 +56,7 @@ Columns:
 - `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
-- `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
+- `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identical hash value without the values of literals for similar queries.
 - `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 - `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 - `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.
@@ -95,8 +90,6 @@ Columns:
 - `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Major version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Minor version of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
 - `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Patch component of the [clickhouse-client](../../interfaces/cli.md) or another TCP client version.
-- `script_query_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The query number in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
-- `script_line_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The line number of the query start in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     - 0 — The query was launched from the TCP interface.
     - 1 — `GET` method was used.
@@ -115,13 +108,11 @@ Columns:
 - `used_aggregate_function_combinators` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `aggregate functions combinators`, which were used during query execution.
 - `used_database_engines` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `database engines`, which were used during query execution.
 - `used_data_type_families` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `data type families`, which were used during query execution.
-- `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `dictionaries`, which were used during query execution. For dictionaries configured using an XML file this is the name of the dictionary, and for dictionaries created by an SQL statement, the canonical name is the fully qualified object name.
+- `used_dictionaries` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `dictionaries`, which were used during query execution.
 - `used_formats` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `formats`, which were used during query execution.
 - `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `functions`, which were used during query execution.
 - `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `storages`, which were used during query execution.
 - `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
-- `used_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges which were successfully checked during query execution.
-- `missing_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges that are missing during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
     - `'Unknown'` = Status unknown.
     - `'None'` = The query result was neither written into nor read from the query cache.
@@ -203,8 +194,6 @@ used_formats:                          []
 used_functions:                        []
 used_storages:                         []
 used_table_functions:                  []
-used_privileges:                       []
-missing_privileges:                    []
 query_cache_usage:                     None
 ```
 

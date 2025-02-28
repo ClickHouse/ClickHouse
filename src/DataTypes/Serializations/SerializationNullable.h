@@ -29,8 +29,7 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state,
-            SubstreamsDeserializeStatesCache * cache) const override;
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
@@ -113,6 +112,18 @@ public:
     static void serializeNullText(WriteBuffer & ostr, const FormatSettings & settings);
     static bool tryDeserializeNullText(ReadBuffer & istr);
     static void serializeNullXML(WriteBuffer & ostr);
+
+private:
+    struct SubcolumnCreator : public ISubcolumnCreator
+    {
+        const ColumnPtr null_map;
+
+        explicit SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
 };
 
 }

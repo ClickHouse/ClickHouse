@@ -33,13 +33,6 @@ name: Build ClickHouse
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
-    secrets:
-      robot_git_token:
-        required: false
-      ci_db_url:
-        required: false
-      ci_db_password:
-        required: false
 
 jobs:
   Build:
@@ -64,15 +57,6 @@ jobs:
           DOCKER_TAG<<DOCKER_JSON
           ${{ toJson(fromJson(inputs.data).docker_data.images) }}
           DOCKER_JSON
-          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-          ${{secrets.robot_git_token}}
-          RCSK
-          CI_DB_URL<<CIDBU
-          ${{ secrets.ci_db_url }}
-          CIDBU
-          CI_DB_PASSWORD<<CIDBP
-          ${{ secrets.ci_db_password }}
-          CIDBP
           EOF
           python3 "$GITHUB_WORKSPACE"/tests/ci/ci_config.py --build-name "${{inputs.build_name}}" >> "$GITHUB_ENV"
       - name: Apply sparse checkout for contrib # in order to check that it doesn't break build

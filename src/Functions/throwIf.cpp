@@ -4,7 +4,6 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
-#include <Core/Settings.h>
 #include <Common/ErrorCodes.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
@@ -12,11 +11,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_custom_error_code_in_throwif;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
@@ -36,10 +30,7 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionThrowIf>(context); }
 
-    explicit FunctionThrowIf(ContextPtr context_)
-        : allow_custom_error_code_argument(context_->getSettingsRef()[Setting::allow_custom_error_code_in_throwif])
-    {
-    }
+    explicit FunctionThrowIf(ContextPtr context_) : allow_custom_error_code_argument(context_->getSettingsRef().allow_custom_error_code_in_throwif) {}
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -71,11 +62,6 @@ public:
         }
 
 
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
         return std::make_shared<DataTypeUInt8>();
     }
 
@@ -150,10 +136,10 @@ private:
                     throw Exception::createRuntime(
                         error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
                         *message);
-                throw Exception(
-                    error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
-                    "Value passed to '{}' function is non-zero",
-                    getName());
+                else
+                    throw Exception(
+                        error_code.value_or(ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO),
+                        "Value passed to '{}' function is non-zero", getName());
             }
 
             size_t result_size = in_untyped->size();
@@ -165,7 +151,7 @@ private:
         return nullptr;
     }
 
-    const bool allow_custom_error_code_argument;
+    bool allow_custom_error_code_argument;
 };
 
 }

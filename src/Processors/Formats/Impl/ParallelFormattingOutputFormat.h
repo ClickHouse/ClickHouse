@@ -7,8 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -16,7 +16,6 @@
 
 #include <deque>
 #include <atomic>
-
 
 namespace CurrentMetrics
 {
@@ -27,9 +26,6 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
-class IOutputFormat;
-using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 namespace ErrorCodes
 {
@@ -115,7 +111,7 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flushImpl() override
+    void flush() override
     {
         need_flush = true;
     }
@@ -126,9 +122,15 @@ public:
         started_prefix = true;
     }
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         finishAndWait();
+    }
+
+    void onProgress(const Progress & value) override
+    {
+        std::lock_guard lock(statistics_mutex);
+        statistics.progress.incrementPiecewiseAtomically(value);
     }
 
     void writeSuffix() override
@@ -139,13 +141,13 @@ public:
 
     String getContentType() const override
     {
-        NullWriteBuffer buffer;
+        WriteBufferFromOwnString buffer;
         return internal_formatter_creator(buffer)->getContentType();
     }
 
     bool supportsWritingException() const override
     {
-        NullWriteBuffer buffer;
+        WriteBufferFromOwnString buffer;
         return internal_formatter_creator(buffer)->supportsWritingException();
     }
 
@@ -203,7 +205,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType : uint8_t
+    enum class ProcessingUnitType
     {
         START,
         PLAIN,
@@ -266,7 +268,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait() noexcept;
+    void finishAndWait();
 
     void onBackgroundException()
     {
@@ -310,12 +312,6 @@ private:
         std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
-    }
-    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.rows_before_aggregation = rows_before_aggregation;
-        statistics.applied_aggregation = true;
     }
 };
 

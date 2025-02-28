@@ -1,10 +1,7 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>
@@ -90,13 +87,6 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t index) const override
-    {
-        WriteBufferFromOwnString buf;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[n * index]), n}, buf);
-        return {buf.str(), std::make_shared<DataTypeString>()};
-    }
-
     StringRef getDataAt(size_t index) const override
     {
         return StringRef(&chars[n * index], n);
@@ -108,17 +98,9 @@ public:
 
     bool tryInsert(const Field & x) override;
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t index) override;
-#else
-    void doInsertFrom(const IColumn & src_, size_t index) override;
-#endif
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#else
-    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
-#endif
 
     void insertData(const char * pos, size_t length) override;
 
@@ -147,11 +129,7 @@ public:
 
     void updateHashFast(SipHash & hash) const override;
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
-#else
-    int doCompareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
-#endif
     {
         const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
         chassert(this->n == rhs.n);
@@ -164,13 +142,7 @@ public:
     void updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const override;
 
-    size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const override;
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
-#endif
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
@@ -185,16 +157,11 @@ public:
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     void reserve(size_t size) override
     {
         chars.reserve_exact(n * size);
-    }
-
-    size_t capacity() const override
-    {
-        return chars.capacity() / n;
     }
 
     void shrinkToFit() override

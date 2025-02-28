@@ -1,10 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
-#include <Common/Stopwatch.h>
-#include <Common/CurrentThread.h>
-
-#include <shared_mutex>
 #include <stack>
-
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -100,7 +96,7 @@ bool ExecutingGraph::addEdges(uint64_t node)
     return was_edge_added;
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
+bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
 {
     auto & cur_node = *nodes[pid];
     Processors new_processors;
@@ -112,7 +108,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
     catch (...)
     {
         cur_node.exception = std::current_exception();
-        return UpdateNodeStatus::Exception;
+        return false;
     }
 
     {
@@ -122,7 +118,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
         {
             for (auto & processor : new_processors)
                 processor->cancel();
-            return UpdateNodeStatus::Cancelled;
+            return false;
         }
         processors->insert(processors->end(), new_processors.begin(), new_processors.end());
 
@@ -182,10 +178,10 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::expandPipeline(std::stack<uint6
         }
     }
 
-    return UpdateNodeStatus::Done;
+    return true;
 }
 
-void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
+void ExecutingGraph::initializeExecution(Queue & queue)
 {
     std::stack<uint64_t> stack;
 
@@ -201,17 +197,23 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         }
     }
 
+    Queue async_queue;
+
     while (!stack.empty())
     {
         uint64_t proc = stack.top();
         stack.pop();
 
         updateNode(proc, queue, async_queue);
+
+        if (!async_queue.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
+                            async_queue.front()->processor->getName());
     }
 }
 
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue)
+bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue)
 {
     std::stack<Edge *> updated_edges;
     std::stack<uint64_t> updated_processors;
@@ -277,11 +279,9 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 try
                 {
                     auto & processor = *node.processor;
-                    const auto last_status = node.last_processor_status;
+                    IProcessor::Status last_status = node.last_processor_status;
                     IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                     node.last_processor_status = status;
-                    if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                        CurrentThread::getGroup()->memory_spill_scheduler.remove(&processor);
 
                     if (profile_processors)
                     {
@@ -292,7 +292,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                         }
                         else if (last_status == IProcessor::Status::NeedData && status != IProcessor::Status::NeedData)
                         {
-                            processor.input_wait_elapsed_ns += processor.input_wait_watch.elapsedNanoseconds();
+                            processor.input_wait_elapsed_us += processor.input_wait_watch.elapsedMicroseconds();
                         }
 
                         /// PortFull
@@ -302,14 +302,14 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                         }
                         else if (last_status == IProcessor::Status::PortFull && status != IProcessor::Status::PortFull)
                         {
-                            processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
+                            processor.output_wait_elapsed_us += processor.output_wait_watch.elapsedMicroseconds();
                         }
                     }
                 }
                 catch (...)
                 {
                     node.exception = std::current_exception();
-                    return UpdateNodeStatus::Exception;
+                    return false;
                 }
 
 #ifndef NDEBUG
@@ -319,7 +319,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 node.updated_input_ports.clear();
                 node.updated_output_ports.clear();
 
-                switch (*node.last_processor_status)
+                switch (node.last_processor_status)
                 {
                     case IProcessor::Status::NeedData:
                     case IProcessor::Status::PortFull:
@@ -386,9 +386,8 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
                 read_lock.unlock();
                 {
                     std::unique_lock lock(nodes_mutex);
-                    auto status = expandPipeline(updated_processors, pid);
-                    if (status != UpdateNodeStatus::Done)
-                        return status;
+                    if (!expandPipeline(updated_processors, pid))
+                        return false;
                 }
                 read_lock.lock();
 
@@ -398,7 +397,7 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(uint64_t pid, Queue 
         }
     }
 
-    return UpdateNodeStatus::Done;
+    return true;
 }
 
 void ExecutingGraph::cancel(bool cancel_all_processors)

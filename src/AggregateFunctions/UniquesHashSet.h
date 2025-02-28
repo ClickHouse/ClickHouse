@@ -105,14 +105,14 @@ private:
         }
     }
 
-    size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
-    size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
-    size_t mask() const               { return buf_size() - 1; }
+    inline size_t buf_size() const           { return 1ULL << size_degree; } /// NOLINT
+    inline size_t max_fill() const           { return 1ULL << (size_degree - 1); } /// NOLINT
+    inline size_t mask() const               { return buf_size() - 1; }
 
-    size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
     /// The value is divided by 2 ^ skip_degree
-    bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
+    inline bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
     HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
 
@@ -443,6 +443,51 @@ public:
                     has_zero = true;
                 else
                     reinsertImpl(hs[i]);
+            }
+        }
+    }
+
+    void readAndMerge(DB::ReadBuffer & rb)
+    {
+        UInt8 rhs_skip_degree = 0;
+        DB::readBinaryLittleEndian(rhs_skip_degree, rb);
+
+        if (rhs_skip_degree > skip_degree)
+        {
+            skip_degree = rhs_skip_degree;
+            rehash();
+        }
+
+        size_t rhs_size = 0;
+        DB::readVarUInt(rhs_size, rb);
+
+        if (rhs_size > UNIQUES_HASH_MAX_SIZE)
+            throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
+
+        if ((1ULL << size_degree) < rhs_size)
+        {
+            UInt8 new_size_degree = std::max(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE, static_cast<int>(log2(rhs_size - 1)) + 2);
+            resize(new_size_degree);
+        }
+
+        if (rhs_size <= 1)
+        {
+            for (size_t i = 0; i < rhs_size; ++i)
+            {
+                HashValue x = 0;
+                DB::readBinaryLittleEndian(x, rb);
+                insertHash(x);
+            }
+        }
+        else
+        {
+            auto hs = std::make_unique<HashValue[]>(rhs_size);
+            rb.readStrict(reinterpret_cast<char *>(hs.get()), rhs_size * sizeof(HashValue));
+
+            for (size_t i = 0; i < rhs_size; ++i)
+            {
+                DB::transformEndianness<std::endian::native, std::endian::little>(hs[i]);
+                insertHash(hs[i]);
             }
         }
     }

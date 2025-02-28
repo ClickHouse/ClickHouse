@@ -131,12 +131,12 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    size_t size() const
+    inline size_t size() const
     {
         return counter_list.size();
     }
 
-    size_t capacity() const
+    inline size_t capacity() const
     {
         return m_capacity;
     }

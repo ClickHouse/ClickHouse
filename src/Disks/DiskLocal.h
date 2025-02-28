@@ -21,7 +21,6 @@ public:
 
     DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_,
               const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
     DiskLocal(
         const String & name_,
         const String & path_,
@@ -42,9 +41,11 @@ public:
 
     UInt64 getKeepingFreeSpace() const override { return keep_free_space_bytes; }
 
-    bool existsFile(const String & path) const override;
-    bool existsDirectory(const String & path) const override;
-    bool existsFileOrDirectory(const String & path) const override;
+    bool exists(const String & path) const override;
+
+    bool isFile(const String & path) const override;
+
+    bool isDirectory(const String & path) const override;
 
     size_t getFileSize(const String & path) const override;
 
@@ -63,10 +64,6 @@ public:
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
-
-    void renameExchange(const std::string & old_path, const std::string & new_path) override;
-
-    bool renameExchangeIfSupported(const std::string & old_path, const std::string & new_path) override;
 
     void copyDirectoryContent(
         const String & from_dir,
@@ -91,13 +88,11 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
-    bool areBlobPathsRandom() const override { return false; }
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;
     void removeDirectory(const String & path) override;
-    void removeDirectoryIfExists(const String & path) override;
     void removeRecursive(const String & path) override;
 
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
@@ -109,20 +104,6 @@ public:
     void setReadOnly(const String & path) override;
 
     void createHardLink(const String & src_path, const String & dst_path) override;
-
-    bool isSymlinkSupported() const override { return true; }
-
-    bool isSymlink(const String & path) const override;
-
-    bool isSymlinkNoThrow(const String & path) const override;
-
-    void createDirectoriesSymlink(const String & target, const String & link) override;
-
-    String readSymlink(const fs::path & path) const override;
-
-    bool equivalent(const String & p1, const String & p2) const override;
-
-    bool equivalentNoThrow(const String & p1, const String & p2) const override;
 
     void truncateFile(const String & path, size_t size) override;
 

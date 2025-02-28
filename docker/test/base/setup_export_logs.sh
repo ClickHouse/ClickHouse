@@ -19,9 +19,13 @@ EXTRA_COLUMNS=${EXTRA_COLUMNS:-"pull_request_number UInt32, commit_sha String, c
 EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:-"CAST(0 AS UInt32) AS pull_request_number, '' AS commit_sha, now() AS check_start_time, toLowCardinality('') AS check_name, toLowCardinality('') AS instance_type, '' AS instance_id"}
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
 
+# trace_log needs more columns for symbolization
+EXTRA_COLUMNS_TRACE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), lines Array(LowCardinality(String)), "
+EXTRA_COLUMNS_EXPRESSION_TRACE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), trace)::Array(LowCardinality(String)) AS symbols, arrayMap(x -> addressToLine(x), trace)::Array(LowCardinality(String)) AS lines"
+
 # coverage_log needs more columns for symbolization, but only symbol names (the line numbers are too heavy to calculate)
 EXTRA_COLUMNS_COVERAGE_LOG="${EXTRA_COLUMNS} symbols Array(LowCardinality(String)), "
-EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayDistinct(arrayMap(x -> demangle(addressToSymbol(x)), coverage))::Array(LowCardinality(String)) AS symbols"
+EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG="${EXTRA_COLUMNS_EXPRESSION}, arrayMap(x -> demangle(addressToSymbol(x)), coverage)::Array(LowCardinality(String)) AS symbols"
 
 
 function __set_connection_args
@@ -120,10 +124,11 @@ function setup_logs_replication
     check_logs_credentials || return 0
     __set_connection_args
 
-    echo "My hostname is ${HOSTNAME}"
-
     echo 'Create all configured system logs'
     clickhouse-client --query "SYSTEM FLUSH LOGS"
+
+    # It's doesn't make sense to try creating tables if SYNC fails
+    echo "SYSTEM SYNC DATABASE REPLICA default" | clickhouse-client "${CONNECTION_ARGS[@]}" || return 0
 
     debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
@@ -138,14 +143,26 @@ function setup_logs_replication
             time DateTime COMMENT 'The time of test run',
             test_name String COMMENT 'The name of the test',
             coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
-        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
+        ) ENGINE = Null COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
     "
 
     # For each system log table:
     echo 'Create %_log tables'
     clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
-        if [[ "$table" = "coverage_log" ]]
+        if [[ "$table" = "trace_log" ]]
+        then
+            EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_TRACE_LOG}"
+            # Do not try to resolve stack traces in case of debug/sanitizers
+            # build, since it is too slow (flushing of trace_log can take ~1min
+            # with such MV attached)
+            if [[ "$debug_or_sanitizer_build" = 1 ]]
+            then
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
+            else
+                EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_TRACE_LOG}"
+            fi
+        elif [[ "$table" = "coverage_log" ]]
         then
             EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS_COVERAGE_LOG}"
             EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION_COVERAGE_LOG}"
@@ -170,17 +187,7 @@ function setup_logs_replication
             /^TTL /d
             ')
 
-        echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
-
-        echo "::group::${table}"
-        # there's the only way big "$statement" can be printed without causing EAGAIN error
-        # cat: write error: Resource temporarily unavailable
-        statement_print="${statement}"
-        if [ "${#statement_print}" -gt 4000 ]; then
-          statement_print="${statement::1999}\n…\n${statement:${#statement}-1999}"
-        fi
-        echo -e "$statement_print"
-        echo "::endgroup::"
+        echo -e "Creating remote destination table ${table}_${hash} with statement:\n${statement}" >&2
 
         echo "$statement" | clickhouse-client --database_replicated_initial_query_timeout_sec=10 \
             --distributed_ddl_task_timeout=30 --distributed_ddl_output_mode=throw_only_active \
@@ -214,6 +221,6 @@ function stop_logs_replication
     clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
+        xargs -n1 -r -i clickhouse-client --query "drop table {}"
     }
 }

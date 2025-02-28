@@ -36,7 +36,7 @@ public:
 
     String getName() const override { return "LiveViewSource"; }
 
-    void onCancel() noexcept override
+    void onCancel() override
     {
         if (storage->shutdown_called)
             return;
@@ -153,10 +153,12 @@ protected:
                         {
                             break;
                         }
-
-                        // heartbeat
-                        last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
-                        return {getPort().getHeader(), true};
+                        else
+                        {
+                            // heartbeat
+                            last_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+                            return { getPort().getHeader(), true };
+                        }
                     }
                 }
             }

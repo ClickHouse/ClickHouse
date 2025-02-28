@@ -23,8 +23,7 @@ public:
         const String & query_id,
         UInt64 stage,
         ClientInfo & client_info,
-        bool with_pending_data,
-        const std::vector<String> & external_roles) = 0;
+        bool with_pending_data) = 0;
 
     virtual void sendReadTaskResponse(const String &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
@@ -34,8 +33,6 @@ public:
 
     /// Version of `receivePacket` function without locking.
     virtual Packet receivePacketUnlocked(AsyncCallback async_callback) = 0;
-
-    virtual UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) = 0;
 
     /// Break all active connections.
     virtual void disconnect() = 0;
@@ -57,6 +54,8 @@ public:
 
     struct ReplicaInfo
     {
+        bool collaborate_with_initiator{false};
+        size_t all_replicas_count{0};
         size_t number_of_current_replica{0};
     };
 

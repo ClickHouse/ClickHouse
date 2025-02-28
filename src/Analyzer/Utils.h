@@ -1,25 +1,16 @@
 #pragma once
 
-#include <Storages/IStorage_fwd.h>
+#include <Analyzer/IQueryTreeNode.h>
 
 #include <Interpreters/Context_fwd.h>
-
-#include <Analyzer/IQueryTreeNode.h>
 
 namespace DB
 {
 
 class FunctionNode;
-struct IdentifierResolveScope;
-
-struct NameAndTypePair;
-using NamesAndTypes = std::vector<NameAndTypePair>;
 
 /// Returns true if node part of root tree, false otherwise
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root);
-
-/// Returns true if storage is used in tree, false otherwise
-bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root);
 
 /// Returns true if function name is name of IN function or its variations, false otherwise
 bool isNameOfInFunction(const std::string & function_name);
@@ -36,30 +27,11 @@ std::string getGlobalInFunctionNameForLocalInFunctionName(const std::string & fu
 /// Add unique suffix to names of duplicate columns in block
 void makeUniqueColumnNamesInBlock(Block & block);
 
-/// Returns true, if node is allowed to be a part of expression
-bool isExpressionNodeType(QueryTreeNodeType node_type);
-
-/// Returns true, if node is LAMBDA
-bool isFunctionExpressionNodeType(QueryTreeNodeType node_type);
-
-/// Returns true, if node is either QUERY or UNION
-bool isSubqueryNodeType(QueryTreeNodeType node_type);
-
-/// Returns true, if node is TABLE, TABLE_FUNCTION, QUERY or UNION
-bool isTableExpressionNodeType(QueryTreeNodeType node_type);
-
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const IQueryTreeNode * node);
 
 /// Returns true, if node has type QUERY or UNION
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node);
-
-/* Returns true, if column source is not registered in scopes that appear
- * before nearest query scope.
- */
-bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source);
-
-DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node);
 
 /** Build cast function that cast expression into type.
   * If resolve = true, then result cast function is resolved during build, otherwise
@@ -133,69 +105,10 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
-/// Resolves function node as ordinary function with given name.
-/// Arguments and parameters are taken from the node.
-void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
-
-/// Resolves function node as aggregate function with given name.
-/// Arguments and parameters are taken from the node.
-void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
-
 /// Checks that node has only one source and returns it
 QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node);
 
-/// Update mutable context for subquery execution
-void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
-
-/** Build query to read specified columns from table expression.
-  * Specified mutable context will be used as query context.
-  */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    ContextMutablePtr & context);
-
-/** Build subquery to read specified columns from table expression.
-  * Specified mutable context will be used as query context.
-  */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    ContextMutablePtr & context);
-
-/** Build query to read specified columns from table expression.
-  * Specified context will be copied and used as query context.
-  */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context);
-
-/** Build subquery to read specified columns from table expression.
-  * Specified context will be copied and used as query context.
-  */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
-    const ContextPtr & context);
-
-/** Build subquery to read all columns from table expression.
-  * Specified context will be copied and used as query context.
-  */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
-
-/** Does a node or its children have a dependency on column
-  * NOT from a specific table expression.
-  */
-bool hasUnknownColumn(
-    const QueryTreeNodePtr & node,
-    QueryTreeNodePtr table_expression);
-
-/** Suppose we have a table x with columns a, c, d and
-  * a an expression like x.a > 2 AND y.b > 3 AND x.c + 1 == x.d
-  * This method will remove the part y.b > 3 from it since it depends
-  * on unknown columns from a different table.
-  */
-void removeExpressionsThatDoNotDependOnTableIdentifiers(
-    QueryTreeNodePtr & expression,
-    const QueryTreeNodePtr & replacement_table_expression,
-    const ContextPtr & context);
-
+/// Build subquery which we execute for `IN table` function.
+QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(QueryTreeNodePtr table_node, const ContextPtr & context);
 
 }

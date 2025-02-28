@@ -14,17 +14,11 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsFloat opentelemetry_start_trace_probability;
-}
-
 namespace OpenTelemetry
 {
 
 /// This code can be executed inside fibers, we should use fiber local tracing context.
-thread_local static FiberLocal<TracingContextOnThread> current_trace_context;
+thread_local FiberLocal<TracingContextOnThread> current_trace_context;
 
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
@@ -335,7 +329,7 @@ TracingContextHolder::TracingContextHolder(
                 return;
 
             // Start the trace with some configurable probability.
-            std::bernoulli_distribution should_start_trace{(*settings_ptr)[Setting::opentelemetry_start_trace_probability]};
+            std::bernoulli_distribution should_start_trace{settings_ptr->opentelemetry_start_trace_probability};
             if (!should_start_trace(thread_local_rng))
                 /// skip tracing context initialization on current thread
                 return;

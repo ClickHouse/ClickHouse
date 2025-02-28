@@ -18,13 +18,13 @@ REGISTER_FUNCTION(Hashing)
     factory.registerFunction<FunctionSipHash128Reference>(FunctionDocumentation{
         .description="Like [sipHash128](#hash_functions-siphash128) but implements the 128-bit algorithm from the original authors of SipHash.",
         .examples{{"hash", "SELECT hex(sipHash128Reference('foo', '\\x01', 3))", ""}},
-        .category{"Hash"}
+        .categories{"Hash"}
     });
     factory.registerFunction<FunctionSipHash128ReferenceKeyed>(FunctionDocumentation{
         .description = "Same as [sipHash128Reference](#hash_functions-siphash128reference) but additionally takes an explicit key argument "
                        "instead of using a fixed key.",
         .examples{{"hash", "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));", ""}},
-        .category{"Hash"}});
+        .categories{"Hash"}});
     factory.registerFunction<FunctionCityHash64>();
     factory.registerFunction<FunctionFarmFingerprint64>();
     factory.registerFunction<FunctionFarmHash64>();
@@ -40,8 +40,9 @@ REGISTER_FUNCTION(Hashing)
         FunctionDocumentation{
             .description="Calculates value of XXH3 64-bit hash function. Refer to https://github.com/Cyan4973/xxHash for detailed documentation.",
             .examples{{"hash", "SELECT xxh3('ClickHouse')", ""}},
-            .category{"Hash"}
-        });
+            .categories{"Hash"}
+        },
+        FunctionFactory::CaseSensitive);
 
     factory.registerFunction<FunctionWyHash64>();
 

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -13,8 +14,6 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemKafkaConsumers.h>
 #include <Storages/Kafka/StorageKafka.h>
-#include <base/Decimal_fwd.h>
-
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -128,7 +127,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             for (const auto & exc : consumer_stat.exceptions_buffer)
             {
                 exceptions_text.insertData(exc.text.data(), exc.text.size());
-                exceptions_time.insert(exc.timestamp);
+                exceptions_time.insert(exc.timestamp_usec);
             }
             exceptions_num += consumer_stat.exceptions_buffer.size();
             exceptions_text_offset.push_back(exceptions_num);
@@ -137,15 +136,15 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
             last_poll_time.insert(consumer_stat.last_poll_time);
             num_messages_read.insert(consumer_stat.num_messages_read);
-            last_commit_time.insert(consumer_stat.last_commit_timestamp);
+            last_commit_time.insert(consumer_stat.last_commit_timestamp_usec);
             num_commits.insert(consumer_stat.num_commits);
-            last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp);
+            last_rebalance_time.insert(consumer_stat.last_rebalance_timestamp_usec);
 
             num_rebalance_revocations.insert(consumer_stat.num_rebalance_revocations);
             num_rebalance_assigments.insert(consumer_stat.num_rebalance_assignments);
 
             is_currently_used.insert(consumer_stat.in_use);
-            last_used.insert(static_cast<Decimal64>(consumer_stat.last_used_usec));
+            last_used.insert(consumer_stat.last_used_usec);
 
             rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
         }

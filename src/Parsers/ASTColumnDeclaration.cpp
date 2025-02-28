@@ -1,6 +1,8 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTLiteral.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
@@ -13,6 +15,8 @@ ASTPtr ASTColumnDeclaration::clone() const
 
     if (type)
     {
+        // Type may be an ASTFunction (e.g. `create table t (a Decimal(9,0))`),
+        // so we have to clone it properly as well.
         res->type = type->clone();
         res->children.push_back(res->type);
     }
@@ -35,10 +39,10 @@ ASTPtr ASTColumnDeclaration::clone() const
         res->children.push_back(res->codec);
     }
 
-    if (statistics_desc)
+    if (stat_type)
     {
-        res->statistics_desc = statistics_desc->clone();
-        res->children.push_back(res->statistics_desc);
+        res->stat_type = stat_type->clone();
+        res->children.push_back(res->stat_type);
     }
 
     if (ttl)
@@ -62,93 +66,85 @@ ASTPtr ASTColumnDeclaration::clone() const
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
+    /// We have to always backquote column names to avoid ambiguouty with INDEX and other declarations in CREATE query.
+    format_settings.ostr << backQuote(name);
 
     if (type)
     {
-        ostr << ' ';
-        type->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ';
+
+        FormatStateStacked type_frame = frame;
+        type_frame.indent = 0;
+
+        type->formatImpl(format_settings, state, type_frame);
     }
 
     if (null_modifier)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
                       << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
         if (!ephemeral_default)
         {
-            ostr << ' ';
-            default_expression->format(ostr, format_settings, state, frame);
+            format_settings.ostr << ' ';
+            default_expression->formatImpl(format_settings, state, frame);
         }
     }
 
     if (comment)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
-        comment->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
+        comment->formatImpl(format_settings, state, frame);
     }
 
     if (codec)
     {
-        ostr << ' ';
-        codec->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ';
+        codec->formatImpl(format_settings, state, frame);
     }
 
-    if (statistics_desc)
+    if (stat_type)
     {
-        ostr << ' ';
-        statistics_desc->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ';
+        stat_type->formatImpl(format_settings, state, frame);
     }
 
     if (ttl)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
-        ttl->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ttl->formatImpl(format_settings, state, frame);
     }
 
     if (collation)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
-        collation->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
+        collation->formatImpl(format_settings, state, frame);
     }
 
     if (settings)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
-        settings->format(ostr, format_settings, state, frame);
-        ostr << ')';
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
+        settings->formatImpl(format_settings, state, frame);
+        format_settings.ostr << ')';
     }
 }
 
 void ASTColumnDeclaration::forEachPointerToChild(std::function<void(void **)> f)
 {
-    auto visit_child = [&f](ASTPtr & member)
-    {
-        IAST * new_member_ptr = member.get();
-        f(reinterpret_cast<void **>(&new_member_ptr));
-        if (new_member_ptr != member.get())
-        {
-            if (new_member_ptr)
-                member = new_member_ptr->ptr();
-            else
-                member.reset();
-        }
-    };
-
-    visit_child(default_expression);
-    visit_child(comment);
-    visit_child(codec);
-    visit_child(statistics_desc);
-    visit_child(ttl);
-    visit_child(collation);
-    visit_child(settings);
+    f(reinterpret_cast<void **>(&default_expression));
+    f(reinterpret_cast<void **>(&comment));
+    f(reinterpret_cast<void **>(&codec));
+    f(reinterpret_cast<void **>(&stat_type));
+    f(reinterpret_cast<void **>(&ttl));
+    f(reinterpret_cast<void **>(&collation));
+    f(reinterpret_cast<void **>(&settings));
 }
 }

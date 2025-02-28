@@ -1,18 +1,11 @@
-#include <Columns/IColumn.h>
 #include <Core/Range.h>
-#include <IO/Operators.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace DB
 {
-
-FieldRef::FieldRef(ColumnsWithTypeAndName * columns_, size_t row_idx_, size_t column_idx_)
-    : Field((*(*columns_)[column_idx_].column)[row_idx_]), columns(columns_), row_idx(row_idx_), column_idx(column_idx_)
-{
-}
 
 Range::Range(const FieldRef & point) /// NOLINT
     : left(point), right(point), left_included(true), right_included(true) {}
@@ -69,27 +62,27 @@ void Range::shrinkToIncludedIfPossible()
 {
     if (left.isExplicit() && !left_included)
     {
-        if (left.getType() == Field::Types::UInt64 && left.safeGet<UInt64>() != std::numeric_limits<UInt64>::max())
+        if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
         {
-            ++left.safeGet<UInt64>();
+            ++left.get<UInt64 &>();
             left_included = true;
         }
-        if (left.getType() == Field::Types::Int64 && left.safeGet<Int64>() != std::numeric_limits<Int64>::max())
+        if (left.getType() == Field::Types::Int64 && left.get<Int64>() != std::numeric_limits<Int64>::max())
         {
-            ++left.safeGet<Int64>();
+            ++left.get<Int64 &>();
             left_included = true;
         }
     }
     if (right.isExplicit() && !right_included)
     {
-        if (right.getType() == Field::Types::UInt64 && right.safeGet<UInt64>() != std::numeric_limits<UInt64>::min())
+        if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
         {
-            --right.safeGet<UInt64>();
+            --right.get<UInt64 &>();
             right_included = true;
         }
-        if (right.getType() == Field::Types::Int64 && right.safeGet<Int64>() != std::numeric_limits<Int64>::min())
+        if (right.getType() == Field::Types::Int64 && right.get<Int64>() != std::numeric_limits<Int64>::min())
         {
-            --right.safeGet<Int64>();
+            --right.get<Int64 &>();
             right_included = true;
         }
     }

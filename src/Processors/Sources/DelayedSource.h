@@ -30,15 +30,13 @@ public:
     OutputPort * getTotalsPort() { return totals; }
     OutputPort * getExtremesPort() { return extremes; }
 
-    void setRowsBeforeLimitCounter(RowsBeforeStepCounterPtr counter) override { rows_before_limit.swap(counter); }
-    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) override { rows_before_limit.swap(counter); }
 
 private:
     QueryPlanResourceHolder resources;
     Creator creator;
     Processors processors;
-    RowsBeforeStepCounterPtr rows_before_limit;
-    RowsBeforeStepCounterPtr rows_before_aggregation;
+    RowsBeforeLimitCounterPtr rows_before_limit;
 
     /// Outputs for DelayedSource.
     OutputPort * main = nullptr;

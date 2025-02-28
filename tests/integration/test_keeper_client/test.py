@@ -1,8 +1,8 @@
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.keeper_utils import KeeperClient, KeeperException
 from helpers.test_tools import TSV
+from helpers.keeper_utils import KeeperClient, KeeperException
+
 
 cluster = ClickHouseCluster(__file__)
 
@@ -47,24 +47,24 @@ def test_big_family(client: KeeperClient):
 
     assert response == TSV(
         [
-            ["/test_big_family", "11"],
-            ["/test_big_family/1", "6"],
-            ["/test_big_family/2", "4"],
-            ["/test_big_family/2/3", "1"],
-            ["/test_big_family/2/2", "1"],
-            ["/test_big_family/2/1", "1"],
-            ["/test_big_family/1/5", "1"],
-            ["/test_big_family/1/4", "1"],
-            ["/test_big_family/1/3", "1"],
-            ["/test_big_family/1/2", "1"],
+            ["/test_big_family/1", "5"],
+            ["/test_big_family/2", "3"],
+            ["/test_big_family/2/3", "0"],
+            ["/test_big_family/2/2", "0"],
+            ["/test_big_family/2/1", "0"],
+            ["/test_big_family/1/5", "0"],
+            ["/test_big_family/1/4", "0"],
+            ["/test_big_family/1/3", "0"],
+            ["/test_big_family/1/2", "0"],
+            ["/test_big_family/1/1", "0"],
         ]
     )
 
-    response = client.find_big_family("/test_big_family", 2)
+    response = client.find_big_family("/test_big_family", 1)
+
     assert response == TSV(
         [
-            ["/test_big_family", "11"],
-            ["/test_big_family/1", "6"],
+            ["/test_big_family/1", "5"],
         ]
     )
 
@@ -86,12 +86,7 @@ def test_find_super_nodes(client: KeeperClient):
     client.cd("/test_find_super_nodes")
 
     response = client.find_super_nodes(4)
-
-    # The order of the response is not guaranteed, so we need to sort it
-    normalized_response = response.strip().split("\n")
-    normalized_response.sort()
-
-    assert TSV(normalized_response) == TSV(
+    assert response == TSV(
         [
             ["/test_find_super_nodes/1", "5"],
             ["/test_find_super_nodes/2", "4"],
@@ -127,7 +122,7 @@ def test_base_commands(client: KeeperClient):
     assert client.get("/test_create_zk_node1") == "testvalue1"
 
     client.create("/123", "1=2")
-    client.create("/123/321", "foo;bar")
+    client.create("/123/321", "'foo;bar'")
     assert client.get("/123") == "1=2"
     assert client.get("/123/321") == "foo;bar"
 

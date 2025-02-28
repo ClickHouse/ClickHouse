@@ -1,15 +1,13 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraylast
-sidebar_position: 142
-title: "groupArrayLast"
-description: "Creates an array of the last argument values."
+slug: /en/sql-reference/aggregate-functions/reference/grouparraylast
+sidebar_position: 110
 ---
 
 # groupArrayLast
 
 Syntax: `groupArrayLast(max_size)(x)`
 
-Creates an array of the last argument values.
+Creates an array of last argument values.
 For example, `groupArrayLast(1)(x)` is equivalent to `[anyLast (x)]`.
 
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY` if the subquery result is small enough.

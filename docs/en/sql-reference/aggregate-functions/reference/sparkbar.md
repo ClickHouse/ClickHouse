@@ -1,9 +1,7 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/sparkbar
-sidebar_position: 187
+slug: /en/sql-reference/aggregate-functions/reference/sparkbar
+sidebar_position: 311
 sidebar_label: sparkbar
-title: "sparkbar"
-description: "The function plots a frequency histogram for values `x` and the repetition rate `y` of these values over the interval `[min_x, max_x]`."
 ---
 
 # sparkbar

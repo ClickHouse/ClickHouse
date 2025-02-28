@@ -1,14 +1,8 @@
 #pragma once
-#include <Core/Settings.h>
 #include <Functions/IFunctionDateOrDateTime.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool enable_extended_results_for_datetime_functions;
-}
 
 namespace ErrorCodes
 {
@@ -28,7 +22,7 @@ public:
     }
 
     explicit FunctionDateOrDateTimeToDateOrDate32(ContextPtr context_)
-        : enable_extended_results_for_datetime_functions(context_->getSettingsRef()[Setting::enable_extended_results_for_datetime_functions])
+        : enable_extended_results_for_datetime_functions(context_->getSettingsRef().enable_extended_results_for_datetime_functions)
     {
     }
 
@@ -49,7 +43,8 @@ public:
 
         if ((which.isDate32() || which.isDateTime64()) && enable_extended_results_for_datetime_functions)
             return std::make_shared<DataTypeDate32>();
-        return std::make_shared<DataTypeDate>();
+        else
+            return std::make_shared<DataTypeDate>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -59,31 +54,29 @@ public:
 
         if (which.isDate())
             return DateTimeTransformImpl<DataTypeDate, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
-        if (which.isDate32())
+        else if (which.isDate32())
         {
             if (enable_extended_results_for_datetime_functions)
-                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(
-                    arguments, result_type, input_rows_count);
-            return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate32, Transform, /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count);
+            else
+                return DateTimeTransformImpl<DataTypeDate32, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
         }
-        if (which.isDateTime())
+        else if (which.isDateTime())
             return DateTimeTransformImpl<DataTypeDateTime, DataTypeDate, Transform>::execute(arguments, result_type, input_rows_count);
-        if (which.isDateTime64())
+        else if (which.isDateTime64())
         {
             const auto scale = static_cast<const DataTypeDateTime64 *>(from_type)->getScale();
 
             const TransformDateTime64<Transform> transformer(scale);
             if (enable_extended_results_for_datetime_functions)
-                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_extended_result*/ true>::
-                    execute(arguments, result_type, input_rows_count, transformer);
-            return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(
-                arguments, result_type, input_rows_count, transformer);
+                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, decltype(transformer), /*is_extended_result*/ true>::execute(arguments, result_type, input_rows_count, transformer);
+            else
+                return DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate, decltype(transformer)>::execute(arguments, result_type, input_rows_count, transformer);
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}",
-            arguments[0].type->getName(),
-            this->getName());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of function {}",
+                    arguments[0].type->getName(), this->getName());
     }
 
 };

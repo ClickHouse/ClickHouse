@@ -85,21 +85,10 @@ void BackupWriterDefault::copyFileFromDisk(const String & path_in_backup, DiskPt
     {
         if (copy_encrypted)
             return src_disk->readEncryptedFile(src_path, settings);
-        return src_disk->readFile(src_path, settings);
+        else
+            return src_disk->readFile(src_path, settings);
     };
 
     copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);
 }
-
-void BackupWriterDefault::removeFiles(const Strings & file_names)
-{
-    /// Derived classes can override removeFiles() to remove files faster (e.g. by using batch remove).
-    for (const auto & file_name : file_names)
-        removeFile(file_name);
-}
-
-void BackupWriterDefault::removeEmptyDirectories()
-{
-}
-
 }

@@ -3,7 +3,6 @@ import time
 
 import pytest
 import requests
-
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -29,7 +28,7 @@ def parse_response_line(line):
 
     if line.startswith("#"):
         return {}
-    match = re.match(r"^([a-zA-Z_:][a-zA-Z0-9_:]+)(\{.*\})? -?(\d)", line)
+    match = re.match("^([a-zA-Z_:][a-zA-Z0-9_:]+)(\{.*\})? -?(\d)", line)
     assert match, line
     name, _, val = match.groups()
     return {name: int(val)}

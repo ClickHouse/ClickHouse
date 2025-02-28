@@ -136,8 +136,6 @@ void WriteBufferFromPocoSocket::nextImpl()
     SCOPE_EXIT({
         ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::NetworkSendBytes, bytes_written);
-        if (write_event != ProfileEvents::end())
-            ProfileEvents::increment(write_event, bytes_written);
     });
 
     while (bytes_written < offset())
@@ -185,7 +183,6 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     , socket(socket_)
     , peer_address(socket.peerAddress())
     , our_address(socket.address())
-    , write_event(ProfileEvents::end())
     , socket_description("socket (" + peer_address.toString() + ")")
 {
 }
@@ -194,6 +191,18 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     : WriteBufferFromPocoSocket(socket_, buf_size)
 {
     write_event = write_event_;
+}
+
+WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
+{
+    try
+    {
+        finalize();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

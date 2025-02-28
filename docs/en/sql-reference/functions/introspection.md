@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/introspection
+slug: /en/sql-reference/functions/introspection
 sidebar_position: 100
 sidebar_label: Introspection
 ---
@@ -22,7 +22,7 @@ For proper operation of introspection functions:
 
 ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine {#addresstoline}
+## addressToLine
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -36,13 +36,16 @@ addressToLine(address_of_binary_instruction)
 
 **Arguments**
 
-- `address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
 - Source code filename and the line number in this file delimited by colon.
+
         For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
-- Name of a binary, if the function couldn't find the debug information.
+
+- Name of a binary, if the function couldn’t find the debug information.
+
 - Empty string, if the address is not valid.
 
 Type: [String](../../sql-reference/data-types/string.md).
@@ -112,13 +115,11 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToLineWithInlines {#addresstolinewithinlines}
+## addressToLineWithInlines
 
-Similar to `addressToLine`, but returns an Array with all inline functions. As a result of this, it is slower than `addressToLine`.
+Similar to `addressToLine`, but it will return an Array with all inline functions, and will be much slower as a price.
 
-:::note
 If you use official ClickHouse packages, you need to install the `clickhouse-common-static-dbg` package.
-:::
 
 **Syntax**
 
@@ -128,11 +129,17 @@ addressToLineWithInlines(address_of_binary_instruction)
 
 **Arguments**
 
-- `address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
-- An array whose first element is the source code filename and line number in the file delimited by a colon. From the second element onwards, inline functions' source code filenames, line numbers and function names are listed. If the function couldn't find the debug information, then an array with a single element equal to the name of the binary is returned, otherwise an empty array is returned if the address is not valid. [Array(String)](../data-types/array.md).
+- Array which first element is source code filename and the line number in this file delimited by colon. And from second element, inline functions' source code filename and line number and function name are listed.
+
+- Array with single element which is name of a binary, if the function couldn’t find the debug information.
+
+- Empty array, if the address is not valid.
+
+Type: [Array(String)](../../sql-reference/data-types/array.md).
 
 **Example**
 
@@ -213,7 +220,7 @@ The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions
 ```
 
 
-## addressToSymbol {#addresstosymbol}
+## addressToSymbol
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -225,12 +232,14 @@ addressToSymbol(address_of_binary_instruction)
 
 **Arguments**
 
-- `address_of_binary_instruction` ([UInt64](../data-types/int-uint.md)) — Address of instruction in a running process.
+- `address_of_binary_instruction` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
-- Symbol from ClickHouse object files. [String](../data-types/string.md).
-- Empty string, if the address is not valid. [String](../data-types/string.md).
+- Symbol from ClickHouse object files.
+- Empty string, if the address is not valid.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -308,7 +317,7 @@ start_thread
 clone
 ```
 
-## demangle {#demangle}
+## demangle
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
@@ -320,11 +329,14 @@ demangle(symbol)
 
 **Arguments**
 
-- `symbol` ([String](../data-types/string.md)) — Symbol from an object file.
+- `symbol` ([String](../../sql-reference/data-types/string.md)) — Symbol from an object file.
 
 **Returned value**
 
-- Name of the C++ function, or an empty string if the symbol is not valid. [String](../data-types/string.md).
+- Name of the C++ function.
+- Empty string if a symbol is not valid.
+
+Type: [String](../../sql-reference/data-types/string.md).
 
 **Example**
 
@@ -401,9 +413,9 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-## tid {#tid}
+## tid
 
-Returns id of the thread, in which current [Block](/development/architecture/#block) is processed.
+Returns id of the thread, in which current [Block](https://clickhouse.com/docs/en/development/architecture/#block) is processed.
 
 **Syntax**
 
@@ -413,7 +425,7 @@ tid()
 
 **Returned value**
 
-- Current thread id. [Uint64](../data-types/int-uint.md#uint-ranges).
+- Current thread id. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Example**
 
@@ -431,9 +443,9 @@ Result:
 └───────┘
 ```
 
-## logTrace {#logtrace}
+## logTrace
 
-Emits trace log message to server log for each [Block](/development/architecture/#block).
+Emits trace log message to server log for each [Block](https://clickhouse.com/docs/en/development/architecture/#block).
 
 **Syntax**
 
@@ -443,7 +455,7 @@ logTrace('message')
 
 **Arguments**
 
-- `message` — Message that is emitted to server log. [String](../data-types/string.md#string).
+- `message` — Message that is emitted to server log. [String](../../sql-reference/data-types/string.md#string).
 
 **Returned value**
 

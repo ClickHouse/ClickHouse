@@ -19,13 +19,12 @@ ProtobufListInputFormat::ProtobufListInputFormat(
     const String & google_protos_path)
     : IRowInputFormat(header_, in_, params_)
     , reader(std::make_unique<ProtobufReader>(in_))
-    , descriptor_holder(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-          schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path))
     , serializer(ProtobufSerializer::create(
           header_.getNames(),
           header_.getDataTypes(),
           missing_column_indices,
-          descriptor_holder,
+          *ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::Yes, google_protos_path),
           /* with_length_delimiter = */ true,
           /* with_envelope = */ true,
           flatten_google_wrappers_,
@@ -87,16 +86,16 @@ size_t ProtobufListInputFormat::countRows(size_t max_block_size)
 ProtobufListSchemaReader::ProtobufListSchemaReader(const FormatSettings & format_settings)
     : schema_info(
         format_settings.schema.format_schema, "Protobuf", true, format_settings.schema.is_server, format_settings.schema.format_schema_path)
-    , skip_unsupported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
+    , skip_unsopported_fields(format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference)
     , google_protos_path(format_settings.protobuf.google_protos_path)
 {
 }
 
 NamesAndTypesList ProtobufListSchemaReader::readSchema()
 {
-    auto descriptor = ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-        schema_info, ProtobufSchemas::WithEnvelope::Yes, google_protos_path);
-    return protobufSchemaToCHSchema(descriptor.message_descriptor, skip_unsupported_fields);
+    const auto * message_descriptor
+        = ProtobufSchemas::instance().getMessageTypeForFormatSchema(schema_info, ProtobufSchemas::WithEnvelope::Yes, google_protos_path);
+    return protobufSchemaToCHSchema(message_descriptor, skip_unsopported_fields);
 }
 
 void registerInputFormatProtobufList(FormatFactory & factory)

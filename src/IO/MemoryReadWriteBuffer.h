@@ -16,6 +16,13 @@ namespace DB
 class MemoryWriteBuffer : public WriteBuffer, public IReadableWriteBuffer, boost::noncopyable, private Allocator<false>
 {
 public:
+    /// Special exception to throw when the current WriteBuffer cannot receive data
+    class CurrentBufferExhausted : public std::exception
+    {
+    public:
+        const char * what() const noexcept override { return "MemoryWriteBuffer limit is exhausted"; }
+    };
+
     /// Use max_total_size_ = 0 for unlimited storage
     explicit MemoryWriteBuffer(
         size_t max_total_size_ = 0,

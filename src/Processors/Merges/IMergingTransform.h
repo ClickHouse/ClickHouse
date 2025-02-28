@@ -1,13 +1,8 @@
 #pragma once
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
-
-#include <Core/Block_fwd.h>
 #include <Processors/IProcessor.h>
-#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
-#include <Common/formatReadable.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -32,7 +27,7 @@ public:
         UInt64 limit_hint_,
         bool always_read_till_end_);
 
-    OutputPort & getOutputPort();
+    OutputPort & getOutputPort() { return outputs.front(); }
 
     /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
     void addInput();
@@ -115,8 +110,6 @@ public:
 
     void work() override
     {
-        Stopwatch watch{CLOCK_MONOTONIC_COARSE};
-
         if (!state.init_chunks.empty())
             algorithm.initialize(std::move(state.init_chunks));
 
@@ -136,7 +129,7 @@ public:
 
         IMergingAlgorithm::Status status = algorithm.merge();
 
-        if ((status.chunk && status.chunk.hasRows()) || !status.chunk.getChunkInfos().empty())
+        if ((status.chunk && status.chunk.hasRows()) || status.chunk.hasChunkInfo())
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
@@ -154,8 +147,6 @@ public:
             // std::cerr << "Finished" << std::endl;
             state.is_finished = true;
         }
-
-        merging_elapsed_ns += watch.elapsedNanoseconds();
     }
 
 protected:
@@ -165,33 +156,7 @@ protected:
     Algorithm algorithm;
 
     /// Profile info.
-    UInt64 merging_elapsed_ns = 0;
-
-    void logMergedStats(ProfileEvents::Event elapsed_ms_event, std::string_view transform_message, LoggerPtr log) const
-    {
-        auto stats = algorithm.getMergedStats();
-
-        UInt64 elapsed_ms = merging_elapsed_ns / 1000000LL;
-        ProfileEvents::increment(elapsed_ms_event, elapsed_ms);
-
-        /// Don't print info for small parts (< 1M rows)
-        if (stats.rows < 1000000)
-            return;
-
-        double seconds = static_cast<double>(merging_elapsed_ns) / 1000000000ULL;
-
-        if (seconds == 0.0)
-        {
-            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in 0 sec.",
-                transform_message, stats.blocks, stats.rows, stats.bytes);
-        }
-        else
-        {
-            LOG_DEBUG(log, "{}, {} blocks, {} rows, {} bytes in {} sec., {} rows/sec., {}/sec.",
-                transform_message, stats.blocks, stats.rows, stats.bytes,
-                seconds, stats.rows / seconds, ReadableSize(stats.bytes / seconds));
-        }
-    }
+    Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
 
 private:
     using IMergingTransformBase::state;

@@ -1,18 +1,16 @@
 ---
-slug: /sql-reference/functions/functions-for-nulls
+slug: /en/sql-reference/functions/functions-for-nulls
 sidebar_position: 135
 sidebar_label: Nullable
 ---
 
 # Functions for Working with Nullable Values
 
-## isNull {#isnull}
+## isNull
 
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
 See also operator [`IS NULL`](../operators/index.md#is_null).
-
-**Syntax**
 
 ``` sql
 isNull(x)
@@ -54,46 +52,7 @@ Result:
 └───┘
 ```
 
-## isNullable {#isnullable}
-
-Returns `1` if a column is [Nullable](../data-types/nullable.md) (i.e allows `NULL` values), `0` otherwise.
-
-**Syntax**
-
-``` sql
-isNullable(x)
-```
-
-**Arguments**
-
-- `x` — column.
-
-**Returned value**
-
-- `1` if `x` allows `NULL` values. [UInt8](../data-types/int-uint.md).
-- `0` if `x` does not allow `NULL` values. [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-CREATE TABLE tab (ordinary_col UInt32, nullable_col Nullable(UInt32)) ENGINE = Log;
-INSERT INTO tab (ordinary_col, nullable_col) VALUES (1,1), (2, 2), (3,3);
-SELECT isNullable(ordinary_col), isNullable(nullable_col) FROM tab;    
-```
-
-Result:
-
-``` text
-   ┌───isNullable(ordinary_col)──┬───isNullable(nullable_col)──┐
-1. │                           0 │                           1 │
-2. │                           0 │                           1 │
-3. │                           0 │                           1 │
-   └─────────────────────────────┴─────────────────────────────┘
-```
-
-## isNotNull {#isnotnull}
+## isNotNull
 
 Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -137,37 +96,7 @@ Result:
 └───┘
 ```
 
-## isNotDistinctFrom {#isnotdistinctfrom}
-
-Performs null-safe comparison. Used to compare JOIN keys which contain NULL values in the JOIN ON section.
-This function will consider two `NULL` values as identical and will return `true`, which is distinct from the usual
-equals behavior where comparing two `NULL` values would return `NULL`.
-
-:::note
-This function is an internal function used by the implementation of JOIN ON. Please do not use it manually in queries.
-:::
-
-**Syntax**
-
-``` sql
-isNotDistinctFrom(x, y)
-```
-
-**Arguments**
-
-- `x` — first JOIN key.
-- `y` — second JOIN key.
-
-**Returned value**
-
-- `true` when `x` and `y` are both `NULL`.
-- `false` otherwise.
-
-**Example**
-
-For a complete example see: [NULL values in JOIN keys](../../sql-reference/statements/select/join#null-values-in-join-keys).
-
-## isZeroOrNull {#iszeroornull}
+## isZeroOrNull
 
 Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -211,7 +140,7 @@ Result:
 └───┘
 ```
 
-## coalesce {#coalesce}
+## coalesce
 
 Returns the leftmost non-`NULL` argument.
 
@@ -254,7 +183,7 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
 └──────────┴───────────────────────────────────────────────────────────┘
 ```
 
-## ifNull {#ifnull}
+## ifNull
 
 Returns an alternative value if the argument is `NULL`.
 
@@ -302,7 +231,7 @@ Result:
 └───────────────────┘
 ```
 
-## nullIf {#nullif}
+## nullIf
 
 Returns `NULL` if both arguments are equal.
 
@@ -349,9 +278,9 @@ Result:
 └──────────────┘
 ```
 
-## assumeNotNull {#assumenotnull}
+## assumeNotNull
 
-Returns the corresponding non-`Nullable` value for a value of [Nullable](../data-types/nullable.md) type. If the original value is `NULL`, an arbitrary result can be returned. See also functions `ifNull` and `coalesce`.
+Returns the corresponding non-`Nullable` value for a value of [Nullable](../../sql-reference/data-types/nullable.md) type. If the original value is `NULL`, an arbitrary result can be returned. See also functions `ifNull` and `coalesce`.
 
 ``` sql
 assumeNotNull(x)
@@ -408,7 +337,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## toNullable {#tonullable}
+## toNullable
 
 Converts the argument type to `Nullable`.
 

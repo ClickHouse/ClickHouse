@@ -38,14 +38,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    static bool tryExecuteString(const IColumn * col, ColumnPtr & col_res, size_t input_rows_count)
+    static bool tryExecuteString(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnString * col_str_in = checkAndGetColumn<ColumnString>(col);
 
@@ -58,7 +53,8 @@ public:
             const ColumnString::Chars & in_vec = col_str_in->getChars();
             const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
-            out_offsets.resize(input_rows_count);
+            size_t size = in_offsets.size();
+            out_offsets.resize(size);
             out_vec.resize(in_vec.size());
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
@@ -66,7 +62,7 @@ public:
 
             ColumnString::Offset current_in_offset = 0;
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 const char * pos_in = reinterpret_cast<const char *>(&in_vec[current_in_offset]);
                 size_t current_size = strlen(pos_in);
@@ -85,11 +81,13 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-
-        return false;
+        else
+        {
+            return false;
+        }
     }
 
-    static bool tryExecuteFixedString(const IColumn * col, ColumnPtr & col_res, size_t input_rows_count)
+    static bool tryExecuteFixedString(const IColumn * col, ColumnPtr & col_res)
     {
         const ColumnFixedString * col_fstr_in = checkAndGetColumn<ColumnFixedString>(col);
 
@@ -101,8 +99,10 @@ public:
 
             const ColumnString::Chars & in_vec = col_fstr_in->getChars();
 
-            out_offsets.resize(input_rows_count);
-            out_vec.resize(in_vec.size() + input_rows_count);
+            size_t size = col_fstr_in->size();
+
+            out_offsets.resize(size);
+            out_vec.resize(in_vec.size() + size);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
@@ -110,7 +110,7 @@ public:
 
             size_t n = col_fstr_in->getN();
 
-            for (size_t i = 0; i < input_rows_count; ++i)
+            for (size_t i = 0; i < size; ++i)
             {
                 size_t current_size = strnlen(pos_in, n);
                 memcpySmallAllowReadWriteOverflow15(pos, pos_in, current_size);
@@ -127,16 +127,18 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-
-        return false;
+        else
+        {
+            return false;
+        }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
         ColumnPtr res_column;
 
-        if (tryExecuteFixedString(column, res_column, input_rows_count) || tryExecuteString(column, res_column, input_rows_count))
+        if (tryExecuteFixedString(column, res_column) || tryExecuteString(column, res_column))
             return res_column;
 
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",

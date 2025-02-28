@@ -13,7 +13,7 @@
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ZooKeeper/Types.h>
 
@@ -129,11 +129,9 @@ ClusterDiscovery::ClusterDiscovery(
         if (!config.has(cluster_config_prefix))
             continue;
 
-        String zk_name_and_root = config.getString(cluster_config_prefix + ".path");
-        if (zk_name_and_root.empty())
+        String zk_root = config.getString(cluster_config_prefix + ".path");
+        if (zk_root.empty())
             throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "ZooKeeper path for cluster '{}' is empty", key);
-        String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
-        String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
         const auto & password = config.getString(cluster_config_prefix + ".password", "");
         const auto & cluster_secret = config.getString(cluster_config_prefix + ".secret", "");
@@ -144,7 +142,6 @@ ClusterDiscovery::ClusterDiscovery(
             key,
             ClusterInfo(
                 /* name_= */ key,
-                /* zk_name_= */ zk_name,
                 /* zk_root_= */ zk_root,
                 /* host_name= */ config.getString(cluster_config_prefix + ".my_hostname", getFQDNOrHostName()),
                 /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
@@ -166,14 +163,6 @@ ClusterDiscovery::ClusterDiscovery(
 
     LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
     clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
-
-    /// Init get_nodes_callbacks after init clusters_to_update.
-    for (const auto & e : clusters_info)
-        get_nodes_callbacks[e.first] = std::make_shared<Coordination::WatchCallback>(
-            [cluster_name = e.first, my_clusters_to_update = clusters_to_update](auto)
-            {
-                my_clusters_to_update->set(cluster_name);
-            });
 }
 
 /// List node in zookeper for cluster
@@ -183,8 +172,10 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        int * version,
                                        bool set_callback)
 {
+    auto watch_callback = [cluster_name, my_clusters_to_update = clusters_to_update](auto) { my_clusters_to_update->set(cluster_name); };
+
     Coordination::Stat stat;
-    Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? get_nodes_callbacks[cluster_name] : Coordination::WatchCallbackPtr{});
+    Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
     if (version)
         *version = stat.cversion;
     return nodes;
@@ -297,7 +288,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 {
     LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
 
-    auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
+    auto zk = context->getZooKeeper();
 
     int start_version;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
@@ -390,9 +381,9 @@ void ClusterDiscovery::initialUpdate()
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
     });
 
+    auto zk = context->getZooKeeper();
     for (auto & [_, info] : clusters_info)
     {
-        auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
         registerInZk(zk, info);
         if (!updateCluster(info))
         {

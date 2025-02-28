@@ -1,5 +1,5 @@
 #include <base/map.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
 #include <Parsers/IAST.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -40,17 +39,6 @@ DataTypeMap::DataTypeMap(const DataTypePtr & nested_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected Array(Tuple(key, value)) type, got {}", nested->getName());
 
-    if (type_tuple->haveExplicitNames())
-    {
-        const auto & names = type_tuple->getElementNames();
-        if (names[0] != "keys" || names[1] != "values")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Expected Tuple(key, value) with explicit names 'keys', 'values', got explicit names '{}', '{}'", names[0], names[1]);
-    }
-    else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Expected Tuple(key, value) with explicit names 'keys', 'values', got without explicit names");
-
     key_type = type_tuple->getElement(0);
     value_type = type_tuple->getElement(1);
     assertKeyType();
@@ -78,8 +66,11 @@ DataTypeMap::DataTypeMap(const DataTypePtr & key_type_, const DataTypePtr & valu
 
 void DataTypeMap::assertKeyType() const
 {
-    if (!isValidKeyType(key_type))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Map cannot have a key of type {}", key_type->getName());
+    if (!checkKeyType(key_type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Type of Map key must be a type, that can be represented by integer "
+                        "or String or FixedString (possibly LowCardinality) or UUID or IPv6,"
+                        " but {} given", key_type->getName());
 }
 
 
@@ -110,14 +101,10 @@ Field DataTypeMap::getDefault() const
 
 SerializationPtr DataTypeMap::doGetDefaultSerialization() const
 {
-    auto key_serialization = key_type->getDefaultSerialization();
-    auto value_serialization = value_type->getDefaultSerialization();
-    /// Don't use nested->getDefaultSerialization() to avoid creating exponentially growing number of serializations for deep nested maps.
-    /// Instead, reuse already created serializations for keys and values.
-    auto key_serialization_named = std::make_shared<SerializationNamed>(key_serialization, "keys", SubstreamType::TupleElement);
-    auto value_serialization_named = std::make_shared<SerializationNamed>(value_serialization, "values", SubstreamType::TupleElement);
-    auto nested_serialization = std::make_shared<SerializationArray>(std::make_shared<SerializationTuple>(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
-    return std::make_shared<SerializationMap>(key_serialization, value_serialization, nested_serialization);
+    return std::make_shared<SerializationMap>(
+        key_type->getDefaultSerialization(),
+        value_type->getDefaultSerialization(),
+        nested->getDefaultSerialization());
 }
 
 bool DataTypeMap::equals(const IDataType & rhs) const
@@ -129,9 +116,24 @@ bool DataTypeMap::equals(const IDataType & rhs) const
     return nested->equals(*rhs_map.nested);
 }
 
-bool DataTypeMap::isValidKeyType(DataTypePtr key_type)
+bool DataTypeMap::checkKeyType(DataTypePtr key_type)
 {
-    return !isNullableOrLowCardinalityNullable(key_type);
+    if (key_type->getTypeId() == TypeIndex::LowCardinality)
+    {
+        const auto & low_cardinality_data_type = assert_cast<const DataTypeLowCardinality &>(*key_type);
+        if (!isStringOrFixedString(*(low_cardinality_data_type.getDictionaryType())))
+            return false;
+    }
+    else if (!key_type->isValueRepresentedByInteger()
+             && !isStringOrFixedString(*key_type)
+             && !WhichDataType(key_type).isNothing()
+             && !WhichDataType(key_type).isIPv6()
+             && !WhichDataType(key_type).isUUID())
+    {
+        return false;
+    }
+
+    return true;
 }
 
 DataTypePtr DataTypeMap::getNestedTypeWithUnnamedTuple() const

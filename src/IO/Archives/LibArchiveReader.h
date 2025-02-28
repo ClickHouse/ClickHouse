@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <IO/Archives/IArchiveReader.h>
+#include <IO/Archives/LibArchiveReader.h>
 #include "config.h"
 
 

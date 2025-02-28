@@ -1,13 +1,11 @@
 #include "ConfigReloader.h"
 
-#include <filesystem>
-#include <memory>
-#include "ConfigProcessor.h"
-#include <Common/Exception.h>
-#include <Common/filesystemHelpers.h>
+#include <Poco/Util/Application.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Poco/Util/Application.h>
+#include "ConfigProcessor.h"
+#include <filesystem>
+#include <Common/filesystemHelpers.h>
 
 
 namespace fs = std::filesystem;
@@ -15,19 +13,14 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_LOAD_CONFIG;
-}
-
-
 ConfigReloader::ConfigReloader(
         std::string_view config_path_,
         const std::vector<std::string>& extra_paths_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
-        Updater && updater_)
+        Updater && updater_,
+        bool already_loaded)
     : config_path(config_path_)
     , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
@@ -35,15 +28,10 @@ ConfigReloader::ConfigReloader(
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
 {
-    auto config = reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
-
-    if (config.has_value())
-        reload_interval = std::chrono::milliseconds(config->configuration->getInt64("config_reload_interval_ms", DEFAULT_RELOAD_INTERVAL.count()));
-    else
-        reload_interval = DEFAULT_RELOAD_INTERVAL;
-
-    LOG_TRACE(log, "Config reload interval set to {}ms", reload_interval.count());
+    if (!already_loaded)
+        reloadIfNewer(/* force = */ true, /* throw_on_error = */ true, /* fallback_to_preprocessed = */ true, /* initial_loading = */ true);
 }
+
 
 void ConfigReloader::start()
 {
@@ -94,17 +82,7 @@ void ConfigReloader::run()
             if (quit)
                 return;
 
-            auto config = reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false);
-            if (config.has_value())
-            {
-                auto new_reload_interval = std::chrono::milliseconds(config->configuration->getInt64("config_reload_interval_ms", DEFAULT_RELOAD_INTERVAL.count()));
-                if (new_reload_interval != reload_interval)
-                {
-                    reload_interval = new_reload_interval;
-                    LOG_TRACE(log, "Config reload interval changed to {}ms", reload_interval.count());
-                }
-            }
-
+            reloadIfNewer(zk_changed, /* throw_on_error = */ false, /* fallback_to_preprocessed = */ false, /* initial_loading = */ false);
         }
         catch (...)
         {
@@ -114,7 +92,7 @@ void ConfigReloader::run()
     }
 }
 
-std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading)
+void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed, bool initial_loading)
 {
     std::lock_guard lock(reload_mutex);
 
@@ -139,25 +117,19 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
             if (Coordination::isHardwareError(e.code))
                 need_reload_from_zk = true;
 
-            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
-            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
-
             if (throw_on_error)
-                exc->rethrow();
+                throw;
 
-            LOG_ERROR(log, "ZooKeeper error when loading config from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
-            return std::nullopt;
+            tryLogCurrentException(log, "ZooKeeper error when loading config from '" + config_path + "'");
+            return;
         }
         catch (...)
         {
-            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
-            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
-
             if (throw_on_error)
-                exc->rethrow();
+                throw;
 
-            LOG_ERROR(log, "Error loading config from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
-            return std::nullopt;
+            tryLogCurrentException(log, "Error loading config from '" + config_path + "'");
+            return;
         }
         config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
@@ -180,20 +152,14 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         catch (...)
         {
-            const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
-            auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
-
             if (throw_on_error)
-                exc->rethrow();
-
-            LOG_ERROR(log, "Error updating configuration from '{}': {}", config_path, getExceptionMessage(*exc, /*with_stacktrace=*/false, /*check_embedded_stacktrace=*/false));
-            return std::nullopt;
+                throw;
+            tryLogCurrentException(log, "Error updating configuration from '" + config_path + "' config.");
+            return;
         }
 
         LOG_DEBUG(log, "Loaded config '{}', performed update on configuration", config_path);
-        return loaded_config;
     }
-    return std::nullopt;
 }
 
 struct ConfigReloader::FileWithTimestamp

@@ -4,6 +4,7 @@
 
 #if USE_SIMDJSON
 #    include <base/types.h>
+#    include <Common/Exception.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
 #    include "ElementTypes.h"
@@ -13,6 +14,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 /// Format elements of basic types into string.
 /// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
@@ -21,62 +26,62 @@ class SimdJSONBasicFormatter
 {
 public:
     explicit SimdJSONBasicFormatter(PaddedPODArray<UInt8> & buffer_) : buffer(buffer_) {}
-    void comma() { oneChar(','); }
+    inline void comma() { oneChar(','); }
     /** Start an array, prints [ **/
-    void startArray() { oneChar('['); }
+    inline void startArray() { oneChar('['); }
     /** End an array, prints ] **/
-    void endArray() { oneChar(']'); }
+    inline void endArray() { oneChar(']'); }
     /** Start an array, prints { **/
-    void startObject() { oneChar('{'); }
+    inline void startObject() { oneChar('{'); }
     /** Start an array, prints } **/
-    void endObject() { oneChar('}'); }
+    inline void endObject() { oneChar('}'); }
     /** Prints a true **/
-    void trueAtom()
+    inline void trueAtom()
     {
         const char * s = "true";
         buffer.insert(s, s + 4);
     }
     /** Prints a false **/
-    void falseAtom()
+    inline void falseAtom()
     {
         const char * s = "false";
         buffer.insert(s, s + 5);
     }
     /** Prints a null **/
-    void nullAtom()
+    inline void nullAtom()
     {
         const char * s = "null";
         buffer.insert(s, s + 4);
     }
     /** Prints a number **/
-    void number(int64_t x)
+    inline void number(int64_t x)
     {
         char number_buffer[24];
         auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
         buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a number **/
-    void number(uint64_t x)
+    inline void number(uint64_t x)
     {
         char number_buffer[24];
         auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
         buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a number **/
-    void number(double x)
+    inline void number(double x)
     {
         char number_buffer[24];
         auto res = std::to_chars(number_buffer, number_buffer + sizeof(number_buffer), x);
         buffer.insert(number_buffer, res.ptr);
     }
     /** Prints a key (string + colon) **/
-    void key(std::string_view unescaped)
+    inline void key(std::string_view unescaped)
     {
         string(unescaped);
         oneChar(':');
     }
     /** Prints a string. The string is escaped as needed. **/
-    void string(std::string_view unescaped)
+    inline void string(std::string_view unescaped)
     {
         oneChar('\"');
         size_t i = 0;
@@ -118,7 +123,7 @@ public:
 
         // At least for long strings, the following should be fast. We could
         // do better by integrating the checks and the insertion.
-        buffer.insert(unescaped.data(), unescaped.data() + i);  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        buffer.insert(unescaped.data(), unescaped.data() + i);
         // We caught a control character if we enter this loop (slow).
         // Note that we are do not restart from the beginning, but rather we continue
         // from the point where we encountered something that requires escaping.
@@ -160,7 +165,7 @@ public:
         oneChar('\"');
     }
 
-    void oneChar(char c)
+    inline void oneChar(char c)
     {
         buffer.push_back(c);
     }
@@ -177,7 +182,7 @@ class SimdJSONElementFormatter
 public:
     explicit SimdJSONElementFormatter(PaddedPODArray<UInt8> & buffer_) : format(buffer_) {}
     /** Append an element to the builder (to be printed) **/
-    void append(simdjson::dom::element value)
+    inline void append(simdjson::dom::element value)
     {
         switch (value.type())
         {
@@ -219,7 +224,7 @@ public:
         }
     }
     /** Append an array to the builder (to be printed) **/
-    void append(simdjson::dom::array value)
+    inline void append(simdjson::dom::array value)
     {
         format.startArray();
         auto iter = value.begin();
@@ -236,7 +241,7 @@ public:
         format.endArray();
     }
 
-    void append(simdjson::dom::object value)
+    inline void append(simdjson::dom::object value)
     {
         format.startObject();
         auto pair = value.begin();
@@ -253,7 +258,7 @@ public:
         format.endObject();
     }
 
-    void append(simdjson::dom::key_value_pair kv)
+    inline void append(simdjson::dom::key_value_pair kv)
     {
         format.key(kv.key);
         append(kv.value);
@@ -403,7 +408,11 @@ struct SimdJSONParser
     }
 
     /// Optional: Allocates memory to parse JSON documents faster.
-    void reserve(size_t max_size);
+    void reserve(size_t max_size)
+    {
+        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Couldn't allocate {} bytes when parsing JSON", max_size);
+    }
 
 private:
     simdjson::dom::parser parser;

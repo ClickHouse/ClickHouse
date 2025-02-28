@@ -1,4 +1,0 @@
-SELECT _CAST(__table1.`v.String`, \'Nullable(String)\') AS `variantElement(v, \'String\')`
-FROM default.t_func_to_subcolumns_variant AS __table1
-foo
-\N

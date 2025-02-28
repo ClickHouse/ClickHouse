@@ -1,21 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/kafka
+slug: /en/engines/table-engines/integrations/kafka
 sidebar_position: 110
 sidebar_label: Kafka
-title: "Kafka"
-description: "The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available."
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Kafka
-
-<CloudNotSupportedBadge/>
-
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
-:::
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -63,7 +52,7 @@ Required parameters:
 
 Optional parameters:
 
-- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
 - `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
@@ -162,7 +151,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -181,41 +170,52 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   <kafka>
     <!-- Global configuration options for all tables of Kafka engine type -->
     <debug>cgrp</debug>
-    <statistics_interval_ms>3000</statistics_interval_ms>
+    <auto_offset_reset>smallest</auto_offset_reset>
+	<statistics_interval_ms>600</statistics_interval_ms>
+
+    <!-- Configuration specific to topics "logs" and "stats" -->
 
     <kafka_topic>
-        <name>logs</name>
-        <statistics_interval_ms>4000</statistics_interval_ms>
+      <name>logs</name>
+      <retry_backoff_ms>250</retry_backoff_ms>
+      <fetch_min_bytes>100000</fetch_min_bytes>
     </kafka_topic>
 
-    <!-- Settings for consumer -->
-    <consumer>
-        <auto_offset_reset>smallest</auto_offset_reset>
-        <kafka_topic>
-            <name>logs</name>
-            <fetch_min_bytes>100000</fetch_min_bytes>
-        </kafka_topic>
-
-        <kafka_topic>
-            <name>stats</name>
-            <fetch_min_bytes>50000</fetch_min_bytes>
-        </kafka_topic>
-    </consumer>
-
-    <!-- Settings for producer -->
-    <producer>
-        <kafka_topic>
-            <name>logs</name>
-            <retry_backoff_ms>250</retry_backoff_ms>
-        </kafka_topic>
-
-        <kafka_topic>
-            <name>stats</name>
-            <retry_backoff_ms>400</retry_backoff_ms>
-        </kafka_topic>
-    </producer>
+    <kafka_topic>
+      <name>stats</name>
+      <retry_backoff_ms>400</retry_backoff_ms>
+      <fetch_min_bytes>50000</fetch_min_bytes>
+    </kafka_topic>
   </kafka>
+
 ```
+
+<details markdown="1">
+
+<summary>Example in deprecated syntax</summary>
+
+``` xml
+  <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+  </kafka>
+
+  <!-- Configuration specific to topics "logs" and "stats" -->
+  <!-- Does NOT support periods in topic names, e.g. "logs.security"> -->
+
+  <kafka_logs>
+    <retry_backoff_ms>250</retry_backoff_ms>
+    <fetch_min_bytes>100000</fetch_min_bytes>
+  </kafka_logs>
+
+  <kafka_stats>
+    <retry_backoff_ms>400</retry_backoff_ms>
+    <fetch_min_bytes>50000</fetch_min_bytes>
+  </kafka_stats>
+```
+
+</details>
 
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
@@ -261,46 +261,6 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
-
-## Engine to store committed offsets in ClickHouse Keeper {#engine-to-store-committed-offsets-in-clickhouse-keeper}
-
-<ExperimentalBadge/>
-
-If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
- - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
- - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
-
-Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
-
-Example:
-
-``` sql
-CREATE TABLE experimental_kafka (key UInt64, value UInt64)
-ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
-SETTINGS
-  kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
-  kafka_replica_name = 'r1'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
-```
-
-Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
-
-``` sql
-CREATE TABLE experimental_kafka (key UInt64, value UInt64)
-ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
-SETTINGS
-  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
-  kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
-```
-
-### Known limitations {#known-limitations}
-
-As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
- - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
- - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
- - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
- - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

@@ -14,7 +14,6 @@
 #include <Common/logger_useful.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -41,13 +40,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_use_async_executor;
-    extern const SettingsBool regexp_dict_allow_hyperscan;
-    extern const SettingsBool regexp_dict_flag_case_insensitive;
-    extern const SettingsBool regexp_dict_flag_dotall;
-}
 
 namespace ErrorCodes
 {
@@ -248,8 +240,7 @@ void RegExpTreeDictionary::initRegexNodes(Block & block)
 
 #if USE_VECTORSCAN
         String required_substring;
-        bool is_trivial;
-        bool required_substring_is_prefix;
+        bool is_trivial, required_substring_is_prefix;
         std::vector<std::string> alternatives;
 
         if (use_vectorscan)
@@ -322,7 +313,6 @@ void RegExpTreeDictionary::loadData()
     {
         QueryPipeline pipeline(source_ptr->loadAll());
         DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-        pipeline.setConcurrencyControl(false);
 
         Block block;
         while (executor.pull(block))
@@ -377,8 +367,8 @@ void RegExpTreeDictionary::loadData()
 
             if (error->expression < 0)
                 throw Exception::createRuntime(ErrorCodes::LOGICAL_ERROR, String(error->message));
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Pattern '{}' failed with error '{}'", patterns[error->expression], String(error->message));
         }
 
         /// We allocate the scratch space only once, then copy it across multiple threads with hs_clone_scratch
@@ -457,7 +447,7 @@ public:
             if (!this->contains(attr_name))
                 (*this)[attr_name] = Array();
 
-            Array & values = (*this)[attr_name].safeGet<Array>();
+            Array & values = (*this)[attr_name].safeGet<Array &>();
             if (values.size() < *collect_values_limit)
             {
                 values.push_back(std::move(field));
@@ -484,21 +474,23 @@ public:
     }
 
     // Checks if no more values can be added for a given attribute
-    bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
+    inline bool full(const String & attr_name, std::unordered_set<String> * const defaults = nullptr) const
     {
         if (collect_values_limit)
         {
             auto it = this->find(attr_name);
             if (it == this->end())
                 return false;
-            return it->second.safeGet<Array>().size() >= *collect_values_limit;
+            return it->second.safeGet<const Array &>().size() >= *collect_values_limit;
         }
-
-        return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
+        else
+        {
+            return this->contains(attr_name) || (defaults && defaults->contains(attr_name));
+        }
     }
 
     // Returns the number of full attributes
-    size_t attributesFull() const { return n_full_attributes; }
+    inline size_t attributesFull() const { return n_full_attributes; }
 };
 
 std::pair<String, bool> processBackRefs(const String & data, const re2::RE2 & searcher, const std::vector<StringPiece> & pieces)
@@ -815,7 +807,6 @@ std::unordered_map<String, ColumnPtr> RegExpTreeDictionary::match(
                 if (attributes_to_set.contains(name_))
                     continue;
 
-                columns[name_]->insertDefault();
                 default_mask.value().get()[key_idx] = 1;
             }
 
@@ -888,8 +879,7 @@ Pipe RegExpTreeDictionary::read(const Names & , size_t max_block_size, size_t) c
             const auto & node = it->second;
             col_pid->insert(node->parent_id);
             col_regex->insert(node->regex);
-            std::vector<Field> keys;
-            std::vector<Field> values;
+            std::vector<Field> keys, values;
             for (const auto & [key, attr] : node->attributes)
             {
                 keys.push_back(key);
@@ -992,14 +982,14 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
                             "to represent regular expressions");
         }
 
+        String dictionary_layout_prefix = config_prefix + ".layout" + ".regexp_tree";
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
 
         auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
         const auto * clickhouse_source = typeid_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor
-            = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef()[Setting::dictionary_use_async_executor];
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && context->getSettingsRef().dictionary_use_async_executor;
 
         RegExpTreeDictionary::Configuration configuration{
             .require_nonempty = config.getBool(config_prefix + ".require_nonempty", false),
@@ -1012,9 +1002,9 @@ void registerDictionaryRegExpTree(DictionaryFactory & factory)
             dict_struct,
             std::move(source_ptr),
             configuration,
-            context->getSettingsRef()[Setting::regexp_dict_allow_hyperscan],
-            context->getSettingsRef()[Setting::regexp_dict_flag_case_insensitive],
-            context->getSettingsRef()[Setting::regexp_dict_flag_dotall]);
+            context->getSettings().regexp_dict_allow_hyperscan,
+            context->getSettings().regexp_dict_flag_case_insensitive,
+            context->getSettings().regexp_dict_flag_dotall);
     };
 
     factory.registerLayout("regexp_tree", create_layout, true);

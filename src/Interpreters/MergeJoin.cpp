@@ -37,7 +37,8 @@ String deriveTempName(const String & name, JoinTableSide block_side)
 {
     if (block_side == JoinTableSide::Left)
         return "--pmj_cond_left_" + name;
-    return "--pmj_cond_right_" + name;
+    else
+        return "--pmj_cond_right_" + name;
 }
 
 /*
@@ -79,8 +80,8 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls && has_right_nulls)
     {
-        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column);
-        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column);
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
 
         if (left_nullable && right_nullable)
         {
@@ -98,7 +99,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_left_nulls)
     {
-        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(&left_column))
+        if (const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column))
         {
             if (left_column.isNullAt(lhs_pos))
                 return null_direction_hint;
@@ -108,7 +109,7 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_right_nulls)
     {
-        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(&right_column))
+        if (const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column))
         {
             if (right_column.isNullAt(rhs_pos))
                 return -null_direction_hint;
@@ -262,9 +263,9 @@ public:
     {
         if (has_left_nullable && has_right_nullable)
             return getNextEqualRangeImpl<true, true>(rhs);
-        if (has_left_nullable)
+        else if (has_left_nullable)
             return getNextEqualRangeImpl<true, false>(rhs);
-        if (has_right_nullable)
+        else if (has_right_nullable)
             return getNextEqualRangeImpl<false, true>(rhs);
         return getNextEqualRangeImpl<false, false>(rhs);
     }
@@ -517,7 +518,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         size_limits.max_bytes = table_join->defaultMaxBytes();
         if (!size_limits.max_bytes)
             throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                            "No limit for MergeJoin (max_rows_in_join or max_bytes_in_join settings must be set)");
+                            "No limit for MergeJoin (max_rows_in_join, max_bytes_in_join "
+                            "or default_max_bytes_in_join have to be set)");
     }
 
     if (!table_join->oneDisjunct())
@@ -602,18 +604,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(),
-        right_sort_description,
-        max_rows_in_right_block,
-        /*max_block_bytes=*/0,
-        /*limit_=*/0,
-        /*increase_sort_description_compile_attempts=*/false,
-        /*max_bytes_before_remerge_*/0,
-        /*remerge_lowered_memory_bytes_ratio_*/0,
-        /*min_external_sort_block_bytes_*/0,
-        /*max_bytes_before_external_sort_*/0,
-        /*tmp_data_*/nullptr,
-        /*min_free_disk_space_*/0));
+        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, false, 0, 0, 0, nullptr, 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);

@@ -1,19 +1,15 @@
-#include <Core/ServerUUID.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <base/sort.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
-#include <Common/threadPoolCallbackRunner.h>
-
-#include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace DB
@@ -286,7 +282,7 @@ void TransactionLog::removeOldEntries()
     CSN new_tail_ptr = getOldestSnapshot();
     if (new_tail_ptr < old_tail_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected tail_ptr {}, oldest snapshot is {}, it's a bug", old_tail_ptr, new_tail_ptr);
-    if (new_tail_ptr == old_tail_ptr)
+    else if (new_tail_ptr == old_tail_ptr)
         return;
 
     /// (it's not supposed to fail with ZBADVERSION while there is only one host)
@@ -455,7 +451,6 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
 CSN TransactionLog::finalizeCommittedTransaction(MergeTreeTransaction * txn, CSN allocated_csn, scope_guard & state_guard) noexcept
 {
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     chassert(!allocated_csn == txn->isReadOnly());
     if (allocated_csn)
     {
@@ -606,7 +601,7 @@ void TransactionLog::assertTIDIsNotOutdated(const TransactionID & tid, const std
     /// If the second case takes place transaction's commit csn has to be set.
     /// We should load CSN again to distinguish the second case.
     if (failback_with_strict_load_csn)
-        if (CSN _ = failback_with_strict_load_csn->load())
+        if (CSN maybe_csn = failback_with_strict_load_csn->load())
             return;
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get CSN for too old TID {}, current tail_ptr is {}, probably it's a bug", tid, tail);

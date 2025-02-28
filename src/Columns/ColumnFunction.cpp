@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -73,52 +72,7 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
 }
 
-Field ColumnFunction::operator[](size_t n) const
-{
-    Field res;
-    get(n, res);
-    return res;
-}
-
-void ColumnFunction::get(size_t n, Field & res) const
-{
-    const size_t tuple_size = captured_columns.size();
-
-    res = Tuple();
-    Tuple & res_tuple = res.safeGet<Tuple>();
-    res_tuple.reserve(tuple_size);
-
-    for (size_t i = 0; i < tuple_size; ++i)
-        res_tuple.push_back((*captured_columns[i].column)[n]);
-}
-
-std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) const
-{
-    size_t size = captured_columns.size();
-
-    String value_name {size > 1 ? "(" : "tuple("};
-    DataTypes element_types;
-    element_types.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const auto & [value, type] = captured_columns[i].column->getValueNameAndType(n);
-        element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
-    }
-    value_name += ")";
-
-    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
-}
-
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFunction::insertFrom(const IColumn & src, size_t n)
-#else
-void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
-#endif
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
@@ -135,11 +89,7 @@ void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
     ++elements_size;
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
@@ -369,7 +319,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     if (is_function_compiled)
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
-    res.column = function->execute(columns, res.type, elements_size, /* dry_run = */ false);
+    res.column = function->execute(columns, res.type, elements_size);
     if (res.column->getDataType() != res.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,

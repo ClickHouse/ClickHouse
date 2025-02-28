@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <utility>
 #include <mutex>
 #include <string_view>
 #include <vector>
@@ -33,7 +35,7 @@ namespace ErrorCodes
 
     struct Error
     {
-        /// Number of times Exception with this ErrorCode has been thrown.
+        /// Number of times Exception with this ErrorCode had been throw.
         Value count = 0;
         /// Time of the last error.
         UInt64 error_time_ms = 0;
@@ -53,8 +55,7 @@ namespace ErrorCodes
     {
     public:
         ErrorPair get();
-        size_t increment(bool remote, const std::string & message, const FramePointers & trace);
-        void extendedMessage(bool remote, size_t error_index, const std::string & new_message);
+        void increment(bool remote, const std::string & message, const FramePointers & trace);
 
     private:
         ErrorPair value TSA_GUARDED_BY(mutex);
@@ -67,17 +68,8 @@ namespace ErrorCodes
     /// Get index just after last error_code identifier.
     ErrorCode end();
 
-    /// Increments the counter of errors for a specified error code, and remembers some information about the last error.
-    /// The function returns the index of the passed error among other errors with the same code and the same `remote` flag
-    /// since the program startup.
-    size_t increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace);
-
-    /// Extends the error message after it was set by a call to increment().
-    /// The result of that call to increment() should be passed to this function as `error_index`.
-    /// Exceptions are often extended by calling Exception::addMessage() and in such cases
-    /// this function helps to update the information stored in ErrorCodes in order to
-    /// make the "system.errors" table able to show the extended error messages.
-    void extendedMessage(ErrorCode error_code, bool remote, size_t error_index, const std::string & new_message);
+    /// Add value for specified error_code.
+    void increment(ErrorCode error_code, bool remote, const std::string & message, const FramePointers & trace);
 }
 
 }

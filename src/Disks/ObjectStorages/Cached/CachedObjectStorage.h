@@ -33,7 +33,13 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
+        const StoredObjects & objects,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const override;
 
@@ -44,6 +50,10 @@ public:
         std::optional<ObjectAttributes> attributes = {},
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
+
+    void removeObject(const StoredObject & object) override;
+
+    void removeObjects(const StoredObjects & objects) override;
 
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -70,7 +80,7 @@ public:
         const std::string & config_prefix,
         ContextPtr context) override;
 
-    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, int max_keys) const override;
 
     ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
@@ -81,23 +91,13 @@ public:
     void applyNewSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr context,
-        const ApplyNewSettingsOptions & options) override;
+        ContextPtr context) override;
 
     String getObjectsNamespace() const override;
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
-
-    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
-
-    bool isPlain() const override { return object_storage->isPlain(); }
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
@@ -120,7 +120,7 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() override
     {
         return object_storage->getAzureBlobStorageClient();
     }
@@ -130,11 +130,6 @@ public:
     std::shared_ptr<const S3::Client> getS3StorageClient() override
     {
         return object_storage->getS3StorageClient();
-    }
-
-    std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
-    {
-        return object_storage->tryGetS3StorageClient();
     }
 #endif
 

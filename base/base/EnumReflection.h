@@ -1,20 +1,17 @@
 #pragma once
 
-/// To cover ZooKeeperConstants -> See contrib/magic_enum/doc/limitations.md#enum-range
-#define MAGIC_ENUM_RANGE_MIN (-100)
-#define MAGIC_ENUM_RANGE_MAX 1000
 #include <magic_enum.hpp>
 #include <fmt/format.h>
 
 
-template <typename T> concept is_enum = std::is_enum_v<T>;
+template <class T> concept is_enum = std::is_enum_v<T>;
 
 namespace detail
 {
 template <is_enum E, class F, size_t ...I>
 constexpr void static_for(F && f, std::index_sequence<I...>)
 {
-    (f(std::integral_constant<E, magic_enum::enum_value<E>(I)>()) , ...);
+    (std::forward<F>(f)(std::integral_constant<E, magic_enum::enum_value<E>(I)>()) , ...);
 }
 }
 
@@ -35,7 +32,7 @@ constexpr void static_for(F && f)
 template <is_enum T>
 struct fmt::formatter<T> : fmt::formatter<std::string_view>
 {
-    constexpr auto format(T value, auto& format_context) const
+    constexpr auto format(T value, auto& format_context)
     {
         return formatter<string_view>::format(magic_enum::enum_name(value), format_context);
     }

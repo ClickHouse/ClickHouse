@@ -14,14 +14,11 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <Analyzer/InterpolateNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
 namespace DB
@@ -30,7 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -52,21 +48,30 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
+    if (projection_columns_value.size() != getProjection().getNodes().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
 
-    // Ensure the number of aliases matches the number of projection columns
-    if (!this->projection_aliases_to_override.empty())
-    {
-        if (this->projection_aliases_to_override.size() != projection_columns_value.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Number of aliases does not match number of projection columns. "
-                "Expected {}, got {}",
-                projection_columns_value.size(),
-                this->projection_aliases_to_override.size());
-
-        for (size_t i = 0; i < projection_columns_value.size(); ++i)
-            projection_columns_value[i].name = this->projection_aliases_to_override[i];
-    }
     projection_columns = std::move(projection_columns_value);
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns.contains(projection_columns[i].name))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
 }
 
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
@@ -87,23 +92,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
-
-    if (hasInterpolate())
-    {
-        std::unordered_set<String> used_projection_columns;
-        for (const auto & projection : projection_columns)
-            used_projection_columns.insert(projection.name);
-
-        auto & interpolate_node = getInterpolate();
-        auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
-        std::erase_if(
-            interpolate_list_nodes,
-            [&used_projection_columns](const QueryTreeNodePtr & interpolate)
-            { return !used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()); });
-
-        if (interpolate_list_nodes.empty())
-            interpolate_node = nullptr;
-    }
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -118,9 +106,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (is_cte)
         buffer << ", is_cte: " << is_cte;
-
-    if (is_recursive_with)
-        buffer << ", is_recursive_with: " << is_recursive_with;
 
     if (is_distinct)
         buffer << ", is_distinct: " << is_distinct;
@@ -212,12 +197,6 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
         getWindow().dumpTreeImpl(buffer, format_state, indent + 4);
     }
 
-    if (hasQualify())
-    {
-        buffer << '\n' << std::string(indent + 2, ' ') << "QUALIFY\n";
-        getQualify()->dumpTreeImpl(buffer, format_state, indent + 4);
-    }
-
     if (hasOrderBy())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "ORDER BY\n";
@@ -274,7 +253,6 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 
     return is_subquery == rhs_typed.is_subquery &&
         is_cte == rhs_typed.is_cte &&
-        is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
@@ -307,13 +285,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(projection_column_type_name);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
-    {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
-    }
-
-    state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
     state.update(is_group_by_with_totals);
@@ -340,21 +311,19 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 {
     auto result_query_node = std::make_shared<QueryNode>(context);
 
-    result_query_node->is_subquery = is_subquery;
-    result_query_node->is_cte = is_cte;
-    result_query_node->is_recursive_with = is_recursive_with;
-    result_query_node->is_distinct = is_distinct;
-    result_query_node->is_limit_with_ties = is_limit_with_ties;
-    result_query_node->is_group_by_with_totals = is_group_by_with_totals;
-    result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
-    result_query_node->is_group_by_with_cube = is_group_by_with_cube;
+    result_query_node->is_subquery                    = is_subquery;
+    result_query_node->is_cte                         = is_cte;
+    result_query_node->is_distinct                    = is_distinct;
+    result_query_node->is_limit_with_ties             = is_limit_with_ties;
+    result_query_node->is_group_by_with_totals        = is_group_by_with_totals;
+    result_query_node->is_group_by_with_rollup        = is_group_by_with_rollup;
+    result_query_node->is_group_by_with_cube          = is_group_by_with_cube;
     result_query_node->is_group_by_with_grouping_sets = is_group_by_with_grouping_sets;
-    result_query_node->is_group_by_all = is_group_by_all;
-    result_query_node->is_order_by_all = is_order_by_all;
-    result_query_node->cte_name = cte_name;
-    result_query_node->projection_columns = projection_columns;
-    result_query_node->settings_changes = settings_changes;
-    result_query_node->projection_aliases_to_override = projection_aliases_to_override;
+    result_query_node->is_group_by_all                = is_group_by_all;
+    result_query_node->is_order_by_all                = is_order_by_all;
+    result_query_node->cte_name                       = cte_name;
+    result_query_node->projection_columns             = projection_columns;
+    result_query_node->settings_changes               = settings_changes;
 
     return result_query_node;
 }
@@ -362,7 +331,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
 ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     auto select_query = std::make_shared<ASTSelectQuery>();
-    select_query->recursive_with = is_recursive_with;
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
     select_query->group_by_with_totals = is_group_by_with_totals;
@@ -373,41 +341,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->order_by_all = is_order_by_all;
 
     if (hasWith())
-    {
-        const auto & with = getWith();
-        auto expression_list_ast = std::make_shared<ASTExpressionList>();
-        expression_list_ast->children.reserve(with.getNodes().size());
-
-        for (const auto & with_node : with)
-        {
-            auto with_node_ast = with_node->toAST(options);
-            expression_list_ast->children.push_back(with_node_ast);
-
-            const auto * with_query_node = with_node->as<QueryNode>();
-            const auto * with_union_node = with_node->as<UnionNode>();
-            if (!with_query_node && !with_union_node)
-                continue;
-
-            bool is_with_node_cte = with_query_node ? with_query_node->isCTE() : with_union_node->isCTE();
-            if (!is_with_node_cte)
-                continue;
-
-            const auto & with_node_cte_name = with_query_node ? with_query_node->cte_name : with_union_node->getCTEName();
-
-            auto * with_node_ast_subquery = with_node_ast->as<ASTSubquery>();
-            if (with_node_ast_subquery)
-                with_node_ast_subquery->cte_name = "";
-
-            auto with_element_ast = std::make_shared<ASTWithElement>();
-            with_element_ast->name = with_node_cte_name;
-            with_element_ast->subquery = std::move(with_node_ast);
-            with_element_ast->children.push_back(with_element_ast->subquery);
-
-            expression_list_ast->children.back() = std::move(with_element_ast);
-        }
-
-        select_query->setExpression(ASTSelectQuery::Expression::WITH, std::move(expression_list_ast));
-    }
+        select_query->setExpression(ASTSelectQuery::Expression::WITH, getWith().toAST(options));
 
     auto projection_ast = getProjection().toAST(options);
     auto & projection_expression_list_ast = projection_ast->as<ASTExpressionList &>();
@@ -446,9 +380,6 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
 
     if (hasWindow())
         select_query->setExpression(ASTSelectQuery::Expression::WINDOW, getWindow().toAST(options));
-
-    if (hasQualify())
-        select_query->setExpression(ASTSelectQuery::Expression::QUALIFY, getQualify()->toAST(options));
 
     if (hasOrderBy())
         select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, getOrderBy().toAST(options));

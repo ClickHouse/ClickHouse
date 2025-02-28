@@ -56,7 +56,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         node = query;
         return true;
     }
-    if (s_rename_table.ignore(pos, expected))
+    else if (s_rename_table.ignore(pos, expected))
         ;
     else if (s_exchange_tables.ignore(pos, expected))
         exchange = true;
@@ -72,7 +72,8 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos, expected) : s_to.ignore(pos, expected); };
+    const auto ignore_delim = [&] { return exchange ? s_and.ignore(pos) : s_to.ignore(pos); };
+
 
     ASTRenameQuery::Elements elements;
 

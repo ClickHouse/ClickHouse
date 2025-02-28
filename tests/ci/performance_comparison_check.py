@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import json
 import logging
 import os
@@ -11,7 +12,7 @@ from pathlib import Path
 from github import Github
 
 from build_download_helper import download_builds_filter
-from ci_config import CI
+from ci_config import CI_CONFIG
 from clickhouse_helper import get_instance_id, get_instance_type
 from commit_status_helper import get_commit
 from docker_images_helper import get_docker_image, pull_image
@@ -26,7 +27,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from report import FAILURE, SKIPPED, SUCCESS, JobReport
+from report import FAILURE, SUCCESS, JobReport
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -82,7 +83,7 @@ def main():
     assert (
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
-    required_build = CI.get_job_config(check_name).get_required_build()
+    required_build = CI_CONFIG.test_configs[check_name].required_build
 
     with open(GITHUB_EVENT_PATH, "r", encoding="utf-8") as event_file:
         event = json.load(event_file)
@@ -106,26 +107,15 @@ def main():
         f'Job (actions)</a> <a href={pr_link}>Tested commit</a>"'
     )
 
-    run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "0"))
-    run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
-
-    match = re.search(r"\(.*?\)", check_name)
-    options = match.group(0)[1:-1].split(",") if match else []
-    for option in options:
-        if "/" in option:
-            run_by_hash_num = int(option.split("/")[0]) - 1
-            run_by_hash_total = int(option.split("/")[1])
-            os.environ["RUN_BY_HASH_NUM"] = str(run_by_hash_num)
-            os.environ["RUN_BY_HASH_TOTAL"] = str(run_by_hash_total)
-            break
-
-    if run_by_hash_total:
-        check_name_with_group = (
-            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
-        )
+    if "RUN_BY_HASH_TOTAL" in os.environ:
+        run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "1"))
+        run_by_hash_num = int(os.getenv("RUN_BY_HASH_NUM", "1"))
         docker_env += (
             f" -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total}"
             f" -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}"
+        )
+        check_name_with_group = (
+            check_name + f" [{run_by_hash_num + 1}/{run_by_hash_total}]"
         )
     else:
         check_name_with_group = check_name
@@ -133,14 +123,6 @@ def main():
     is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
     if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
         print("Skipped, not labeled with 'pr-performance'")
-        JobReport(
-            description="Skipped, not labeled with 'pr-performance'",
-            test_results=[],
-            status=SKIPPED.lower(),
-            start_time=stopwatch.start_time_str,
-            duration=stopwatch.duration_seconds,
-            additional_files=[],
-        ).dump()
         sys.exit(0)
 
     check_name_prefix = (
@@ -264,6 +246,7 @@ def main():
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=[v for _, v in paths.items()] + image_files,
+        check_name=check_name_with_group,
     ).dump()
 
     if status != SUCCESS:

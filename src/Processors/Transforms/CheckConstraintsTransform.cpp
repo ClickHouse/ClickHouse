@@ -11,7 +11,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB
@@ -64,7 +63,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
 
             auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
-            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
+            if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(*result_column))
             {
                 const auto & nested_column = column_nullable->getNestedColumnPtr();
 

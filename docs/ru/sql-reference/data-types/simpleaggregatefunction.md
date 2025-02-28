@@ -21,7 +21,6 @@ slug: /ru/sql-reference/data-types/simpleaggregatefunction
 -   [`groupBitXor`](../../sql-reference/aggregate-functions/reference/groupbitxor.md#groupbitxor)
 -   [`groupArrayArray`](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray)
 -   [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
--   [`groupUniqArrayArrayMap`](../../sql-reference/aggregate-functions/combinators#-map)
 -   [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
 -   [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
 -   [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)

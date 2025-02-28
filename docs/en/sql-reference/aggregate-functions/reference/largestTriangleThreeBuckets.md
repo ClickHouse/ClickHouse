@@ -1,9 +1,7 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
-sidebar_position: 159
+slug: /en/sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
+sidebar_position: 312
 sidebar_label: largestTriangleThreeBuckets
-title: "largestTriangleThreeBuckets"
-description: "Applies the Largest-Triangle-Three-Buckets algorithm to the input data."
 ---
 
 # largestTriangleThreeBuckets
@@ -25,8 +23,6 @@ Alias: `lttb`.
 
 - `x` — x coordinate. [Integer](../../../sql-reference/data-types/int-uint.md) , [Float](../../../sql-reference/data-types/float.md) , [Decimal](../../../sql-reference/data-types/decimal.md)  , [Date](../../../sql-reference/data-types/date.md), [Date32](../../../sql-reference/data-types/date32.md), [DateTime](../../../sql-reference/data-types/datetime.md), [DateTime64](../../../sql-reference/data-types/datetime64.md).
 - `y` — y coordinate. [Integer](../../../sql-reference/data-types/int-uint.md) , [Float](../../../sql-reference/data-types/float.md) , [Decimal](../../../sql-reference/data-types/decimal.md)  , [Date](../../../sql-reference/data-types/date.md), [Date32](../../../sql-reference/data-types/date32.md), [DateTime](../../../sql-reference/data-types/datetime.md), [DateTime64](../../../sql-reference/data-types/datetime64.md).
-
-NaNs are ignored in the provided series, meaning that any NaN values will be excluded from the analysis. This ensures that the function operates only on valid numerical data.
 
 **Parameters**
 
@@ -65,7 +61,7 @@ Result:
 
 ``` text
 ┌────────largestTriangleThreeBuckets(4)(x, y)───────────┐
-│           [(1,10),(3,15),(9,55),(10,70)]              │
+│           [(1,10),(3,15),(5,40),(10,70)]              │
 └───────────────────────────────────────────────────────┘
 ```
 

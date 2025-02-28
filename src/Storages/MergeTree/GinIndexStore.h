@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/FST.h>
+#include <Core/Block.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -12,8 +13,8 @@
 #include <vector>
 #include <absl/container/flat_hash_map.h>
 
-/// GinIndexStore manages the generalized inverted index ("gin") (full-text index )for a data part, and it is made up of one or more
-/// immutable index segments.
+/// GinIndexStore manages the generalized inverted index ("gin") for a data part, and it is made up of one or more immutable
+/// index segments.
 ///
 /// There are 4 types of index files in a store:
 ///  1. Segment ID file(.gin_sid): it contains one byte for version followed by the next available segment ID.
@@ -160,7 +161,6 @@ public:
 
     /// Do last segment writing
     void finalize();
-    void cancel() noexcept;
 
     /// Method for writing segment data to Gin index files
     void writeSegment();

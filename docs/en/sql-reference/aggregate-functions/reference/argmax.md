@@ -1,14 +1,12 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/argmax
-sidebar_position: 109
-title: "argMax"
-description: "Calculates the `arg` value for a maximum `val` value."
+slug: /en/sql-reference/aggregate-functions/reference/argmax
+sidebar_position: 106
 ---
 
 # argMax
 
-Calculates the `arg` value for a maximum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Calculates the `arg` value for a maximum `val` value. If there are several different values of `arg` for maximum values of `val`, returns the first of these values encountered.
+Both parts the `arg` and the `max` behave as [aggregate functions](/docs/en/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/docs/en/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
 
@@ -108,4 +106,4 @@ SELECT argMax(a, tuple(b)) FROM test;
 
 **See also**
 
-- [Tuple](/sql-reference/data-types/tuple.md)
+- [Tuple](/docs/en/sql-reference/data-types/tuple.md)

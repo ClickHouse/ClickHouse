@@ -35,7 +35,7 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
-            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
+            { "marks", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -131,10 +131,8 @@ protected:
                     // 'type_full' column
                     if (column_mask[src_index++])
                     {
-                        auto * expression = index.definition_ast->as<ASTIndexDeclaration>();
-                        auto index_type = expression ? expression->getType() : nullptr;
-                        if (index_type)
-                            res_columns[res_index++]->insert(queryToString(*index_type));
+                        if (auto * expression = index.definition_ast->as<ASTIndexDeclaration>(); expression && expression->type)
+                            res_columns[res_index++]->insert(queryToString(*expression->type));
                         else
                             res_columns[res_index++]->insertDefault();
                     }
@@ -161,7 +159,7 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
 
-                    /// 'marks_bytes' column
+                    /// 'marks' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.marks);
                 }
@@ -197,7 +195,7 @@ public:
         std::vector<UInt8> columns_mask_,
         size_t max_block_size_)
         : SourceStepWithFilter(
-            std::move(sample_block),
+            DataStream{.header = std::move(sample_block)},
             column_names_,
             query_info_,
             storage_snapshot_,
@@ -214,24 +212,14 @@ private:
     std::shared_ptr<StorageSystemDataSkippingIndices> storage;
     std::vector<UInt8> columns_mask;
     const size_t max_block_size;
-    ExpressionActionsPtr virtual_columns_filter;
+    const ActionsDAG::Node * predicate = nullptr;
 };
 
 void ReadFromSystemDataSkippingIndices::applyFilters(ActionDAGNodes added_filter_nodes)
 {
-    SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
-
+    filter_actions_dag = ActionsDAG::buildFilterActionsDAG(added_filter_nodes.nodes);
     if (filter_actions_dag)
-    {
-        Block block_to_filter
-        {
-            { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
-        };
-
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
-        if (dag)
-            virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
-    }
+        predicate = filter_actions_dag->getOutputs().at(0);
 }
 
 void StorageSystemDataSkippingIndices::read(
@@ -277,12 +265,11 @@ void ReadFromSystemDataSkippingIndices::initializePipeline(QueryPipelineBuilder 
 
     /// Condition on "database" in a query acts like an index.
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
-    if (virtual_columns_filter)
-        VirtualColumnUtils::filterBlockWithExpression(virtual_columns_filter, block);
+    VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
 
     ColumnPtr & filtered_databases = block.getByPosition(0).column;
     pipeline.init(Pipe(std::make_shared<DataSkippingIndicesSource>(
-        std::move(columns_mask), getOutputHeader(), max_block_size, std::move(filtered_databases), context)));
+        std::move(columns_mask), getOutputStream().header, max_block_size, std::move(filtered_databases), context)));
 }
 
 }

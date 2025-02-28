@@ -18,10 +18,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -65,19 +64,19 @@ public:
     {
         size_t arguments_size = arguments.size();
         if (arguments_size < 2)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Number of arguments for function {} doesn't match: passed {}, should be at least 2",
                 getName(),
                 arguments_size);
 
         Names nested_names = extractNestedNames(arguments[0].column);
         if (nested_names.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "First argument for function {} must be constant column with array of strings",
                 getName());
 
         if (nested_names.size() != arguments_size - 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Size of nested names array for function {} does not match arrays arguments size. Actual {}. Expected {}",
                 getName(),
                 nested_names.size(),
@@ -108,29 +107,27 @@ public:
     {
         size_t arguments_size = arguments.size();
 
-        ColumnPtr first_array_materialized = arguments[1].column->convertToFullColumnIfConst();
-        const ColumnArray & first_array = assert_cast<const ColumnArray &>(*first_array_materialized);
+        const auto * lhs_array = assert_cast<const ColumnArray *>(arguments.at(1).column.get());
 
         Columns data_columns;
         data_columns.reserve(arguments_size);
-        data_columns.push_back(first_array.getDataPtr());
+        data_columns.push_back(lhs_array->getDataPtr());
 
         for (size_t i = 2; i < arguments_size; ++i)
         {
-            ColumnPtr other_array_materialized = arguments[i].column->convertToFullColumnIfConst();
-            const ColumnArray & other_array = assert_cast<const ColumnArray &>(*other_array_materialized);
+            const auto * rhs_array = assert_cast<const ColumnArray *>(arguments[i].column.get());
 
-            if (!first_array.hasEqualOffsets(other_array))
+            if (!lhs_array->hasEqualOffsets(*rhs_array))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
                     "The argument 2 and argument {} of function {} have different array offsets",
                     i + 1,
                     getName());
 
-            data_columns.push_back(other_array.getDataPtr());
+            data_columns.push_back(rhs_array->getDataPtr());
         }
 
         auto tuple_column = ColumnTuple::create(std::move(data_columns));
-        auto array_column = ColumnArray::create(std::move(tuple_column), first_array.getOffsetsPtr());
+        auto array_column = ColumnArray::create(std::move(tuple_column), lhs_array->getOffsetsPtr());
 
         return array_column;
     }
@@ -147,7 +144,7 @@ private:
         if (nested_names_field.getType() != Field::Types::Array)
             return {};
 
-        const auto & nested_names_array = nested_names_field.safeGet<Array>();
+        const auto & nested_names_array = nested_names_field.get<const Array &>();
 
         Names nested_names;
         nested_names.reserve(nested_names_array.size());
@@ -157,7 +154,7 @@ private:
             if (nested_name_field.getType() != Field::Types::String)
                 return {};
 
-            nested_names.push_back(nested_name_field.safeGet<String>());
+            nested_names.push_back(nested_name_field.get<const String &>());
         }
 
         return nested_names;
@@ -170,15 +167,10 @@ REGISTER_FUNCTION(Nested)
 {
     factory.registerFunction<FunctionNested>(FunctionDocumentation{
         .description=R"(
-This is a function used internally by the ClickHouse engine and not meant to be used directly.
-
 Returns the array of tuples from multiple arrays.
-
-The first argument must be a constant array of Strings determining the names of the resulting Tuple.
-The other arguments must be arrays of the same size.
 )",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
-        .category{"Other"}
+        .categories{"OtherFunctions"}
     });
 }
 

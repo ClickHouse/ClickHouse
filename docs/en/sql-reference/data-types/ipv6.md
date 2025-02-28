@@ -1,14 +1,14 @@
 ---
-slug: /sql-reference/data-types/ipv6
-sidebar_position: 30
+slug: /en/sql-reference/data-types/ipv6
+sidebar_position: 60
 sidebar_label: IPv6
 ---
 
-## IPv6 {#ipv6}
+## IPv6
 
 IPv6 addresses. Stored in 16 bytes as UInt128 big-endian.
 
-### Basic Usage {#basic-usage}
+### Basic Usage
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
@@ -56,19 +56,6 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 │ IPv6             │ 200144C8012926320033000002520002 │
 └──────────────────┴──────────────────────────────────┘
 ```
-
-IPv6 addresses can be directly compared to IPv4 addresses:
-
-```sql
-SELECT toIPv4('127.0.0.1') = toIPv6('::ffff:127.0.0.1');
-```
-
-```text
-┌─equals(toIPv4('127.0.0.1'), toIPv6('::ffff:127.0.0.1'))─┐
-│                                                       1 │
-└─────────────────────────────────────────────────────────┘
-```
-
 
 **See Also**
 

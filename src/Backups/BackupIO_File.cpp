@@ -33,7 +33,7 @@ UInt64 BackupReaderFile::getFileSize(const String & file_name)
     return fs::file_size(root_path / file_name);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String & file_name)
+std::unique_ptr<SeekableReadBuffer> BackupReaderFile::readFile(const String & file_name)
 {
     return createReadBufferFromFileBase(root_path / file_name, read_settings);
 }
@@ -105,31 +105,17 @@ std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_nam
 
 void BackupWriterFile::removeFile(const String & file_name)
 {
-    (void)fs::remove(root_path / file_name);
+    fs::remove(root_path / file_name);
+    if (fs::is_directory(root_path) && fs::is_empty(root_path))
+        fs::remove(root_path);
 }
 
-void BackupWriterFile::removeEmptyDirectories()
+void BackupWriterFile::removeFiles(const Strings & file_names)
 {
-    removeEmptyDirectoriesImpl(root_path);
-}
-
-void BackupWriterFile::removeEmptyDirectoriesImpl(const fs::path & current_dir)
-{
-    if (!fs::is_directory(current_dir))
-        return;
-
-    if (fs::is_empty(current_dir))
-    {
-        (void)fs::remove(current_dir);
-        return;
-    }
-
-    /// Backups are not too deep, so recursion is good enough here.
-    for (const auto & it : std::filesystem::directory_iterator{current_dir})
-        removeEmptyDirectoriesImpl(it.path());
-
-    if (fs::is_empty(current_dir))
-        (void)fs::remove(current_dir);
+    for (const auto & file_name : file_names)
+        fs::remove(root_path / file_name);
+    if (fs::is_directory(root_path) && fs::is_empty(root_path))
+        fs::remove(root_path);
 }
 
 void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
@@ -146,7 +132,7 @@ void BackupWriterFile::copyFileFromDisk(const String & path_in_backup, DiskPtr s
             /// std::filesystem::copy() can copy from a single file only.
             if (auto blob_path = src_disk->getBlobPath(src_path); blob_path.size() == 1)
             {
-                const auto & abs_source_path = blob_path[0];
+                auto abs_source_path = blob_path[0];
 
                 /// std::filesystem::copy() can copy a file as a whole only.
                 if ((start_pos == 0) && (length == fs::file_size(abs_source_path)))

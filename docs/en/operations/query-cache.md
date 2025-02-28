@@ -1,5 +1,5 @@
 ---
-slug: /operations/query-cache
+slug: /en/operations/query-cache
 sidebar_position: 65
 sidebar_label: Query Cache
 ---
@@ -9,7 +9,7 @@ sidebar_label: Query Cache
 The query cache allows to compute `SELECT` queries just once and to serve further executions of the same query directly from the cache.
 Depending on the type of the queries, this can dramatically reduce latency and resource consumption of the ClickHouse server.
 
-## Background, Design and Limitations {#background-design-and-limitations}
+## Background, Design and Limitations
 
 Query caches can generally be viewed as transactionally consistent or inconsistent.
 
@@ -25,15 +25,14 @@ Query caches can generally be viewed as transactionally consistent or inconsiste
   slowly enough that the database only needs to compute the report once (represented by the first `SELECT` query). Further queries can be
   served directly from the query cache. In this example, a reasonable validity period could be 30 min.
 
-Transactionally inconsistent caching is traditionally provided by client tools or proxy packages (e.g.
-[chproxy](https://www.chproxy.org/configuration/caching/)) interacting with the database. As a result, the same caching logic and
-configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side. This reduces maintenance
-effort and avoids redundancy.
+Transactionally inconsistent caching is traditionally provided by client tools or proxy packages interacting with the database. As a result,
+the same caching logic and configuration is often duplicated. With ClickHouse's query cache, the caching logic moves to the server side.
+This reduces maintenance effort and avoids redundancy.
 
-## Configuration Settings and Usage {#configuration-settings-and-usage}
+## Configuration Settings and Usage
 
 :::note
-In ClickHouse Cloud, you must use [query level settings](/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/operations/configuration-files) is currently not supported.
+In ClickHouse Cloud, you must use [query level settings](/en/operations/settings/query-level) to edit query cache settings. Editing [config level settings](/en/operations/configuration-files) is currently not supported.
 :::
 
 Setting [use_query_cache](settings/settings.md#use-query-cache) can be used to control whether a specific query or all queries of the
@@ -68,7 +67,8 @@ SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
 
 For maximum control, it is generally recommended to provide settings `use_query_cache`, `enable_writes_to_query_cache` and
 `enable_reads_from_query_cache` only with specific queries. It is also possible to enable caching at user or profile level (e.g. via `SET
-use_query_cache = true`) but one should keep in mind that all `SELECT` queries may return cached results then.
+use_query_cache = true`) but one should keep in mind that all `SELECT` queries including monitoring or debugging queries to system tables
+may return cached results then.
 
 The query cache can be cleared using statement `SYSTEM DROP QUERY CACHE`. The content of the query cache is displayed in system table
 [system.query_cache](system-tables/query_cache.md). The number of query cache hits and misses since database start are shown as events
@@ -139,27 +139,10 @@ is only cached if the query runs longer than 5 seconds. It is also possible to s
 cached - for that use setting [query_cache_min_query_runs](settings/settings.md#query-cache-min-query-runs).
 
 Entries in the query cache become stale after a certain time period (time-to-live). By default, this period is 60 seconds but a different
-value can be specified at session, profile or query level using setting [query_cache_ttl](settings/settings.md#query-cache-ttl). The query
-cache evicts entries "lazily", i.e. when an entry becomes stale, it is not immediately removed from the cache. Instead, when a new entry
-is to be inserted into the query cache, the database checks whether the cache has enough free space for the new entry. If this is not the
-case, the database tries to remove all stale entries. If the cache still has not enough free space, the new entry is not inserted.
+value can be specified at session, profile or query level using setting [query_cache_ttl](settings/settings.md#query-cache-ttl).
 
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](settings/settings.md#query-cache-compress-entries).
-
-Sometimes it is useful to keep multiple results for the same query cached. This can be achieved using setting
-[query_cache_tag](settings/settings.md#query-cache-tag) that acts as as a label (or namespace) for a query cache entries. The query cache
-considers results of the same query with different tags different.
-
-Example for creating three different query cache entries for the same query:
-
-```sql
-SELECT 1 SETTINGS use_query_cache = true; -- query_cache_tag is implicitly '' (empty string)
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 1';
-SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
-```
-
-To remove only entries with tag `tag` from the query cache, you can use statement `SYSTEM DROP QUERY CACHE TAG 'tag'`.
 
 ClickHouse reads table data in blocks of [max_block_size](settings/settings.md#setting-max_block_size) rows. Due to filtering, aggregation,
 etc., result blocks are typically much smaller than 'max_block_size' but there are also cases where they are much bigger. Setting
@@ -192,15 +175,16 @@ Also, results of queries with non-deterministic functions are not cached by defa
 To force caching of results of queries with non-deterministic functions regardless, use setting
 [query_cache_nondeterministic_function_handling](settings/settings.md#query-cache-nondeterministic-function-handling).
 
-Results of queries that involve system tables (e.g. [system.processes](system-tables/processes.md)` or
-[information_schema.tables](system-tables/information_schema.md)) are not cached by default. To force caching of results of queries with
-system tables regardless, use setting [query_cache_system_table_handling](settings/settings.md#query-cache-system-table-handling).
+:::note
+Prior to ClickHouse v23.11, setting 'query_cache_store_results_of_queries_with_nondeterministic_functions = 0 / 1' controlled whether
+results of queries with non-deterministic results were cached. In newer ClickHouse versions, this setting is obsolete and has no effect.
+:::
 
 Finally, entries in the query cache are not shared between users due to security reasons. For example, user A must not be able to bypass a
 row policy on a table by running the same query as another user B for whom no such policy exists. However, if necessary, cache entries can
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](settings/settings.md#query-cache-share-between-users).
 
-## Related Content {#related-content}
+## Related Content
 
 - Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

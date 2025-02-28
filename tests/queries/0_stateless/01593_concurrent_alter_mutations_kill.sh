@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -39,7 +39,7 @@ function kill_mutation_thread
 export -f alter_thread;
 export -f kill_mutation_thread;
 
-TIMEOUT=20
+TIMEOUT=30
 
 timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
 timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &

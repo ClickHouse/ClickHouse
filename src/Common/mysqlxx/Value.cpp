@@ -3,8 +3,6 @@
 #include <mysqlxx/Query.h>
 #include <mysqlxx/Exception.h>
 
-#include <base/preciseExp10.h>
-
 
 namespace mysqlxx
 {

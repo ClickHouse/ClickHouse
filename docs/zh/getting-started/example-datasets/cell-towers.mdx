@@ -8,8 +8,8 @@ title: "蜂窝信号塔"
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
-import ActionsMenu from '@site/docs/_snippets/_service_actions_menu.md';
-import SQLConsoleDetail from '@site/docs/_snippets/_launch_sql_console.md';
+import ActionsMenu from '@site/docs/en/_snippets/_service_actions_menu.md';
+import SQLConsoleDetail from '@site/docs/en/_snippets/_launch_sql_console.md';
 
 该数据集来自 [OpenCellid](https://www.opencellid.org/) - 世界上最大的蜂窝信号塔的开放数据库。
 
@@ -27,7 +27,7 @@ OpenCelliD 项目在 `Creative Commons Attribution-ShareAlike 4.0 International 
 
 从 **Sample data** 选项卡中选择 **Cell Towers** 数据集，然后选择 **Load data**：
 
-![加载数据集](@site/docs/_snippets/images/cloud-load-data-sample.png)
+![加载数据集](@site/docs/en/_snippets/images/cloud-load-data-sample.png)
 
 检查 cell_towers 的表结构：
 
@@ -228,5 +228,5 @@ WHERE pointInPolygon((lon, lat), (SELECT * FROM moscow))
 1 rows in set. Elapsed: 0.067 sec. Processed 43.28 million rows, 692.42 MB (645.83 million rows/s., 10.33 GB/s.)
 ```
 
-虽然不能创建临时表，但此数据集仍可在 [Playground](https://sql.clickhouse.com) 中进行交互式的请求, [example](https://sql.clickhouse.com?query_id=UV8M4MAGS2PWAUOAYAAARM).
+虽然不能创建临时表，但此数据集仍可在 [Playground](https://play.clickhouse.com/play?user=play) 中进行交互式的请求, [example](https://play.clickhouse.com/play?user=play#U0VMRUNUIG1jYywgY291bnQoKSBGUk9NIGNlbGxfdG93ZXJzIEdST1VQIEJZIG1jYyBPUkRFUiBCWSBjb3VudCgpIERFU0M=).
 

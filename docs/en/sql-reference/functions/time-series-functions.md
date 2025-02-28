@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/time-series-functions
+slug: /en/sql-reference/functions/time-series-functions
 sidebar_position: 172
 sidebar_label: Time Series
 ---
@@ -8,7 +8,7 @@ sidebar_label: Time Series
 
 Below functions are used for series data analysis.
 
-## seriesOutliersDetectTukey {#seriesoutliersdetecttukey}
+## seriesOutliersDetectTukey
 
 Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
@@ -30,7 +30,9 @@ At least four data points are required in `series` to detect outliers.
 
 **Returned value**
 
-- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly. [Array](../data-types/array.md).
+- Returns an array of the same length as the input array where each value represents score of possible anomaly of corresponding element in the series. A non-zero score indicates a possible anomaly.
+
+Type: [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 
@@ -62,7 +64,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## seriesPeriodDetectFFT {#seriesperioddetectfft}
+## seriesPeriodDetectFFT
 
 Finds the period of the given series data data using FFT
 FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
@@ -79,7 +81,10 @@ seriesPeriodDetectFFT(series);
 
 **Returned value**
 
-- A real value equal to the period of series data. NaN when number of data points are less than four. [Float64](../data-types/float.md).
+- A real value equal to the period of series data
+- Returns NAN when number of data points are less than four.
+
+Type: [Float64](../../sql-reference/data-types/float.md).
 
 **Examples**
 
@@ -109,7 +114,7 @@ Result:
 └─────────┘
 ```
 
-## seriesDecomposeSTL {#seriesdecomposestl}
+## seriesDecomposeSTL
 
 Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
 
@@ -129,7 +134,9 @@ The number of data points in `series` should be at least twice the value of `per
 **Returned value**
 
 - An array of four arrays where the first array include seasonal components, the second array - trend,
-the third array - residue component, and the fourth array - baseline(seasonal + trend) component. [Array](../data-types/array.md).
+the third array - residue component, and the fourth array - baseline(seasonal + trend) component.
+
+Type: [Array](../../sql-reference/data-types/array.md).
 
 **Examples**
 

@@ -22,8 +22,7 @@ EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(const String & path_prefix_, 
 
 template <typename T>
 std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path,
-    const std::optional<String> & znode_data)
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const T & deduplication_path)
 {
     static constexpr bool async_insert = std::is_same_v<T, std::vector<String>>;
 
@@ -31,12 +30,12 @@ std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper(
 
     if (deduplication_path.empty())
     {
-        String holder_path = znode_data.value_or(temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER);
+        String holder_path = temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_OTHER;
         path = zookeeper_->create(path_prefix_, holder_path, zkutil::CreateMode::EphemeralSequential);
     }
     else
     {
-        String holder_path = znode_data.value_or(temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT);
+        String holder_path = temp_path + "/" + EphemeralLockInZooKeeper::LEGACY_LOCK_INSERT;
 
         /// Check for duplicates in advance, to avoid superfluous block numbers allocation
         Coordination::Requests ops;
@@ -99,12 +98,6 @@ void EphemeralLockInZooKeeper::unlock()
     getUnlockOp(ops);
     zookeeper->multi(ops);
     zookeeper = nullptr;
-}
-
-void EphemeralLockInZooKeeper::checkCreated() const
-{
-    if (!isLocked())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
 }
 
 void EphemeralLockInZooKeeper::getUnlockOp(Coordination::Requests & ops)
@@ -178,7 +171,7 @@ EphemeralLocksInAllPartitions::EphemeralLocksInAllPartitions(
             LOG_TRACE(getLogger("EphemeralLocksInAllPartitions"), "Someone has inserted a block in a new partition while we were creating locks. Retry.");
             continue;
         }
-        if (rc != Coordination::Error::ZOK)
+        else if (rc != Coordination::Error::ZOK)
             throw Coordination::Exception(rc);
 
         for (size_t i = 0; i < partitions.size(); ++i)
@@ -228,11 +221,9 @@ EphemeralLocksInAllPartitions::~EphemeralLocksInAllPartitions()
 }
 
 template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<String>(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path,
-    const std::optional<String> & znode_data);
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const String & deduplication_path);
 
 template std::optional<EphemeralLockInZooKeeper> createEphemeralLockInZooKeeper<std::vector<String>>(
-    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path,
-    const std::optional<String> & znode_data);
+    const String & path_prefix_, const String & temp_path, const ZooKeeperWithFaultInjectionPtr & zookeeper_, const std::vector<String> & deduplication_path);
 
 }

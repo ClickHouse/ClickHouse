@@ -9,10 +9,12 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Core/Defines.h>
 
 #include <bit>
 #include <cmath>
-#include <string>
+#include <cstring>
 
 
 namespace DB
@@ -25,7 +27,7 @@ namespace ErrorCodes
 
 
 /// Sets denominator type.
-enum class DenominatorMode : uint8_t
+enum class DenominatorMode
 {
     Compact,        /// Compact denominator.
     StableIfBig,    /// Stable denominator falling back to Compact if rank storage is not big enough.
@@ -50,7 +52,8 @@ struct LogLUT
     {
         if (x <= M)
             return log_table[x];
-        return log(static_cast<double>(x));
+        else
+            return log(static_cast<double>(x));
     }
 
 private:
@@ -125,13 +128,13 @@ public:
     {
     }
 
-    void update(UInt8 cur_rank, UInt8 new_rank)
+    inline void update(UInt8 cur_rank, UInt8 new_rank)
     {
         denominator -= static_cast<T>(1.0) / (1ULL << cur_rank);
         denominator += static_cast<T>(1.0) / (1ULL << new_rank);
     }
 
-    void update(UInt8 rank)
+    inline void update(UInt8 rank)
     {
         denominator += static_cast<T>(1.0) / (1ULL << rank);
     }
@@ -163,13 +166,13 @@ public:
         rank_count[0] = static_cast<UInt32>(initial_value);
     }
 
-    void update(UInt8 cur_rank, UInt8 new_rank)
+    inline void update(UInt8 cur_rank, UInt8 new_rank)
     {
         --rank_count[cur_rank];
         ++rank_count[new_rank];
     }
 
-    void update(UInt8 rank)
+    inline void update(UInt8 rank)
     {
         ++rank_count[rank];
     }
@@ -243,7 +246,7 @@ struct RankWidth<UInt64>
 
 
 /// Sets behavior of HyperLogLog class.
-enum class HyperLogLogMode : uint8_t
+enum class HyperLogLogMode
 {
     Raw,            /// No error correction.
     LinearCounting, /// LinearCounting error correction.
@@ -336,18 +339,30 @@ public:
 
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
-            in.readStrict(denominator_copy.data(), denom_size);
+            in.readStrict(denominator_copy.begin(), denom_size);
 
             for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
             {
                 UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
                 DB::transformEndianness<std::endian::native, std::endian::little>(*cur);
             }
-            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.data(), denom_size);
+            memcpy(reinterpret_cast<char *>(&denominator), denominator_copy.begin(), denom_size);
 
             in.readStrict(reinterpret_cast<char *>(&zeros), sizeof(ZerosCounterType));
             DB::transformEndianness<std::endian::native, std::endian::little>(zeros);
         }
+    }
+
+    void readAndMerge(DB::ReadBuffer & in)
+    {
+        typename RankStore::Reader reader(in);
+        while (reader.next())
+        {
+            const auto & data = reader.get();
+            update(data.first, data.second);
+        }
+
+        in.ignore(sizeof(DenominatorCalculatorType) + sizeof(ZerosCounterType));
     }
 
     static void skip(DB::ReadBuffer & in)
@@ -365,14 +380,14 @@ public:
 
             constexpr size_t denom_size = sizeof(DenominatorCalculatorType);
             std::array<char, denom_size> denominator_copy;
-            memcpy(denominator_copy.data(), reinterpret_cast<const char *>(&denominator), denom_size);
+            memcpy(denominator_copy.begin(), reinterpret_cast<const char *>(&denominator), denom_size);
 
             for (size_t i = 0; i < denominator_copy.size(); i += (sizeof(UInt32) / sizeof(char)))
             {
                 UInt32 * cur = reinterpret_cast<UInt32 *>(&denominator_copy[i]);
                 DB::transformEndianness<std::endian::little, std::endian::native>(*cur);
             }
-            out.write(denominator_copy.data(), denom_size);
+            out.write(denominator_copy.begin(), denom_size);
 
             auto zeros_copy = zeros;
             DB::transformEndianness<std::endian::little, std::endian::native>(zeros_copy);
@@ -414,13 +429,13 @@ public:
 
 private:
     /// Extract subset of bits in [begin, end[ range.
-    HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
+    inline HashValueType extractBitSequence(HashValueType val, UInt8 begin, UInt8 end) const
     {
         return (val >> begin) & ((1ULL << (end - begin)) - 1);
     }
 
     /// Rank is number of trailing zeros.
-    UInt8 calculateRank(HashValueType val) const
+    inline UInt8 calculateRank(HashValueType val) const
     {
         if (unlikely(val == 0))
             return max_rank;
@@ -433,7 +448,7 @@ private:
         return zeros_plus_one;
     }
 
-    HashValueType getHash(Value key) const
+    inline HashValueType getHash(Value key) const
     {
         /// NOTE: this should be OK, since value is the same as key for HLL.
         return static_cast<HashValueType>(
@@ -460,11 +475,11 @@ private:
     {
         if ((mode == HyperLogLogMode::Raw) || ((mode == HyperLogLogMode::BiasCorrected) && BiasEstimator::isTrivial()))
             return raw_estimate;
-        if (mode == HyperLogLogMode::LinearCounting)
+        else if (mode == HyperLogLogMode::LinearCounting)
             return applyLinearCorrection(raw_estimate);
-        if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
+        else if ((mode == HyperLogLogMode::BiasCorrected) && !BiasEstimator::isTrivial())
             return applyBiasCorrection(raw_estimate);
-        if (mode == HyperLogLogMode::FullFeatured)
+        else if (mode == HyperLogLogMode::FullFeatured)
         {
             static constexpr double pow2_32 = 4294967296.0;
 
@@ -477,10 +492,11 @@ private:
 
             return fixed_estimate;
         }
-        throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
+        else
+            throw Poco::Exception("Internal error", DB::ErrorCodes::LOGICAL_ERROR);
     }
 
-    double applyCorrection(double raw_estimate) const
+    inline double applyCorrection(double raw_estimate) const
     {
         double fixed_estimate;
 
@@ -509,7 +525,7 @@ private:
     /// Correction used in HyperLogLog++ algorithm.
     /// Source: "HyperLogLog in Practice: Algorithmic Engineering of a State of The Art Cardinality Estimation Algorithm"
     /// (S. Heule et al., Proceedings of the EDBT 2013 Conference).
-    double applyBiasCorrection(double raw_estimate) const
+    inline double applyBiasCorrection(double raw_estimate) const
     {
         double fixed_estimate;
 
@@ -524,7 +540,7 @@ private:
     /// Calculation of unique values using LinearCounting algorithm.
     /// Source: "A Linear-time Probabilistic Counting Algorithm for Database Applications"
     /// (Whang et al., ACM Trans. Database Syst., pp. 208-229, 1990).
-    double applyLinearCorrection(double raw_estimate) const
+    inline double applyLinearCorrection(double raw_estimate) const
     {
         double fixed_estimate;
 

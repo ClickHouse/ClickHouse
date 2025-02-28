@@ -30,7 +30,12 @@ public:
         const StorageURL::Configuration & configuration_);
 
     std::string getName() const override { return "URLCluster"; }
+
     RemoteQueryExecutor::Extension getTaskIteratorExtension(const ActionsDAG::Node * predicate, const ContextPtr & context) const override;
+
+    bool supportsSubcolumns() const override { return true; }
+
+    bool supportsTrivialCountOptimization() const override { return true; }
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;

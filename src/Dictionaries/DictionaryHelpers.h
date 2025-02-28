@@ -44,7 +44,7 @@ public:
     {
     }
 
-    bool isConstant() const { return default_values_column == nullptr; }
+    inline bool isConstant() const { return default_values_column == nullptr; }
 
     Field getDefaultValue(size_t row) const
     {
@@ -274,8 +274,10 @@ public:
                 auto nested_column = array_type->getNestedType()->createColumn();
                 return ColumnArray::create(std::move(nested_column));
             }
-
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            else
+            {
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
+            }
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -343,7 +345,7 @@ public:
             if (attribute_default_value.isNull())
                 default_value_is_null = true;
             else
-                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.safeGet<DictionaryAttributeType>());
+                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.get<DictionaryAttributeType>());
         }
         else
         {
@@ -375,7 +377,7 @@ public:
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
             Field field = (*default_values_column)[row];
-            return field.safeGet<Array>();
+            return field.get<Array>();
         }
         else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
@@ -448,17 +450,17 @@ public:
         keys_size = key_columns.front()->size();
     }
 
-    size_t getKeysSize() const
+    inline size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    size_t getCurrentKeyIndex() const
+    inline size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
 
-    KeyType extractCurrentKey()
+    inline KeyType extractCurrentKey()
     {
         assert(current_key_index < keys_size);
 
@@ -600,7 +602,6 @@ void mergeBlockWithPipe(
     while (executor.pull(block))
     {
         convertToFullIfSparse(block);
-        block.checkNumberOfRows();
 
         Columns block_key_columns;
         block_key_columns.reserve(key_columns_size);
@@ -680,8 +681,10 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
         return backup_storage;
     }
-
-    return vector_col->getData();
+    else
+    {
+        return vector_col->getData();
+    }
 }
 
 template <typename T>

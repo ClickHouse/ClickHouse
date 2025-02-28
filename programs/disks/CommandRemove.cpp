@@ -1,7 +1,5 @@
-#include <Interpreters/Context.h>
-#include "Common/Exception.h"
 #include "ICommand.h"
-#include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -11,48 +9,46 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-
 class CommandRemove final : public ICommand
 {
 public:
-    CommandRemove() : ICommand("CommandRemove")
+    CommandRemove()
     {
         command_name = "remove";
-        description = "Remove file or directory. Throws exception if file doesn't exists";
-        options_description.add_options()("path", po::value<String>(), "path that is going to be deleted (mandatory, positional)")(
-            "recursive,r", "recursively removes the directory (required to remove a directory)");
-        positional_options_description.add("path", 1);
+        description = "Remove file or directory with all children. Throws exception if file doesn't exists.\nPath should be in format './' or './path' or 'path'";
+        usage = "remove [OPTION]... <PATH>";
     }
 
-    void executeImpl(const CommandLineOptions & options, DisksClient & client) override
+    void processOptions(
+        Poco::Util::LayeredConfiguration &,
+        po::variables_map &) const override
+    {}
+
+    void execute(
+        const std::vector<String> & command_arguments,
+        std::shared_ptr<DiskSelector> & disk_selector,
+        Poco::Util::LayeredConfiguration & config) override
     {
-        const auto & disk = client.getCurrentDiskWithPath();
-        const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
-        bool recursive = options.count("recursive");
-        if (disk.getDisk()->existsDirectory(path))
+        if (command_arguments.size() != 1)
         {
-            if (!recursive)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "cannot remove '{}': Is a directory", path);
-            }
-
-            LOG_INFO(log, "Removing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
-
-            disk.getDisk()->removeRecursiveWithLimit(path);
+            printHelpMessage();
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Bad Arguments");
         }
-        else if (disk.getDisk()->existsFile(path))
-        {
-            LOG_INFO(log, "Removing file '{}' at disk '{}'", path, disk.getDisk()->getName());
-            disk.getDisk()->removeFileIfExists(path);
-        }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} on disk {} doesn't exist", path, disk.getDisk()->getName());
+
+        String disk_name = config.getString("disk", "default");
+
+        const String & path = command_arguments[0];
+
+        DiskPtr disk = disk_selector->get(disk_name);
+
+        String relative_path = validatePathAndGetAsRelative(path);
+
+        disk->removeRecursive(relative_path);
     }
 };
-
-CommandPtr makeCommandRemove()
-{
-    return std::make_shared<DB::CommandRemove>();
 }
 
+std::unique_ptr <DB::ICommand> makeCommandRemove()
+{
+    return std::make_unique<DB::CommandRemove>();
 }

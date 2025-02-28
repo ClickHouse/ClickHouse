@@ -18,7 +18,7 @@
 #include <Poco/NumberParser.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <Common/XMLUtils.h>
 #include <Common/logger_useful.h>
@@ -26,8 +26,6 @@
 #include <base/sort.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-
-#include <fstream>
 
 #if USE_SSL
 #include <format>
@@ -140,14 +138,9 @@ static Node * getRootNode(Document * document)
     return XMLUtils::getRootNode(document);
 }
 
-static size_t firstNonWhitespacePos(const std::string & s)
-{
-    return s.find_first_not_of(" \t\n\r");
-}
-
 static bool allWhitespace(const std::string & s)
 {
-    return firstNonWhitespacePos(s) == std::string::npos;
+    return s.find_first_not_of(" \t\n\r") == std::string::npos;
 }
 
 static void deleteAttributesRecursive(Node * root)
@@ -254,44 +247,6 @@ void ConfigProcessor::decryptRecursive(Poco::XML::Node * config_root)
     }
 }
 
-void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
-{
-    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
-    decryptRecursive(config_root);
-    loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
-}
-
-bool ConfigProcessor::hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name)
-{
-    for (Node * node = config_root->firstChild(); node != nullptr; node = node->nextSibling())
-    {
-        if (node->nodeType() != Node::ELEMENT_NODE)
-            continue;
-
-        if (dynamic_cast<Element &>(*node).hasAttribute(attribute_name) || hasNodeWithAttribute(node, attribute_name))
-            return true;
-    }
-    return false;
-}
-
-bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name)
-{
-    for (Node * node = config_root->firstChild(); node != nullptr; node = node->nextSibling())
-    {
-        if (node->nodeType() != Node::ELEMENT_NODE)
-            continue;
-
-        if ((node_name == node->nodeName() && hasNodeWithAttribute(node, attribute_name)) || hasNodeWithNameAndChildNodeWithAttribute(node, node_name, attribute_name))
-            return true;
-    }
-    return false;
-}
-
-bool ConfigProcessor::hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name)
-{
-    return hasNodeWithNameAndChildNodeWithAttribute(loaded_config.preprocessed_xml.get(), node_name, attribute_name);
-}
-
 #endif
 
 void ConfigProcessor::hideRecursive(Poco::XML::Node * config_root)
@@ -361,6 +316,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else if (replace)
                 {
+                    with_element.removeAttribute("replace");
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
@@ -667,47 +623,6 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     return files;
 }
 
-XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path)
-{
-    fs::path p(config_path);
-    std::string extension = p.extension();
-    boost::algorithm::to_lower(extension);
-
-    if (extension == ".xml")
-        return dom_parser.parse(config_path);
-    if (extension == ".yaml" || extension == ".yml")
-        return YAMLParser::parse(config_path);
-
-    /// Suppose non regular file parsed as XML, such as pipe: /dev/fd/X (regardless it has .xml extension or not)
-    if (!fs::is_regular_file(config_path))
-        return dom_parser.parse(config_path);
-
-    /// If the regular file begins with < it might be XML, otherwise it might be YAML.
-    bool maybe_xml = false;
-    {
-        std::ifstream file(config_path);
-        if (!file.is_open())
-            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", config_path);
-
-        std::string line;
-        while (std::getline(file, line))
-        {
-            const size_t pos = firstNonWhitespacePos(line);
-
-            if (pos < line.size() && '<' == line[pos])
-            {
-                maybe_xml = true;
-                break;
-            }
-            if (pos != std::string::npos)
-                break;
-        }
-    }
-    if (maybe_xml)
-        return dom_parser.parse(config_path);
-    return YAMLParser::parse(config_path);
-}
-
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
@@ -721,7 +636,23 @@ XMLDocumentPtr ConfigProcessor::processConfig(
 
     if (fs::exists(path))
     {
-        config = parseConfig(path);
+        fs::path p(path);
+
+        std::string extension = p.extension();
+        boost::algorithm::to_lower(extension);
+
+        if (extension == ".yaml" || extension == ".yml")
+        {
+            config = YAMLParser::parse(path);
+        }
+        else if (extension == ".xml" || extension == ".conf" || extension.empty())
+        {
+            config = dom_parser.parse(path);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Unknown format of '{}' config", path);
+        }
     }
     else
     {
@@ -747,7 +678,20 @@ XMLDocumentPtr ConfigProcessor::processConfig(
                 LOG_DEBUG(log, "Merging configuration file '{}'.", merge_file);
 
             XMLDocumentPtr with;
-            with = parseConfig(merge_file);
+
+            fs::path p(merge_file);
+            std::string extension = p.extension();
+            boost::algorithm::to_lower(extension);
+
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                with = YAMLParser::parse(merge_file);
+            }
+            else
+            {
+                with = dom_parser.parse(merge_file);
+            }
+
             if (!merge(config, with))
             {
                 LOG_DEBUG(log, "Merging bypassed - configuration file '{}' doesn't belong to configuration '{}' - merging root node name '{}' doesn't match '{}'",
@@ -791,8 +735,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         {
             LOG_DEBUG(log, "Including configuration file '{}'.", include_from_path);
 
-            include_from = parseConfig(include_from_path);
             contributing_files.push_back(include_from_path);
+            include_from = dom_parser.parse(include_from_path);
         }
 
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
@@ -858,7 +802,6 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
-        zk_node_cache.sync();
         config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
         processed_successfully = true;
     }
@@ -881,6 +824,18 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
+#if USE_SSL
+
+void ConfigProcessor::decryptEncryptedElements(LoadedConfig & loaded_config)
+{
+    CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, "encryption_codecs");
+    Node * config_root = getRootNode(loaded_config.preprocessed_xml.get());
+    decryptRecursive(config_root);
+    loaded_config.configuration = new Poco::Util::XMLConfiguration(loaded_config.preprocessed_xml);
+}
+
+#endif
+
 XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
 {
     /// Create a copy of XML Document because hiding elements from preprocessed_xml document
@@ -899,11 +854,7 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
     return xml_tree_copy;
 }
 
-void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir
-#if USE_SSL
-    , bool skip_zk_encryption_keys
-#endif
-)
+void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
     try
     {
@@ -961,35 +912,9 @@ void ConfigProcessor::savePreprocessedConfig(LoadedConfig & loaded_config, std::
     }
 
 #if USE_SSL
-    /* Some callers (e.g. during very early server startup) will not have access to Zookeeper. Such callers can specify `skip_zk_encryption_keys = false`
-    (but they will not be able to decrypt encrypted elements). If there are no `encryption_codecs` tags with `from_zk` attributes, we can decrypt anyways.
-
-    Config example we process here:
-    <clickhouse>
-      <encryption_codecs>
-        <aes_128_gcm_siv>
-            <key_hex>00112233445566778899aabbccddeeff</key_hex>
-        </aes_128_gcm_siv>
-      </encryption_codecs>
-      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
-    </clickhouse>
-
-    Config example we do not process here:
-    <clickhouse>
-      <encryption_codecs>
-        <aes_128_gcm_siv>
-            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
-        </aes_128_gcm_siv>
-      </encryption_codecs>
-      <max_table_size_to_drop encrypted_by="AES_128_GCM_SIV">96260000000B0000000000E8FE3C087CED2205A5071078B29FD5C3B97F824911DED3217E980C</max_table_size_to_drop>
-    </clickhouse>
-    */
-    constexpr auto encryption_codecs_key = "encryption_codecs";
-    if (!skip_zk_encryption_keys || !hasNodeWithNameAndChildNodeWithAttribute(loaded_config, encryption_codecs_key, "from_zk"))
-    {
-        CompressionCodecEncrypted::Configuration::instance().load(*loaded_config.configuration, encryption_codecs_key);
+    std::string preprocessed_file_name = fs::path(preprocessed_path).filename();
+    if (preprocessed_file_name == "config.xml" || preprocessed_file_name == std::format("config{}.xml", PREPROCESSED_SUFFIX))
         decryptEncryptedElements(loaded_config);
-    }
 #endif
 }
 

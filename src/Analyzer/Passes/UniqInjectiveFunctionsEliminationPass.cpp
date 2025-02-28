@@ -7,17 +7,10 @@
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/Utils.h>
-
-#include <Core/Settings.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_injective_functions_inside_uniq;
-}
 
 namespace
 {
@@ -40,7 +33,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_injective_functions_inside_uniq])
+        if (!getSettings().optimize_injective_functions_inside_uniq)
             return;
 
         auto * function_node = node->as<FunctionNode>();

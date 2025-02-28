@@ -5,12 +5,10 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/scope_guard.h>
@@ -40,11 +38,7 @@ ColumnString::ColumnString(const ColumnString & src)
             last_offset, chars.size());
 }
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertManyFrom(const IColumn & src, size_t position, size_t length)
-#else
-void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t length)
-#endif
 {
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
     const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
@@ -133,11 +127,7 @@ WeakHash32 ColumnString::getWeakHash32() const
 }
 
 
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
-#else
-void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
-#endif
 {
     if (length == 0)
         return;
@@ -241,23 +231,6 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     return permuteImpl(*this, perm, limit);
 }
 
-ColumnCheckpointPtr ColumnString::getCheckpoint() const
-{
-    auto nested = std::make_shared<ColumnCheckpoint>(chars.size());
-    return std::make_shared<ColumnCheckpointWithNested>(size(), std::move(nested));
-}
-
-void ColumnString::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested->size = chars.size();
-}
-
-void ColumnString::rollback(const ColumnCheckpoint & checkpoint)
-{
-    offsets.resize_assume_reserved(checkpoint.size);
-    chars.resize_assume_reserved(assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested->size);
-}
 
 void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
@@ -507,23 +480,6 @@ void ColumnString::updatePermutationWithCollation(const Collator & collator, Per
             DefaultPartialSort());
 }
 
-size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const
-{
-    const size_t range_size = equal_range.size();
-    if (range_size <= 1)
-        return range_size;
-
-    /// TODO use sampling if the range is too large (e.g. 16k elements, but configurable)
-    StringHashSet elements;
-    bool inserted = false;
-    for (size_t i = equal_range.from; i < equal_range.to; ++i)
-    {
-        size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
-        elements.emplace(value, inserted);
-    }
-    return elements.size();
-}
 
 ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
@@ -575,26 +531,6 @@ void ColumnString::reserve(size_t n)
     offsets.reserve_exact(n);
 }
 
-size_t ColumnString::capacity() const
-{
-    return offsets.capacity();
-}
-
-void ColumnString::prepareForSquashing(const Columns & source_columns)
-{
-    size_t new_size = size();
-    size_t new_chars_size = chars.size();
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_string_column = assert_cast<const ColumnString &>(*source_column);
-        new_size += source_string_column.size();
-        new_chars_size += source_string_column.chars.size();
-    }
-
-    offsets.reserve_exact(new_size);
-    chars.reserve_exact(new_chars_size);
-}
-
 void ColumnString::shrinkToFit()
 {
     chars.shrink_to_fit();
@@ -628,46 +564,33 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnString::compress(bool force_compression) const
+ColumnPtr ColumnString::compress() const
 {
     const size_t source_chars_size = chars.size();
     const size_t source_offsets_elements = offsets.size();
     const size_t source_offsets_size = source_offsets_elements * sizeof(Offset);
 
     /// Don't compress small blocks.
-    if (source_chars_size < min_size_to_compress)
-    {
+    if (source_chars_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
-    }
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, force_compression);
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
 
     /// Return original column if not compressible.
     if (!chars_compressed)
-    {
         return ColumnCompressed::wrap(this->getPtr());
-    }
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, force_compression);
-    const bool offsets_were_compressed = !!offsets_compressed;
-
-    /// Offsets are not compressible. Use the source data.
-    if (!offsets_compressed)
-    {
-        offsets_compressed = std::make_shared<Memory<>>(source_offsets_size);
-        memcpy(offsets_compressed->data(), offsets.data(), source_offsets_size);
-    }
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();
-    return ColumnCompressed::create(
-        source_offsets_elements,
-        chars_compressed_size + offsets_compressed_size,
-        [my_chars_compressed = std::move(chars_compressed),
-         my_offsets_compressed = std::move(offsets_compressed),
-         source_chars_size,
-         source_offsets_elements,
-         offsets_were_compressed]
+    return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
+        [
+            my_chars_compressed = std::move(chars_compressed),
+            my_offsets_compressed = std::move(offsets_compressed),
+            source_chars_size,
+            source_offsets_elements
+        ]
         {
             auto res = ColumnString::create();
 
@@ -677,18 +600,8 @@ ColumnPtr ColumnString::compress(bool force_compression) const
             ColumnCompressed::decompressBuffer(
                 my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
 
-            if (offsets_were_compressed)
-            {
-                ColumnCompressed::decompressBuffer(
-                    my_offsets_compressed->data(),
-                    res->getOffsets().data(),
-                    my_offsets_compressed->size(),
-                    source_offsets_elements * sizeof(Offset));
-            }
-            else
-            {
-                memcpy(res->getOffsets().data(), my_offsets_compressed->data(), my_offsets_compressed->size());
-            }
+            ColumnCompressed::decompressBuffer(
+                my_offsets_compressed->data(), res->getOffsets().data(), my_offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
 
             return res;
         });
@@ -717,21 +630,6 @@ void ColumnString::validate() const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
                         last_offset, chars.size());
-}
-
-void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
-{
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-
-    hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
-    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
-}
-
-void ColumnString::updateHashFast(SipHash & hash) const
-{
-    hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
-    hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
 }
 
 }

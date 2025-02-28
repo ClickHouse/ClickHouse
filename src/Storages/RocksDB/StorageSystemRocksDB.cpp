@@ -7,9 +7,8 @@
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
@@ -17,15 +16,17 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool system_events_show_zero_values;
-}
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+}
+
+namespace DB
+{
+
 
 ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
 {
@@ -38,14 +39,6 @@ ColumnsDescription StorageSystemRocksDB::getColumnsDescription()
     };
 }
 
-
-Block StorageSystemRocksDB::getFilterSampleBlock() const
-{
-    return {
-        { {}, std::make_shared<DataTypeString>(), "database" },
-        { {}, std::make_shared<DataTypeString>(), "table" },
-    };
-}
 
 void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
 {
@@ -104,11 +97,11 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         col_table_to_filter = filtered_block.getByName("table").column;
     }
 
-    bool show_zeros = context->getSettingsRef()[Setting::system_events_show_zero_values];
+    bool show_zeros = context->getSettingsRef().system_events_show_zero_values;
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
-        String database = (*col_database_to_filter)[i].safeGet<String>();
-        String table = (*col_table_to_filter)[i].safeGet<String>();
+        String database = (*col_database_to_filter)[i].safeGet<const String &>();
+        String table = (*col_table_to_filter)[i].safeGet<const String &>();
 
         auto statistics = tables[database][table]->getRocksDBStatistics();
         if (!statistics)

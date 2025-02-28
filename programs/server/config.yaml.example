@@ -1,6 +1,6 @@
 # This is an example of a configuration file "config.xml" rewritten in YAML
 # You can read this documentation for detailed information about YAML configuration:
-# https://clickhouse.com/docs/operations/configuration-files/
+# https://clickhouse.com/docs/en/operations/configuration-files/
 
 # NOTE: User and query level settings are set up in "users.yaml" file.
 # If you have accidentally specified user-level settings here, server won't start.
@@ -136,12 +136,11 @@ interserver_http_port: 9009
 # Allow multiple servers to listen on the same address:port. This is not recommended.
 # listen_reuse_port: 0
 
-# listen_backlog: 4096
-
-# max_connections: 4096
+# listen_backlog: 64
+max_connections: 4096
 
 # For 'Connection: keep-alive' in HTTP 1.1
-keep_alive_timeout: 10
+keep_alive_timeout: 3
 
 # gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API)
 # grpc_port: 9100
@@ -261,10 +260,7 @@ uncompressed_cache_size: 8589934592
 # Approximate size of mark cache, used in tables of MergeTree family.
 # In bytes. Cache is single for server. Memory is allocated only on demand.
 # You should not lower this value.
-# mark_cache_size: 5368709120
-
-# For marks of secondary indices.
-# index_mark_cache_size: 5368709120
+mark_cache_size: 5368709120
 
 # If you enable the `min_bytes_to_use_mmap_io` setting,
 # the data in MergeTree tables can be read with mmap to avoid copying from kernel to userspace.
@@ -281,20 +277,13 @@ uncompressed_cache_size: 8589934592
 # in query or server memory usage - because this memory can be discarded similar to OS page cache.
 # The cache is dropped (the files are closed) automatically on removal of old parts in MergeTree,
 # also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
-# mmap_cache_size: 1024
+mmap_cache_size: 1000
 
 # Cache size in bytes for compiled expressions.
-# compiled_expression_cache_size: 134217728
+compiled_expression_cache_size: 134217728
 
 # Cache size in elements for compiled expressions.
-# compiled_expression_cache_elements_size: 10000
-
-# Configuration for the query cache
-# query_cache:
-#     max_size_in_bytes: 1073741824
-#     max_entries: 1024
-#     max_entry_size_in_bytes: 1048576
-#     max_entry_size_in_rows: 30000000
+compiled_expression_cache_elements_size: 10000
 
 # Path to data directory, with trailing slash.
 path: /var/lib/clickhouse/
@@ -523,7 +512,7 @@ remap_executable: false
 #     port: 9019
 
 # Configuration of clusters that could be used in Distributed tables.
-# https://clickhouse.com/docs/operations/table_engines/distributed/
+# https://clickhouse.com/docs/en/operations/table_engines/distributed/
 remote_servers:
     # Test only shard config for testing distributed storage
     default:
@@ -582,7 +571,7 @@ remote_servers:
 
 # ZooKeeper is used to store metadata about replicas, when using Replicated tables.
 # Optional. If you don't use replicated tables, you could omit that.
-# See https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication/
+# See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
 
 # zookeeper:
 #     - node:
@@ -597,7 +586,7 @@ remote_servers:
 
 # Substitutions for parameters of replicated tables.
 # Optional. If you don't use replicated tables, you could omit that.
-# See https://clickhouse.com/docs/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
+# See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
 # macros:
 #     shard: 01
 #     replica: example01-01-1
@@ -667,7 +656,7 @@ query_log:
     database: system
     table: query_log
 
-    # PARTITION BY expr: https://clickhouse.com/docs/table_engines/mergetree-family/custom_partitioning_key/
+    # PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
     # Example:
     # event_date
     # toMonday(event_date)
@@ -675,7 +664,7 @@ query_log:
     # toStartOfHour(event_time)
     partition_by: toYYYYMM(event_date)
 
-    # Table TTL specification: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+    # Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
     # Example:
     # event_date + INTERVAL 1 WEEK
     # event_date + INTERVAL 7 DAY DELETE
@@ -737,27 +726,6 @@ metric_log:
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 
-# Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval.
-latency_log:
-    database: system
-    table: latency_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
-
-# Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval.
-error_log:
-    database: system
-    table: error_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
-
-# Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.
-query_metric_log:
-    database: system
-    table: query_metric_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
-
 # Asynchronous metric log contains values of metrics from
 # system.asynchronous_metrics.
 asynchronous_metric_log:
@@ -806,7 +774,7 @@ top_level_domains_lists: ''
 # public_suffix_list: /path/to/public_suffix_list.dat
 
 # Configuration of external dictionaries. See:
-# https://clickhouse.com/docs/sql-reference/dictionaries/external-dictionaries/external-dicts
+# https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
 dictionaries_config: '*_dictionary.xml'
 
 # Uncomment if you want data to be compressed 30-100% better.

@@ -3,14 +3,9 @@
 #include <Parsers/ASTTransactionControl.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsTransactionsWaitCSNMode wait_changes_become_visible_after_commit_mode;
-}
 
 namespace ErrorCodes
 {
@@ -38,6 +33,7 @@ BlockIO InterpreterTransactionControlQuery::execute()
         case ASTTransactionControl::SET_SNAPSHOT:
             return executeSetSnapshot(session_context, tcl.snapshot);
     }
+    UNREACHABLE();
 }
 
 BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr session_context)
@@ -59,12 +55,13 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     {
         if (session_context->getClientInfo().interface == ClientInfo::Interface::MYSQL)
             return {};
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
+        else
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     }
     if (txn->getState() != MergeTreeTransaction::RUNNING)
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction is not in RUNNING state");
 
-    TransactionsWaitCSNMode mode = query_context->getSettingsRef()[Setting::wait_changes_become_visible_after_commit_mode];
+    TransactionsWaitCSNMode mode = query_context->getSettingsRef().wait_changes_become_visible_after_commit_mode;
     CSN csn;
     try
     {
@@ -122,7 +119,8 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
     {
         if (session_context->getClientInfo().interface == ClientInfo::Interface::MYSQL)
             return {};
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
+        else
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "There is no current transaction");
     }
     if (txn->getState() == MergeTreeTransaction::COMMITTED)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTED state");

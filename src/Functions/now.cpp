@@ -1,7 +1,6 @@
 #include <ctime>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -10,16 +9,10 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_nonconst_timezone_arguments;
-}
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int CANNOT_CLOCK_GETTIME;
 }
 
 namespace
@@ -97,7 +90,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<NowOverloadResolver>(context); }
     explicit NowOverloadResolver(ContextPtr context)
-        : allow_nonconst_timezone_arguments(context->getSettingsRef()[Setting::allow_nonconst_timezone_arguments])
+        : allow_nonconst_timezone_arguments(context->getSettings().allow_nonconst_timezone_arguments)
     {}
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -129,17 +122,12 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
         }
-
-        timespec spec{};
-        if (clock_gettime(CLOCK_REALTIME, &spec))
-            throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
-
         if (arguments.size() == 1)
             return std::make_unique<FunctionBaseNow>(
-                spec.tv_sec, DataTypes{arguments.front().type},
+                time(nullptr), DataTypes{arguments.front().type},
                 std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 0, 0, allow_nonconst_timezone_arguments)));
 
-        return std::make_unique<FunctionBaseNow>(spec.tv_sec, DataTypes(), std::make_shared<DataTypeDateTime>());
+        return std::make_unique<FunctionBaseNow>(time(nullptr), DataTypes(), std::make_shared<DataTypeDateTime>());
     }
 private:
     const bool allow_nonconst_timezone_arguments;
@@ -149,8 +137,8 @@ private:
 
 REGISTER_FUNCTION(Now)
 {
-    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<NowOverloadResolver>({}, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("current_timestamp", NowOverloadResolver::name, FunctionFactory::CaseInsensitive);
 }
 
 }

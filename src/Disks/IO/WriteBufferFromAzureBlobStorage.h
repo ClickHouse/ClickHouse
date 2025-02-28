@@ -13,7 +13,7 @@
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Storages/StorageAzureBlob.h>
 
 namespace Poco
 {
@@ -28,43 +28,35 @@ class TaskTracker;
 class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
 public:
-    using AzureClientPtr = std::shared_ptr<const AzureBlobStorage::ContainerClient>;
+    using AzureClientPtr = std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient>;
 
     WriteBufferFromAzureBlobStorage(
         AzureClientPtr blob_container_client_,
         const String & blob_path_,
         size_t buf_size_,
         const WriteSettings & write_settings_,
-        std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
+        std::shared_ptr<const AzureObjectStorageSettings> settings_,
+        ThreadPoolCallbackRunner<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
 
     void nextImpl() override;
-    void preFinalize() override;
+
     std::string getFileName() const override { return blob_path; }
     void sync() override { next(); }
 
 private:
     struct PartData;
 
-    void writeMultipartUpload();
-    void writePart(PartData && part_data);
-    void detachBuffer();
-    void reallocateFirstBuffer();
+    void writePart();
     void allocateBuffer();
-    void hidePartialData();
-    void setFakeBufferWhenPreFinalized();
 
     void finalizeImpl() override;
     void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
-    /// Returns true if not a single byte was written to the buffer
-    bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
-
     LoggerPtr log;
-    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    LogSeriesLimiterPtr limitedLog = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
@@ -72,9 +64,6 @@ private:
     const size_t max_unexpected_write_error_retries;
     const std::string blob_path;
     const WriteSettings write_settings;
-
-    /// Track that prefinalize() is called only once
-    bool is_prefinalized = false;
 
     AzureClientPtr blob_container_client;
     std::vector<std::string> block_ids;
@@ -85,17 +74,9 @@ private:
 
     MemoryBufferPtr allocateBuffer() const;
 
-    char fake_buffer_when_prefinalized[1] = {};
-
-    bool first_buffer = true;
-
-    size_t total_size = 0;
-    size_t hidden_size = 0;
+    bool first_buffer=true;
 
     std::unique_ptr<TaskTracker> task_tracker;
-    bool check_objects_after_upload = false;
-
-    std::deque<PartData> detached_part_data;
 };
 
 }

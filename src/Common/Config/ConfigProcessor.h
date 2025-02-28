@@ -66,8 +66,6 @@ public:
         const zkutil::EventPtr & zk_changed_event = nullptr,
         bool is_config_changed = true);
 
-    XMLDocumentPtr parseConfig(const std::string & config_path);
-
     /// These configurations will be used if there is no configuration file.
     static void registerEmbeddedConfig(std::string name, std::string_view content);
 
@@ -101,13 +99,7 @@ public:
 
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
-    /// If skip_zk_encryption_keys == true, skip loading encryption keys with from_zk directive and decrypting config values,
-    /// otherwise load/decrypt all types of keys
-    void savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir
-#if USE_SSL
-        , bool skip_zk_encryption_keys = false
-#endif
-    );
+    void savePreprocessedConfig(LoadedConfig & loaded_config, std::string preprocessed_dir);
 
     /// Set path of main config.xml. It will be cut from all configs placed to preprocessed_configs/
     static void setConfigPath(const std::string & config_path);
@@ -146,17 +138,10 @@ private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
 #if USE_SSL
-    /// Decrypt elements in XML tree recursively starting with config_root
-    static void decryptRecursive(Poco::XML::Node * config_root);
-    /// Decrypt elements in config with specified encryption attributes and previously loaded encryption keys
-    static void decryptEncryptedElements(LoadedConfig & loaded_config);
+    void decryptRecursive(Poco::XML::Node * config_root);
 
-    /// Determine if there is a node starting inside config_root which has a descendant with a given attribute
-    static bool hasNodeWithAttribute(Poco::XML::Node * config_root, const std::string & attribute_name);
-    /// Determine if there is a node starting inside config_root with a given node_name which has a descendant with a given attribute
-    static bool hasNodeWithNameAndChildNodeWithAttribute(Poco::XML::Node * config_root, const std::string & node_name, const std::string & attribute_name);
-    /// Determine if there is a node in loaded_config with a given node_name which has a descendant with a given attribute
-    static bool hasNodeWithNameAndChildNodeWithAttribute(LoadedConfig & loaded_config, const std::string & node_name, const std::string & attribute_name);
+    /// Decrypt elements in config with specified encryption attributes
+    void decryptEncryptedElements(LoadedConfig & loaded_config);
 #endif
 
     void hideRecursive(Poco::XML::Node * config_root);

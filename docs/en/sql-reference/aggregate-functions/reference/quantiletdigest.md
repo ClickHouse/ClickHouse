@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletdigest
-sidebar_position: 178
-title: "quantileTDigest"
-description: "Computes an approximate quantile of a numeric data sequence using the t-digest algorithm."
+slug: /en/sql-reference/aggregate-functions/reference/quantiletdigest
+sidebar_position: 207
 ---
 
 # quantileTDigest
@@ -57,4 +55,4 @@ Result:
 **See Also**
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](/sql-reference/aggregate-functions/reference/quantiles)
+- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

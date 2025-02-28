@@ -26,8 +26,8 @@ sidebar_position: 2
 
 当用户创建数据跳数索引时，表的每个数据部分目录中将有两个额外的文件。
 
-- `skp_idx_{index_name}.idx`：包含排序的表达式值。
-- `skp_idx_{index_name}.mrk2`：包含关联数据列文件中的相应偏移量。
+- skp_idx_{index_name}.idx：包含排序的表达式值。
+- skp_idx_{index_name}.mrk2：包含关联数据列文件中的相应偏移量。
 
 如果在执行查询并读取相关列文件时，WHERE子句过滤条件的某些部分与跳数索引表达式匹配，ClickHouse将使用索引文件数据来确定每个相关的数据块是必须被处理还是可以被绕过(假设块还没有通过应用主键索引被排除)。这里用一个非常简单的示例：考虑以下加载了可预测数据的表。
 
@@ -89,7 +89,7 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 
 下图是更直观的展示，这就是如何读取和选择my_value为125的4096行，以及如何跳过以下行而不从磁盘读取:
 
-![Simple Skip](../../../guides/best-practices/images/simple_skip.svg)
+![Simple Skip](../../../en/guides/best-practices/images/simple_skip.svg)
 
 通过在执行查询时启用跟踪，用户可以看到关于跳数索引使用情况的详细信息。在clickhouse-client中设置send_logs_level:
 
@@ -123,7 +123,7 @@ Bloom filter是一种数据结构，它允许对集合成员进行高效的是�
 
 有三种基于Bloom过滤器的数据跳数索引类型：
 
-* 基本的**bloom_filter**接受一个可选参数，该参数表示在0到1之间允许的“假阳性”率(如果未指定，则使用0.025)。
+* 基本的**bloom_filter**接受一个可选参数，该参数表示在0到1之间允许的“假阳性”率(如果未指定，则使用.025)。
 
 * 更专业的**tokenbf_v1**。需要三个参数，用来优化布隆过滤器：（1）过滤器的大小字节(大过滤器有更少的假阳性，有更高的存储成本)，（2）哈希函数的个数(更多的散列函数可以减少假阳性)。（3）布隆过滤器哈希函数的种子。有关这些参数如何影响布隆过滤器功能的更多细节，请参阅  [这里](https://hur.st/bloomfilter/)  。此索引仅适用于String、FixedString和Map类型的数据。输入表达式被分割为由非字母数字字符分隔的字符序列。例如，列值`This is a candidate for a "full text" search`将被分割为`This` `is` `a` `candidate` `for` `full` `text` `search`。它用于LIKE、EQUALS、in、hasToken()和类似的长字符串中单词和其他值的搜索。例如，一种可能的用途是在非结构的应用程序日志行列中搜索少量的类名或行号。
 
@@ -135,7 +135,7 @@ Bloom filter是一种数据结构，它允许对集合成员进行高效的是�
 * 插入数据并将索引定义为一个函数表达式(表达式的结果存储在索引文件中)或者
 * 处理查询，并将表达式应用于存储的索引值，以确定是否排除数据块。
 
-每种类型的跳数索引支持的函数列表可以查看 [这里](/engines/table-engines/mergetree-family/mergetree/#functions-support) 。通常，集合索引和基于Bloom filter的索引(另一种类型的集合索引)都是无序的，因此不能用于范围。相反，最大最小值索引在范围中工作得特别好，因为确定范围是否相交非常快。部分匹配函数LIKE、startsWith、endsWith和hasToken的有效性取决于使用的索引类型、索引表达式和数据的特定形状。
+每种类型的跳数索引支持的函数列表可以查看 [这里](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#functions-support) 。通常，集合索引和基于Bloom filter的索引(另一种类型的集合索引)都是无序的，因此不能用于范围。相反，最大最小值索引在范围中工作得特别好，因为确定范围是否相交非常快。部分匹配函数LIKE、startsWith、endsWith和hasToken的有效性取决于使用的索引类型、索引表达式和数据的特定形状。
 
 ### 跳数索引的配置
 
@@ -150,7 +150,7 @@ Bloom filter是一种数据结构，它允许对集合成员进行高效的是�
 
 考虑以下数据分布：
 
-![Bad Skip!](../../../guides/best-practices/images/bad_skip_1.svg)
+![Bad Skip!](../../../en/guides/best-practices/images/bad_skip_1.svg)
 
 
 假设主键/顺序是时间戳，并且在visitor_id上有一个索引。考虑下面的查询:

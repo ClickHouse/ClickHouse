@@ -2,15 +2,12 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
-#include <Processors/Chunk.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/RowsBeforeStepCounter.h>
+#include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/Stopwatch.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/setThreadName.h>
-
 
 namespace CurrentMetrics
 {
@@ -22,7 +19,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class AggregatedChunkInfo final : public ChunkInfoCloneable<AggregatedChunkInfo>
+class AggregatedChunkInfo : public ChunkInfo
 {
 public:
     bool is_overflows = false;
@@ -106,12 +103,18 @@ struct ManyAggregatedData
                 // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
                 if (variant->aggregator)
                 {
-                    pool->scheduleOrThrowOnError(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
+                    // variant is moved here and will be destroyed in the destructor of the lambda function.
+                    pool->trySchedule(
+                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]()
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
+                            SCOPE_EXIT_SAFE(
+                                if (thread_group)
+                                    CurrentThread::detachFromGroupIfNotDetached();
+                            );
+                            if (thread_group)
+                                CurrentThread::attachToGroupIfDetached(thread_group);
 
-                            my_variant.reset();
+                            setThreadName("AggregDestruct");
                         });
                 }
             }
@@ -143,7 +146,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
   * At aggregation step, every transform uses it's own AggregatedDataVariants structure.
   * At merging step, all structures pass to ConvertingAggregatedToChunksTransform.
   */
-class AggregatingTransform final : public IProcessor
+class AggregatingTransform : public IProcessor
 {
 public:
     AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
@@ -164,7 +167,6 @@ public:
     Status prepare() override;
     void work() override;
     Processors expandPipeline() override;
-    void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
@@ -207,10 +209,6 @@ private:
     bool read_current_chunk = false;
 
     bool is_consume_started = false;
-
-    RowsBeforeStepCounterPtr rows_before_aggregation;
-
-    std::list<TemporaryBlockStreamHolder> tmp_files;
 
     void initGenerate();
 };

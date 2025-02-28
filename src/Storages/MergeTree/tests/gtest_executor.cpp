@@ -6,7 +6,6 @@
 #include <random>
 #include <functional>
 
-#include <Common/Exception.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 
@@ -35,12 +34,10 @@ public:
 
         auto choice = distribution(generator);
         if (choice == 0)
-            throw TestException();
+            throw std::runtime_error("Unlucky...");
 
         return false;
     }
-
-    void cancel() noexcept override { /* no op */ }
 
     StorageID getStorageID() const override
     {
@@ -51,7 +48,7 @@ public:
     {
         auto choice = distribution(generator);
         if (choice == 0)
-            throw TestException();
+            throw std::runtime_error("Unlucky...");
     }
 
     Priority getPriority() const override { return {}; }
@@ -82,8 +79,6 @@ public:
             step_func(name, step_count);
         return --step_count;
     }
-
-    void cancel() noexcept override { chassert(false, "Not implemented"); }
 
     StorageID getStorageID() const override
     {

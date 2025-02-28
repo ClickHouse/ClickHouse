@@ -174,7 +174,7 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 如果在URL中指定了`compress=1`，服务会返回压缩的数据。
 如果在URL中指定了`decompress=1`，服务会解压通过POST方法发送的数据。
 
-您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](/operations/settings/settings#http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
+您也可以选择使用[HTTP compression](https://en.wikipedia.org/wiki/HTTP_compression)。发送一个压缩的POST请求，附加请求头`Content-Encoding: compression_method`。为了使ClickHouse响应，您必须附加`Accept-Encoding: compression_method`。ClickHouse支持`gzip`，`br`和`deflate` [compression methods](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens)。要启用HTTP压缩，必须使用ClickHouse[启用Http压缩](../operations/settings/settings.md#settings-enable_http_compression)配置。您可以在[Http zlib压缩级别](#settings-http_zlib_compression_level)设置中为所有压缩方法配置数据压缩级别。
 
 您可以使用它在传输大量数据时减少网络流量，或者创建立即压缩的转储。
 
@@ -427,32 +427,29 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[regex:/query_param_with_url/(?P<name_1>[^/]+)]]></url>
-        <methods>GET</methods>
+        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <method>GET</method>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[regex:(?P<name_2>[^/]+)]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
-            <query>
-                SELECT name, value FROM system.settings
-                WHERE name IN ({name_1:String}, {name_2:String})
-            </query>
+            <query>SELECT value FROM system.settings WHERE name = {name_1:String}</query>
+            <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
-    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
-max_final_threads	2
-max_threads	1
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
+1
+max_final_threads   2
 ```
 
 :::warning
-在一个`predefined_query_handler`中，只支持的一个`查询`。
+在一个`predefined_query_handler`中，只支持insert类型的一个`查询`。
 :::
 
 ### 动态查询 {#dynamic_query_handler}

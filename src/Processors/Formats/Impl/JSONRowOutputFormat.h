@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Core/Block.h>
 #include <IO/Progress.h>
+#include <IO/WriteBuffer.h>
 #include <IO/PeekableWriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
@@ -24,17 +26,14 @@ public:
 
     String getName() const override { return "JSONRowOutputFormat"; }
 
+    void onProgress(const Progress & value) override;
+
     String getContentType() const override { return "application/json; charset=UTF-8"; }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
     {
         statistics.applied_limit = true;
         statistics.rows_before_limit = rows_before_limit_;
-    }
-    void setRowsBeforeAggregation(size_t rows_before_aggregation_) override
-    {
-        statistics.applied_aggregation = true;
-        statistics.rows_before_aggregation = rows_before_aggregation_;
     }
 
 protected:

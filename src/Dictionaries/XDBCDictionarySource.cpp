@@ -10,12 +10,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/LocalDateTime.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
+#include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
-#include <Core/ServerSettings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "config.h"
@@ -23,15 +22,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsSeconds http_receive_timeout;
-    extern const SettingsBool odbc_bridge_use_connection_pooling;
-
-    /// Cloud only
-    extern const SettingsBool cloud_mode;
-}
-
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -86,7 +76,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     , load_all_query(query_builder.composeLoadAllQuery())
     , bridge_helper(bridge_)
     , bridge_url(bridge_helper->getMainURI())
-    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings()))
+    , timeouts(ConnectionTimeouts::getHTTPTimeouts(context_->getSettingsRef(), context_->getServerSettings().keep_alive_timeout))
 {
     auto url_params = bridge_helper->getURLParams(max_block_size);
     for (const auto & [name, value] : url_params)
@@ -120,9 +110,11 @@ std::string XDBCDictionarySource::getUpdateFieldAndDate()
         update_time = std::chrono::system_clock::now();
         return query_builder.composeUpdateQuery(configuration.update_field, str_time);
     }
-
-    update_time = std::chrono::system_clock::now();
-    return load_all_query;
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        return load_all_query;
+    }
 }
 
 
@@ -244,16 +236,13 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                    ContextPtr global_context,
                                    const std::string & /* default_database */,
                                    bool /* check_config */) -> DictionarySourcePtr {
-
-        if (global_context->getSettingsRef()[Setting::cloud_mode])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `odbc` is disabled");
-
+#if USE_ODBC
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             global_context,
-            global_context->getSettingsRef()[Setting::http_receive_timeout],
+            global_context->getSettings().http_receive_timeout,
             config.getString(config_prefix + ".odbc.connection_string"),
             config.getBool(config_prefix + ".settings.odbc_bridge_use_connection_pooling",
-            global_context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling]));
+            global_context->getSettingsRef().odbc_bridge_use_connection_pooling));
 
         std::string settings_config_prefix = config_prefix + ".odbc";
 
@@ -270,6 +259,15 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
         };
 
         return std::make_unique<XDBCDictionarySource>(dict_struct, configuration, sample_block, global_context, bridge);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        (void)global_context;
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.");
+#endif
     };
     factory.registerSource("odbc", create_table_source);
 }
