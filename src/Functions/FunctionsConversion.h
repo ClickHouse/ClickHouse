@@ -1717,7 +1717,6 @@ struct ConvertImpl
                         std::is_same_v<DataTypeUInt128::FieldType, DataTypeIPv6::FieldType::UnderlyingType>,
                         "IPv6 and UInt128 types must be same");
 
-                    // static_cast<ToFieldType>(static_cast<IPv4::UnderlyingType>(vec_from[i]))
                     vec_to[i].toUnderType().items[1] = std::byteswap(vec_from[i].items[0]);
                     vec_to[i].toUnderType().items[0] = std::byteswap(vec_from[i].items[1]);
                 }
