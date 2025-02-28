@@ -22,6 +22,8 @@ namespace ActionLocks
     extern const StorageActionBlockType ViewRefresh = 10;
     extern const StorageActionBlockType VirtualPartsUpdate = 11;
     extern const StorageActionBlockType ReduceBlockingParts = 12;
+    extern const StorageActionBlockType ReloadExternalDictionaries = 13;
+    extern const StorageActionBlockType ReloadEmbeddedDictionaries = 14;
 }
 
 
@@ -46,6 +48,12 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
     }
 }
 
+void ActionLocksManager::add(StorageActionBlockType action_type, ActionLock&& action_lock)
+{
+    std::lock_guard lock(mutex);
+    global_locks[action_type] = std::move(action_lock);
+}
+
 void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
     if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext()))
@@ -58,6 +66,14 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 
     if (storage_locks.contains(table.get()))
         storage_locks[table.get()].erase(action_type);
+}
+
+void ActionLocksManager::remove(StorageActionBlockType action_type)
+{
+    std::lock_guard lock(mutex);
+
+    if (global_locks.contains(action_type))
+        global_locks.erase(action_type);
 }
 
 void ActionLocksManager::cleanExpired()

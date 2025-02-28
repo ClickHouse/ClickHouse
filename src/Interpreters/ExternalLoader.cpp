@@ -26,6 +26,10 @@ namespace ErrorCodes
     extern const int DICTIONARIES_WAS_NOT_LOADED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType ReloadExternalDictionaries;
+}
 
 namespace
 {
@@ -640,10 +644,25 @@ public:
         return infos.contains(name);
     }
 
+    ActionLock getActionLock(StorageActionBlockType action_type)
+    {
+        std::lock_guard lock{mutex};
+        if (action_type == ActionLocks::ReloadExternalDictionaries)
+            return reload_blocker.cancel();
+
+        return {};
+    }
+
     /// Starts reloading all the object which update time is earlier than now.
     /// The function doesn't touch the objects which were never tried to load.
     void reloadOutdated()
     {
+        if (reload_blocker.isCancelled())
+        {
+            LOG_DEBUG(log, "Reloading of outdated dictionaries is stopped.");
+            return;
+        }
+
         /// Iterate through all the objects and find loaded ones which should be checked if they need update.
         std::unordered_map<LoadablePtr, bool> should_update_map;
         {
@@ -829,11 +848,15 @@ private:
             if (!min_id)
                 min_id = getMinIDToFinishLoading(forced_to_reload);
 
+            /// If reload is blocked the call to startLoading is still needed to obtain values
+            /// that have already been loaded
+            bool reload_blocked = reload_blocker.isCancelled();
+
             if (info->loading_id < min_id)
-                startLoading(*info, forced_to_reload, *min_id);
+                startLoading(*info, forced_to_reload, reload_blocked, *min_id);
 
             /// Wait for the next event if loading wasn't completed, or stop otherwise.
-            return (info->state_id >= min_id);
+            return (reload_blocked || info->state_id >= min_id);
         };
 
         if (timeout == WAIT)
@@ -846,6 +869,12 @@ private:
 
     void loadImpl(const FilterByNameFunction & filter, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
     {
+        if (reload_blocker.isCancelled())
+        {
+            LOG_DEBUG(log, "Cannot reload, dictionary reload is stopped.");
+            return;
+        }
+
         std::optional<size_t> min_id;
         auto pred = [&]
         {
@@ -858,10 +887,12 @@ private:
                 if (filter && !filter(name))
                     continue;
 
-                if (info.loading_id < min_id)
-                    startLoading(info, forced_to_reload, *min_id);
+                auto reload_blocked = reload_blocker.isCancelled();
 
-                all_ready &= (info.state_id >= min_id);
+                if (info.loading_id < min_id)
+                    startLoading(info, forced_to_reload, reload_blocked, *min_id);
+
+                all_ready &= (reload_blocked || info.state_id >= min_id);
             }
             return all_ready;
         };
@@ -894,7 +925,7 @@ private:
         return 1;
     }
 
-    void startLoading(Info & info, bool forced_to_reload = false, size_t min_id_to_finish_loading_dependencies_ = 1)
+    void startLoading(Info & info, bool forced_to_reload = false, bool reload_blocked = false, size_t min_id_to_finish_loading_dependencies_ = 1)
     {
         if (info.isLoading())
         {
@@ -924,7 +955,7 @@ private:
             ThreadFromGlobalPool thread;
             try
             {
-                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, reload_blocked, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
             }
             catch (...)
             {
@@ -936,7 +967,7 @@ private:
         else
         {
             /// Perform the loading immediately.
-            doLoading(info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, false);
+            doLoading(info.name, loading_id, forced_to_reload, reload_blocked, min_id_to_finish_loading_dependencies_, false);
         }
     }
 
@@ -967,7 +998,7 @@ private:
     }
 
     /// Does the loading, possibly in the separate thread.
-    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
+    void doLoading(const String & name, size_t loading_id, bool forced_to_reload, bool reload_blocked, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
         ThreadGroupSwitcher switcher(thread_group, "ExternalLoader");
 
@@ -993,6 +1024,16 @@ private:
             auto previous_version_as_base_for_loading = info->object;
             if (forced_to_reload)
                 previous_version_as_base_for_loading = nullptr; /// Need complete reloading, cannot use the previous version.
+
+            /// If loading is blocked and there is no previous version then do not load the object
+            if (reload_blocked && !previous_version_as_base_for_loading)
+            {
+              LOG_TRACE(log, "Could not load object '{}': Reload is blocked", name);
+              LoadingGuardForAsyncLoad lock(async, mutex);
+              finishLoadingSingleObject(name, loading_id, lock);
+              event.notify_all();
+              return;
+            }
 
             /// Loading.
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
@@ -1141,6 +1182,7 @@ private:
         {
             info->loading_id = info->state_id;
         }
+
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
         /// Add `loading_id` to the list of recently finished loadings.
@@ -1207,6 +1249,7 @@ private:
     std::unordered_map<std::thread::id, size_t> min_id_to_finish_loading_dependencies;
     size_t next_id_counter = 1; /// should always be > 0
     mutable pcg64 rnd_engine{randomSeed()};
+    ActionBlocker reload_blocker;
 };
 
 
@@ -1501,6 +1544,11 @@ void ExternalLoader::reloadConfig(const String & repository_name) const
 void ExternalLoader::reloadConfig(const String & repository_name, const String & path) const
 {
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
+}
+
+ActionLock ExternalLoader::getActionLock(StorageActionBlockType action_type)
+{
+    return loading_dispatcher->getActionLock(action_type);
 }
 
 ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(

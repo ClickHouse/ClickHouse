@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Common/ActionBlocker.h>
+#include <Common/ActionLock.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 
@@ -35,6 +37,7 @@ private:
     int reload_period;
     int cur_reload_period = 1;
     bool is_fast_start_stage = true;
+    ActionBlocker reload_blocker;
 
     mutable std::mutex mutex;
 
@@ -72,6 +75,8 @@ public:
 
     /// Forcibly reloads all dictionaries.
     void reload();
+
+    ActionLock getActionLock(StorageActionBlockType action_type);
 
     ~EmbeddedDictionaries();
 

@@ -17,6 +17,11 @@ namespace ErrorCodes
     extern const int UNFINISHED;
 }
 
+namespace ActionLocks
+{
+    extern const StorageActionBlockType ReloadEmbeddedDictionaries;
+}
+
 void EmbeddedDictionaries::handleException(const bool throw_on_error) const
 {
     const auto exception_ptr = std::current_exception();
@@ -61,6 +66,12 @@ bool EmbeddedDictionaries::reloadDictionary(
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
     std::lock_guard lock(mutex);
+
+    if (reload_blocker.isCancelled())
+    {
+        LOG_INFO(log, "Loading of embedded dictionaries is stopped.");
+        return false;
+    }
 
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,
@@ -146,5 +157,12 @@ void EmbeddedDictionaries::reload()
         throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
 }
 
+ActionLock EmbeddedDictionaries::getActionLock(StorageActionBlockType action_type)
+{
+    if (action_type == ActionLocks::ReloadEmbeddedDictionaries)
+        return reload_blocker.cancel();
+
+    return {};
+}
 
 }
