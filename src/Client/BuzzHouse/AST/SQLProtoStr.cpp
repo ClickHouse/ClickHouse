@@ -1975,6 +1975,21 @@ CONV_FN(ClusterFunc, cluster)
     ret += ")";
 }
 
+CONV_FN(MergeTreeIndexFunc, mfunc)
+{
+    ret += "mergeTreeIndex('";
+    ret += mfunc.mdatabase();
+    ret += "', '";
+    ret += mfunc.mtable();
+    ret += "'";
+    if (mfunc.has_with_marks())
+    {
+        ret += ", with_marks = ";
+        ret += mfunc.with_marks() ? "true" : "false";
+    }
+    ret += ")";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -2012,6 +2027,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kCluster:
             ClusterFuncToString(ret, tf.cluster());
+            break;
+        case TableFunctionType::kMtindex:
+            MergeTreeIndexFuncToString(ret, tf.mtindex());
             break;
         default:
             ret += "numbers(10)";
