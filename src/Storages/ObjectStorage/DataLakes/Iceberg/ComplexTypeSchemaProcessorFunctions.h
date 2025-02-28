@@ -82,22 +82,34 @@ struct IIcebergSchemaTransform
     virtual ~IIcebergSchemaTransform() = default;
 };
 
-class ExecutableIdentityEvolutionFunction : public IExecutableFunction
+class ExecutableEvolutionFunction : public IExecutableFunction
 {
 public:
-    explicit ExecutableIdentityEvolutionFunction(
+    explicit ExecutableEvolutionFunction(
         DataTypePtr type_, DataTypePtr old_type_, Poco::SharedPtr<Poco::JSON::Object> old_json_, Poco::SharedPtr<Poco::JSON::Object> field_)
         : type(type_), old_type(old_type_), old_json(old_json_), field(field_)
     {
     }
 
-    String getName() const override { return "ExecutableIdentityEvolutionFunction"; }
+    String getName() const override { return "ExecutableEvolutionFunction"; }
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
 
 private:
+    /// To process schema evolution in case when we have tree-based tuple we use DFS
+    /// and process 3-stage pipeline, which was described above.
+    /// Struct below is state of out DFS algorithm.
+    struct TraverseItem
+    {
+        Poco::JSON::Array::Ptr old_subfields;
+        Poco::JSON::Array::Ptr fields;
+        std::vector<String> current_path;
+        std::vector<std::vector<size_t>> permutations;
+    };
+
     void lazyInitialize() const;
+    static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size);
 
     DataTypePtr type;
     DataTypePtr old_type;
@@ -108,10 +120,10 @@ private:
     mutable bool initialized = false;
 };
 
-class IdentityFunctionStruct : public IFunctionBase
+class EvolutionFunctionStruct : public IFunctionBase
 {
 public:
-    explicit IdentityFunctionStruct(
+    explicit EvolutionFunctionStruct(
         const DataTypes & types_,
         const DataTypes & old_types_,
         Poco::SharedPtr<Poco::JSON::Object> old_json_,
@@ -128,7 +140,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableIdentityEvolutionFunction>(types[0], old_types[0], old_json, field);
+        return std::make_unique<ExecutableEvolutionFunction>(types[0], old_types[0], old_json, field);
     }
 
     bool isDeterministic() const override { return true; }

@@ -216,7 +216,7 @@ private:
     DataTypes current_types;
 };
 
-ColumnPtr ExecutableIdentityEvolutionFunction::executeImpl(
+ColumnPtr ExecutableEvolutionFunction::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
     if (!initialized)
@@ -243,7 +243,7 @@ ColumnPtr ExecutableIdentityEvolutionFunction::executeImpl(
     return result_column;
 }
 
-static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size)
+void ExecutableEvolutionFunction::fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size)
 {
     std::unordered_set<size_t> existing_elements;
     for (auto elem : permutation)
@@ -256,18 +256,7 @@ static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, 
     }
 }
 
-/// To process schema evolution in case when we have tree-based tuple we use DFS
-/// and process 3-stage pipeline, which was described above.
-/// Struct below is state of out DFS algorithm.
-struct TraverseItem
-{
-    Poco::JSON::Array::Ptr old_subfields;
-    Poco::JSON::Array::Ptr fields;
-    std::vector<String> current_path;
-    std::vector<std::vector<size_t>> permutations;
-};
-
-void ExecutableIdentityEvolutionFunction::lazyInitialize() const
+void ExecutableEvolutionFunction::lazyInitialize() const
 {
     std::stack<TraverseItem> walk_stack;
     {
