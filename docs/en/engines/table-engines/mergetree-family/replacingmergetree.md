@@ -15,7 +15,7 @@ Data deduplication occurs only during a merge. Merging occurs in the background 
 Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the background in order to save space, but it does not guarantee the absence of duplicates.
 
 :::note
-A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/docs/guides/replacing-merge-tree).
+A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/guides/replacing-merge-tree).
 :::
 
 ## Creating a Table {#creating-a-table}
@@ -215,4 +215,4 @@ FINAL
 1 row in set. Elapsed: 0.002 sec.
 ```
 
-For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/docs/guides/replacing-merge-tree).
+For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/guides/replacing-merge-tree).

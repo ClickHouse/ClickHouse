@@ -155,7 +155,7 @@ You may want to create a [Dictionary](../../sql-reference/dictionaries/index.md)
 
 ## Use case: Incorporate geo data {#use-case}
 
-Using the [`pointInPolygon`](/docs/sql-reference/functions/geo/coordinates.md/#pointinpolygon) function.
+Using the [`pointInPolygon`](/sql-reference/functions/geo/coordinates.md/#pointinpolygon) function.
 
 1. Create a table where we will store polygons:
 
