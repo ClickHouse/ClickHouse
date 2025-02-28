@@ -1,0 +1,12 @@
+t	String
+on	String
+f	String
+off	String
+true	Bool
+false	Bool
+true	Bool
+true	Bool
+false	Bool
+false	Bool
+true	Bool
+false	Bool
