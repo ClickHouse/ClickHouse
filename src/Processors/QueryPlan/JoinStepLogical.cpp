@@ -35,6 +35,7 @@ namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool join_any_take_last_row;
+    extern const SettingsUInt64 default_max_bytes_in_join;
 }
 
 namespace ErrorCodes
@@ -513,7 +514,7 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
 
 JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, query_context);
+    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, query_context->getSettingsRef()[Setting::default_max_bytes_in_join]);
 
     auto & join_expression = join_info.expression;
 
@@ -724,7 +725,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
         prepared_join_storage,
         left_sample_block,
         right_sample_block,
-        query_context,
+        JoinAlgorithmSettings(*query_context),
         hash_table_key_hash);
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
