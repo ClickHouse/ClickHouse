@@ -17,12 +17,18 @@
 #include <boost/algorithm/hex.hpp>
 
 #include <Access/Common/SSLCertificateSubjects.h>
+#include "Access/Common/AuthenticationType.h"
 #include "config.h"
 
 #if USE_SSL
 #     include <openssl/crypto.h>
 #     include <openssl/rand.h>
 #     include <openssl/err.h>
+#     include <openssl/evp.h>
+#     include <openssl/hmac.h>
+#     include <openssl/sha.h>
+#     include <openssl/buffer.h>
+#     include <openssl/bio.h>
 #endif
 
 #if USE_BCRYPT
@@ -41,6 +47,45 @@ namespace ErrorCodes
     extern const int OPENSSL_ERROR;
 }
 
+namespace
+{
+#if USE_SSL
+
+std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<uint8_t>& salt, int iterations)
+{
+    std::vector<uint8_t> derived_key(SHA256_DIGEST_LENGTH);
+    PKCS5_PBKDF2_HMAC(
+        password.data(),
+        static_cast<Int32>(password.size()),
+        salt.data(),
+        static_cast<Int32>(salt.size()),
+        iterations,
+        EVP_sha256(),
+        SHA256_DIGEST_LENGTH,
+        derived_key.data());
+    return derived_key;
+}
+
+std::vector<uint8_t> base64Decode(std::string_view encoded)
+{
+    BIO *bio;
+    BIO *b64;
+    size_t decode_len = encoded.size();
+    std::vector<uint8_t> decoded(decode_len);
+
+    bio = BIO_new_mem_buf(encoded.data(), static_cast<Int32>(encoded.size()));
+    b64 = BIO_new(BIO_f_base64());
+    bio = BIO_push(b64, bio);
+    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
+    Int32 len = BIO_read(bio, decoded.data(), static_cast<Int32>(decode_len));
+    BIO_free_all(bio);
+    decoded.resize(len);
+    return decoded;
+}
+
+#endif
+}
+
 AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_view text [[maybe_unused]])
 {
 #if USE_SSL
@@ -50,6 +95,17 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
     return hash;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+#endif
+}
+
+AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password [[maybe_unused]], std::string_view salt [[maybe_unused]])
+{
+#if USE_SSL
+    auto salt_digest = base64Decode(salt);
+    auto salted_password = pbkdf2SHA256(password, salt_digest, 4096);
+    return salted_password;
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SCRAM SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
 #endif
 }
 
@@ -131,6 +187,10 @@ void AuthenticationData::setPassword(const String & password_, bool validate)
             setPasswordHashBinary(Util::encodeSHA256(password_), validate);
             return;
 
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+            setPasswordHashBinary(Util::encodeScramSHA256(password_, ""), validate);
+            return;
+
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:
             setPasswordHashBinary(Util::encodeDoubleSHA1(password_), validate);
             return;
@@ -161,7 +221,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
+    if (type != AuthenticationType::PLAINTEXT_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
@@ -213,6 +273,12 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Password hash for the 'SHA256_PASSWORD' authentication type has length {} "
                                 "but must be exactly 32 bytes.", hash.size());
+            password_hash = hash;
+            return;
+        }
+
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        {
             password_hash = hash;
             return;
         }
@@ -273,7 +339,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash, bool validat
 
 void AuthenticationData::setSalt(String salt_)
 {
-    if (type != AuthenticationType::SHA256_PASSWORD)
+    if (type != AuthenticationType::SHA256_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setSalt(): authentication type {} not supported", toString(type));
     salt = std::move(salt_);
 }
@@ -310,6 +376,15 @@ std::shared_ptr<ASTAuthenticationData> AuthenticationData::toAST() const
             break;
         }
         case AuthenticationType::SHA256_PASSWORD:
+        {
+            node->contains_hash = true;
+            node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
+
+            if (!getSalt().empty())
+                node->children.push_back(std::make_shared<ASTLiteral>(getSalt()));
+            break;
+        }
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
         {
             node->contains_hash = true;
             node->children.push_back(std::make_shared<ASTLiteral>(getPasswordHashHex()));
@@ -513,6 +588,37 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
                             "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
 #endif
         }
+
+        if (query.type == AuthenticationType::SCRAM_SHA256_PASSWORD)
+        {
+#if USE_SSL
+            ///random generator FIPS complaint
+            uint8_t key[32];
+            if (RAND_bytes(key, sizeof(key)) != 1)
+            {
+                char buf[512] = {0};
+                ERR_error_string_n(ERR_get_error(), buf, sizeof(buf));
+                throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot generate salt for password. OpenSSL {}", buf);
+            }
+
+            String salt;
+            salt.resize(sizeof(key) * 2);
+            char * buf_pos = salt.data();
+            for (uint8_t k : key)
+            {
+                writeHexByteUppercase(k, buf_pos);
+                buf_pos += 2;
+            }
+            auth_data.setSalt(salt);
+            auto digest = Util::encodeScramSHA256(value, salt);
+            auth_data.setPasswordHashBinary(digest, validate);
+            return auth_data;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "SHA256 passwords support is disabled, because ClickHouse was built without SSL library");
+#endif
+        }
+
 
         auth_data.setPassword(value, validate);
         return auth_data;
