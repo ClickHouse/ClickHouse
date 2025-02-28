@@ -9,7 +9,7 @@ class UnionStep : public IQueryPlanStep
 {
 public:
     /// max_threads is used to limit the number of threads for result pipeline.
-    explicit UnionStep(Headers input_headers_, size_t max_threads_ = 0);
+    explicit UnionStep(Headers input_headers_, size_t max_threads_ = 0, bool parallel_replicas = false);
 
     String getName() const override { return "Union"; }
 
@@ -18,6 +18,7 @@ public:
     void describePipeline(FormatSettings & settings) const override;
 
     size_t getMaxThreads() const { return max_threads; }
+    bool parallelReplicas() const { return parallel_replicas; }
 
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
@@ -25,7 +26,8 @@ public:
 private:
     void updateOutputHeader() override;
 
-    size_t max_threads;
+    const size_t max_threads = 0;
+    const bool parallel_replicas = false;
 };
 
 }
