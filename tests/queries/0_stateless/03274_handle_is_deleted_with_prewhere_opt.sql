@@ -8,7 +8,9 @@ set do_not_merge_across_partitions_select_final=1;
 
 truncate table system.query_log;
 
+-- check that it works for queries with and without WHERE
 select count() from 03274_prewhere_is_deleted final SETTINGS log_comment='final_query';
+select count() from 03274_prewhere_is_deleted final where number > 100 SETTINGS log_comment='final_query';
 
 system flush logs;
 
