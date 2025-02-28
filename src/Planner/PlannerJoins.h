@@ -241,6 +241,25 @@ JoinClausesAndActions buildJoinClausesAndActions(
   */
 std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join_node);
 
+struct JoinAlgorithmSettings
+{
+    bool join_any_take_last_row;
+
+    bool collect_hash_table_stats_during_joins;
+    UInt64 max_entries_for_hash_table_stats;
+
+    UInt64 grace_hash_join_initial_buckets;
+    UInt64 grace_hash_join_max_buckets;
+
+    UInt64 max_size_to_preallocate_for_joins;
+    UInt64 max_threads;
+
+    String initial_query_id;
+    std::chrono::milliseconds acquire_timeout;
+
+    explicit JoinAlgorithmSettings(const Context & context);
+};
+
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.
@@ -250,7 +269,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    ContextPtr query_context,
+    const JoinAlgorithmSettings & settings,
     IQueryTreeNode::HashState hash_table_key_hash);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
