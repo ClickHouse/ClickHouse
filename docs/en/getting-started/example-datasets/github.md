@@ -175,6 +175,7 @@ CREATE TABLE git.line_changes
 
 Insert the data using `INSERT INTO SELECT` and the [s3 function](/sql-reference/table-functions/s3). For example, below, we insert the ClickHouse files into each of their respective tables:
 
+
 *commits*
 
 ```sql
