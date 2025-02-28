@@ -85,9 +85,8 @@ void IOutputFormat::work()
             setRowsBeforeLimit(rows_before_limit_counter->get());
         if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
             setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+
         finalizeUnlocked();
-        if (auto_flush)
-            flushImpl();
         return;
     }
 
@@ -164,6 +163,10 @@ void IOutputFormat::finalizeUnlocked()
 
     writeSuffixIfNeeded();
     finalizeImpl();
+
+    if (auto_flush)
+        flushImpl();
+
     finalizeBuffers();
     finalized = true;
 }

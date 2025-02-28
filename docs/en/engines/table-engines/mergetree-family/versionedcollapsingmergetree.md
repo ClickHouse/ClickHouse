@@ -2,6 +2,8 @@
 slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
 sidebar_position: 80
 sidebar_label:  VersionedCollapsingMergeTree
+title: "VersionedCollapsingMergeTree"
+description: "Allows for quick writing of object states that are continually changing, and deleting old object states in the background."
 ---
 
 # VersionedCollapsingMergeTree
@@ -32,7 +34,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
 
-### Engine Parameters
+### Engine Parameters {#engine-parameters}
 
 ``` sql
 VersionedCollapsingMergeTree(sign, version)
@@ -40,10 +42,10 @@ VersionedCollapsingMergeTree(sign, version)
 
 | Parameter | Description                                                                            | Type                                                                                                                                                                                                                                                                                    |
 |-----------|----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/docs/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
-| `version` | Name of the column with the version of the object state.                               | [`Int*`](/docs/sql-reference/data-types/int-uint), [`UInt*`](/docs/sql-reference/data-types/int-uint), [`Date`](/docs/sql-reference/data-types/date), [`Date32`](/docs/sql-reference/data-types/date32), [`DateTime`](/docs/sql-reference/data-types/datetime) or [`DateTime64`](/docs/sql-reference/data-types/datetime64) |
+| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
+| `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
 
-### Query Clauses
+### Query Clauses {#query-clauses}
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
 

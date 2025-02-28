@@ -96,7 +96,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.shard_num);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(shard_info.shard_name);
+                res_columns[res_index++]->insert(shard_info.name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(shard_info.weight);
             if (columns_mask[src_index++])

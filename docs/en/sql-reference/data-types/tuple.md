@@ -8,11 +8,11 @@ sidebar_label: Tuple(T1, T2, ...)
 
 A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types). Tuple must contain at least one element.
 
-Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](../../sql-reference/functions/index.md#higher-order-functions).
+Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
 
-## Creating Tuples
+## Creating Tuples {#creating-tuples}
 
 You can use a function to create a tuple:
 
@@ -60,7 +60,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-## Data Type Detection
+## Data Type Detection {#data-type-detection}
 
 When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](../../sql-reference/syntax.md#null-literal), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
 
@@ -76,7 +76,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-## Referring to Tuple Elements
+## Referring to Tuple Elements {#referring-to-tuple-elements}
 
 Tuple elements can be referred to by name or by index:
 
@@ -102,7 +102,7 @@ Result:
 └────────────────────┘
 ```
 
-## Comparison operations with Tuple
+## Comparison operations with Tuple {#comparison-operations-with-tuple}
 
 Two tuples are compared by sequentially comparing their elements from the left to the right. If first tuples element is greater (smaller) than the second tuples corresponding element, then the first tuple is greater (smaller) than the second, otherwise (both elements are equal), the next element is compared.
 

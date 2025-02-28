@@ -2,6 +2,8 @@
 slug: /engines/table-engines/integrations/rabbitmq
 sidebar_position: 170
 sidebar_label: RabbitMQ
+title: "RabbitMQ Engine"
+description: "This engine allows integrating ClickHouse with RabbitMQ."
 ---
 
 # RabbitMQ Engine
@@ -201,7 +203,7 @@ Note: `_raw_message` and `_error` virtual columns are filled only in case of exc
 
 ## Caveats {#caveats}
 
-Even though you may specify [default column expressions](/docs/sql-reference/statements/create/table.md/#default_values) (such as `DEFAULT`, `MATERIALIZED`, `ALIAS`) in the table definition, these will be ignored. Instead, the columns will be filled with their respective default values for their types.
+Even though you may specify [default column expressions](/sql-reference/statements/create/table.md/#default_values) (such as `DEFAULT`, `MATERIALIZED`, `ALIAS`) in the table definition, these will be ignored. Instead, the columns will be filled with their respective default values for their types.
 
 ## Data formats support {#data-formats-support}
 
