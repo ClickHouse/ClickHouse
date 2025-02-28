@@ -62,7 +62,7 @@ namespace
             "ClickHouseDictionarySource",
             Protocol::Compression::Enable,
             configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable,
-            "" /* bind_host */)); // TYOCUM TODO
+            "" /* bind_host */));
 
         return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
     }

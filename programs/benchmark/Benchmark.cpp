@@ -140,7 +140,7 @@ public:
                 /* client_name_= */ std::string(DEFAULT_CLIENT_NAME),
                 Protocol::Compression::Enable,
                 secure,
-                "")); // TYOCUM TODO
+                /* bind_host_= */ ""));
 
             if (!round_robin || comparison_info_per_interval.empty())
             {
