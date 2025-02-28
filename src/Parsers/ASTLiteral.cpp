@@ -1,6 +1,7 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorHash.h>
+#include <DataTypes/IDataType.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -150,6 +151,8 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 
 void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
+    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
+        settings.ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
     if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         settings.ostr << applyVisitor(FieldVisitorToString(), value);
     else
