@@ -8,6 +8,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/logger_useful.h>
 
+#include <Columns/IColumn.h>
+
 namespace DB::ErrorCodes
 {
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
