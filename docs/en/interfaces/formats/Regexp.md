@@ -1,7 +1,7 @@
 ---
-title : Regexp
+title: Regexp
 slug: /interfaces/formats/Regexp
-keywords : [Regexp]
+keywords: [Regexp]
 input_format: true
 output_format: false
 alias: []

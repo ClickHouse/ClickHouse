@@ -1,7 +1,7 @@
 ---
-title : Vertical
+title: Vertical
 slug: /interfaces/formats/Vertical
-keywords : [Vertical]
+keywords: [Vertical]
 input_format: false
 output_format: true
 alias: []

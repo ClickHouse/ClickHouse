@@ -1,7 +1,7 @@
 ---
-title : CustomSeparated
+title: CustomSeparated
 slug: /interfaces/formats/CustomSeparated
-keywords : [CustomSeparated]
+keywords: [CustomSeparated]
 input_format: true
 output_format: true
 alias: []

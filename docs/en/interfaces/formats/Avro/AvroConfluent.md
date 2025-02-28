@@ -1,7 +1,7 @@
 ---
-title : AvroConfluent
+title: AvroConfluent
 slug: /interfaces/formats/AvroConfluent
-keywords : [AvroConfluent]
+keywords: [AvroConfluent]
 input_format: true
 output_format: false
 alias: []

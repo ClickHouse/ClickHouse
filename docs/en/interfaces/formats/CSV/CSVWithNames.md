@@ -1,7 +1,7 @@
 ---
-title : CSVWithNames
+title: CSVWithNames
 slug: /interfaces/formats/CSVWithNames
-keywords : [CSVWithNames]
+keywords: [CSVWithNames]
 input_format: true
 output_format: true
 alias: []

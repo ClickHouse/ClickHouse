@@ -1,5 +1,5 @@
 ---
-title : JSON
+title: JSON
 slug: /interfaces/formats/JSON
 keywords: [JSON]
 input_format: true
