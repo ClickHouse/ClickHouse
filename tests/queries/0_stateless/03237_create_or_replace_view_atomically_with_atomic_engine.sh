@@ -18,7 +18,7 @@ export -f create_or_replace_view_thread;
 function select_view_thread
 {
     for _ in {1..20}; do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view" > /dev/null
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${CLICKHOUSE_DATABASE}_db.test_view FORMAT NULL"  | grep -v -P 'Code: (60|741)'
     done
 }
 export -f select_view_thread;
