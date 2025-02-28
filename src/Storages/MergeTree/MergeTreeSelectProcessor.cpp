@@ -214,11 +214,19 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             }
 
             auto chunk = Chunk(ordered_columns, res.row_count);
+            const auto & data_part = task->getInfo().data_part;
             if (add_part_level)
-                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(task->getInfo().data_part->info.level));
+                chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(data_part->info.level));
 
             if (reader_settings.use_query_condition_cache)
-                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(task->getInfo().data_part, res.read_mark_ranges));
+            {
+                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(data_part, res.read_mark_ranges));
+                LOG_DEBUG(
+                    log,
+                    "Mark ranges info, part_name: {}, (ranges: {})",
+                    data_part->name,
+                    toString(res.read_mark_ranges));
+            }
 
             return ChunkAndProgress{
                 .chunk = std::move(chunk),

@@ -167,7 +167,6 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (constant_filter_description.always_false)
     {
         write_into_query_condition_cache();
-
         return; /// Will finish at next prepare call
     }
 
@@ -218,7 +217,6 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (num_filtered_rows == 0)
     {
         write_into_query_condition_cache();
-
         /// SimpleTransform will skip it.
         return;
     }
