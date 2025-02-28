@@ -1951,6 +1951,15 @@ String Context::getConcurrentThreadsScheduler() const
 std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler)
 {
     std::lock_guard lock(shared->mutex);
+
+    // Set the scheduler
+    bool ok = ConcurrencyControl::instance().setScheduler(scheduler);
+    if (ok)
+        shared->concurrent_threads_scheduler = scheduler;
+    else
+        LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", value);
+
+    // Set the limit
     SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
     if (num > 0 && num < concurrent_threads_soft_limit)
         concurrent_threads_soft_limit = num;
@@ -1960,11 +1969,9 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
         if (value > 0 && value < concurrent_threads_soft_limit)
             concurrent_threads_soft_limit = value;
     }
-    ConcurrencyControl::instance().setScheduler(scheduler);
     ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
     shared->concurrent_threads_soft_limit_num = num;
     shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
-    shared->concurrent_threads_scheduler = scheduler;
     return { concurrent_threads_soft_limit, ConcurrencyControl::instance().getScheduler() };
 }
 

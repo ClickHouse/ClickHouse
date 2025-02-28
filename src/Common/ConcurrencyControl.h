@@ -258,8 +258,8 @@ public:
     // Sets value of the current slot limit
     void setMaxConcurrency(SlotCount value);
 
-    // Sets the current scheduling algorithm
-    void setScheduler(const String & value);
+    // Sets the current scheduling algorithm. Returns true if `value` is valid
+    bool setScheduler(const String & value);
 
     // Returns the current scheduling algorithm
     String getScheduler() const;

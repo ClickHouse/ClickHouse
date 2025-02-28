@@ -400,13 +400,20 @@ void ConcurrencyControl::setMaxConcurrency(SlotCount value)
     schedule(lock);
 }
 
-void ConcurrencyControl::setScheduler(const String & value)
+bool ConcurrencyControl::setScheduler(const String & value)
 {
     std::unique_lock lock{state.mutex};
     if (value == "fair_round_robin")
+    {
         scheduler = Scheduler::FairRoundRobin;
-    else // "round_robin" or something else (default)
+        return true;
+    }
+    if (value == "round_robin")
+    {
         scheduler = Scheduler::RoundRobin;
+        return true;
+    }
+    return false; // invalid value - stick to the current scheduler
 }
 
 String ConcurrencyControl::getScheduler() const
