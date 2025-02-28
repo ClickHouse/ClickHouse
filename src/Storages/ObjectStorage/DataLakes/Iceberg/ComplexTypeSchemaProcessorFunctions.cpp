@@ -258,12 +258,12 @@ void ExecutableEvolutionFunction::fillMissingElementsInPermutation(std::vector<s
 
 void ExecutableEvolutionFunction::lazyInitialize() const
 {
-    std::stack<TraverseItem> walk_stack;
+    std::stack<ExecutableEvolutionFunction::TraverseItem> walk_stack;
     {
         auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
         auto old_subfields = old_json->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
 
-        walk_stack.push(TraverseItem{old_subfields, subfields, {}, {}});
+        walk_stack.push(ExecutableEvolutionFunction::TraverseItem{old_subfields, subfields, {}, {}});
     }
 
     while (!walk_stack.empty())
