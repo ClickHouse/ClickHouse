@@ -17,6 +17,13 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
 }
 
+namespace
+{
+    bool hasNotNoneValue(const std::string value, const Poco::JSON::Object::Ptr & object)
+    {
+        return object->has(value) && !object->isNull(value) && !object->get(value).isEmpty();
+    }
+}
 namespace DataLake
 {
 
@@ -107,7 +114,7 @@ void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & 
             auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-            if (object->has("aws_temp_credentials") && !object->isNull("aws_temp_credentials"))
+            if (hasNotNoneValue("aws_temp_credentials", object))
             {
                 const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
                 std::string access_key_id = creds_object->get("access_key_id").extract<String>();
@@ -136,21 +143,61 @@ bool UnityCatalog::tryGetTableMetadata(
     {
         std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-        if (object->has("name") && object->get("name").extract<String>() == table_name)
+        if (hasNotNoneValue("name", object) && object->get("name").extract<String>() == table_name)
         {
             std::string location;
-            if (result.requiresLocation() || (result.requiresLocationIfExists() && object->has("storage_location")))
+            if (result.requiresLocationIfExists() && hasNotNoneValue("storage_location", object))
             {
                 location = object->get("storage_location").extract<String>();
                 result.setLocation(location);
             }
+            else if (result.requiresLocation())
+            {
+                if (!hasNotNoneValue("storage_location", object))
+                    throw DB::Exception(
+                        DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it doesn't have storage location. " \
+                        "It means that it's not a DeltaLake table, and it's unreadable with Unity catalog in ClickHouse", full_table_name);
 
-            if (object->has("securable_kind") && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))
+                location = object->get("storage_location").extract<String>();
+                result.setLocation(location);
+            }
+
+            bool has_securable_kind = hasNotNoneValue("securable_kind", object);
+            bool has_data_source_format = hasNotNoneValue("data_source_format", object);
+            if (has_securable_kind && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))
+            {
                 result.setDefaultReadableTable(false);
-            else if (object->has("data_source_format") && object->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
+                if (result.requiresLocation())
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has unsupported securable_kind: '{}'. " \
+                        "It means that it's unreadable with Unity catalog in ClickHouse, readable tables are: [{}]",
+                        full_table_name, object->get("securable_kind").extract<String>(), fmt::join(READABLE_TABLES, ", "));
+                }
+            }
+
+            if (has_data_source_format && object->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
+            {
                 result.setDefaultReadableTable(false);
-            else
+                if (result.requiresLocation())
+                {
+                    throw DB::Exception(
+                        DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has unsupported data_source_format '{}'. " \
+                        "It means that it's unreadable with Unity catalog in ClickHouse, readable tables must have data_source_format == '{}'",
+                        full_table_name, object->get("securable_kind").extract<String>(), READABLE_DATA_SOURCE_FORMAT);
+                }
+            }
+
+            if (has_data_source_format || has_securable_kind)
+            {
                 result.setDefaultReadableTable(true);
+            }
+            else if (result.requiresLocation())
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has no information about data_source_format or securable_kind. " \
+                    "It means that it's unreadable with Unity catalog in ClickHouse", full_table_name);
+            }
 
             if (result.requiresSchema())
             {
@@ -210,7 +257,7 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     {
         std::tie(json, json_str) = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / (warehouse + "." + schema_name + "." + table_name));
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-        if (object->has("name") && object->get("name").extract<String>() == table_name)
+        if (hasNotNoneValue("name", object) && object->get("name").extract<String>() == table_name)
             return true;
         return false;
     }
@@ -256,7 +303,7 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
             if (limit && tables.size() >= limit)
                 break;
 
-            if (object->has("next_page_token") && !object->get("next_page_token").isEmpty())
+            if (hasNotNoneValue("next_page_token", object))
             {
                 auto continuation_token = object->get("next_page_token").extract<String>();
 
@@ -320,7 +367,7 @@ DataLake::ICatalog::Namespaces UnityCatalog::getSchemas(const std::string & base
             if (limit && schemas.size() > limit)
                 break;
 
-            if (object->has("next_page_token") && !object->get("next_page_token").isEmpty())
+            if (hasNotNoneValue("next_page_token", object))
             {
                 auto continuation_token = object->get("next_page_token").extract<String>();
 

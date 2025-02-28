@@ -275,7 +275,6 @@ Chunk StorageObjectStorageSource::generate()
                 else
                 {
 #if USE_PARQUET && USE_AWS_S3
-                    LOG_DEBUG(log, "OTHER BRANCH INFO BRANCH");
                     /// This is an awful temporary crutch,
                     /// which will be removed once DeltaKernel is used by default for DeltaLake.
                     /// By release 25.3.
@@ -283,7 +282,6 @@ Chunk StorageObjectStorageSource::generate()
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
                     {
-                        LOG_DEBUG(log, "DATALAKE CONF");
                         /// A terrible crutch, but it this code will be removed next month.
                         DeltaLakePartitionColumns partition_columns;
                         if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
@@ -294,9 +292,6 @@ Chunk StorageObjectStorageSource::generate()
                         {
                             partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
                         }
-                        LOG_DEBUG(log, "Partition columns size {}", partition_columns.size());
-                        for (const auto & [n, column] : partition_columns)
-                            LOG_DEBUG(log, "NAME {} COL {}", n, column.size());
                         if (!partition_columns.empty())
                         {
                             auto partition_values = partition_columns.find(full_path);
