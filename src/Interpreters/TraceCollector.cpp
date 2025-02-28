@@ -137,8 +137,8 @@ void TraceCollector::run()
             UInt64 thread_id;
             readPODBinary(thread_id, in);
 
-            UInt64 parent_thread_id;
-            readPODBinary(parent_thread_id, in);
+            UInt64 parent_thread_id = 0;
+//            readPODBinary(parent_thread_id, in);
 
             Int64 size;
             readPODBinary(size, in);
