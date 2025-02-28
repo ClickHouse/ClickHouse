@@ -357,7 +357,7 @@ class ClickhouseIntegrationTestsRunner:
         image_cmd = self._get_runner_image_cmd()
         runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
-        report_file = "setup.jsonl"
+        report_file = "runner_get_all_tests.jsonl"
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- "
@@ -377,11 +377,14 @@ class ClickhouseIntegrationTestsRunner:
                         print("    " + line, end="")
                 raise ex
 
+        # Add report_file to the uploaded files
+        shutil.move(
+            os.path.join(self.repo_path, "tests", "integration", report_file),
+            os.path.join(self.result_path, report_file),
+        )
         all_tests = set()
         with open(
-            os.path.join(self.repo_path, "tests", "integration", report_file),
-            "r",
-            encoding="utf-8",
+            os.path.join(self.result_path, report_file), "r", encoding="utf-8"
         ) as rfd:
             reports = [json.loads(j) for j in rfd]
 
