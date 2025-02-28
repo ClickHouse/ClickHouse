@@ -12,6 +12,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
