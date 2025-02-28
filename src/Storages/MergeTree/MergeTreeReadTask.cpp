@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/Exception.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
