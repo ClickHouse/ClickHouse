@@ -196,9 +196,9 @@ String getNameForSubstreamPath(
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
-            stream_name += "." + it->variant_element_name;
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->variant_element_name) : it->variant_element_name);
         else if (it->type == Substream::VariantElementNullMap)
-            stream_name += "." + it->variant_element_name + ".null";
+            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->variant_element_name) : it->variant_element_name) + ".null";
         else if (it->type == SubstreamType::DynamicStructure)
             stream_name += ".dynamic_structure";
         else if (it->type == SubstreamType::ObjectStructure)
