@@ -17,8 +17,7 @@ class IMergeTreeReader : private boost::noncopyable
 public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
-    using DeserializeBinaryBulkStateMap = std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
-    using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
+    using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,

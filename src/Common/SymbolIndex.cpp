@@ -1,9 +1,9 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 
-#    include <base/MemorySanitizer.h>
-#    include <base/hex.h>
-#    include <base/sort.h>
-#    include <Common/SymbolIndex.h>
+#include <Common/SymbolIndex.h>
+#include <Common/MemorySanitizer.h>
+#include <base/hex.h>
+#include <base/sort.h>
 
 #include <algorithm>
 #include <optional>
@@ -460,11 +460,13 @@ const T * find(const void * address, const std::vector<T> & vec)
 
     if (it == vec.begin())
         return nullptr;
-    --it; /// Last range that has left boundary less or equals than address.
+    else
+        --it; /// Last range that has left boundary less or equals than address.
 
     if (address >= it->address_begin && address < it->address_end)
         return &*it;
-    return nullptr;
+    else
+        return nullptr;
 }
 
 }
@@ -496,11 +498,12 @@ const SymbolIndex::Object * SymbolIndex::findObject(const void * address) const
 
 String SymbolIndex::getBuildIDHex() const
 {
+    String build_id_binary = getBuildID();
     String build_id_hex;
-    build_id_hex.resize(data.build_id.size() * 2);
+    build_id_hex.resize(build_id_binary.size() * 2);
 
     char * pos = build_id_hex.data();
-    for (auto c : data.build_id)
+    for (auto c : build_id_binary)
     {
         writeHexByteUppercase(c, pos);
         pos += 2;

@@ -1,14 +1,6 @@
 #include <Storages/Kafka/StorageKafkaUtils.h>
 
 
-#include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicatedHelpers.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -19,6 +11,13 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/StorageKafka2.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -29,13 +28,11 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
-
+#include <boost/algorithm/string/replace.hpp>
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
 
@@ -50,37 +47,6 @@ extern const Event KafkaConsumerErrors;
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
-    extern const SettingsBool kafka_disable_num_consumers_limit;
-}
-
-namespace KafkaSetting
-{
-    extern const KafkaSettingsUInt64 input_format_allow_errors_num;
-    extern const KafkaSettingsFloat input_format_allow_errors_ratio;
-    extern const KafkaSettingsBool input_format_skip_unknown_fields;
-    extern const KafkaSettingsString kafka_broker_list;
-    extern const KafkaSettingsString kafka_client_id;
-    extern const KafkaSettingsBool kafka_commit_every_batch;
-    extern const KafkaSettingsBool kafka_commit_on_select;
-    extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
-    extern const KafkaSettingsString kafka_format;
-    extern const KafkaSettingsString kafka_group_name;
-    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
-    extern const KafkaSettingsString kafka_keeper_path;
-    extern const KafkaSettingsUInt64 kafka_max_block_size;
-    extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
-    extern const KafkaSettingsUInt64 kafka_num_consumers;
-    extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
-    extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
-    extern const KafkaSettingsString kafka_replica_name;
-    extern const KafkaSettingsString kafka_schema;
-    extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
-    extern const KafkaSettingsBool kafka_thread_per_consumer;
-    extern const KafkaSettingsString kafka_topic_list;
-}
 
 using namespace std::chrono_literals;
 
@@ -104,7 +70,12 @@ void registerStorageKafka(StorageFactory & factory)
         String collection_name;
         if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
         {
-            kafka_settings->loadFromNamedCollection(named_collection);
+            for (const auto & setting : kafka_settings->all())
+            {
+                const auto & setting_name = setting.getName();
+                if (named_collection->has(setting_name))
+                    kafka_settings->set(setting_name, named_collection->get<String>(setting_name));
+            }
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
         }
 
@@ -116,7 +87,7 @@ void registerStorageKafka(StorageFactory & factory)
 // Check arguments and settings
 #define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME, EVAL, TYPE) \
     /* One of the four required arguments is not specified */ \
-    if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 && !(*kafka_settings)[KafkaSetting::PAR_NAME].changed) \
+    if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 && !kafka_settings->PAR_NAME.changed) \
     { \
         throw Exception( \
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, \
@@ -127,7 +98,8 @@ void registerStorageKafka(StorageFactory & factory)
     if (args_count >= (ARG_NUM)) \
     { \
         /* The same argument is given in two places */ \
-        if (has_settings && (*kafka_settings)[KafkaSetting::PAR_NAME].changed) \
+        if (has_settings && kafka_settings->PAR_NAME.changed) \
+        { \
             throw Exception( \
                 ErrorCodes::BAD_ARGUMENTS, \
                 "The argument №{} of storage Kafka " \
@@ -135,17 +107,21 @@ void registerStorageKafka(StorageFactory & factory)
                 "in SETTINGS cannot be specified at the same time", \
                 #ARG_NUM, \
                 #PAR_NAME); \
+        } \
         /* move engine args to settings */ \
-        if constexpr ((EVAL) == 1) \
+        else \
         { \
-            engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+            if constexpr ((EVAL) == 1) \
+            { \
+                engine_args[(ARG_NUM)-1] = evaluateConstantExpressionAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+            } \
+            if constexpr ((EVAL) == 2) \
+            { \
+                engine_args[(ARG_NUM)-1] \
+                    = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
+            } \
+            kafka_settings->PAR_NAME = checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME); \
         } \
-        if constexpr ((EVAL) == 2) \
-        { \
-            engine_args[(ARG_NUM)-1] \
-                = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
-        } \
-        (*kafka_settings)[KafkaSetting::PAR_NAME] = checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME); \
     }
 
         /** Arguments of engine is following:
@@ -185,10 +161,10 @@ void registerStorageKafka(StorageFactory & factory)
 
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
-        auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
-        auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
+        auto num_consumers = kafka_settings->kafka_num_consumers.value;
+        auto max_consumers = std::max<uint32_t>(getNumberOfPhysicalCPUCores(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
+        if (!args.getLocalContext()->getSettingsRef().kafka_disable_num_consumers_limit && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -203,17 +179,17 @@ void registerStorageKafka(StorageFactory & factory)
                 "See also https://clickhouse.com/docs/integrations/kafka/kafka-table-engine#tuning-performance",
                 max_consumers);
         }
-        if (num_consumers < 1)
+        else if (num_consumers < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of consumers can not be lower than 1");
         }
 
-        if ((*kafka_settings)[KafkaSetting::kafka_max_block_size].changed && (*kafka_settings)[KafkaSetting::kafka_max_block_size].value < 1)
+        if (kafka_settings->kafka_max_block_size.changed && kafka_settings->kafka_max_block_size.value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_max_block_size can not be lower than 1");
         }
 
-        if ((*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed && (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value < 1)
+        if (kafka_settings->kafka_poll_max_batch_size.changed && kafka_settings->kafka_poll_max_batch_size.value < 1)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
         }
@@ -231,17 +207,17 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
-                "See https://clickhouse.com/docs/engines/table-engines/integrations/kafka/#configuration");
+                "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
-        const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();
-        const auto has_replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].changed && !(*kafka_settings)[KafkaSetting::kafka_replica_name].value.empty();
+        const auto has_keeper_path = kafka_settings->kafka_keeper_path.changed && !kafka_settings->kafka_keeper_path.value.empty();
+        const auto has_replica_name = kafka_settings->kafka_replica_name.changed && !kafka_settings->kafka_replica_name.value.empty();
 
         if (!has_keeper_path && !has_replica_name)
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
+        if (!args.getLocalContext()->getSettingsRef().allow_experimental_kafka_offsets_storage_in_keeper && !args.query.attach)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
@@ -271,18 +247,18 @@ void registerStorageKafka(StorageFactory & factory)
             info.table_id = args.table_id;
             // We could probably unfold UUID here too, but let's keep it similar to ReplicatedMergeTree, which doesn't do the unfolding.
             info.table_id.uuid = UUIDHelpers::Nil;
-            (*kafka_settings)[KafkaSetting::kafka_keeper_path].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_keeper_path].value, info);
+            kafka_settings->kafka_keeper_path.value = context->getMacros()->expand(kafka_settings->kafka_keeper_path.value, info);
 
             info.level = 0;
-            (*kafka_settings)[KafkaSetting::kafka_replica_name].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_replica_name].value, info);
+            kafka_settings->kafka_replica_name.value = context->getMacros()->expand(kafka_settings->kafka_replica_name.value, info);
         }
 
 
         auto * settings_query = args.storage_def->settings;
         chassert(has_settings && "Unexpected settings query in StorageKafka");
 
-        settings_query->changes.setSetting("kafka_keeper_path", (*kafka_settings)[KafkaSetting::kafka_keeper_path].value);
-        settings_query->changes.setSetting("kafka_replica_name", (*kafka_settings)[KafkaSetting::kafka_replica_name].value);
+        settings_query->changes.setSetting("kafka_keeper_path", kafka_settings->kafka_keeper_path.value);
+        settings_query->changes.setSetting("kafka_replica_name", kafka_settings->kafka_replica_name.value);
 
         // Expand other macros (such as {replica}). We do not expand them on previous step to make possible copying metadata files between replicas.
         // Disable expanding {shard} macro, because it can lead to incorrect behavior and it doesn't make sense to shard Kafka tables.
@@ -296,11 +272,11 @@ void registerStorageKafka(StorageFactory & factory)
         }
         if (!allow_uuid_macro)
             info.table_id.uuid = UUIDHelpers::Nil;
-        (*kafka_settings)[KafkaSetting::kafka_keeper_path].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_keeper_path].value, info);
+        kafka_settings->kafka_keeper_path.value = context->getMacros()->expand(kafka_settings->kafka_keeper_path.value, info);
 
         info.level = 0;
         info.table_id.uuid = UUIDHelpers::Nil;
-        (*kafka_settings)[KafkaSetting::kafka_replica_name].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_replica_name].value, info);
+        kafka_settings->kafka_replica_name.value = context->getMacros()->expand(kafka_settings->kafka_replica_name.value, info);
 
         return std::make_shared<StorageKafka2>(
             args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
@@ -311,8 +287,6 @@ void registerStorageKafka(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .source_access_type = AccessType::KAFKA,
-            .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
 }
 
@@ -352,9 +326,11 @@ void drainConsumer(
             {
                 break;
             }
-
-            LOG_ERROR(log, "Error during draining: {}", error);
-            error_handler(error);
+            else
+            {
+                LOG_ERROR(log, "Error during draining: {}", error);
+                error_handler(error);
+            }
         }
 
         // i don't stop draining on first error,
@@ -394,35 +370,31 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 {
     SettingsChanges result;
     // Needed for backward compatibility
-    if (!kafka_settings[KafkaSetting::input_format_skip_unknown_fields].changed)
+    if (!kafka_settings.input_format_skip_unknown_fields.changed)
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
-        kafka_settings[KafkaSetting::input_format_skip_unknown_fields] = true;
+        kafka_settings.input_format_skip_unknown_fields = true;
     }
 
-    if (!kafka_settings[KafkaSetting::input_format_allow_errors_ratio].changed)
+    if (!kafka_settings.input_format_allow_errors_ratio.changed)
     {
-        kafka_settings[KafkaSetting::input_format_allow_errors_ratio] = 0.;
+        kafka_settings.input_format_allow_errors_ratio = 0.;
     }
 
-    if (!kafka_settings[KafkaSetting::input_format_allow_errors_num].changed)
+    if (!kafka_settings.input_format_allow_errors_num.changed)
     {
-        kafka_settings[KafkaSetting::input_format_allow_errors_num] = kafka_settings[KafkaSetting::kafka_skip_broken_messages].value;
+        kafka_settings.input_format_allow_errors_num = kafka_settings.kafka_skip_broken_messages.value;
     }
 
     if (!schema_name.empty())
         result.emplace_back("format_schema", schema_name);
 
-    auto kafka_format_settings = kafka_settings.getFormatSettings();
-    result.insert(result.end(), kafka_format_settings.begin(), kafka_format_settings.end());
-
-    /// It does not make sense to use auto detection here, since the format
-    /// will be reset for each message, plus, auto detection takes CPU
-    /// time.
-    result.setSetting("input_format_csv_detect_header", false);
-    result.setSetting("input_format_tsv_detect_header", false);
-    result.setSetting("input_format_custom_detect_header", false);
-
+    for (const auto & setting : kafka_settings)
+    {
+        const auto & name = setting.getName();
+        if (name.find("kafka_") == std::string::npos)
+            result.emplace_back(name, setting.getValue());
+    }
     return result;
 }
 

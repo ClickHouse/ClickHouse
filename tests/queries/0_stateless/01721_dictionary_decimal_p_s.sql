@@ -1,5 +1,6 @@
 -- Tags: no-parallel
 
+set allow_experimental_bigint_types=1;
 drop database if exists db_01721;
 drop table if exists db_01721.table_decimal_dict;
 drop dictionary if exists db_01721.decimal_dict;
@@ -76,3 +77,4 @@ SELECT dictGet('db_01721.decimal_dict', 'Decimal32_', toUInt64(5000)),
 drop table if exists table_decimal_dict;
 drop dictionary if exists cache_dict;
 drop database if exists db_01721;
+

@@ -165,7 +165,7 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 
 ## toDate {#todate}
 
-Конвертирует аргумент в значение [Date](/ru/sql-reference/data-types/date.md).
+Конвертирует аргумент в значение [Date](/docs/ru/sql-reference/data-types/date.md).
 
 **Синтаксис**
 
@@ -175,13 +175,13 @@ toDate(expr)
 
 **Аргументы**
 
-- `expr` — Значение для преобразования. [String](/ru/sql-reference/data-types/string.md), [Int](/ru/sql-reference/data-types/int-uint.md), [Date](/ru/sql-reference/data-types/date.md) или [DateTime](/ru/sql-reference/data-types/datetime.md).
+- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
 
 Если `expr` является числом выглядит как UNIX timestamp (больше чем 65535), оно интерпретируется как DateTime, затем обрезается до Date учитывавая текущую часовой пояс. Если `expr` является числом и меньше чем 65536, оно интерпретируется как количество дней с 1970-01-01.
 
 **Возвращаемое значение**
 
-- Календарная дата. [Date](/ru/sql-reference/data-types/date.md).
+- Календарная дата. [Date](/docs/ru/sql-reference/data-types/date.md).
 
 **Пример**
 
@@ -202,7 +202,7 @@ SELECT toDate('2022-12-30'), toDate(1685457500);
 
 ## toDateOrZero {#todateorzero}
 
-Как [toDate](#todate), но в случае неудачи возвращает нижнюю границу [Date](/ru/sql-reference/data-types/date.md)). Поддерживается только аргумент типа [String](/ru/sql-reference/data-types/string.md).
+Как [toDate](#todate), но в случае неудачи возвращает нижнюю границу [Date](/docs/ru/sql-reference/data-types/date.md)). Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
 
 **Пример**
 
@@ -223,7 +223,7 @@ SELECT toDateOrZero('2022-12-30'), toDateOrZero('');
 
 ## toDateOrNull {#todateornull}
 
-Как [toDate](#todate), но в случае неудачи возвращает `NULL`. Поддерживается только аргумент типа [String](/ru/sql-reference/data-types/string.md).
+Как [toDate](#todate), но в случае неудачи возвращает `NULL`. Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
 
 **Пример**
 
@@ -244,7 +244,7 @@ SELECT toDateOrNull('2022-12-30'), toDateOrNull('');
 
 ## toDateOrDefault {#todateordefault}
 
-Как [toDate](#todate), но в случае неудачи возвращает значение по умолчанию (или второй аргумент (если указан), или нижняя граница [Date](/ru/sql-reference/data-types/date.md)).
+Как [toDate](#todate), но в случае неудачи возвращает значение по умолчанию (или второй аргумент (если указан), или нижняя граница [Date](/docs/ru/sql-reference/data-types/date.md)).
 
 **Синтаксис**
 
@@ -271,7 +271,7 @@ SELECT toDateOrDefault('2022-12-30'), toDateOrDefault('', '2023-01-01'::Date);
 
 ## toDateTime {#todatetime}
 
-Конвертирует аргумент в значение [DateTime](/ru/sql-reference/data-types/datetime.md).
+Конвертирует аргумент в значение [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
 
 **Синтаксис**
 
@@ -281,20 +281,20 @@ toDateTime(expr[, time_zone ])
 
 **Аргументы**
 
-- `expr` — Значение для преобразования. [String](/ru/sql-reference/data-types/string.md), [Int](/ru/sql-reference/data-types/int-uint.md), [Date](/ru/sql-reference/data-types/date.md) или [DateTime](/ru/sql-reference/data-types/datetime.md).
-- `time_zone` — Часовой пояс. [String](/ru/sql-reference/data-types/string.md).
+- `expr` — Значение для преобразования. [String](/docs/ru/sql-reference/data-types/string.md), [Int](/docs/ru/sql-reference/data-types/int-uint.md), [Date](/docs/ru/sql-reference/data-types/date.md) или [DateTime](/docs/ru/sql-reference/data-types/datetime.md).
+- `time_zone` — Часовой пояс. [String](/docs/ru/sql-reference/data-types/string.md).
 
 :::note
 Если `expr` является числом, то оно интерпретируется как число секунд с начала Unix-эпохи (Unix Timestamp).
 
-Если же `expr` -- [строка (String)](/ru/sql-reference/data-types/string.md), то оно может быть интерпретировано и как Unix Timestamp, и как строковое представление даты / даты со временем.  
+Если же `expr` -- [строка (String)](/docs/ru/sql-reference/data-types/string.md), то оно может быть интерпретировано и как Unix Timestamp, и как строковое представление даты / даты со временем.  
 Ввиду неоднозначности запрещён парсинг строк длиной 4 и меньше. Так, строка `'1999'` могла бы представлять собой как год (неполное строковое представление даты или даты со временем), так и Unix Timestamp.  
 Строки длиной 5 символов и более не несут неоднозначности, а следовательно, их парсинг разрешён.
 :::
 
 **Возвращаемое значение**
 
-- Время. [DateTime](/ru/sql-reference/data-types/datetime.md)
+- Время. [DateTime](/docs/ru/sql-reference/data-types/datetime.md)
 
 **Пример**
 
@@ -315,7 +315,7 @@ SELECT toDateTime('2022-12-30 13:44:17'), toDateTime(1685457500, 'UTC');
 
 ## toDateTimeOrZero {#todatetimeorzero}
 
-Как [toDateTime](#todatetime), но в случае неудачи возвращает нижнюю границу [DateTime](/ru/sql-reference/data-types/datetime.md)). Поддерживается только аргумент типа [String](/ru/sql-reference/data-types/string.md).
+Как [toDateTime](#todatetime), но в случае неудачи возвращает нижнюю границу [DateTime](/docs/ru/sql-reference/data-types/datetime.md)). Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
 
 **Пример**
 
@@ -336,7 +336,7 @@ SELECT toDateTimeOrZero('2022-12-30 13:44:17'), toDateTimeOrZero('');
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-Как [toDateTime](#todatetime), но в случае неудачи возвращает `NULL`. Поддерживается только аргумент типа [String](/ru/sql-reference/data-types/string.md).
+Как [toDateTime](#todatetime), но в случае неудачи возвращает `NULL`. Поддерживается только аргумент типа [String](/docs/ru/sql-reference/data-types/string.md).
 
 **Example**
 
@@ -357,7 +357,7 @@ Result:
 
 ## toDateTimeOrDefault {#todatetimeordefault}
 
-Как [toDateTime](#todatetime), но в случае неудачи возвращает значение по умолчанию (или третий аргумент (если указан), или нижняя граница [DateTime](/ru/sql-reference/data-types/datetime.md)).
+Как [toDateTime](#todatetime), но в случае неудачи возвращает значение по умолчанию (или третий аргумент (если указан), или нижняя граница [DateTime](/docs/ru/sql-reference/data-types/datetime.md)).
 
 **Синтаксис**
 
@@ -774,14 +774,14 @@ toDecimalString(number, scale)
 
 **Параметры**
 
--   `number` — Значение любого числового типа: [Int, UInt](/ru/sql-reference/data-types/int-uint.md), [Float](/ru/sql-reference/data-types/float.md), [Decimal](/ru/sql-reference/data-types/decimal.md),
--   `scale` — Требуемое количество десятичных знаков после запятой, [UInt8](/ru/sql-reference/data-types/int-uint.md).
-    * Значение `scale` для типов [Decimal](/ru/sql-reference/data-types/decimal.md) и [Int, UInt](/ru/sql-reference/data-types/int-uint.md) должно не превышать 77 (так как это наибольшее количество значимых символов для этих типов),
-    * Значение `scale` для типа [Float](/ru/sql-reference/data-types/float.md) не должно превышать 60.
+-   `number` — Значение любого числового типа: [Int, UInt](/docs/ru/sql-reference/data-types/int-uint.md), [Float](/docs/ru/sql-reference/data-types/float.md), [Decimal](/docs/ru/sql-reference/data-types/decimal.md),
+-   `scale` — Требуемое количество десятичных знаков после запятой, [UInt8](/docs/ru/sql-reference/data-types/int-uint.md).
+    * Значение `scale` для типов [Decimal](/docs/ru/sql-reference/data-types/decimal.md) и [Int, UInt](/docs/ru/sql-reference/data-types/int-uint.md) должно не превышать 77 (так как это наибольшее количество значимых символов для этих типов),
+    * Значение `scale` для типа [Float](/docs/ru/sql-reference/data-types/float.md) не должно превышать 60.
 
 **Возвращаемое значение**
 
--   Строка ([String](/sql-reference/data-types/string.md)), представляющая собой десятичное представление входного числа с заданной длиной дробной части.
+-   Строка ([String](/docs/en/sql-reference/data-types/string.md)), представляющая собой десятичное представление входного числа с заданной длиной дробной части.
     При необходимости число округляется по стандартным правилам арифметики.
 
 **Пример использования**

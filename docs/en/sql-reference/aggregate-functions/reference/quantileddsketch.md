@@ -1,8 +1,7 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileddsketch
+slug: /en/sql-reference/aggregate-functions/reference/quantileddsketch
 sidebar_position: 171
 title: quantileDD
-description: "Computes an approximate quantile of a sample with relative-error guarantees."
 ---
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees. It works by building a [DD](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).
@@ -10,7 +9,7 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 **Syntax**
 
 ``` sql
-quantileDD(relative_accuracy, [level])(expr)
+quantileDDsketch[relative_accuracy, (level)](expr)
 ```
 
 **Arguments**

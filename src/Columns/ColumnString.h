@@ -2,13 +2,12 @@
 
 #include <cstring>
 
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
+#include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Core/Field.h>
 
@@ -16,7 +15,7 @@
 
 
 class Collator;
-class SipHash;
+
 
 namespace DB
 {
@@ -30,8 +29,6 @@ class ColumnString final : public COWHelper<IColumnHelper<ColumnString>, ColumnS
 public:
     using Char = UInt8;
     using Chars = PaddedPODArray<UInt8>;
-
-    static constexpr size_t min_size_to_compress = 4096;
 
 private:
     friend class COWHelper<IColumnHelper<ColumnString>, ColumnString>;
@@ -112,13 +109,6 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1};
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
-    {
-        WriteBufferFromOwnString wb;
-        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1}, wb);
-        return {wb.str(), std::make_shared<DataTypeString>()};
-    }
-
     StringRef getDataAt(size_t n) const override
     {
         chassert(n < size());
@@ -133,7 +123,7 @@ public:
 
     void insert(const Field & x) override
     {
-        const String & s = x.safeGet<String>();
+        const String & s = x.safeGet<const String &>();
         const size_t old_size = chars.size();
         const size_t size_to_append = s.size() + 1;
         const size_t new_size = old_size + size_to_append;
@@ -204,10 +194,6 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    ColumnCheckpointPtr getCheckpoint() const override;
-    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
-    void rollback(const ColumnCheckpoint & checkpoint) override;
-
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -217,11 +203,22 @@ public:
 
     const char * skipSerializedInArena(const char * pos) const override;
 
-    void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateHashWithValue(size_t n, SipHash & hash) const override
+    {
+        size_t string_size = sizeAt(n);
+        size_t offset = offsetAt(n);
+
+        hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
+        hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
+    }
 
     WeakHash32 getWeakHash32() const override;
 
-    void updateHashFast(SipHash & hash) const override;
+    void updateHashFast(SipHash & hash) const override
+    {
+        hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
+        hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
+    }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -283,7 +280,7 @@ public:
 
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
 
-    ColumnPtr compress(bool force_compression) const override;
+    ColumnPtr compress() const override;
 
     void reserve(size_t n) override;
     size_t capacity() const override;

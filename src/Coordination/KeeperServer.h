@@ -3,6 +3,7 @@
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStateManager.h>
+#include <Coordination/KeeperStorage.h>
 #include <libnuraft/raft_params.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -69,6 +70,7 @@ private:
 
     const bool create_snapshot_on_exit;
     const bool enable_reconfiguration;
+
 public:
     KeeperServer(
         const KeeperConfigurationAndSettingsPtr & settings_,
@@ -84,14 +86,14 @@ public:
 
     /// Put local read request and execute in state machine directly and response into
     /// responses queue
-    void putLocalReadRequest(const KeeperRequestForSession & request);
+    void putLocalReadRequest(const KeeperStorageBase::RequestForSession & request);
 
     bool isRecovering() const { return is_recovering; }
     bool reconfigEnabled() const { return enable_reconfiguration; }
 
     /// Put batch of requests into Raft and get result of put. Responses will be set separately into
     /// responses_queue.
-    RaftAppendResult putRequestBatch(const KeeperRequestsForSessions & requests);
+    RaftAppendResult putRequestBatch(const KeeperStorageBase::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
@@ -153,8 +155,6 @@ public:
     void yieldLeadership();
 
     void recalculateStorageStats();
-
-    std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 };
 
 }

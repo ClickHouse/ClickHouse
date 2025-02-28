@@ -1,9 +1,7 @@
 ---
-slug: /engines/table-engines/integrations/nats
+slug: /en/engines/table-engines/integrations/nats
 sidebar_position: 140
 sidebar_label: NATS
-title: "NATS Engine"
-description: "his engine allows integrating ClickHouse with NATS to publish or subscribe to message subjects, and process new messages as they become available."
 ---
 
 # NATS Engine {#redisstreams-engine}
@@ -54,7 +52,7 @@ Required parameters:
 
 Optional parameters:
 
-- `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
 - `nats_max_reconnect` – Maximum amount of reconnection attempts per try to connect to NATS. Default: `5`.
@@ -114,7 +112,7 @@ Example:
 ```
 
 The NATS server configuration can be added using the ClickHouse config file.
-More specifically you can add Redis password for NATS engine:
+ More specifically you can add Redis password for NATS engine:
 
 ``` xml
 <nats>
@@ -169,7 +167,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 
 - `_subject` - NATS message subject. Data type: `String`.
 
-Additional virtual columns when `nats_handle_error_mode='stream'`:
+Additional virtual columns when `kafka_handle_error_mode='stream'`:
 
 - `_raw_message` - Raw message that couldn't be parsed successfully. Data type: `Nullable(String)`.
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.

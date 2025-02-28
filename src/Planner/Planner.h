@@ -3,13 +3,13 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 
+#include <Analyzer/QueryTreePassManager.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
-
-class QueryNode;
 
 class GlobalPlannerContext;
 using GlobalPlannerContextPtr = std::shared_ptr<GlobalPlannerContext>;
@@ -56,6 +56,8 @@ public:
         return std::move(query_plan);
     }
 
+    SelectQueryInfo buildSelectQueryInfo() const;
+
     void addStorageLimits(const StorageLimitsList & limits);
 
     PlannerContextPtr getPlannerContext() const
@@ -69,8 +71,6 @@ public:
     const QueryNodeToPlanStepMapping & getQueryNodeToPlanStepMapping() const { return query_node_to_plan_step_mapping; }
 
 private:
-    SelectQueryInfo buildSelectQueryInfo() const;
-
     void buildPlanForUnionNode();
 
     void buildPlanForQueryNode();

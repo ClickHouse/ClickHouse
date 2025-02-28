@@ -19,8 +19,6 @@ using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
 /// Writes data part in wide format.
 class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
-    using Base = MergeTreeDataPartWriterOnDisk;
-
 public:
     MergeTreeDataPartWriterWide(
         const String & data_part_name_,
@@ -37,16 +35,13 @@ public:
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        MergeTreeIndexGranularityPtr index_granularity_);
+        const MergeTreeIndexGranularity & index_granularity);
 
     void write(const Block & block, const IColumn::Permutation * permutation) override;
 
     void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
-    void cancel() noexcept override;
-
-    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
@@ -96,7 +91,9 @@ private:
     void addStreams(
         const NameAndTypePair & name_and_type,
         const ColumnPtr & column,
-        const ASTPtr & effective_codec_desc) override;
+        const ASTPtr & effective_codec_desc);
+
+    void initDynamicStreamsIfNeeded(const Block & block);
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -139,12 +136,11 @@ private:
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
 
-    /// Set of columns to put marks in cache during write.
-    NameSet columns_to_load_marks;
-
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.
     size_t rows_written_in_last_mark = 0;
+
+    bool is_dynamic_streams_initialized = false;
 };
 
 }

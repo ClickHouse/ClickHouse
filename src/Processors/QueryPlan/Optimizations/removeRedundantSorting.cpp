@@ -100,7 +100,7 @@ private:
         }
 
         /// sorting removed, so need to update sorting traits for upstream steps
-        const Header * input_header = &parent_node->children.front()->step->getOutputHeader();
+        const DataStream * input_stream = &parent_node->children.front()->step->getOutputStream();
         chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
@@ -119,8 +119,8 @@ private:
                 break;
             }
 
-            trans->updateInputHeader(*input_header);
-            input_header = &trans->getOutputHeader();
+            trans->updateInputStream(*input_stream);
+            input_stream = &trans->getOutputStream();
 
             /// update sorting properties though stack until reach node which affects order (inclusive)
             if (node == nodes_affect_order.back())
@@ -181,7 +181,7 @@ private:
             return true;
         }
         /// (2) sorting
-        if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
+        else if (const auto * next_sorting = typeid_cast<const SortingStep *>(step_affect_order); next_sorting)
         {
             if (next_sorting->getType() == SortingStep::Type::Full)
                 return true;

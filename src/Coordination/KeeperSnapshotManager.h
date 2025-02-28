@@ -1,10 +1,6 @@
 #pragma once
-#include "config.h"
-
+#include <Coordination/KeeperStorage.h>
 #include <Common/CopyableAtomic.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Coordination/KeeperCommon.h>
-#include <Coordination/KeeperStorage_fwd.h>
 #include <libnuraft/nuraft.hxx>
 
 namespace DB

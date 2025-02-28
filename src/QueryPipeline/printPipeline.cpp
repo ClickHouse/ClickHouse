@@ -1,7 +1,6 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/Port.h>
-
+#include <set>
 #include <map>
 
 namespace DB

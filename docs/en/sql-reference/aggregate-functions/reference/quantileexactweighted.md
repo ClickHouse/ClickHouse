@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexactweighted
+slug: /en/sql-reference/aggregate-functions/reference/quantileexactweighted
 sidebar_position: 174
-title: "quantileExactWeighted"
-description: "Exactly computes the quantile of a numeric data sequence, taking into account the weight of each element."
 ---
 
 # quantileExactWeighted
@@ -25,7 +23,7 @@ Alias: `medianExactWeighted`.
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 - `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
-- `weight` — Column with weights of sequence members. Weight is a number of value occurrences with [Unsigned integer types](../../../sql-reference/data-types/int-uint.md).
+- `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
 
 **Returned value**
 
@@ -67,4 +65,4 @@ Result:
 **See Also**
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
-- [quantiles](/sql-reference/aggregate-functions/reference/quantiles)
+- [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

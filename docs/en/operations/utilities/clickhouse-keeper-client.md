@@ -1,5 +1,5 @@
 ---
-slug: /operations/utilities/clickhouse-keeper-client
+slug: /en/operations/utilities/clickhouse-keeper-client
 sidebar_label: clickhouse-keeper-client
 ---
 
@@ -47,15 +47,13 @@ keeper foo bar
 
 -   `ls '[path]'` -- Lists the nodes for the given path (default: cwd)
 -   `cd '[path]'` -- Changes the working path (default `.`)
--   `cp '<src>' '<dest>'`  -- Copies 'src' node to 'dest' path
--   `mv '<src>' '<dest>'`  -- Moves 'src' node to the 'dest' path
 -   `exists '<path>'` -- Returns `1` if node exists, `0` otherwise
 -   `set '<path>' <value> [version]` -- Updates the node's value. Only updates if version matches (default: -1)
 -   `create '<path>' <value> [mode]` -- Creates new node with the set value
 -   `touch '<path>'` -- Creates new node with an empty string as value. Doesn't throw an exception if the node already exists
 -   `get '<path>'` -- Returns the node's value
 -   `rm '<path>' [version]` -- Removes the node only if version matches (default: -1)
--   `rmr '<path>' [limit]` -- Recursively deletes path if the subtree size is smaller than the limit. Confirmation required (default limit = 100)
+-   `rmr '<path>'` -- Recursively deletes path. Confirmation required
 -   `flwc <command>` -- Executes four-letter-word command
 -   `help` -- Prints this message
 -   `get_direct_children_number '[path]'` -- Get numbers of direct children nodes under a specific path
@@ -65,4 +63,4 @@ keeper foo bar
 -   `delete_stale_backups` -- Deletes ClickHouse nodes used for backups that are now inactive
 -   `find_big_family [path] [n]` -- Returns the top n nodes with the biggest family in the subtree (default path = `.` and n = 10)
 -   `sync '<path>'` -- Synchronizes node between processes and leader
--   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration
+-   `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure Keeper cluster. See https://clickhouse.com/docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

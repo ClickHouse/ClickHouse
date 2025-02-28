@@ -9,7 +9,6 @@
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
-#include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
@@ -93,18 +92,8 @@ public:
     /// stick with other commands. Commands from one set have already been validated
     /// to be executed without issues on the creation state.
     bool containBarrierCommand() const;
-    NameSet getAllUpdatedColumns() const;
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
-
-/// A pair of Actions DAG that is required to execute one step
-/// of mutation and the name of filter column if it's a filtering step.
-struct MutationActions
-{
-    ActionsDAG dag;
-    String filter_column_name;
-    bool project_input;
-};
 
 }

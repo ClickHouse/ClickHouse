@@ -1,21 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/kafka
+slug: /en/engines/table-engines/integrations/kafka
 sidebar_position: 110
 sidebar_label: Kafka
-title: "Kafka"
-description: "The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available."
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Kafka
-
-<CloudNotSupportedBadge/>
-
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
-:::
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -63,7 +52,7 @@ Required parameters:
 
 Optional parameters:
 
-- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
 - `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
@@ -162,7 +151,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -262,9 +251,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
 - For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
 
-## Engine to store committed offsets in ClickHouse Keeper {#engine-to-store-committed-offsets-in-clickhouse-keeper}
-
-<ExperimentalBadge/>
+## Experimental engine to store committed offsets in ClickHouse Keeper
 
 If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
  - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
@@ -294,7 +281,7 @@ SETTINGS
 SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ```
 
-### Known limitations {#known-limitations}
+### Known limitations
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
  - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.

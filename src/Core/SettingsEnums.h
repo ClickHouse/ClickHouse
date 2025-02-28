@@ -1,21 +1,15 @@
 #pragma once
 
-#include <Access/Common/SQLSecurityDefs.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
-#include <Core/MergeSelectorAlgorithm.h>
-#include <Core/ParallelReplicasMode.h>
 #include <Core/QueryLogElementType.h>
 #include <Core/SchemaInferenceMode.h>
 #include <Core/SettingsFields.h>
 #include <Core/ShortCircuitFunctionEvaluation.h>
-#include <Core/StreamingHandleErrorMode.h>
 #include <Formats/FormatSettings.h>
-#include <IO/DistributedCacheLogMode.h>
-#include <IO/DistributedCachePoolBehaviourOnLimit.h>
-#include <IO/ReadMethod.h>
-#include <Parsers/IdentifierQuotingStyle.h>
+#include <IO/ReadSettings.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
 
@@ -128,7 +122,9 @@ constexpr auto getEnumValues();
 DECLARE_SETTING_ENUM(LoadBalancing)
 
 DECLARE_SETTING_ENUM(JoinStrictness)
+
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
+
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -220,9 +216,6 @@ enum class DefaultTableEngine : uint8_t
 
 DECLARE_SETTING_ENUM(DefaultTableEngine)
 
-DECLARE_SETTING_ENUM(DistributedCacheLogMode)
-
-DECLARE_SETTING_ENUM(DistributedCachePoolBehaviourOnLimit)
 
 enum class CleanDeletedRows : uint8_t
 {
@@ -264,6 +257,14 @@ enum class DistributedDDLOutputMode : uint8_t
 
 DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 
+enum class StreamingHandleErrorMode : uint8_t
+{
+    DEFAULT = 0, // Ignore errors with threshold.
+    STREAM, // Put errors to stream in the virtual column named ``_error.
+    /*FIXED_SYSTEM_TABLE, Put errors to in a fixed system table likely system.kafka_errors. This is not implemented now.  */
+    /*CUSTOM_SYSTEM_TABLE, Put errors to in a custom system table. This is not implemented now.  */
+};
+
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
@@ -298,28 +299,30 @@ enum class Dialect : uint8_t
 
 DECLARE_SETTING_ENUM(Dialect)
 
+enum class ParallelReplicasCustomKeyFilterType : uint8_t
+{
+    DEFAULT,
+    RANGE,
+};
+
 DECLARE_SETTING_ENUM(ParallelReplicasCustomKeyFilterType)
 
 enum class LightweightMutationProjectionMode : uint8_t
 {
     THROW,
     DROP,
-    REBUILD,
 };
 
 DECLARE_SETTING_ENUM(LightweightMutationProjectionMode)
 
 enum class DeduplicateMergeProjectionMode : uint8_t
 {
-    IGNORE,
     THROW,
     DROP,
     REBUILD,
 };
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
-
-DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
 
@@ -347,23 +350,11 @@ DECLARE_SETTING_ENUM_WITH_RENAME(DateTimeOverflowBehavior, FormatSettings::DateT
 
 DECLARE_SETTING_ENUM(SQLSecurityType)
 
-DECLARE_SETTING_ENUM(IdentifierQuotingRule)
-DECLARE_SETTING_ENUM(IdentifierQuotingStyle)
-
 enum class GroupArrayActionWhenLimitReached : uint8_t
 {
     THROW,
     DISCARD
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
-
-DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
-
-enum class DatabaseIcebergCatalogType : uint8_t
-{
-    REST,
-};
-
-DECLARE_SETTING_ENUM(DatabaseIcebergCatalogType)
 
 }

@@ -52,11 +52,6 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
-
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
@@ -70,7 +65,7 @@ public:
         };
 
         auto date_name_func = function_resolver->build(temporary_columns);
-        return date_name_func->execute(temporary_columns, result_type, input_rows_count, /* dry_run = */ false);
+        return date_name_func->execute(temporary_columns, result_type, input_rows_count);
     }
 
 private:

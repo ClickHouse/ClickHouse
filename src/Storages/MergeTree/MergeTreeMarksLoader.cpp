@@ -3,12 +3,10 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <utility>
 
@@ -16,8 +14,6 @@ namespace ProfileEvents
 {
     extern const Event WaitMarksLoadMicroseconds;
     extern const Event BackgroundLoadingMarksTasks;
-    extern const Event LoadingMarksTasksCanceled;
-    extern const Event LoadedMarksFiles;
     extern const Event LoadedMarksCount;
     extern const Event LoadedMarksMemoryBytes;
 }
@@ -25,17 +21,11 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString columns_to_prewarm_mark_cache;
-}
-
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int ASYNC_LOAD_CANCELED;
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -86,10 +76,7 @@ void MergeTreeMarksLoader::startAsyncLoad()
 MergeTreeMarksLoader::~MergeTreeMarksLoader()
 {
     if (future.valid())
-    {
-        is_canceled = true;
         future.wait();
-    }
 }
 
 MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
@@ -162,7 +149,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.mark_type.adaptive)
     {
         /// Read directly to marks.
-        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));  /// NOLINT(bugprone-sizeof-expression)
+        chassert(expected_uncompressed_size == plain_marks.size() * sizeof(MarkInCompressedFile));
         reader->readStrict(reinterpret_cast<char *>(plain_marks.data()), expected_uncompressed_size);
 
         if (!reader->eof())
@@ -209,7 +196,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 
-    ProfileEvents::increment(ProfileEvents::LoadedMarksFiles);
     ProfileEvents::increment(ProfileEvents::LoadedMarksCount, marks_count * num_columns_in_mark);
     ProfileEvents::increment(ProfileEvents::LoadedMarksMemoryBytes, res->approximateMemoryUsage());
 
@@ -225,7 +211,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
     if (mark_cache)
     {
         auto key = MarkCache::hash(fs::path(data_part_storage->getFullPath()) / mrk_path);
-
         if (save_marks_in_cache)
         {
             auto callback = [this] { return loadMarksImpl(); };
@@ -257,38 +242,11 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(
         [this]() -> MarkCache::MappedPtr
         {
-            if (is_canceled)
-            {
-                ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
-                throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Background task for loading marks was canceled");
-            }
-
             ProfileEvents::increment(ProfileEvents::BackgroundLoadingMarksTasks);
             return loadMarksSync();
         },
         *load_marks_threadpool,
         "LoadMarksThread");
-}
-
-void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)
-{
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
-
-    for (const auto & [stream_name, marks] : cached_marks)
-    {
-        auto mark_path = part.index_granularity_info.getMarksFilePath(stream_name);
-        auto key = MarkCache::hash(fs::path(part.getRelativePathOfActivePart()) / mark_path);
-        mark_cache->set(key, std::make_shared<MarksInCompressedFile>(*marks));
-    }
-}
-
-Names getColumnsToPrewarmMarks(const MergeTreeSettings & settings, const NamesAndTypesList & columns_list)
-{
-    auto columns_str = settings[MergeTreeSetting::columns_to_prewarm_mark_cache].toString();
-    if (columns_str.empty())
-        return columns_list.getNames();
-
-    return parseIdentifiersOrStringLiterals(columns_str, Context::getGlobalContextInstance()->getSettingsRef());
 }
 
 }

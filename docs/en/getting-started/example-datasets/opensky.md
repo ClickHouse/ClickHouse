@@ -1,7 +1,7 @@
 ---
-description: "The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic."
-slug: /getting-started/example-datasets/opensky
+slug: /en/getting-started/example-datasets/opensky
 sidebar_label: Air Traffic Data
+description: The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. 
 title: "Crowdsourced air traffic data from The OpenSky Network 2020"
 ---
 
@@ -417,4 +417,4 @@ Result:
 
 ### Online Playground {#playground}
 
-You can test other queries to this data set using the interactive resource [Online Playground](https://sql.clickhouse.com). For example, [like this](https://sql.clickhouse.com?query_id=BIPDVQNIGVEZFQYFEFQB7O). However, please note that you cannot create temporary tables here.
+You can test other queries to this data set using the interactive resource [Online Playground](https://play.clickhouse.com/play?user=play). For example, [like this](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBvcmlnaW4sCiAgICBjb3VudCgpLAogICAgcm91bmQoYXZnKGdlb0Rpc3RhbmNlKGxvbmdpdHVkZV8xLCBsYXRpdHVkZV8xLCBsb25naXR1ZGVfMiwgbGF0aXR1ZGVfMikpKSBBUyBkaXN0YW5jZSwKICAgIGJhcihkaXN0YW5jZSwgMCwgMTAwMDAwMDAsIDEwMCkgQVMgYmFyCkZST00gb3BlbnNreQpXSEVSRSBvcmlnaW4gIT0gJycKR1JPVVAgQlkgb3JpZ2luCk9SREVSIEJZIGNvdW50KCkgREVTQwpMSU1JVCAxMDA=). However, please note that you cannot create temporary tables here.

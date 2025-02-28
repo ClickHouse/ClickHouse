@@ -1,14 +1,9 @@
 ---
-description: "System table containing information about events that occurred with data parts in the MergeTree family tables, such as adding or merging of data."
-slug: /operations/system-tables/part_log
-title: "system.part_log"
-keywords: ["system table", "part_log"]
+slug: /en/operations/system-tables/part_log
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+# part_log
 
-<SystemTableCloud/>
-
-The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#part-log) server setting is specified.
+The `system.part_log` table is created only if the [part_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-part-log) server setting is specified.
 
 This table contains information about events that occurred with [data parts](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family tables, such as adding or merging data.
 
@@ -18,12 +13,10 @@ The `system.part_log` table contains the following columns:
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the `INSERT` query that created this data part.
 - `event_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the event that occurred with the data part. Can have one of the following values:
     - `NewPart` — Inserting of a new data part.
-    - `MergePartsStart` — Merging of data parts has started.
-    - `MergeParts` — Merging of data parts has finished.
+    - `MergeParts` — Merging of data parts.
     - `DownloadPart` — Downloading a data part.
     - `RemovePart` — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
-    - `MutatePartStart` — Mutating of a data part has started.
-    - `MutatePart` — Mutating of a data part has finished.
+    - `MutatePart` — Mutating of a data part.
     - `MovePart` — Moving the data part from the one disk to another one.
 - `merge_reason` ([Enum8](../../sql-reference/data-types/enum.md)) — The reason for the event with type `MERGE_PARTS`. Can have one of the following values:
     - `NotAMerge` — The current event has the type other than `MERGE_PARTS`.

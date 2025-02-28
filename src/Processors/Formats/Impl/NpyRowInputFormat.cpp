@@ -8,10 +8,9 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Common/FloatUtils.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
 #include <boost/algorithm/string/split.hpp>
 #include <IO/ReadBufferFromString.h>
 
@@ -30,6 +29,46 @@ namespace ErrorCodes
 
 namespace
 {
+
+float convertFloat16ToFloat32(uint16_t float16_value)
+{
+    uint16_t sign = (float16_value >> 15) & 0x1;
+    uint16_t exponent = (float16_value >> 10) & 0x1F;
+    uint16_t fraction = float16_value & 0x3FF;
+
+    if (exponent == 0 && fraction == 0)
+    {
+        uint32_t float32_value = sign << 31;
+        return std::bit_cast<float>(float32_value);
+    }
+
+    // Handling special cases for exponent
+    if (exponent == 0x1F)
+    {
+        // NaN or Infinity in float16
+        return (fraction == 0) ? std::numeric_limits<float>::infinity() : std::numeric_limits<float>::quiet_NaN();
+    }
+
+    // Convert exponent from float16 to float32 format
+    int32_t new_exponent = static_cast<int32_t>(exponent) - 15 + 127;
+
+    // Constructing the float32 representation
+    uint32_t float32_value = (static_cast<uint32_t>(sign) << 31) |
+                             (static_cast<uint32_t>(new_exponent) << 23) |
+                             (static_cast<uint32_t>(fraction) << 13);
+
+    // Interpret the binary representation as a float
+    float result;
+    std::memcpy(&result, &float32_value, sizeof(float));
+
+    // Determine decimal places dynamically based on the magnitude of the number
+    int decimal_places = std::max(0, 6 - static_cast<int>(std::log10(std::abs(result))));
+    // Truncate the decimal part to the determined number of decimal places
+    float multiplier = static_cast<float>(std::pow(10.0f, decimal_places));
+    result = std::round(result * multiplier) / multiplier;
+
+    return result;
+}
 
 DataTypePtr getDataTypeFromNumpyType(const std::shared_ptr<NumpyDataType> & numpy_type)
 {
@@ -102,21 +141,22 @@ std::shared_ptr<NumpyDataType> parseType(String type)
     /// Parse type
     if (type[1] == 'i')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), true);
-    if (type[1] == 'b')
+    else if (type[1] == 'b')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    if (type[1] == 'u')
+    else if (type[1] == 'u')
         return std::make_shared<NumpyDataTypeInt>(endianness, parseTypeSize(type.substr(2)), false);
-    if (type[1] == 'f')
+    else if (type[1] == 'f')
         return std::make_shared<NumpyDataTypeFloat>(endianness, parseTypeSize(type.substr(2)));
-    if (type[1] == 'S')
+    else if (type[1] == 'S')
         return std::make_shared<NumpyDataTypeString>(endianness, parseTypeSize(type.substr(2)));
-    if (type[1] == 'U')
+    else if (type[1] == 'U')
         return std::make_shared<NumpyDataTypeUnicode>(endianness, parseTypeSize(type.substr(2)));
-    if (type[1] == 'c')
+    else if (type[1] == 'c')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support complex numeric type");
-    if (type[1] == 'O')
+    else if (type[1] == 'O')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support object types");
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouse doesn't support numpy type '{}'", type);
 }
 
 std::vector<int> parseShape(String shape_string)

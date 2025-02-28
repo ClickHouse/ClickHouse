@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
-#include <Processors/Chunk.h>
 #include <Processors/LimitTransform.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
@@ -38,7 +37,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
@@ -138,7 +136,7 @@ using ModelPtr = std::unique_ptr<IModel>;
 
 
 template <typename... Ts>
-static UInt64 hash(Ts... xs)
+UInt64 hash(Ts... xs)
 {
     SipHash hash;
     (hash.update(xs), ...);
@@ -233,8 +231,8 @@ static Int64 transformSigned(Int64 x, UInt64 seed)
 {
     if (x >= 0)
         return transform(x, seed);
-
-    return -transform(-x, seed);    /// It works Ok even for minimum signed number.
+    else
+        return -transform(-x, seed);    /// It works Ok even for minimum signed number.
 }
 
 
@@ -273,7 +271,7 @@ public:
 
 /// Pseudorandom permutation of mantissa.
 template <typename Float>
-static Float transformFloatMantissa(Float x, UInt64 seed)
+Float transformFloatMantissa(Float x, UInt64 seed)
 {
     using UInt = std::conditional_t<std::is_same_v<Float, Float32>, UInt32, UInt64>;
     constexpr size_t mantissa_num_bits = std::is_same_v<Float, Float32> ? 23 : 52;
@@ -1107,8 +1105,8 @@ public:
         {
             if (isUInt(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
-
-            return std::make_unique<SignedIntegerModel>(seed);
+            else
+                return std::make_unique<SignedIntegerModel>(seed);
         }
 
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
@@ -1476,13 +1474,11 @@ try
         rewind_needed = true;
     }
 
-    file_out.finalize();
-
     return 0;
 }
 catch (...)
 {
     std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
     auto code = DB::getCurrentExceptionCode();
-    return static_cast<UInt8>(code) ? code : 1;
+    return code ? code : 1;
 }

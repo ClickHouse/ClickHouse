@@ -48,8 +48,8 @@ template <> struct Construct<false, false, 4> { using Type = UInt32; };
 template <> struct Construct<false, false, 8> { using Type = UInt64; };
 template <> struct Construct<false, false, 16> { using Type = UInt128; };
 template <> struct Construct<false, false, 32> { using Type = UInt256; };
-template <> struct Construct<false, true, 1> { using Type = BFloat16; };
-template <> struct Construct<false, true, 2> { using Type = BFloat16; };
+template <> struct Construct<false, true, 1> { using Type = Float32; };
+template <> struct Construct<false, true, 2> { using Type = Float32; };
 template <> struct Construct<false, true, 4> { using Type = Float32; };
 template <> struct Construct<false, true, 8> { using Type = Float64; };
 template <> struct Construct<true, false, 1> { using Type = Int8; };
@@ -58,8 +58,8 @@ template <> struct Construct<true, false, 4> { using Type = Int32; };
 template <> struct Construct<true, false, 8> { using Type = Int64; };
 template <> struct Construct<true, false, 16> { using Type = Int128; };
 template <> struct Construct<true, false, 32> { using Type = Int256; };
-template <> struct Construct<true, true, 1> { using Type = BFloat16; };
-template <> struct Construct<true, true, 2> { using Type = BFloat16; };
+template <> struct Construct<true, true, 1> { using Type = Float32; };
+template <> struct Construct<true, true, 2> { using Type = Float32; };
 template <> struct Construct<true, true, 4> { using Type = Float32; };
 template <> struct Construct<true, true, 8> { using Type = Float64; };
 
@@ -74,7 +74,7 @@ template <typename A, typename B> struct ResultOfAdditionMultiplication
 {
     using Type = typename Construct<
         is_signed_v<A> || is_signed_v<B>,
-        is_floating_point<A> || is_floating_point<B>,
+        std::is_floating_point_v<A> || std::is_floating_point_v<B>,
         nextSize(max(sizeof(A), sizeof(B)))>::Type;
 };
 
@@ -82,7 +82,7 @@ template <typename A, typename B> struct ResultOfSubtraction
 {
     using Type = typename Construct<
         true,
-        is_floating_point<A> || is_floating_point<B>,
+        std::is_floating_point_v<A> || std::is_floating_point_v<B>,
         nextSize(max(sizeof(A), sizeof(B)))>::Type;
 };
 
@@ -113,7 +113,7 @@ template <typename A, typename B> struct ResultOfModulo
     /// Example: toInt32(-199) % toUInt8(200) will return -199 that does not fit in Int8, only in Int16.
     static constexpr size_t size_of_result = result_is_signed ? nextSize(sizeof(B)) : sizeof(B);
     using Type0 = typename Construct<result_is_signed, false, size_of_result>::Type;
-    using Type = std::conditional_t<is_floating_point<A> || is_floating_point<B>, Float64, Type0>;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };
 
 template <typename A, typename B> struct ResultOfPositiveModulo
@@ -121,21 +121,21 @@ template <typename A, typename B> struct ResultOfPositiveModulo
     /// function positive_modulo always return non-negative number.
     static constexpr size_t size_of_result = sizeof(B);
     using Type0 = typename Construct<false, false, size_of_result>::Type;
-    using Type = std::conditional_t<is_floating_point<A> || is_floating_point<B>, Float64, Type0>;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };
 
 
 template <typename A, typename B> struct ResultOfModuloLegacy
 {
     using Type0 = typename Construct<is_signed_v<A> || is_signed_v<B>, false, sizeof(B)>::Type;
-    using Type = std::conditional_t<is_floating_point<A> || is_floating_point<B>, Float64, Type0>;
+    using Type = std::conditional_t<std::is_floating_point_v<A> || std::is_floating_point_v<B>, Float64, Type0>;
 };
 
 template <typename A> struct ResultOfNegate
 {
     using Type = typename Construct<
         true,
-        is_floating_point<A>,
+        std::is_floating_point_v<A>,
         is_signed_v<A> ? sizeof(A) : nextSize(sizeof(A))>::Type;
 };
 
@@ -143,7 +143,7 @@ template <typename A> struct ResultOfAbs
 {
     using Type = typename Construct<
         false,
-        is_floating_point<A>,
+        std::is_floating_point_v<A>,
         sizeof(A)>::Type;
 };
 
@@ -154,7 +154,7 @@ template <typename A, typename B> struct ResultOfBit
     using Type = typename Construct<
         is_signed_v<A> || is_signed_v<B>,
         false,
-        is_floating_point<A> || is_floating_point<B> ? 8 : max(sizeof(A), sizeof(B))>::Type;
+        std::is_floating_point_v<A> || std::is_floating_point_v<B> ? 8 : max(sizeof(A), sizeof(B))>::Type;
 };
 
 template <typename A> struct ResultOfBitNot
@@ -180,7 +180,7 @@ template <typename A> struct ResultOfBitNot
 template <typename A, typename B>
 struct ResultOfIf
 {
-    static constexpr bool has_float = is_floating_point<A> || is_floating_point<B>;
+    static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
     static constexpr bool has_integer = is_integer<A> || is_integer<B>;
     static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
     static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
@@ -189,7 +189,7 @@ struct ResultOfIf
     static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
     static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
     static constexpr size_t max_size_of_integer = max(is_integer<A> ? sizeof(A) : 0, is_integer<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_float = max(is_floating_point<A> ? sizeof(A) : 0, is_floating_point<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_float = max(std::is_floating_point_v<A> ? sizeof(A) : 0, std::is_floating_point_v<B> ? sizeof(B) : 0);
 
     using ConstructedType = typename Construct<has_signed, has_float,
         ((has_float && has_integer && max_size_of_integer >= max_size_of_float)
@@ -205,13 +205,13 @@ struct ResultOfIf
             ConstructedType, Error>>>;
 };
 
-/** Before applying operator `%` and bitwise operations, operands are cast to whole numbers. */
+/** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */
 template <typename A> struct ToInteger
 {
     using Type = typename Construct<
         is_signed_v<A>,
         false,
-        is_floating_point<A> ? 8 : sizeof(A)>::Type;
+        std::is_floating_point_v<A> ? 8 : sizeof(A)>::Type;
 };
 
 

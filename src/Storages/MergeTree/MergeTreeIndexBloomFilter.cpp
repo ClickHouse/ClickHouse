@@ -18,7 +18,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
@@ -84,14 +83,6 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
 bool MergeTreeIndexGranuleBloomFilter::empty() const
 {
     return !total_rows;
-}
-
-size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter->memoryUsageBytes();
-    return sum;
 }
 
 void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -194,9 +185,17 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
                                                         hash_functions);
                            });
     }
-
-    return std::any_of(
-        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
+    else
+    {
+        return std::any_of(hashes.begin(),
+                           hashes.end(),
+                           [&](const auto& hash_row)
+                           {
+                               return hashMatchesFilter(bloom_filter,
+                                                        hash_row,
+                                                        hash_functions);
+                           });
+    }
 }
 
 }
@@ -594,8 +593,9 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
     {
         return true;
     }
-    if (function_name == "equals" /// notEquals is not applicable
-        || function_name == "greater" || function_name == "greaterOrEquals" || function_name == "less" || function_name == "lessOrEquals")
+    else if (function_name == "equals" /// notEquals is not applicable
+        || function_name == "greater" || function_name == "greaterOrEquals"
+        || function_name == "less" || function_name == "lessOrEquals")
     {
         size_t function_arguments_size = function.getArgumentsSize();
         if (function_arguments_size != 2)
@@ -631,18 +631,17 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
             /// indexOf(...) = c, c != 0
             return true;
         }
-        if (function_name == "notEquals" && constant_equal_zero)
+        else if (function_name == "notEquals" && constant_equal_zero)
         {
             /// indexOf(...) != c, c = 0
             return true;
         }
-        if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
+        else if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
         {
             /// indexOf(...) > c, c >= 0
             return true;
         }
-        if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals")
-            && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
+        else if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals") && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
         {
             /// indexOf(...) >= c, c > 0
             return true;
@@ -775,7 +774,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (which.isTuple() && key_node_function_name == "tuple")
         {
-            const Tuple & tuple = value_field.safeGet<Tuple>();
+            const Tuple & tuple = value_field.safeGet<const Tuple &>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)

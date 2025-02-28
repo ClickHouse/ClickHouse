@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -15,9 +16,24 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 }
 
-bool FilterTransform::canUseType(const DataTypePtr & filter_type)
+static void replaceFilterToConstant(Block & block, const String & filter_column_name)
 {
-    return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
+    ConstantFilterDescription constant_filter_description;
+
+    auto filter_column = block.getPositionByName(filter_column_name);
+    auto & column_elem = block.safeGetByPosition(filter_column);
+
+    /// Isn't the filter already constant?
+    if (column_elem.column)
+        constant_filter_description = ConstantFilterDescription(*column_elem.column);
+
+    if (!constant_filter_description.always_false
+        && !constant_filter_description.always_true)
+    {
+        /// Replace the filter column to a constant with value 1.
+        FilterDescription filter_description_check(*column_elem.column);
+        column_elem.column = column_elem.type->createColumnConst(block.rows(), 1u);
+    }
 }
 
 Block FilterTransform::transformHeader(
@@ -26,13 +42,15 @@ Block FilterTransform::transformHeader(
     Block result = expression ? expression->updateHeader(header) : header;
 
     auto filter_type = result.getByName(filter_column_name).type;
-    if (!canUseType(filter_type))
+    if (!filter_type->onlyNull() && !isUInt8(removeNullable(removeLowCardinality(filter_type))))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column {} for filter. Must be UInt8 or Nullable(UInt8).",
             filter_type->getName(), filter_column_name);
 
     if (remove_filter_column)
         result.erase(filter_column_name);
+    else
+        replaceFilterToConstant(result, filter_column_name);
 
     return result;
 }
@@ -88,10 +106,10 @@ IProcessor::Status FilterTransform::prepare()
 }
 
 
-void FilterTransform::removeFilterIfNeed(Columns & columns) const
+void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 {
-    if (remove_filter_column)
-        columns.erase(columns.begin() + filter_column_position);
+    if (chunk && remove_filter_column)
+        chunk.erase(filter_column_position);
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -121,8 +139,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
-        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        removeFilterIfNeed(chunk);
         return;
     }
 
@@ -141,8 +159,8 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true)
     {
-        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        removeFilterIfNeed(chunk);
         return;
     }
 
@@ -190,19 +208,35 @@ void FilterTransform::doTransform(Chunk & chunk)
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
     {
+        if (!remove_filter_column)
+        {
+            /// Replace the column with the filter by a constant.
+            auto & type = transformed_header.getByPosition(filter_column_position).type;
+            columns[filter_column_position] = type->createColumnConst(num_filtered_rows, 1u);
+        }
+
         /// No need to touch the rest of the columns.
-        removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        removeFilterIfNeed(chunk);
         return;
     }
 
     /// Filter the rest of the columns.
     for (size_t i = 0; i < num_columns; ++i)
     {
+        const auto & current_type = transformed_header.safeGetByPosition(i).type;
         auto & current_column = columns[i];
 
-        if (i == filter_column_position && remove_filter_column)
+        if (i == filter_column_position)
+        {
+            /// The column with filter itself is replaced with a column with a constant `1`, since after filtering, nothing else will remain.
+            /// NOTE User could pass column with something different than 0 and 1 for filter.
+            /// Example:
+            ///  SELECT materialize(100) AS x WHERE x
+            /// will work incorrectly.
+            current_column = current_type->createColumnConst(num_filtered_rows, 1u);
             continue;
+        }
 
         if (i == first_non_constant_column)
             continue;
@@ -213,8 +247,8 @@ void FilterTransform::doTransform(Chunk & chunk)
             current_column = filter_description->filter(*current_column, num_filtered_rows);
     }
 
-    removeFilterIfNeed(columns);
     chunk.setColumns(std::move(columns), num_filtered_rows);
+    removeFilterIfNeed(chunk);
 }
 
 

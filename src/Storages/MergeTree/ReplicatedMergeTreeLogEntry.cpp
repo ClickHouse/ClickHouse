@@ -1,7 +1,6 @@
 #include <Common/ZooKeeper/Types.h>
 #include "Access/IAccessEntity.h"
 
-#include <Common/Exception.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
@@ -32,27 +31,6 @@ enum FormatVersion : UInt8
     FORMAT_LAST = 8,
 };
 
-
-String ReplicatedMergeTreeLogEntryData::typeToString(Type type)
-{
-    switch (type)
-    {
-        case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
-        case ReplicatedMergeTreeLogEntryData::ATTACH_PART:      return "ATTACH_PART";
-        case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
-        case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
-        case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
-        case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
-        case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
-        case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
-        case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
-        case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
-        case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
-        case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
-    }
-}
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 {

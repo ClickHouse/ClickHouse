@@ -476,7 +476,7 @@
             <input id="edit" type="button" value="✎" style="display: none;">
             <input id="add" type="button" value="Add chart" style="display: none;">
             <input id="reload" type="button" value="Reload">
-            <span id="search-span" class="nowrap" style="display: none;"><input id="search" type="button" value="🔎" title="Run query to obtain list of charts from ClickHouse. Either select dashboard name or write your own query"><input id="search-query" name="search" list="search-options" type="text" spellcheck="false"><datalist id="search-options"></datalist></span>
+            <span id="search-span" class="nowrap" style="display: none;"><input id="search" type="button" value="🔎" title="Run query to obtain list of charts from ClickHouse"><input id="search-query" name="search" type="text" spellcheck="false"></span>
             <div id="chart-params"></div>
         </div>
     </form>
@@ -532,15 +532,9 @@ const errorMessages = [
     }
 ]
 
-/// Dashboard selector
-const dashboardSearchQuery = (dashboard_name) => `SELECT title, query FROM system.dashboards WHERE dashboard = '${dashboard_name}'`;
-let dashboard_queries = {
-    "Overview": dashboardSearchQuery("Overview"),
-};
-const default_dashboard = 'Overview';
 
 /// Query to fill `queries` list for the dashboard
-let search_query = dashboardSearchQuery(default_dashboard);
+let search_query = `SELECT title, query FROM system.dashboards WHERE dashboard = 'Overview'`;
 let customized = false;
 let queries = [];
 
@@ -1116,7 +1110,7 @@ async function doFetch(query, url_params = '') {
 
     let response, reply, error;
     try {
-        response = await fetch(url + url_params, { method: "POST", body: query, headers: { 'Authorization': 'never' } });
+        response = await fetch(url + url_params, { method: "POST", body: query });
         reply = await response.text();
         if (response.ok) {
             reply = JSON.parse(reply);
@@ -1445,7 +1439,7 @@ async function reloadAll(do_search) {
     try {
         updateParams();
         if (do_search) {
-            search_query = toSearchQuery(document.getElementById('search-query').value);
+            search_query = document.getElementById('search-query').value;
             queries = [];
             refreshCustomized(false);
         }
@@ -1510,7 +1504,7 @@ function updateFromState() {
     document.getElementById('url').value = host;
     document.getElementById('user').value = user;
     document.getElementById('password').value = password;
-    document.getElementById('search-query').value = fromSearchQuery(search_query);
+    document.getElementById('search-query').value = search_query;
     refreshCustomized();
 }
 
@@ -1549,44 +1543,6 @@ if (window.location.hash) {
     } catch {}
 }
 
-function fromSearchQuery(query) {
-    for (const dashboard_name in dashboard_queries) {
-        if (query == dashboard_queries[dashboard_name])
-            return dashboard_name;
-    }
-    return query;
-}
-
-function toSearchQuery(value) {
-    if (value in dashboard_queries)
-        return dashboard_queries[value];
-    else
-        return value;
-}
-
-async function populateSearchOptions() {
-    let {reply, error} = await doFetch("SELECT dashboard FROM system.dashboards GROUP BY dashboard ORDER BY ALL");
-    if (error) {
-        throw new Error(error);
-    }
-    let data = reply.data;
-    if (data.dashboard.length == 0) {
-        console.log("Unable to fetch dashboards list");
-        return;
-    }
-    dashboard_queries = {};
-    for (let i = 0; i < data.dashboard.length; i++) {
-        const dashboard = data.dashboard[i];
-        dashboard_queries[dashboard] = dashboardSearchQuery(dashboard);
-    }
-    const searchOptions = document.getElementById('search-options');
-    for (const dashboard in dashboard_queries) {
-        const opt = document.createElement('option');
-        opt.value = dashboard;
-        searchOptions.appendChild(opt);
-    }
-}
-
 async function start() {
     try {
         updateFromState();
@@ -1602,7 +1558,6 @@ async function start() {
         } else {
             drawAll();
         }
-        await populateSearchOptions();
     } catch (e) {
         showError(e.message);
     }

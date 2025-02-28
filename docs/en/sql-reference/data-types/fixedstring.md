@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/fixedstring
+slug: /en/sql-reference/data-types/fixedstring
 sidebar_position: 10
 sidebar_label: FixedString(N)
 ---
@@ -34,7 +34,7 @@ When inserting the data, ClickHouse:
 
 When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
 
-Let's consider the following table with the single `FixedString(2)` column:
+Let’s consider the following table with the single `FixedString(2)` column:
 
 ``` text
 ┌─name──┐

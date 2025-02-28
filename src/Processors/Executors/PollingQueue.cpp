@@ -33,9 +33,9 @@ PollingQueue::PollingQueue()
 PollingQueue::~PollingQueue()
 {
     int err;
-    err = close(pipe_fd[0]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    err = close(pipe_fd[0]);
     chassert(!err || errno == EINTR);
-    err = close(pipe_fd[1]);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    err = close(pipe_fd[1]);
     chassert(!err || errno == EINTR);
 }
 

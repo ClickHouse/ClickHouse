@@ -9,15 +9,13 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 
-#include <shared_mutex>
-
 namespace DB
 {
 
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
-/// Stores metadata on a separate disk
+/// Store metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
@@ -37,12 +35,11 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    /// Metadata on disk for an empty file can store empty list of blobs and size=0
-    bool supportsEmptyFilesWithoutBlobs() const override { return true; }
+    bool exists(const std::string & path) const override;
 
-    bool existsFile(const std::string & path) const override;
-    bool existsDirectory(const std::string & path) const override;
-    bool existsFileOrDirectory(const std::string & path) const override;
+    bool isFile(const std::string & path) const override;
+
+    bool isDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 

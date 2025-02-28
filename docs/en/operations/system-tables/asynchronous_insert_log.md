@@ -1,20 +1,15 @@
 ---
-description: "System table containing information about async inserts. Each entry represents an insert query buffered into an async insert query."
-slug: /operations/system-tables/asynchronous_insert_log
-title: "system.asynchronous_insert_log"
-keywords: ["system table", "asynchronous_insert_log"]
+slug: /en/operations/system-tables/asynchronous_insert_log
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-<SystemTableCloud/>
+# asynchronous_insert_log
 
 Contains information about async inserts. Each entry represents an insert query buffered into an async insert query.
 
-To start logging configure parameters in the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) section.
+To start logging configure parameters in the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-asynchronous_insert_log) section.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
 
 Columns:
 
@@ -25,7 +20,7 @@ Columns:
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `database` ([String](../../sql-reference/data-types/string.md)) — The name of the database the table is in.
 - `table` ([String](../../sql-reference/data-types/string.md)) — Table name.
-- `format` ([String](/sql-reference/data-types/string.md)) — Format name.
+- `format` ([String](/docs/en/sql-reference/data-types/string.md)) — Format name.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query.
 - `bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of inserted bytes.
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
@@ -67,5 +62,5 @@ flush_query_id:          cd2c1e43-83f5-49dc-92e4-2fbc7f8d3716
 
 **See Also**
 
-- [system.query_log](../../operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
 - [system.asynchronous_inserts](../../operations/system-tables/asynchronous_inserts.md#system_tables-asynchronous_inserts) — This table contains information about pending asynchronous inserts in queue.

@@ -67,7 +67,6 @@ private:
     struct ClusterInfo
     {
         const String name;
-        const String zk_name;
         const String zk_root;
         NodesInfo nodes_info;
 
@@ -89,7 +88,6 @@ private:
         String cluster_secret;
 
         ClusterInfo(const String & name_,
-                    const String & zk_name_,
                     const String & zk_root_,
                     const String & host_name,
                     const String & username_,
@@ -101,7 +99,6 @@ private:
                     bool observer_mode,
                     bool invisible)
             : name(name_)
-            , zk_name(zk_name_)
             , zk_root(zk_root_)
             , current_node(host_name + ":" + toString(port), secure, shard_id)
             , current_node_is_observer(observer_mode)
@@ -148,10 +145,6 @@ private:
     /// The `shared_ptr` is used because it's passed to watch callback.
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
-
-    /// Hold the callback pointers of each cluster.
-    /// To avoid registering callbacks for the same path multiple times.
-    std::unordered_map<String, Coordination::WatchCallbackPtr> get_nodes_callbacks;
 
     mutable std::mutex mutex;
     std::unordered_map<String, ClusterPtr> cluster_impls;

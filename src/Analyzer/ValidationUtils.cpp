@@ -80,65 +80,6 @@ void validateFilters(const QueryTreeNodePtr & query_node)
         validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
 }
 
-bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
-{
-    using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
-    std::vector<NodePair> nodes_to_process;
-    nodes_to_process.emplace_back(lhs.get(), rhs.get());
-
-    while (!nodes_to_process.empty())
-    {
-        const auto [lhs_node, rhs_node] = nodes_to_process.back();
-        nodes_to_process.pop_back();
-
-        if (lhs_node->getNodeType() != rhs_node->getNodeType())
-            return false;
-
-        if (lhs_node->getNodeType() == QueryTreeNodeType::COLUMN)
-        {
-            const auto * lhs_column_node = lhs_node->as<ColumnNode>();
-            const auto * rhs_column_node = rhs_node->as<ColumnNode>();
-            if (!lhs_column_node->getColumnSource()->isEqual(*rhs_column_node->getColumnSource()))
-                return false;
-        }
-
-        const auto & lhs_children = lhs_node->getChildren();
-        const auto & rhs_children = rhs_node->getChildren();
-        if (lhs_children.size() != rhs_children.size())
-            return false;
-
-        for (size_t i = 0; i < lhs_children.size(); ++i)
-        {
-            const auto & lhs_child = lhs_children[i];
-            const auto & rhs_child = rhs_children[i];
-
-            if (!lhs_child && !rhs_child)
-                continue;
-            if (lhs_child && !rhs_child)
-                return false;
-            if (!lhs_child && rhs_child)
-                return false;
-
-            nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
-        }
-    }
-    return true;
-}
-
-bool compareGroupByKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtr & group_by_key_node)
-{
-    if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
-    {
-        /** Column sources should be compared with aliases for correct GROUP BY keys validation,
-            * otherwise t2.x and t1.x will be considered as the same column:
-            * SELECT t2.x FROM t1 JOIN t1 as t2 ON t1.x = t2.x GROUP BY t1.x;
-            */
-        if (areColumnSourcesEqual(node, group_by_key_node))
-            return true;
-    }
-    return false;
-}
-
 namespace
 {
 
@@ -213,6 +154,51 @@ public:
 
 private:
 
+    static bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
+        std::vector<NodePair> nodes_to_process;
+        nodes_to_process.emplace_back(lhs.get(), rhs.get());
+
+        while (!nodes_to_process.empty())
+        {
+            const auto [lhs_node, rhs_node] = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (lhs_node->getNodeType() != rhs_node->getNodeType())
+                return false;
+
+            if (lhs_node->getNodeType() == QueryTreeNodeType::COLUMN)
+            {
+                const auto * lhs_column_node = lhs_node->as<ColumnNode>();
+                const auto * rhs_column_node = rhs_node->as<ColumnNode>();
+                if (!lhs_column_node->getColumnSource()->isEqual(*rhs_column_node->getColumnSource()))
+                    return false;
+            }
+
+            const auto & lhs_children = lhs_node->getChildren();
+            const auto & rhs_children = rhs_node->getChildren();
+            if (lhs_children.size() != rhs_children.size())
+                return false;
+
+            for (size_t i = 0; i < lhs_children.size(); ++i)
+            {
+                const auto & lhs_child = lhs_children[i];
+                const auto & rhs_child = rhs_children[i];
+
+                if (!lhs_child && !rhs_child)
+                    continue;
+                else if (lhs_child && !rhs_child)
+                    return false;
+                else if (!lhs_child && rhs_child)
+                    return false;
+
+                nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
+            }
+        }
+        return true;
+    }
+
     bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
     {
         if (auto * function_node = node->as<FunctionNode>())
@@ -221,8 +207,15 @@ private:
 
         for (const auto & group_by_key_node : group_by_keys_nodes)
         {
-            if (compareGroupByKeys(node, group_by_key_node))
-                return true;
+            if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
+            {
+                /** Column sources should be compared with aliases for correct GROUP BY keys validation,
+                  * otherwise t2.x and t1.x will be considered as the same column:
+                  * SELECT t2.x FROM t1 JOIN t1 as t2 ON t1.x = t2.x GROUP BY t1.x;
+                  */
+                if (areColumnSourcesEqual(node, group_by_key_node))
+                    return true;
+            }
         }
 
         return false;

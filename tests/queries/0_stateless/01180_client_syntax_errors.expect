@@ -20,7 +20,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --history_file=$history_file"
 expect ":) "
 
 # Make a query with syntax error
@@ -30,11 +30,11 @@ expect "Expected one of: "
 
 # Make another query with syntax error
 send -- "CREATE TABLE t4 UUID '57f27aa5-141c-47c5-888a-9563681717f5' AS t1 (`rowNumberInAllBlocks()` UInt64, `toLowCardinality(arrayJoin(\['exchange', 'tables'\]))` LowCardinality(String)) ENGINE = MergeTree \r"
-expect "Syntax error: failed at position 93 (UInt64):*"
+expect "Syntax error: failed at position 93 ('UInt64'):*"
 
 # Make a query with unmatched parentheses
 send -- "select (1, 2\r"
-expect "Syntax error: failed at position 8 (():"
+expect "Syntax error: failed at position 8 ('('):"
 expect "Unmatched parentheses: ("
 expect ":) "
 

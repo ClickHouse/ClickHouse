@@ -11,9 +11,6 @@ namespace CurrentMetrics
     extern const Metric BackupsIOThreads;
     extern const Metric BackupsIOThreadsActive;
     extern const Metric BackupsIOThreadsScheduled;
-    extern const Metric MergeTreeFetchPartitionThreads;
-    extern const Metric MergeTreeFetchPartitionThreadsActive;
-    extern const Metric MergeTreeFetchPartitionThreadsScheduled;
     extern const Metric MergeTreePartsLoaderThreads;
     extern const Metric MergeTreePartsLoaderThreadsActive;
     extern const Metric MergeTreePartsLoaderThreadsScheduled;
@@ -32,9 +29,6 @@ namespace CurrentMetrics
     extern const Metric DatabaseReplicatedCreateTablesThreads;
     extern const Metric DatabaseReplicatedCreateTablesThreadsActive;
     extern const Metric DatabaseReplicatedCreateTablesThreadsScheduled;
-    extern const Metric MergeTreeSubcolumnsReaderThreads;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsActive;
-    extern const Metric MergeTreeSubcolumnsReaderThreadsScheduled;
 }
 
 namespace DB
@@ -145,12 +139,6 @@ StaticThreadPool & getBackupsIOThreadPool()
     return instance;
 }
 
-StaticThreadPool & getFetchPartitionThreadPool()
-{
-    static StaticThreadPool instance("MergeTreeFetchPartitionThreadPool", CurrentMetrics::MergeTreeFetchPartitionThreads, CurrentMetrics::MergeTreeFetchPartitionThreadsActive, CurrentMetrics::MergeTreeFetchPartitionThreadsScheduled);
-    return instance;
-}
-
 StaticThreadPool & getActivePartsLoadingThreadPool()
 {
     static StaticThreadPool instance("MergeTreePartsLoaderThreadPool", CurrentMetrics::MergeTreePartsLoaderThreads, CurrentMetrics::MergeTreePartsLoaderThreadsActive, CurrentMetrics::MergeTreePartsLoaderThreadsScheduled);
@@ -185,12 +173,6 @@ StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool()
 StaticThreadPool & getDatabaseCatalogDropTablesThreadPool()
 {
     static StaticThreadPool instance("DropTablesThreadPool", CurrentMetrics::DatabaseCatalogThreads, CurrentMetrics::DatabaseCatalogThreadsActive, CurrentMetrics::DatabaseCatalogThreadsScheduled);
-    return instance;
-}
-
-StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool()
-{
-    static StaticThreadPool instance("MergeTreePrefixesDeserializationThreadPool", CurrentMetrics::MergeTreeSubcolumnsReaderThreads, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsActive, CurrentMetrics::MergeTreeSubcolumnsReaderThreadsScheduled);
     return instance;
 }
 

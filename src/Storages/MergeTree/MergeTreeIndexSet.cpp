@@ -1,8 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexSet.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
-#include <Common/quoteString.h>
-
 #include <DataTypes/IDataType.h>
 
 #include <Interpreters/ExpressionActions.h>
@@ -15,7 +12,6 @@
 #include <Parsers/ASTSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -489,7 +485,7 @@ const ActionsDAG::Node * MergeTreeIndexConditionSet::operatorFromDAG(const Actio
         auto bit_swap_last_two_function = FunctionFactory::instance().get("__bitSwapLastTwo", context);
         return &result_dag.addFunction(bit_swap_last_two_function, {argument}, {});
     }
-    if (function_name == "and" || function_name == "indexHint" || function_name == "or")
+    else if (function_name == "and" || function_name == "indexHint" || function_name == "or")
     {
         if (arguments_size < 1)
             return nullptr;
@@ -539,13 +535,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             sets_to_prepare.push_back(set);
         return false;
     }
-    if (node.column && isColumnConst(*node.column))
+    else if (node.column && isColumnConst(*node.column))
     {
         Field literal;
         node.column->get(0, literal);
         return !atomic && literal.safeGet<bool>();
     }
-    if (node.type == ActionsDAG::ActionType::FUNCTION)
+    else if (node.type == ActionsDAG::ActionType::FUNCTION)
     {
         auto column_name = tree_node.getColumnName();
         if (key_columns.contains(column_name))
@@ -566,17 +562,13 @@ bool MergeTreeIndexConditionSet::checkDAGUseless(const ActionsDAG::Node & node, 
             }
             return all_useless;
         }
-        if (function_name == "or")
-            return std::any_of(
-                arguments.begin(),
-                arguments.end(),
-                [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
-        if (function_name == "not")
+        else if (function_name == "or")
+            return std::any_of(arguments.begin(), arguments.end(), [&, atomic](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, atomic); });
+        else if (function_name == "not")
             return checkDAGUseless(*arguments.at(0), context, sets_to_prepare, atomic);
-        return std::any_of(
-            arguments.begin(),
-            arguments.end(),
-            [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
+        else
+            return std::any_of(arguments.begin(), arguments.end(),
+                [&](const auto & arg) { return checkDAGUseless(*arg, context, sets_to_prepare, true /*atomic*/); });
     }
 
     auto column_name = tree_node.getColumnName();
@@ -610,7 +602,7 @@ void setIndexValidator(const IndexDescription & index, bool /*attach*/)
 {
     if (index.arguments.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index must have exactly one argument.");
-    if (index.arguments[0].getType() != Field::Types::UInt64)
+    else if (index.arguments[0].getType() != Field::Types::UInt64)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Set index argument must be positive integer.");
 }
 

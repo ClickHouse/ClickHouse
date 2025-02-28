@@ -20,9 +20,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
-#include <Analyzer/InterpolateNode.h>
-#include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/UnionNode.h>
 
 namespace DB
 {
@@ -30,7 +29,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int BAD_ARGUMENTS;
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
@@ -52,21 +50,30 @@ QueryNode::QueryNode(ContextMutablePtr context_)
 
 void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
 {
+    if (projection_columns_value.size() != getProjection().getNodes().size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected projection columns size to match projection nodes size");
 
-    // Ensure the number of aliases matches the number of projection columns
-    if (!this->projection_aliases_to_override.empty())
-    {
-        if (this->projection_aliases_to_override.size() != projection_columns_value.size())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Number of aliases does not match number of projection columns. "
-                "Expected {}, got {}",
-                projection_columns_value.size(),
-                this->projection_aliases_to_override.size());
-
-        for (size_t i = 0; i < projection_columns_value.size(); ++i)
-            projection_columns_value[i].name = this->projection_aliases_to_override[i];
-    }
     projection_columns = std::move(projection_columns_value);
+}
+
+void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    auto & projection_nodes = getProjection().getNodes();
+    size_t projection_columns_size = projection_columns.size();
+    size_t write_index = 0;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        if (!used_projection_columns.contains(projection_columns[i].name))
+            continue;
+
+        projection_nodes[write_index] = projection_nodes[i];
+        projection_columns[write_index] = projection_columns[i];
+        ++write_index;
+    }
+
+    projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
+    projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
 }
 
 void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
@@ -87,23 +94,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
 
     projection_nodes.erase(projection_nodes.begin() + write_index, projection_nodes.end());
     projection_columns.erase(projection_columns.begin() + write_index, projection_columns.end());
-
-    if (hasInterpolate())
-    {
-        std::unordered_set<String> used_projection_columns;
-        for (const auto & projection : projection_columns)
-            used_projection_columns.insert(projection.name);
-
-        auto & interpolate_node = getInterpolate();
-        auto & interpolate_list_nodes = interpolate_node->as<ListNode &>().getNodes();
-        std::erase_if(
-            interpolate_list_nodes,
-            [&used_projection_columns](const QueryTreeNodePtr & interpolate)
-            { return !used_projection_columns.contains(interpolate->as<InterpolateNode &>().getExpressionName()); });
-
-        if (interpolate_list_nodes.empty())
-            interpolate_node = nullptr;
-    }
 }
 
 void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const
@@ -307,12 +297,6 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(projection_column_type_name);
     }
 
-    for (const auto & projection_alias : projection_aliases_to_override)
-    {
-        state.update(projection_alias.size());
-        state.update(projection_alias);
-    }
-
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
@@ -354,7 +338,6 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->cte_name = cte_name;
     result_query_node->projection_columns = projection_columns;
     result_query_node->settings_changes = settings_changes;
-    result_query_node->projection_aliases_to_override = projection_aliases_to_override;
 
     return result_query_node;
 }

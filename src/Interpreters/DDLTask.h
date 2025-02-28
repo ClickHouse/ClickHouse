@@ -2,7 +2,7 @@
 
 #include <Core/Types.h>
 #include <Interpreters/Cluster.h>
-#include <Common/OpenTelemetryTracingContext.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/SettingsChanges.h>
 #include <Common/ZooKeeper/Types.h>
 #include <filesystem>
@@ -77,11 +77,10 @@ struct DDLLogEntry
     static constexpr const UInt64 OPENTELEMETRY_ENABLED_VERSION = 4;
     static constexpr const UInt64 PRESERVE_INITIAL_QUERY_ID_VERSION = 5;
     static constexpr const UInt64 BACKUP_RESTORE_FLAG_IN_ZK_VERSION = 6;
-    static constexpr const UInt64 PARENT_TABLE_UUID_VERSION = 7;
     /// Add new version here
 
     /// Remember to update the value below once new version is added
-    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 7;
+    static constexpr const UInt64 DDL_ENTRY_FORMAT_MAX_VERSION = 6;
 
     UInt64 version = 1;
     String query;
@@ -91,9 +90,6 @@ struct DDLLogEntry
     OpenTelemetry::TracingContext tracing_context;
     String initial_query_id;
     bool is_backup_restore = false;
-    /// If present, this entry should be executed only if table with this uuid exists.
-    /// Only for DatabaseReplicated.
-    std::optional<UUID> parent_table_uuid;
 
     void setSettingsIfRequired(ContextPtr context);
     String toString() const;
@@ -252,21 +248,7 @@ public:
 
     void commit();
 
-    /// (It would be nice to assert something like the following:
-    ///    assert(isExecuted() || std::uncaught_exceptions() || ops.empty());
-    ///  But we can't do it because it would cause rare false positives because
-    ///  ZooKeeperMetadataTransaction can be inside a weak_ptr
-    ///  (in QueryStatus -> WithContext -> Context -> ContextData), enabling the following
-    ///  scenario:
-    ///   0. There's a query whose Context has a ZooKeeperMetadataTransactionPtr.
-    ///   1. A `select * from system.process_list` looks at this query's QueryStatus and does
-    ///      weak_ptr::lock() on the query's Context.
-    ///   2. The query fails with any exception and destroys its ContextPtr. But the Context
-    ///      and its ZooKeeperMetadataTransaction are still held alive by the temporary
-    ///      shared_ptr from the previous step.
-    ///   3. The temporary shared_ptr<Context> gets destroyed, and ~ZooKeeperMetadataTransaction
-    ///      is called with std::uncaught_exceptions() == 0.)
-    ~ZooKeeperMetadataTransaction() = default;
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
 };
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
