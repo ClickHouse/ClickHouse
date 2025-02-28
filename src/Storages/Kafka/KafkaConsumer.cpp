@@ -176,25 +176,25 @@ KafkaConsumer::~KafkaConsumer()
         return;
 
     cleanUnprocessed();
-    try
-    {
-        if (!consumer->get_subscription().empty())
-        {
-            try
-            {
-                consumer->unsubscribe();
-            }
-            catch (const cppkafka::HandleException & e)
-            {
-                LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
-            }
-            drain();
-        }
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
-    }
+    // try
+    // {
+    //     if (!consumer->get_subscription().empty())
+    //     {
+    //         try
+    //         {
+    //             consumer->unsubscribe();
+    //         }
+    //         catch (const cppkafka::HandleException & e)
+    //         {
+    //             LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
+    //         }
+    //         drain();
+    //     }
+    // }
+    // catch (const cppkafka::HandleException & e)
+    // {
+    //     LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
+    // }
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer
