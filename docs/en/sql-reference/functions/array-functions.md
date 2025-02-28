@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/data_types/array/).
+- `array` – [Array](/sql-reference/data-types/array).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float).
+Returns an array of differences between adjacent array elements. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float).
 
 **Example**
 

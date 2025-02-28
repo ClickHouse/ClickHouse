@@ -2833,7 +2833,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
-# query_metric_log
+## query_metric_log {#query_metric_log}
 
 It is disabled by default.
 
