@@ -132,7 +132,7 @@ FORMAT PrettyCompact"
 
 ## Next Steps {#next-steps}
 
-[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/docs/guides/best-practices/sparse-primary-indexes.md) uses the hits dataset to discuss the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
+[A Practical Introduction to Sparse Primary Indexes in ClickHouse](/guides/best-practices/sparse-primary-indexes.md) uses the hits dataset to discuss the differences in ClickHouse indexing compared to traditional relational databases, how ClickHouse builds and uses a sparse primary index, and indexing best practices.
 
 Additional examples of queries to these tables can be found among the ClickHouse [stateful tests](https://github.com/ClickHouse/ClickHouse/blob/d7129855757f38ceec3e4ecc6dafacdabe9b178f/tests/queries/1_stateful/00172_parallel_join.sql).
 

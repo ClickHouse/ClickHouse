@@ -1,7 +1,7 @@
 ---
-title : DWARF
+title: DWARF
 slug: /interfaces/formats/DWARF
-keywords : [DWARF]
+keywords: [DWARF]
 input_format: true
 output_format: false
 alias: []
