@@ -2,7 +2,6 @@
 #include <type_traits>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalFunctions.h>
-#include "Common/logger_useful.h"
 #include <Common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
@@ -77,6 +76,10 @@ struct AddNanosecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Date32");
     }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
+    }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addNanoseconds() cannot be used with Time");
@@ -120,6 +123,10 @@ struct AddMicrosecondsImpl
     static NO_SANITIZE_UNDEFINED Int8 execute(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Date32");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMicroseconds() cannot be used with Time");
     }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -165,6 +172,10 @@ struct AddMillisecondsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Date32");
     }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
+    }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMilliseconds() cannot be used with Time");
@@ -203,6 +214,10 @@ struct AddSecondsImpl
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(d + delta);
+    }
+    static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int32>(d + delta);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -243,6 +258,10 @@ struct AddMinutesImpl
     {
         return static_cast<Int64>(d + delta * 60);
     }
+    static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int32>(d + delta * 60);
+    }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
         return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)) + delta * 60);
@@ -281,6 +300,10 @@ struct AddHoursImpl
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         return static_cast<Int64>(d + delta * 3600);
+    }
+    static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        return static_cast<Int32>(d + delta * 3600);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -327,6 +350,10 @@ struct AddDaysImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
     }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addDays() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -365,6 +392,10 @@ struct AddWeeksImpl
         return static_cast<Int32>(d + delta * 7);
     }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addWeeks() cannot be used with Time");
     }
@@ -409,6 +440,10 @@ struct AddMonthsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
     }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addMonths() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -447,6 +482,10 @@ struct AddQuartersImpl
         return time_zone.addQuarters(ExtendedDayNum(d), delta);
     }
     static NO_SANITIZE_UNDEFINED Int8 execute(Int64, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
+    }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addQuarters() cannot be used with Time");
     }
@@ -491,6 +530,10 @@ struct AddYearsImpl
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
     }
+    static NO_SANITIZE_UNDEFINED Int8 executeForTime(Int32, Int64, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "addYears() cannot be used with Time");
+    }
     static DateTime64 execute(std::string_view s, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
     {
         ReadBufferFromString buf(s);
@@ -510,6 +553,13 @@ struct SubtractIntervalImpl : public Transform
     {
         /// Signed integer overflow is Ok.
         return Transform::execute(t, -delta, time_zone, utc_time_zone, scale);
+    }
+
+    template <typename T>
+    NO_SANITIZE_UNDEFINED auto executeForTime(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    {
+        /// Signed integer overflow is Ok.
+        return Transform::executeForTime(t, -delta, time_zone, utc_time_zone, scale);
     }
 };
 
@@ -535,7 +585,9 @@ struct Processor
         : transform(std::move(transform_))
     {}
 
-    template <typename FromColumnType, typename ToColumnType>
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType>
     void NO_INLINE vectorConstant(const FromColumnType & col_from, ToColumnType & col_to, Int64 delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
         static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
@@ -559,29 +611,41 @@ struct Processor
 
             vec_to.resize(input_rows_count);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
-                vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale);
+            if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
+            }
+            else
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.execute(vec_from[i], checkOverflow(delta), time_zone, utc_time_zone, scale));
+            }
         }
     }
 
-    template <typename FromColumnType, typename ToColumnType>
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType>
     void vectorVector(const FromColumnType & col_from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
         castTypeToEither<
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ vectorVector(col_from, col_to, column, time_zone, scale, input_rows_count); return true; });
+            &delta, [&](const auto & column){ vectorVector<FromDataType>(col_from, col_to, column, time_zone, scale, input_rows_count); return true; });
     }
 
-    template <typename FromType, typename ToColumnType>
+    template <typename FromDataType,
+        typename FromType = typename FromDataType::FieldType,
+        typename ToColumnType>
     void constantVector(const FromType & from, ToColumnType & col_to, const IColumn & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
         castTypeToEither<
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ constantVector(from, col_to, column, time_zone, scale, input_rows_count); return true; });
+            &delta, [&](const auto & column){ constantVector<FromDataType>(from, col_to, column, time_zone, scale, input_rows_count); return true; });
     }
 
 private:
@@ -594,7 +658,10 @@ private:
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
     }
 
-    template <typename FromColumnType, typename ToColumnType, typename DeltaColumnType>
+    template <typename FromDataType,
+        typename FromColumnType = typename FromDataType::ColumnType,
+        typename ToColumnType,
+        typename DeltaColumnType>
     NO_INLINE NO_SANITIZE_UNDEFINED void vectorVector(
         const FromColumnType & col_from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
@@ -619,12 +686,23 @@ private:
 
             vec_to.resize(input_rows_count);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
-                vec_to[i] = transform.execute(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
+            if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+            }
+            else
+            {
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.execute(vec_from[i], checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+            }
         }
     }
 
-    template <typename FromType, typename ToColumnType, typename DeltaColumnType>
+    template <typename FromDataType,
+        typename FromType = typename FromDataType::FieldType,
+        typename ToColumnType,
+        typename DeltaColumnType>
     NO_INLINE NO_SANITIZE_UNDEFINED void constantVector(
         const FromType & from, ToColumnType & col_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, UInt16 scale, size_t input_rows_count) const
     {
@@ -634,8 +712,16 @@ private:
 
         vec_to.resize(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
-            vec_to[i] = transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale);
+        if constexpr (std::is_same_v<FromDataType, DataTypeTime>)
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.executeForTime(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                vec_to[i] = static_cast<typename ToColumnType::Container::value_type>(transform.execute(from, checkOverflow(delta.getData()[i]), time_zone, utc_time_zone, scale));
+        }
     }
 };
 
@@ -662,15 +748,13 @@ struct DateTimeAddIntervalImpl
         if (const auto * sources = checkAndGetColumn<FromColumnType>(&source_column))
         {
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                processor.vectorConstant(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
+                processor.template vectorConstant<FromDataType>(*sources, *col_to, delta_const_column->getInt(0), time_zone, scale, input_rows_count);
             else
-                processor.vectorVector(*sources, *col_to, delta_column, time_zone, scale, input_rows_count);
+                processor.template vectorVector<FromDataType>(*sources, *col_to, delta_column, time_zone, scale, input_rows_count);
         }
         else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(&source_column))
         {
-            processor.constantVector(
-                sources_const->template getValue<FromValueType>(),
-                *col_to, delta_column, time_zone, scale, input_rows_count);
+            processor.template constantVector<FromDataType>(sources_const->template getValue<FromValueType>(), *col_to, delta_column, time_zone, scale, input_rows_count);
         }
         else
         {
@@ -741,10 +825,10 @@ public:
         {
             case TypeIndex::Date:
                 return resolveReturnType<DataTypeDate>(arguments);
-            case TypeIndex::Date32:
-                return resolveReturnType<DataTypeDate32>(arguments);
             case TypeIndex::Time:
                 return resolveReturnType<DataTypeTime>(arguments);
+            case TypeIndex::Date32:
+                return resolveReturnType<DataTypeDate32>(arguments);
             case TypeIndex::Time64:
                 return resolveReturnType<DataTypeTime64>(arguments);
             case TypeIndex::DateTime:
@@ -768,7 +852,13 @@ public:
     // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
     // argument type is expected to be 'Date', and result type is deduced to be 'DateTime'.
     template <typename FromDataType>
-    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<typename FromDataType::FieldType>>::ResultDataType;
+    using TransformResultDataType = std::conditional_t<
+        std::is_same_v<FromDataType, DataTypeTime>,
+        DataTypeTime,
+        typename date_and_time_type_details::ResultDataTypeMap<
+            TransformExecuteReturnType<typename FromDataType::FieldType>
+        >::ResultDataType
+    >;
 
     template <typename FromDataType>
     DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const

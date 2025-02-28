@@ -1872,6 +1872,9 @@ public:
             if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
                 std::swap(new_arguments[0], new_arguments[1]);
 
+            // if (isTime(new_arguments[0].type))
+            //     new_arguments[0].type = std::make_shared<Int64>();
+
             /// Change interval argument to its representation
             new_arguments[1].type = std::make_shared<DataTypeNumber<DataTypeInterval::FieldType>>();
 
