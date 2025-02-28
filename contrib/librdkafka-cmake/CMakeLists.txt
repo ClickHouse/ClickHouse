@@ -38,7 +38,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_event.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_feature.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_fetcher.c"
-  # "${RDKAFKA_SOURCE_DIR}/rdhttp.c" #  WITH_CURL - needed for WITH_OAUTHBEARER_OIDC
+  # "${RDKAFKA_SOURCE_DIR}/rdhttp.c" #  see WITH_CURL below
   "${RDKAFKA_SOURCE_DIR}/rdkafka_header.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_idempotence.c"
   "${RDKAFKA_SOURCE_DIR}/rdkafka_interceptor.c"
@@ -63,7 +63,7 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl.c"
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c"            # WITH_SASL_CYRUS, see below
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c"      # WITH_SASL_OAUTHBEARER, see below
-#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer_oidc.c" # WITH_OAUTHBEARER_OIDC
+#  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer_oidc.c" # WITH_OAUTHBEARER_OIDC, see below
   "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_plain.c"
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_scram.c"     # WITH_SASL_SCRAM, see below
 #  "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_win32.c"     # WIN32
@@ -101,6 +101,11 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c"
 )
 
+if(TARGET ch_contrib::curl)
+    message (STATUS "librdkafka with curl")
+    set(WITH_CURL 1)
+endif()
+
 if(TARGET ch_contrib::sasl2)
     message (STATUS "librdkafka with SASL support")
     set(WITH_SASL_CYRUS 1)
@@ -113,6 +118,18 @@ if(WITH_SASL_CYRUS)
    set(WITH_SASL_OAUTHBEARER 1)
 endif()
 list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
+
+if(WITH_SSL AND WITH_CURL)
+    set(WITH_OAUTHBEARER_OIDC 1)
+endif()
+
+if(WITH_CURL)
+  list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdhttp.c") # needed for WITH_OAUTHBEARER_OIDC
+endif()
+
+if(WITH_OAUTHBEARER_OIDC)
+  list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer_oidc.c")
+endif()
 
 if(WITH_SASL_CYRUS)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c") # needed to support Kerberos, requires cyrus-sasl
@@ -152,6 +169,10 @@ target_link_libraries(_rdkafka
 )
 if(WITH_SASL_CYRUS)
     target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
+endif()
+
+if(WITH_CURL)
+  target_link_libraries(_rdkafka PRIVATE ch_contrib::curl)
 endif()
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/auxdir")
