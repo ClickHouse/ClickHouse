@@ -311,22 +311,20 @@ bool StatementGenerator::joinedTableOrFunction(
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
+    const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
 
-    const uint32_t derived_table = 30 * static_cast<uint32_t>(this->depth < this->fc.max_depth);
+    const uint32_t derived_table = 30 * static_cast<uint32_t>(can_recurse);
     const uint32_t cte = 10 * static_cast<uint32_t>(!under_remote && !this->ctes.empty());
     const uint32_t table = (40 * static_cast<uint32_t>(has_table)) + (20 * static_cast<uint32_t>(this->peer_query != PeerQuery::None));
     const uint32_t view = 20 * static_cast<uint32_t>(this->peer_query != PeerQuery::ClickHouseOnly && has_view);
-    const uint32_t engine_udf
-        = 5 * static_cast<uint32_t>(this->allow_engine_udf && (this->depth < this->fc.max_depth || has_table || has_view));
+    const uint32_t engine_udf = 5 * static_cast<uint32_t>(this->allow_engine_udf && (can_recurse || has_table || has_view));
     const uint32_t generate_series_udf = 10;
     const uint32_t system_table = 3 * static_cast<uint32_t>(this->allow_not_deterministic && !systemTables.empty());
     const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
-    const uint32_t cluster_udf = 5
-        * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf
-                                && (this->depth < this->fc.max_depth || has_table || has_view));
+    const uint32_t cluster_udf
+        = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_table && this->allow_engine_udf);
-    const uint32_t loop_udf
-        = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && this->depth < this->fc.max_depth);
+    const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t prob_space = derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
@@ -392,7 +390,7 @@ bool StatementGenerator::joinedTableOrFunction(
     {
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
-        const uint32_t recurse = 10 * static_cast<uint32_t>(this->depth < this->fc.max_depth);
+        const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
         const uint32_t pspace = remote_table + remote_view + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
@@ -557,7 +555,7 @@ bool StatementGenerator::joinedTableOrFunction(
         ClusterFunc * cdf = tf->mutable_cluster();
         const uint32_t remote_table = 10 * static_cast<uint32_t>(has_table);
         const uint32_t remote_view = 5 * static_cast<uint32_t>(has_view);
-        const uint32_t recurse = 10 * static_cast<uint32_t>(this->depth < this->fc.max_depth);
+        const uint32_t recurse = 10 * static_cast<uint32_t>(can_recurse);
         const uint32_t pspace = remote_table + remote_view + recurse;
         std::uniform_int_distribution<uint32_t> ndist(1, pspace);
         const uint32_t nopt2 = ndist(rg.generator);
