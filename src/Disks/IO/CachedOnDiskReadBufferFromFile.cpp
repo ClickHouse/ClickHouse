@@ -60,7 +60,7 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     bool use_external_buffer_,
     std::optional<size_t> read_until_position_,
     std::shared_ptr<FilesystemCacheLog> cache_log_)
-    : ReadBufferFromFileBase()
+    : ReadBufferFromFileBase(use_external_buffer_ ? 0 : settings_.remote_fs_buffer_size, nullptr, 0, file_size_)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     , log(getLogger(fmt::format("CachedOnDiskReadBufferFromFile({})", cache_key_)))
 #else
@@ -80,7 +80,6 @@ CachedOnDiskReadBufferFromFile::CachedOnDiskReadBufferFromFile(
     , query_context_holder(cache_->getQueryContextHolder(query_id, settings_))
     , cache_log(cache_log_)
 {
-    file_size = file_size_;
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
