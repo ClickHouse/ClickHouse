@@ -131,7 +131,7 @@ struct DeltaLakeMetadataImpl
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto metadata_file_suffix = ".json";
 
-    std::string withPadding(size_t version)
+    std::string withPadding(size_t version) const
     {
         /// File names are zero-padded to 20 digits.
         static constexpr auto padding = 20;
@@ -153,7 +153,7 @@ struct DeltaLakeMetadataImpl
         DeltaLakePartitionColumns partition_columns;
     };
 
-    DeltaLakeMetadata processMetadataFiles()
+    DeltaLakeMetadata processMetadataFiles() const
     {
         auto configuration_ptr = configuration.lock();
         std::set<String> result_files;
@@ -228,7 +228,7 @@ struct DeltaLakeMetadataImpl
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns,
-        std::set<String> & result)
+        std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(metadata_file_path);
@@ -454,7 +454,7 @@ struct DeltaLakeMetadataImpl
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
-        DeltaLakePartitionColumns & file_partition_columns)
+        DeltaLakePartitionColumns & file_partition_columns) const
     {
         const auto version = readLastCheckpointIfExists();
         if (!version)
