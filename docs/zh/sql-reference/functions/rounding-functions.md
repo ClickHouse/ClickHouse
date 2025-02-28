@@ -33,8 +33,8 @@ trunc(input, precision)
 
 **参数***
 
-- `输入` 数值类型（[Float](/sql-reference/data-types/float.md)、[Decimal](/sql-reference/data-types/decimal.md)或[Integer](/sql-reference/data-types/int-uint.md)）。
-- `精度` 一个 [Integer](/sql-reference/data-types/int-uint.md) 类型。
+- `输入` 数值类型（[Float](/docs/en/sql-reference/data-types/float.md)、[Decimal](/docs/en/sql-reference/data-types/decimal.md)或[Integer](/docs/en/sql-reference/data-types/int-uint.md)）。
+- `精度` 一个 [Integer](/docs/en/sql-reference/data-types/int-uint.md) 类型。
 
 **返回值**
 

@@ -93,8 +93,6 @@ public:
     ObjectStorageKey
     generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
-    bool areObjectKeysRandom() const override;
-
     void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
 
     bool isPlain() const override { return object_storage->isPlain(); }
@@ -120,7 +118,7 @@ public:
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 
 #if USE_AZURE_BLOB_STORAGE
-    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override
+    std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const override
     {
         return object_storage->getAzureBlobStorageClient();
     }

@@ -1,14 +1,12 @@
 ---
-slug: /engines/table-engines/integrations/mongodb
+slug: /en/engines/table-engines/integrations/mongodb
 sidebar_position: 135
 sidebar_label: MongoDB
-title: "MongoDB"
-description: "MongoDB engine is read-only table engine which allows to read data from a remote collection."
 ---
 
 # MongoDB
 
-MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
+MongoDB engine is read-only table engine which allows to read data from remote [MongoDB](https://www.mongodb.com/) collection.
 
 Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
@@ -61,7 +59,7 @@ ENGINE = MongoDB(uri, collection);
 - `collection` — Remote collection name.
 
 
-## Types mappings {#types-mappings}
+## Types mappings
 
 | MongoDB            | ClickHouse                                                            |
 |--------------------|-----------------------------------------------------------------------|
@@ -77,7 +75,7 @@ ENGINE = MongoDB(uri, collection);
 
 If key is not found in MongoDB document (for example, column name doesn't match), default value or `NULL` (if the column is nullable) will be inserted.
 
-## Supported clauses {#supported-clauses}
+## Supported clauses
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
@@ -137,7 +135,7 @@ SELECT count() FROM sample_mflix_table
    └─────────┘
 ```
 
-```sql
+```SQL
 -- JSONExtractString cannot be pushed down to MongoDB
 SET mongodb_throw_on_unsupported_query = 0;
 
@@ -167,7 +165,7 @@ directors: ['Robert Zemeckis']
 released:  1989-11-22
 ```
 
-```sql
+```SQL
 -- Find top 3 movies based on Cormac McCarthy's books
 SELECT title, toFloat32(JSONExtractString(imdb, 'rating')) as rating
 FROM sample_mflix_table
@@ -184,7 +182,7 @@ LIMIT 3;
    └────────────────────────┴────────┘
 ```
 
-## Troubleshooting {#troubleshooting}
+## Troubleshooting
 You can see the generated MongoDB query in DEBUG level logs.
 
 Implementation details can be found in [mongocxx](https://github.com/mongodb/mongo-cxx-driver) and [mongoc](https://github.com/mongodb/mongo-c-driver) documentations.

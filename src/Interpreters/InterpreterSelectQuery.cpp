@@ -26,7 +26,6 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -79,10 +78,8 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
-#include <Storages/ReadInOrderOptimizer.h>
 
 #include <Columns/Collator.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
@@ -99,7 +96,6 @@
 #include <Common/NaNUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/checkStackSize.h>
-#include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 
@@ -121,6 +117,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
+    extern const SettingsBool compile_aggregate_expressions;
     extern const SettingsBool compile_sort_description;
     extern const SettingsBool count_distinct_optimization;
     extern const SettingsUInt64 cross_to_inner_join_rewrite;
@@ -130,17 +127,20 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
+    extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool extremes;
     extern const SettingsBool final;
     extern const SettingsBool force_aggregation_in_order;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_analyze_depth;
     extern const SettingsUInt64 max_block_size;
+    extern const SettingsUInt64 max_bytes_before_external_group_by;
     extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsUInt64 max_columns_to_read;
     extern const SettingsUInt64 max_distributed_connections;
@@ -152,16 +152,23 @@ namespace Setting
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
+    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
+    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool optimize_distinct_in_order;
+    extern const SettingsBool optimize_group_by_constant_keys;
     extern const SettingsBool optimize_move_to_prewhere;
     extern const SettingsBool optimize_move_to_prewhere_if_final;
+    extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_uniq_to_count;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsString parallel_replicas_custom_key;
@@ -179,16 +186,6 @@ namespace Setting
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
-    extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
-    extern const SettingsUInt64 max_rows_to_group_by;
-    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
-    extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
-    extern const SettingsBool compile_aggregate_expressions;
-    extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
-    extern const SettingsBool enable_software_prefetch_in_aggregation;
-    extern const SettingsBool optimize_group_by_constant_keys;
 }
 
 namespace ServerSetting
@@ -226,7 +223,6 @@ FilterDAGInfoPtr generateFilterActions(
     const StorageMetadataPtr & metadata_snapshot,
     Names & prerequisite_columns,
     PreparedSetsPtr prepared_sets)
-try
 {
     auto filter_info = std::make_shared<FilterDAGInfo>();
 
@@ -288,11 +284,6 @@ try
     }
 
     return filter_info;
-}
-catch (Exception & e)
-{
-    e.addMessage("While applying a row policy (see system.row_policies)");
-    throw;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -414,9 +405,9 @@ ASTPtr parseAdditionalFilterConditionForTable(
 {
     for (const auto & additional_filter : additional_table_filters)
     {
-        const auto & tuple = additional_filter.safeGet<Tuple>();
-        const auto & table = tuple.at(0).safeGet<String>();
-        const auto & filter = tuple.at(1).safeGet<String>();
+        const auto & tuple = additional_filter.safeGet<const Tuple &>();
+        auto & table = tuple.at(0).safeGet<String>();
+        auto & filter = tuple.at(1).safeGet<String>();
 
         if (table == target.alias ||
             (table == target.table && context.getCurrentDatabase() == target.database) ||
@@ -536,7 +527,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         if (context->getSettingsRef()[Setting::enable_global_with_statement])
             ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor(context).visit(query_ptr);
+        ApplyWithSubqueryVisitor::visit(query_ptr);
     }
 
     query_info.query = query_ptr->clone();
@@ -566,14 +557,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        if (storage->hasExternalDynamicMetadata())
-        {
-            storage->updateExternalDynamicMetadata(context);
-            metadata_snapshot = storage->getInMemoryMetadataPtr();
-        }
         table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
         table_id = storage->getStorageID();
-
         if (!metadata_snapshot)
             metadata_snapshot = storage->getInMemoryMetadataPtr();
 
@@ -1133,7 +1118,8 @@ BlockIO InterpreterSelectQuery::execute()
 
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    auto builder = query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
@@ -1903,9 +1889,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         settings[Setting::max_block_size],
                         0,
                         max_streams,
-                        /* required_output_ = */ NameSet{},
-                        analysis_result.optimize_read_in_order,
-                        /* use_new_analyzer_ = */ false);
+                        analysis_result.optimize_read_in_order);
 
                     join_step->setStepDescription(fmt::format("JOIN {}", expressions.join->pipelineType()));
                     std::vector<QueryPlanPtr> plans;
@@ -2780,7 +2764,7 @@ static Aggregator::Params getAggregatorParams(
         settings[Setting::group_by_overflow_mode],
         group_by_two_level_threshold,
         group_by_two_level_threshold_bytes,
-        Aggregator::Params::getMaxBytesBeforeExternalGroupBy(settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+        settings[Setting::max_bytes_before_external_group_by],
         settings[Setting::empty_result_for_aggregation_by_empty_set]
             || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && keys.empty()
                 && query_analyzer.hasConstAggregationKeys()),
@@ -2794,8 +2778,7 @@ static Aggregator::Params getAggregatorParams(
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params
-    };
+        stats_collecting_params};
 }
 
 void InterpreterSelectQuery::executeAggregation(

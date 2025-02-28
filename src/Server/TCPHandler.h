@@ -276,7 +276,7 @@ private:
     bool processData(QueryState & state, bool scalar) TSA_REQUIRES(callback_mutex);
     void processClusterNameAndSalt();
 
-    void readTemporaryTables(QueryState & state) TSA_REQUIRES(callback_mutex);
+    void readData(QueryState & state) TSA_REQUIRES(callback_mutex);
     void skipData(QueryState & state) TSA_REQUIRES(callback_mutex);
 
     bool processUnexpectedData();

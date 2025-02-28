@@ -1,13 +1,11 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -21,24 +19,20 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const ColumnsStatistics & stats_to_recalc,
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
-    size_t part_uncompressed_bytes,
-    WrittenOffsetColumns * offset_columns)
+    WrittenOffsetColumns * offset_columns,
+    bool save_marks_in_cache)
     : IMergedBlockOutputStream(data_part->storage.getSettings(), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, /*reset_columns=*/ true)
 {
-    /// Save marks in memory if prewarm is enabled to avoid re-reading marks file.
-    bool save_marks_in_cache = data_part->storage.getMarkCacheToPrewarm(part_uncompressed_bytes) != nullptr;
-    /// Save primary index in memory if cache is disabled or is enabled with prewarm to avoid re-reading priamry index file.
-    bool save_primary_index_in_memory = !data_part->storage.getPrimaryIndexCache() || data_part->storage.getPrimaryIndexCacheToPrewarm(part_uncompressed_bytes);
+    const auto & global_settings = data_part->storage.getContext()->getSettingsRef();
 
     /// Granularity is never recomputed while writing only columns.
     MergeTreeWriterSettings writer_settings(
-        data_part->storage.getContext()->getSettingsRef(),
+        global_settings,
         data_part->storage.getContext()->getWriteSettings(),
         storage_settings,
         data_part->index_granularity_info.mark_type.adaptive,
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
-        save_primary_index_in_memory,
         /*blocks_are_granules_size=*/ false);
 
     writer = createMergeTreeDataPartWriter(

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/alter/comment
+slug: /en/sql-reference/statements/alter/comment
 sidebar_position: 51
 sidebar_label: COMMENT
 ---

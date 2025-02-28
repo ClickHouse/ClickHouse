@@ -20,31 +20,31 @@ ASTPtr ASTCreateResourceQuery::clone() const
     return res;
 }
 
-void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
+void ASTCreateResourceQuery::formatImpl(const IAST::FormatSettings & format, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
+    format.ostr << (format.hilite ? hilite_keyword : "") << "CREATE ";
 
     if (or_replace)
-        ostr << "OR REPLACE ";
+        format.ostr << "OR REPLACE ";
 
-    ostr << "RESOURCE ";
+    format.ostr << "RESOURCE ";
 
     if (if_not_exists)
-        ostr << "IF NOT EXISTS ";
+        format.ostr << "IF NOT EXISTS ";
 
-    ostr << (format.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_none : "");
 
-    ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getResourceName()) << (format.hilite ? hilite_none : "");
+    format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(getResourceName()) << (format.hilite ? hilite_none : "");
 
-    formatOnCluster(ostr, format);
+    formatOnCluster(format);
 
-    ostr << " (";
+    format.ostr << " (";
 
     bool first = true;
     for (const auto & operation : operations)
     {
         if (!first)
-            ostr << ", ";
+            format.ostr << ", ";
         else
             first = false;
 
@@ -52,25 +52,25 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         {
             case AccessMode::Read:
             {
-                ostr << (format.hilite ? hilite_keyword : "") << "READ ";
+                format.ostr << (format.hilite ? hilite_keyword : "") << "READ ";
                 break;
             }
             case AccessMode::Write:
             {
-                ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
+                format.ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
                 break;
             }
         }
         if (operation.disk)
         {
-            ostr << "DISK " << (format.hilite ? hilite_none : "");
-            ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            format.ostr << "DISK " << (format.hilite ? hilite_none : "");
+            format.ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
         }
         else
-            ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+            format.ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
     }
 
-    ostr << ")";
+    format.ostr << ")";
 }
 
 String ASTCreateResourceQuery::getResourceName() const

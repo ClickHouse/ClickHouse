@@ -18,10 +18,6 @@ set(DBMS_FUNCTIONS
     checkHyperscanRegexp.cpp # checkHyperscanRegexp (Used by MultiMatchAnyImpl.h, multiMatchAny.cpp)
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
-    FunctionsConversion_impl0.cpp
-    FunctionsConversion_impl1.cpp
-    FunctionsConversion_impl2.cpp
-    FunctionsConversion_impl3.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
@@ -58,6 +54,7 @@ list (APPEND PUBLIC_LIBS
 
 list (APPEND PRIVATE_LIBS
         ch_contrib::zlib
+        ch_contrib::expected
         boost::filesystem
         divide_impl
         ch_contrib::xxHash

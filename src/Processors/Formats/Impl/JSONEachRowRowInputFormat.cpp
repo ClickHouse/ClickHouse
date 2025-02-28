@@ -45,7 +45,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     , format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
-    name_map = getNamesToIndexesMap(header);
+    name_map = header.getNamesToIndexesMap();
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -72,7 +72,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != BlockNameMap::const_iterator{}
+        && prev_positions[key_index] != Block::NameMap::const_iterator{}
         && name == prev_positions[key_index]->first)
     {
         return prev_positions[key_index]->second;
@@ -121,7 +121,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, std::string_view(name_ref.data, name_ref.size), format_settings.json);
+    skipJSONField(*in, name_ref, format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)

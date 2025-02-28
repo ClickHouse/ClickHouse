@@ -43,7 +43,7 @@ namespace
         const std::vector<AuthenticationData> authentication_methods,
         const std::shared_ptr<ASTUserNameWithHost> & override_name,
         const std::optional<RolesOrUsersSet> & override_default_roles,
-        const std::optional<AlterSettingsProfileElements> & override_settings,
+        const std::optional<SettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
         const std::optional<time_t> & global_valid_until,
         bool reset_authentication_methods,
@@ -172,11 +172,9 @@ namespace
             user.default_database = query.default_database->database_name;
 
         if (override_settings)
-            user.settings.applyChanges(*override_settings);
-        else if (query.alter_settings)
-            user.settings.applyChanges(AlterSettingsProfileElements{*query.alter_settings});
+            user.settings = *override_settings;
         else if (query.settings)
-            user.settings.applyChanges(AlterSettingsProfileElements{*query.settings});
+            user.settings = *query.settings;
 
         if (override_grantees)
             user.grantees = *override_grantees;
@@ -192,13 +190,7 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
-
-    for (const auto & name : *query.names)
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name->toString());
-
-    if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
-
+    access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
@@ -227,14 +219,14 @@ BlockIO InterpreterCreateUserQuery::execute()
         }
     }
 
-    std::optional<AlterSettingsProfileElements> settings_from_query;
-    if (query.alter_settings)
-        settings_from_query = AlterSettingsProfileElements{*query.alter_settings, access_control};
-    else if (query.settings)
-        settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
+    std::optional<SettingsProfileElements> settings_from_query;
+    if (query.settings)
+    {
+        settings_from_query = SettingsProfileElements{*query.settings, access_control};
 
-    if (settings_from_query && !query.attach)
-        getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
+        if (!query.attach)
+            getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
+    }
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());

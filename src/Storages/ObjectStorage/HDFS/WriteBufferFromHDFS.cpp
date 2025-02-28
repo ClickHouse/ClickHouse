@@ -4,7 +4,6 @@
 
 #include "WriteBufferFromHDFS.h"
 #include "HDFSCommon.h"
-#include "HDFSErrorWrapper.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
@@ -27,11 +26,12 @@ extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
 }
 
-struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
+struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
     std::string hdfs_uri;
     std::string hdfs_file_path;
     hdfsFile fout;
+    HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
     WriteSettings write_settings;
 
@@ -42,13 +42,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
             int replication_,
             const WriteSettings & write_settings_,
             int flags)
-        : HDFSErrorWrapper(hdfs_uri_, config_)
-        , hdfs_uri(hdfs_uri_)
+        : hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
+        , builder(createHDFSBuilder(hdfs_uri, config_))
+        , fs(createHDFSFS(builder.get()))
         , write_settings(write_settings_)
     {
-        fs = createHDFSFS(builder.get());
-
         /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
         fout = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), flags, 0, replication_, 0);
 
@@ -64,10 +63,11 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
         hdfsCloseFile(fs.get(), fout);
     }
 
+
     int write(const char * start, size_t size)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIOWrite(), write_settings.io_scheduling.write_resource_link, size);
-        int bytes_written = wrapErr<tSize>(hdfsWrite, fs.get(), fout, start, safe_cast<int>(size));
+        int bytes_written = hdfsWrite(fs.get(), fout, start, safe_cast<int>(size));
         rlock.unlock(std::max(0, bytes_written));
 
         if (bytes_written < 0)
@@ -81,7 +81,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl : public HDFSErrorWrapper
 
     void sync() const
     {
-        int result = wrapErr<int>(hdfsSync, fs.get(), fout);
+        int result = hdfsSync(fs.get(), fout);
         if (result < 0)
             throw ErrnoException(ErrorCodes::CANNOT_FSYNC, "Cannot HDFS sync {}, hdfs_url: {}, {}", hdfs_file_path, hdfs_uri, std::string(hdfsGetLastError()));
     }

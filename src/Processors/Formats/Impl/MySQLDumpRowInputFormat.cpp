@@ -38,7 +38,7 @@ MySQLDumpRowInputFormat::MySQLDumpRowInputFormat(ReadBuffer & in_, const Block &
     , types(header_.getDataTypes())
     , format_settings(format_settings_)
 {
-    column_indexes_by_names = getNamesToIndexesMap(getPort().getHeader());
+    column_indexes_by_names = getPort().getHeader().getNamesToIndexesMap();
 }
 
 

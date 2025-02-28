@@ -22,8 +22,8 @@ public:
         const ColumnsStatistics & stats_to_recalc,
         CompressionCodecPtr default_codec,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
-        size_t part_uncompressed_bytes,
-        WrittenOffsetColumns * offset_columns = nullptr);
+        WrittenOffsetColumns * offset_columns = nullptr,
+        bool save_marks_in_cache = false);
 
     void write(const Block & block) override;
 

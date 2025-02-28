@@ -152,12 +152,12 @@ function clone_submodules
             contrib/c-ares
             contrib/morton-nd
             contrib/xxHash
+            contrib/expected
             contrib/simdjson
             contrib/liburing
             contrib/libfiu
             contrib/incbin
             contrib/yaml-cpp
-            contrib/corrosion
         )
 
         git submodule sync
@@ -233,8 +233,10 @@ function build
         ) | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_result.txt"
 
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            cp programs/clickhouse /build/clickhouse
-            zstd --threads=0 programs/clickhouse-stripped -o /build/clickhouse-stripped.zst
+            mkdir -p "$FASTTEST_OUTPUT/binaries/"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
+
+            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
         ccache_status
         ccache --evict-older-than 1d ||:
@@ -287,7 +289,6 @@ function run_tests
         --order random
         --print-time
         --report-logs-stats
-        --no-stateful
         --jobs "${NPROC}"
         --timeout 45 # We don't want slow test being introduced again in this check
     )
@@ -325,7 +326,7 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests ||:
-    "${FASTTEST_SOURCE}/tests/docker_scripts/process_functional_tests_result.py" --in-results-dir "$FASTTEST_OUTPUT/" \
+    /repo/tests/docker_scripts/process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
         --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
         --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;

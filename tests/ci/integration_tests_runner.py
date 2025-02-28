@@ -14,11 +14,9 @@ import string
 import subprocess
 import sys
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from itertools import chain
 from typing import Any, Dict, List, Optional
-
-import yaml  # type: ignore[import-untyped]
 
 from ci_utils import kill_ci_runner
 from env_helper import IS_CI
@@ -32,6 +30,8 @@ NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
+CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
+CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 FLAKY_TRIES_COUNT = 3  # run whole pytest several times
 FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
@@ -49,13 +49,13 @@ NO_CHANGES_MSG = "Nothing to run"
 # Examples:
 # - has_test(['foobar'], 'foobar[param]') == True
 # - has_test(['foobar[param]'], 'foobar') == True
-def has_test(tests: List[str], test_to_match: str) -> bool:
+def has_test(tests, test_to_match):
     for test in tests:
         if len(test_to_match) < len(test):
-            if test.startswith(test_to_match):
+            if test[0 : len(test_to_match)] == test_to_match:
                 return True
         else:
-            if test_to_match.startswith(test):
+            if test_to_match[0 : len(test)] == test:
                 return True
     return False
 
@@ -99,7 +99,7 @@ def chunks(lst, n):
         yield lst[i : i + n]
 
 
-def get_counters(fname: str) -> Dict[str, List[str]]:
+def get_counters(fname):
     counters = {
         "ERROR": set([]),
         "PASSED": set([]),
@@ -278,9 +278,6 @@ class ClickhouseIntegrationTestsRunner:
             self.run_by_hash_total = 0
             self.run_by_hash_num = 0
 
-        self._all_tests = []  # type: List[str]
-        self._tests_by_hash = []  # type: List[str]
-
     def path(self):
         return self.result_path
 
@@ -318,7 +315,7 @@ class ClickhouseIntegrationTestsRunner:
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
             f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} {image_cmd} "
-            "--command ' echo Pre Pull finished ' "
+            "--pre-pull --command ' echo Pre Pull finished ' "
         )
 
         for i in range(5):
@@ -351,6 +348,8 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse-common-static_",
             "clickhouse-server_",
             "clickhouse-client",
+            "clickhouse-odbc-bridge_",
+            "clickhouse-library-bridge_",
             "clickhouse-common-static-dbg_",
         ):  # order matters
             logging.info("Installing package %s", package)
@@ -370,11 +369,29 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
+        # logging.info("Unstripping binary")
+        # logging.info(
+        #     "Unstring %s",
+        #     subprocess.check_output(
+        #         "eu-unstrip /usr/bin/clickhouse {}".format(CLICKHOUSE_BINARY_PATH),
+        #         shell=True,
+        #     ),
+        # )
 
         logging.info("All packages installed")
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
+        os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
+        os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
         shutil.copy(
             CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH")  # type: ignore
+        )
+        shutil.copy(
+            CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH,
+            os.getenv("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"),  # type: ignore
+        )
+        shutil.copy(
+            CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH,
+            os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"),  # type: ignore
         )
 
     @staticmethod
@@ -401,10 +418,7 @@ class ClickhouseIntegrationTestsRunner:
 
         return " ".join(result)
 
-    @property
-    def all_tests(self) -> List[str]:
-        if self._all_tests:
-            return self._all_tests
+    def _get_all_tests(self) -> List[str]:
         image_cmd = self._get_runner_image_cmd()
         runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
@@ -439,12 +453,11 @@ class ClickhouseIntegrationTestsRunner:
 
         assert all_tests
 
-        self._all_tests = list(sorted(all_tests))
-        return self._all_tests
+        return list(sorted(all_tests))
 
     @staticmethod
     def _get_parallel_tests_skip_list(repo_path):
-        skip_list_file_path = f"{repo_path}/tests/integration/parallel_skip.yaml"
+        skip_list_file_path = f"{repo_path}/tests/integration/parallel_skip.json"
         if (
             not os.path.isfile(skip_list_file_path)
             or os.path.getsize(skip_list_file_path) == 0
@@ -456,12 +469,12 @@ class ClickhouseIntegrationTestsRunner:
 
         skip_list_tests = []
         with open(skip_list_file_path, "r", encoding="utf-8") as skip_list_file:
-            skip_list_tests = yaml.safe_load(skip_list_file)
+            skip_list_tests = json.load(skip_list_file)
         return list(sorted(skip_list_tests))
 
     @staticmethod
     def group_test_by_file(tests):
-        result = OrderedDict()  # type: OrderedDict
+        result = {}  # type: Dict
         for test in tests:
             test_file = test.split("::")[0]
             if test_file not in result:
@@ -626,10 +639,7 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
-            # Run flaky tests in a random order to increase chance to catch an error
-            repeat_cmd = (
-                f" --count {repeat_count} --random-order " if repeat_count > 0 else ""
-            )
+            repeat_cmd = f" --count {repeat_count} " if repeat_count > 0 else ""
             # -r -- show extra test summary:
             # -f -- (f)ailed
             # -E -- (E)rror
@@ -645,12 +655,13 @@ class ClickhouseIntegrationTestsRunner:
 
             log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
-            logging.info("Executing cmd: %s", cmd)
-            # ignore retcode, since it meaningful due to pipe to tee
-            with TeePopen(cmd, log_path) as proc:
-                global runner_subprocess  # pylint:disable=global-statement
-                runner_subprocess = proc
-                proc.wait()
+            with open(log_path, "w", encoding="utf-8") as log:
+                logging.info("Executing cmd: %s", cmd)
+                # ignore retcode, since it meaningful due to pipe to tee
+                with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as proc:
+                    global runner_subprocess  # pylint:disable=global-statement
+                    runner_subprocess = proc
+                    proc.wait()
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
@@ -662,7 +673,13 @@ class ClickhouseIntegrationTestsRunner:
             for pytest_log_path in glob.glob(
                 os.path.join(self.repo_path, "tests/integration/pytest*.log")
             ):
-                new_name = f"{test_group_str}_{i}_{os.path.basename(pytest_log_path)}"
+                new_name = (
+                    test_group_str
+                    + "_"
+                    + str(i)
+                    + "_"
+                    + os.path.basename(pytest_log_path)
+                )
                 os.rename(
                     pytest_log_path,
                     os.path.join(self.repo_path, "tests/integration", new_name),
@@ -708,7 +725,7 @@ class ClickhouseIntegrationTestsRunner:
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
                     str(self.path()),
-                    f"integration_run_{test_group_str}_{i}.tar.zst",
+                    "integration_run_" + test_group_str + "_" + str(i) + ".tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(self.repo_path, "tests/integration"),
@@ -800,11 +817,10 @@ class ClickhouseIntegrationTestsRunner:
                         len(value),
                     )
                     counters[counter] += value
-                    for test_name in value:
-                        tests_log_paths[test_name] = log_paths
 
                 for test_name, test_time in group_test_times.items():
                     tests_times[test_name] = test_time
+                    tests_log_paths[test_name] = log_paths
                 if not should_fail and (
                     group_counters["FAILED"] or group_counters["ERROR"]
                 ):
@@ -882,15 +898,12 @@ class ClickhouseIntegrationTestsRunner:
 
         return result_state, status_text, test_result, tests_log_paths
 
-    @property
-    def tests_by_hash(self) -> List[str]:
+    def _get_tests_by_hash(self) -> List[str]:
         "Tries it's best to group the tests equally between groups"
-        if self._tests_by_hash:
-            return self._tests_by_hash
+        all_tests = self._get_all_tests()
         if self.run_by_hash_total == 0:
-            self._tests_by_hash = self.all_tests
-            return self._tests_by_hash
-        grouped_tests = self.group_test_by_file(self.all_tests)
+            return all_tests
+        grouped_tests = self.group_test_by_file(all_tests)
         groups_by_hash = {
             g: [] for g in range(self.run_by_hash_total)
         }  # type: Dict[int, List[str]]
@@ -902,8 +915,7 @@ class ClickhouseIntegrationTestsRunner:
                 g for g, t in groups_by_hash.items() if len(t) == min_group
             )
             groups_by_hash[group_to_increase].extend(tests_in_group)
-        self._tests_by_hash = groups_by_hash[self.run_by_hash_num]
-        return self._tests_by_hash
+        return groups_by_hash[self.run_by_hash_num]
 
     def run_normal_check(self, build_path):
         self._install_clickhouse(build_path)
@@ -913,39 +925,32 @@ class ClickhouseIntegrationTestsRunner:
             "Dump iptables before run %s",
             subprocess.check_output("sudo iptables -nvL", shell=True),
         )
+        all_tests = self._get_tests_by_hash()
         parallel_skip_tests = self._get_parallel_tests_skip_list(self.repo_path)
         logging.info(
-            "Found %s tests first 3 %s",
-            len(self.tests_by_hash),
-            " ".join(self.tests_by_hash[:3]),
+            "Found %s tests first 3 %s", len(all_tests), " ".join(all_tests[:3])
         )
-        # For backward compatibility, use file names in filtered_sequential_tests
         filtered_sequential_tests = list(
-            set(
-                test_name.split("::", maxsplit=1)[0]
-                for test_name in filter(
-                    lambda test: has_test(parallel_skip_tests, test), self.tests_by_hash
-                )
-            )
+            filter(lambda test: has_test(all_tests, test), parallel_skip_tests)
         )
         filtered_parallel_tests = list(
             filter(
                 lambda test: not has_test(parallel_skip_tests, test),
-                self.tests_by_hash,
+                all_tests,
             )
         )
         not_found_tests = list(
             filter(
-                lambda test: not has_test(self.all_tests, test),
+                lambda test: not has_test(all_tests, test),
                 parallel_skip_tests,
             )
         )
         logging.info(
             "Found %s tests first 3 %s, parallel %s, other %s",
-            len(self.tests_by_hash),
-            " ".join(self.tests_by_hash[:3]),
+            len(all_tests),
+            " ".join(all_tests[:3]),
             len(filtered_parallel_tests),
-            len(self.tests_by_hash) - len(filtered_parallel_tests),
+            len(filtered_sequential_tests),
         )
         logging.info(
             "Not found %s tests first 3 %s",
@@ -991,14 +996,11 @@ class ClickhouseIntegrationTestsRunner:
                     "Totally have %s with status %s", len(counters[counter]), counter
                 )
                 total_tests += len(counters[counter])
-                for test_name in value:
-                    tests_log_paths[test_name] = log_paths
-            logging.info(
-                "Totally finished tests %s/%s", total_tests, len(self.tests_by_hash)
-            )
+            logging.info("Totally finished tests %s/%s", total_tests, len(all_tests))
 
             for test_name, test_time in group_test_times.items():
                 tests_times[test_name] = test_time
+                tests_log_paths[test_name] = log_paths
 
             if len(counters["FAILED"]) + len(counters["ERROR"]) >= 20:
                 logging.info("Collected more than 20 failed/error tests, stopping")
@@ -1087,7 +1089,7 @@ def run():
 
 
 timeout_expired = False
-runner_subprocess = None  # type:Optional[TeePopen]
+runner_subprocess = None  # type:Optional[subprocess.Popen]
 
 
 def handle_sigterm(signum, _frame):
@@ -1096,7 +1098,7 @@ def handle_sigterm(signum, _frame):
     global timeout_expired  # pylint:disable=global-statement
     timeout_expired = True
     if runner_subprocess:
-        runner_subprocess.terminate()
+        runner_subprocess.send_signal(signal.SIGTERM)
 
 
 if __name__ == "__main__":

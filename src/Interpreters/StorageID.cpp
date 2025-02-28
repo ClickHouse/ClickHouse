@@ -1,9 +1,7 @@
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
@@ -14,9 +12,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int UNKNOWN_DATABASE;
-extern const int UNKNOWN_TABLE;
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
@@ -77,15 +74,6 @@ bool StorageID::operator==(const StorageID & rhs) const
     return std::tie(database_name, table_name) == std::tie(rhs.database_name, rhs.table_name);
 }
 
-void StorageID::assertNotEmpty() const
-{
-    // Can be triggered by user input, e.g. SELECT joinGetOrNull('', 'num', 500)
-    if (empty())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty");
-    if (table_name.empty() && !database_name.empty())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table name is empty, but database name is not");
-}
-
 String StorageID::getFullTableName() const
 {
     return backQuoteIfNeed(getDatabaseName()) + "." + backQuoteIfNeed(table_name);
@@ -116,14 +104,6 @@ String StorageID::getShortName() const
     if (database_name.empty())
         return table_name;
     return database_name + "." + table_name;
-}
-
-size_t StorageID::DatabaseAndTableNameHash::operator()(const StorageID & storage_id) const
-{
-    SipHash hash_state;
-    hash_state.update(storage_id.database_name.data(), storage_id.database_name.size());
-    hash_state.update(storage_id.table_name.data(), storage_id.table_name.size());
-    return hash_state.get64();
 }
 
 }

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/nth_value
+slug: /en/sql-reference/window-functions/nth_value
 sidebar_label: nth_value
 sidebar_position: 5
 ---

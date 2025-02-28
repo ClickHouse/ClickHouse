@@ -120,4 +120,10 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     return remove_files;
 }
 
+PlainMarksByName IMergedBlockOutputStream::releaseCachedMarks()
+{
+    if (!writer)
+        return {};
+    return writer->releaseCachedMarks();
+}
 }

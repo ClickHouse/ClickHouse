@@ -15,7 +15,6 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Core/Settings.h>
-#include <IO/WriteHelpers.h>
 
 namespace DB
 {

@@ -6,11 +6,6 @@ from praktika.utils import MetaClasses, Shell, Utils
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.workflows.defs import ToolSet
-
-current_directory = Utils.cwd()
-build_dir = f"{current_directory}/ci/tmp/build"
-temp_dir = f"{current_directory}/ci/tmp/"
 
 
 def clone_submodules():
@@ -47,21 +42,21 @@ def clone_submodules():
         "contrib/c-ares",
         "contrib/morton-nd",
         "contrib/xxHash",
+        "contrib/expected",
         "contrib/simdjson",
         "contrib/liburing",
         "contrib/libfiu",
         "contrib/incbin",
         "contrib/yaml-cpp",
-        "contrib/corrosion",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)
     res = res and Shell.check("git submodule init", verbose=True, strict=True)
     res = res and Shell.check(
-        command=f"xargs --max-procs={min([Utils.cpu_count(), 10])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
+        command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
         stdin_str="\0".join(submodules_to_update) + "\0",
-        timeout=240,
-        retries=2,
+        timeout=120,
+        retries=3,
         verbose=True,
     )
     res = res and Shell.check("git submodule foreach git reset --hard", verbose=True)
@@ -73,18 +68,22 @@ def clone_submodules():
 def update_path_ch_config(config_file_path=""):
     print("Updating path in clickhouse config")
     config_file_path = (
-        config_file_path or f"{temp_dir}/etc/clickhouse-server/config.xml"
+        config_file_path or f"{Settings.TEMP_DIR}/etc/clickhouse-server/config.xml"
     )
-    ssl_config_file_path = f"{temp_dir}/etc/clickhouse-server/config.d/ssl_certs.xml"
+    ssl_config_file_path = (
+        f"{Settings.TEMP_DIR}/etc/clickhouse-server/config.d/ssl_certs.xml"
+    )
     try:
         with open(config_file_path, "r", encoding="utf-8") as file:
             content = file.read()
 
         with open(ssl_config_file_path, "r", encoding="utf-8") as file:
             ssl_config_content = file.read()
-        content = content.replace(">/var/", f">{temp_dir}/var/")
-        content = content.replace(">/etc/", f">{temp_dir}/etc/")
-        ssl_config_content = ssl_config_content.replace(">/etc/", f">{temp_dir}/etc/")
+        content = content.replace(">/var/", f">{Settings.TEMP_DIR}/var/")
+        content = content.replace(">/etc/", f">{Settings.TEMP_DIR}/etc/")
+        ssl_config_content = ssl_config_content.replace(
+            ">/etc/", f">{Settings.TEMP_DIR}/etc/"
+        )
         with open(config_file_path, "w", encoding="utf-8") as file:
             file.write(content)
         with open(ssl_config_file_path, "w", encoding="utf-8") as file:
@@ -122,6 +121,9 @@ def main():
             stages.pop(0)
         stages.insert(0, stage)
 
+    current_directory = Utils.cwd()
+    build_dir = f"{Settings.TEMP_DIR}/build"
+
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
     res = True
@@ -130,7 +132,7 @@ def main():
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Checkout Submodules",
                 command=clone_submodules,
             )
@@ -139,12 +141,10 @@ def main():
 
     if res and JobStages.CMAKE in stages:
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Cmake configuration",
-                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
-                -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
-                -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
-                -DENABLE_LIBRARIES=0 \
+                command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER=clang++-18 -DCMAKE_C_COMPILER=clang-18 \
+                -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
                 workdir=build_dir,
@@ -156,7 +156,7 @@ def main():
     if res and JobStages.BUILD in stages:
         Shell.check("sccache --show-stats")
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Build ClickHouse",
                 command="ninja clickhouse-bundle clickhouse-stripped",
                 workdir=build_dir,
@@ -176,7 +176,7 @@ def main():
             "clickhouse-test --help",
         ]
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Check and Compress binary",
                 command=commands,
                 workdir=build_dir,
@@ -187,15 +187,15 @@ def main():
 
     if res and JobStages.CONFIG in stages:
         commands = [
-            f"rm -rf {temp_dir}/etc/ && mkdir -p {temp_dir}/etc/clickhouse-client {temp_dir}/etc/clickhouse-server",
-            f"cp ./programs/server/config.xml ./programs/server/users.xml {temp_dir}/etc/clickhouse-server/",
-            f"./tests/config/install.sh {temp_dir}/etc/clickhouse-server {temp_dir}/etc/clickhouse-client --fast-test",
-            # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {temp_dir}/etc/clickhouse-server/config.d/",
-            f"rm -f {temp_dir}/etc/clickhouse-server/config.d/secure_ports.xml",
+            f"rm -rf {Settings.TEMP_DIR}/etc/ && mkdir -p {Settings.TEMP_DIR}/etc/clickhouse-client {Settings.TEMP_DIR}/etc/clickhouse-server",
+            f"cp ./programs/server/config.xml ./programs/server/users.xml {Settings.TEMP_DIR}/etc/clickhouse-server/",
+            f"./tests/config/install.sh {Settings.TEMP_DIR}/etc/clickhouse-server {Settings.TEMP_DIR}/etc/clickhouse-client --fast-test",
+            # f"cp -a {current_directory}/programs/server/config.d/log_to_console.xml {Settings.TEMP_DIR}/etc/clickhouse-server/config.d/",
+            f"rm -f {Settings.TEMP_DIR}/etc/clickhouse-server/config.d/secure_ports.xml",
             update_path_ch_config,
         ]
         results.append(
-            Result.from_commands_run(
+            Result.create_from_command_execution(
                 name="Install ClickHouse Config",
                 command=commands,
                 with_log=True,

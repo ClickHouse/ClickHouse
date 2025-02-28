@@ -1,9 +1,9 @@
-#include <base/EnumReflection.h>
+#include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/SettingsChanges.h>
+#include <Common/FieldVisitorToString.h>
+#include <magic_enum.hpp>
 
 
 namespace DB

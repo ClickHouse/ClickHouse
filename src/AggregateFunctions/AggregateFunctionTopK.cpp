@@ -203,7 +203,7 @@ struct AggregateFunctionTopKGenericData
  *  For such columns topK() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column, bool is_weighted>
-class AggregateFunctionTopKGeneric final
+class AggregateFunctionTopKGeneric
     : public IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>
 {
 private:
@@ -367,7 +367,7 @@ public:
 
 /// Substitute return type for Date and DateTime
 template <bool is_weighted>
-class AggregateFunctionTopKDate final : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
+class AggregateFunctionTopKDate : public AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>
 {
 public:
     using AggregateFunctionTopK<DataTypeDate::FieldType, is_weighted>::AggregateFunctionTopK;
@@ -384,7 +384,7 @@ public:
 };
 
 template <bool is_weighted>
-class AggregateFunctionTopKDateTime final : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
+class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>
 {
 public:
     using AggregateFunctionTopK<DataTypeDateTime::FieldType, is_weighted>::AggregateFunctionTopK;
@@ -401,7 +401,7 @@ public:
 };
 
 template <bool is_weighted>
-class AggregateFunctionTopKIPv4 final : public AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>
+class AggregateFunctionTopKIPv4 : public AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>
 {
 public:
     using AggregateFunctionTopK<DataTypeIPv4::FieldType, is_weighted>::AggregateFunctionTopK;

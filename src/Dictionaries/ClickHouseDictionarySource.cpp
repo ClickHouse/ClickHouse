@@ -5,6 +5,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -14,8 +15,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/parseQuery.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
@@ -29,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -168,14 +166,6 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     /// Copy context because results of scalar subqueries potentially could be cached
     auto context_copy = Context::createCopy(context);
     context_copy->makeQueryContext();
-
-    const char * query_begin = query.data();
-    const char * query_end = query.data() + query.size();
-    ParserQuery parser(query_end);
-    ASTPtr ast = parseQuery(parser, query_begin, query_end, "Query for ClickHouse dictionary", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-    if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "Only SELECT query can be used as a dictionary source");
 
     if (configuration.is_local)
     {

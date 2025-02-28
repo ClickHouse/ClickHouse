@@ -1,13 +1,11 @@
 import dataclasses
 import json
-import os
 from pathlib import Path
 from typing import Dict
-from urllib.parse import quote
 
-from ._environment import _Environment
-from .settings import Settings
-from .utils import Shell
+from praktika._environment import _Environment
+from praktika.settings import Settings
+from praktika.utils import Shell
 
 
 class S3:
@@ -31,11 +29,9 @@ class S3:
             return True
 
     @classmethod
-    def clean_s3_directory(cls, s3_path, include=""):
+    def clean_s3_directory(cls, s3_path):
         assert len(s3_path.split("/")) > 2, "check to not delete too much"
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
-        if include:
-            cmd += f' --exclude "*" --include "{include}"'
         cls.run_command_with_retries(cmd, retries=1)
         return
 
@@ -59,7 +55,7 @@ class S3:
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
-        return quote(f"https://{s3_full_path}".replace(bucket, endpoint), safe=":/?&=")
+        return f"https://{s3_full_path}".replace(bucket, endpoint)
 
     @classmethod
     def put(cls, s3_path, local_path, text=False, metadata=None, if_none_matched=False):
@@ -84,8 +80,9 @@ class S3:
             for k, v in metadata.items():
                 command += f" --metadata {k}={v}"
 
+        cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
-            command += " --content-type text/plain"
+            cmd += " --content-type text/plain"
         res = cls.run_command_with_retries(command)
         return res
 
@@ -120,21 +117,15 @@ class S3:
         return res
 
     @classmethod
-    def copy_file_from_s3(
-        cls, s3_path, local_path, recursive=False, include_pattern=""
-    ):
+    def copy_file_from_s3(cls, s3_path, local_path):
         assert Path(s3_path), f"Invalid S3 Path [{s3_path}]"
         if Path(local_path).is_dir():
-            pass
+            local_path = Path(local_path) / Path(s3_path).name
         else:
             assert Path(
                 local_path
             ).parent.is_dir(), f"Parent path for [{local_path}] does not exist"
         cmd = f"aws s3 cp s3://{s3_path}  {local_path}"
-        if recursive:
-            cmd += " --recursive"
-        if include_pattern:
-            cmd += f' --exclude "*" --include "{include_pattern}"'
         res = cls.run_command_with_retries(cmd)
         return res
 
@@ -172,25 +163,6 @@ class S3:
         )
 
     @classmethod
-    def compress_file(cls, path):
-        if Shell.check("which zstd"):
-            path_out = f"{path}.zst"
-            Shell.check(f"zstd < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which pigz"):
-            path_out = f"{path}.gz"
-            Shell.check(f"pigz < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(f"gzip < {path} > {path_out}", verbose=True, strict=True)
-        else:
-            print(f"ERROR: Failed to compress file [{path}] no zstd or gz installed")
-            _Environment.get().add_info(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
-            path_out = path
-        return path_out
-
-    @classmethod
     def _upload_file_to_s3(
         cls, local_file_path, upload_to_s3: bool, text: bool = False, s3_subprefix=""
     ) -> str:
@@ -200,32 +172,8 @@ class S3:
             if s3_subprefix:
                 s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
-            if text and Settings.COMPRESS_THRESHOLD_MB > 0:
-                file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)
-                if file_size_mb > Settings.COMPRESS_THRESHOLD_MB:
-                    print(
-                        f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
-                    )
-                    text = False
-                    local_file_path = cls.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
                 s3_path=s3_path, local_path=local_file_path, text=text
             )
             return html_link
         return f"file://{Path(local_file_path).absolute()}"
-
-    @classmethod
-    def _dump_urls(cls, s3_path):
-        # TODO: add support for path with '*'
-        bucket, name = s3_path.split("/")[0], s3_path.split("/")[-1]
-        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
-
-        with open(Settings.ARTIFACT_URLS_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    name: quote(
-                        f"https://{s3_path}".replace(bucket, endpoint), safe=":/?&="
-                    )
-                },
-                f,
-            )

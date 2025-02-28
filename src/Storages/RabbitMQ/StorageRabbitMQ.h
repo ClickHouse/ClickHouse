@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
@@ -130,9 +130,9 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder looping_task;
-    BackgroundSchedulePoolTaskHolder init_task;
+    BackgroundSchedulePool::TaskHolder streaming_task;
+    BackgroundSchedulePool::TaskHolder looping_task;
+    BackgroundSchedulePool::TaskHolder init_task;
 
     uint64_t milliseconds_to_wait;
 
@@ -181,7 +181,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool wait, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
     void initRabbitMQ();
     void cleanupRabbitMQ() const;

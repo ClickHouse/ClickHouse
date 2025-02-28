@@ -1,12 +1,12 @@
 ---
-slug: /sql-reference/functions/functions-for-nulls
+slug: /en/sql-reference/functions/functions-for-nulls
 sidebar_position: 135
 sidebar_label: Nullable
 ---
 
 # Functions for Working with Nullable Values
 
-## isNull {#isnull}
+## isNull
 
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
@@ -54,7 +54,7 @@ Result:
 └───┘
 ```
 
-## isNullable {#isnullable}
+## isNullable
 
 Returns `1` if a column is [Nullable](../data-types/nullable.md) (i.e allows `NULL` values), `0` otherwise.
 
@@ -93,7 +93,7 @@ Result:
    └─────────────────────────────┴─────────────────────────────┘
 ```
 
-## isNotNull {#isnotnull}
+## isNotNull
 
 Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -137,7 +137,7 @@ Result:
 └───┘
 ```
 
-## isNotDistinctFrom {#isnotdistinctfrom}
+## isNotDistinctFrom
 
 Performs null-safe comparison. Used to compare JOIN keys which contain NULL values in the JOIN ON section.
 This function will consider two `NULL` values as identical and will return `true`, which is distinct from the usual
@@ -167,7 +167,7 @@ isNotDistinctFrom(x, y)
 
 For a complete example see: [NULL values in JOIN keys](../../sql-reference/statements/select/join#null-values-in-join-keys).
 
-## isZeroOrNull {#iszeroornull}
+## isZeroOrNull
 
 Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
 
@@ -211,7 +211,7 @@ Result:
 └───┘
 ```
 
-## coalesce {#coalesce}
+## coalesce
 
 Returns the leftmost non-`NULL` argument.
 
@@ -254,7 +254,7 @@ SELECT name, coalesce(mail, phone, CAST(telegram,'Nullable(String)')) FROM aBook
 └──────────┴───────────────────────────────────────────────────────────┘
 ```
 
-## ifNull {#ifnull}
+## ifNull
 
 Returns an alternative value if the argument is `NULL`.
 
@@ -302,7 +302,7 @@ Result:
 └───────────────────┘
 ```
 
-## nullIf {#nullif}
+## nullIf
 
 Returns `NULL` if both arguments are equal.
 
@@ -349,7 +349,7 @@ Result:
 └──────────────┘
 ```
 
-## assumeNotNull {#assumenotnull}
+## assumeNotNull
 
 Returns the corresponding non-`Nullable` value for a value of [Nullable](../data-types/nullable.md) type. If the original value is `NULL`, an arbitrary result can be returned. See also functions `ifNull` and `coalesce`.
 
@@ -408,7 +408,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## toNullable {#tonullable}
+## toNullable
 
 Converts the argument type to `Nullable`.
 

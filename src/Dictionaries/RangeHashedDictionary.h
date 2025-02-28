@@ -7,11 +7,9 @@
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Core/Block_fwd.h>
-#include <Core/callOnTypeIndex.h>
-#include <Common/ArenaUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/IntervalTree.h>
+#include <Common/ArenaUtils.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
@@ -30,6 +28,7 @@
 
 #include <Columns/ColumnNullable.h>
 
+#include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 
 namespace DB

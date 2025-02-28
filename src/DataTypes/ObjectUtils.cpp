@@ -135,7 +135,7 @@ Array createEmptyArrayField(size_t num_dimensions)
     for (size_t i = 1; i < num_dimensions; ++i)
     {
         current_array->push_back(Array());
-        current_array = &current_array->back().safeGet<Array>();
+        current_array = &current_array->back().safeGet<Array &>();
     }
 
     return array;
@@ -521,7 +521,7 @@ DataTypePtr createConcreteEmptyDynamicColumn(const DataTypePtr & type_in_storage
     throw Exception(ErrorCodes::EXPERIMENTAL_FEATURE_ERROR, "Type {} unexpectedly has dynamic columns", type_in_storage->getName());
 }
 
-bool hasDynamicSubcolumnsDeprecated(const ColumnsDescription & columns)
+bool hasDynamicSubcolumns(const ColumnsDescription & columns)
 {
     return std::any_of(columns.begin(), columns.end(),
         [](const auto & column)

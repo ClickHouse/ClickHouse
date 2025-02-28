@@ -7,10 +7,9 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/memcmpSmall.h>
+#include <Common/memcmpSmall.h>
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/scope_guard.h>
@@ -628,46 +627,33 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
-ColumnPtr ColumnString::compress(bool force_compression) const
+ColumnPtr ColumnString::compress() const
 {
     const size_t source_chars_size = chars.size();
     const size_t source_offsets_elements = offsets.size();
     const size_t source_offsets_size = source_offsets_elements * sizeof(Offset);
 
     /// Don't compress small blocks.
-    if (source_chars_size < min_size_to_compress)
-    {
+    if (source_chars_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
-    }
 
-    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, force_compression);
+    auto chars_compressed = ColumnCompressed::compressBuffer(chars.data(), source_chars_size, false);
 
     /// Return original column if not compressible.
     if (!chars_compressed)
-    {
         return ColumnCompressed::wrap(this->getPtr());
-    }
 
-    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, force_compression);
-    const bool offsets_were_compressed = !!offsets_compressed;
-
-    /// Offsets are not compressible. Use the source data.
-    if (!offsets_compressed)
-    {
-        offsets_compressed = std::make_shared<Memory<>>(source_offsets_size);
-        memcpy(offsets_compressed->data(), offsets.data(), source_offsets_size);
-    }
+    auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
 
     const size_t chars_compressed_size = chars_compressed->size();
     const size_t offsets_compressed_size = offsets_compressed->size();
-    return ColumnCompressed::create(
-        source_offsets_elements,
-        chars_compressed_size + offsets_compressed_size,
-        [my_chars_compressed = std::move(chars_compressed),
-         my_offsets_compressed = std::move(offsets_compressed),
-         source_chars_size,
-         source_offsets_elements,
-         offsets_were_compressed]
+    return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
+        [
+            my_chars_compressed = std::move(chars_compressed),
+            my_offsets_compressed = std::move(offsets_compressed),
+            source_chars_size,
+            source_offsets_elements
+        ]
         {
             auto res = ColumnString::create();
 
@@ -677,18 +663,8 @@ ColumnPtr ColumnString::compress(bool force_compression) const
             ColumnCompressed::decompressBuffer(
                 my_chars_compressed->data(), res->getChars().data(), my_chars_compressed->size(), source_chars_size);
 
-            if (offsets_were_compressed)
-            {
-                ColumnCompressed::decompressBuffer(
-                    my_offsets_compressed->data(),
-                    res->getOffsets().data(),
-                    my_offsets_compressed->size(),
-                    source_offsets_elements * sizeof(Offset));
-            }
-            else
-            {
-                memcpy(res->getOffsets().data(), my_offsets_compressed->data(), my_offsets_compressed->size());
-            }
+            ColumnCompressed::decompressBuffer(
+                my_offsets_compressed->data(), res->getOffsets().data(), my_offsets_compressed->size(), source_offsets_elements * sizeof(Offset));
 
             return res;
         });
@@ -717,21 +693,6 @@ void ColumnString::validate() const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "ColumnString validation failed: size mismatch (internal logical error) {} != {}",
                         last_offset, chars.size());
-}
-
-void ColumnString::updateHashWithValue(size_t n, SipHash & hash) const
-{
-    size_t string_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-
-    hash.update(reinterpret_cast<const char *>(&string_size), sizeof(string_size));
-    hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
-}
-
-void ColumnString::updateHashFast(SipHash & hash) const
-{
-    hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
-    hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
 }
 
 }

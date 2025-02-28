@@ -2,12 +2,8 @@
 #include <type_traits>
 #include <vector>
 #include <IO/WriteBuffer.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
-
-namespace DB
-{
-struct FormatSettings;
-}
 
 namespace DB::JSONBuilder
 {

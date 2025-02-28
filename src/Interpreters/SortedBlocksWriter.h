@@ -3,12 +3,12 @@
 #include <mutex>
 #include <condition_variable>
 
-#include <Core/Block_fwd.h>
+#include <Common/filesystemHelpers.h>
+#include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/filesystemHelpers.h>
+#include <Disks/TemporaryFileOnDisk.h>
 
 namespace DB
 {

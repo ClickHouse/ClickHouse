@@ -6,8 +6,7 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-
-#include <city.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <set>
@@ -121,12 +120,12 @@ public:
         if (!child)
             return;
 
-        T * cast = dynamic_cast<T *>(child.get());
-        if (!cast)
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         children.push_back(child);
-        field = cast;
+        field = casted;
     }
 
     template <typename T>
@@ -135,8 +134,8 @@ public:
         if (!child)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to replace AST subtree with nullptr");
 
-        T * cast = dynamic_cast<T *>(child.get());
-        if (!cast)
+        T * casted = dynamic_cast<T *>(child.get());
+        if (!casted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not cast AST subtree");
 
         for (ASTPtr & current_child : children)
@@ -144,7 +143,7 @@ public:
             if (current_child.get() == field)
             {
                 current_child = child;
-                field = cast;
+                field = casted;
                 return;
             }
         }
@@ -194,6 +193,7 @@ public:
     /// Format settings.
     struct FormatSettings
     {
+        WriteBuffer & ostr;
         bool one_line;
         bool hilite;
         IdentifierQuotingRule identifier_quoting_rule;
@@ -205,6 +205,7 @@ public:
         bool enforce_strict_identifier_format;
 
         explicit FormatSettings(
+            WriteBuffer & ostr_,
             bool one_line_,
             bool hilite_ = false,
             IdentifierQuotingRule identifier_quoting_rule_ = IdentifierQuotingRule::WhenNecessary,
@@ -213,7 +214,8 @@ public:
             LiteralEscapingStyle literal_escaping_style_ = LiteralEscapingStyle::Regular,
             bool print_pretty_type_names_ = false,
             bool enforce_strict_identifier_format_ = false)
-            : one_line(one_line_)
+            : ostr(ostr_)
+            , one_line(one_line_)
             , hilite(hilite_)
             , identifier_quoting_rule(identifier_quoting_rule_)
             , identifier_quoting_style(identifier_quoting_style_)
@@ -225,7 +227,21 @@ public:
         {
         }
 
-        void writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const;
+        FormatSettings(WriteBuffer & ostr_, const FormatSettings & other)
+            : ostr(ostr_)
+            , one_line(other.one_line)
+            , hilite(other.hilite)
+            , identifier_quoting_rule(other.identifier_quoting_rule)
+            , identifier_quoting_style(other.identifier_quoting_style)
+            , show_secrets(other.show_secrets)
+            , nl_or_ws(other.nl_or_ws)
+            , literal_escaping_style(other.literal_escaping_style)
+            , print_pretty_type_names(other.print_pretty_type_names)
+            , enforce_strict_identifier_format(other.enforce_strict_identifier_format)
+        {
+        }
+
+        void writeIdentifier(const String & name, bool ambiguous) const;
         void checkIdentifier(const String & name) const;
     };
 
@@ -251,33 +267,18 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
-        std::string create_engine_name;
         const IAST * current_select = nullptr;
     };
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings) const
+    void format(const FormatSettings & settings) const
     {
         FormatState state;
-        formatImpl(ostr, settings, state, FormatStateStacked());
+        formatImpl(settings, state, FormatStateStacked());
     }
 
-    void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+    virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        formatImpl(ostr, settings, state, std::move(frame));
-    }
-
-    /// TODO: Move more logic into this class (see https://github.com/ClickHouse/ClickHouse/pull/45649).
-    struct FormattingBuffer
-    {
-        WriteBuffer & ostr;
-        const FormatSettings & settings;
-        FormatState & state;
-        FormatStateStacked frame;
-    };
-
-    void format(FormattingBuffer out) const
-    {
-        formatImpl(out.ostr, out.settings, out.state, out.frame);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
     }
 
     /// Secrets are displayed regarding show_secrets, then SensitiveDataMasker is applied.
@@ -312,17 +313,6 @@ public:
             /*max_length=*/0,
             /*one_line=*/true,
             /*show_secrets=*/false,
-            /*print_pretty_type_names=*/false,
-            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
-            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
-    }
-
-    String formatForAnything() const
-    {
-        return formatWithPossiblyHidingSensitiveData(
-            /*max_length=*/0,
-            /*one_line=*/true,
-            /*show_secrets=*/true,
             /*print_pretty_type_names=*/false,
             /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
             /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
@@ -363,8 +353,7 @@ public:
         Commit,
         Rollback,
         SetTransactionSnapshot,
-        AsyncInsertFlush,
-        ParallelWithQuery,
+        AsyncInsertFlush
     };
     /// Return QueryKind of this AST query.
     virtual QueryKind getQueryKind() const { return QueryKind::None; }
@@ -379,16 +368,6 @@ public:
     static const char * hilite_none;
 
 protected:
-    virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-    {
-        formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-    }
-
-    virtual void formatImpl(FormattingBuffer /*out*/) const
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
-    }
-
     bool childrenHaveSecretParts() const;
 
     /// Some AST classes have naked pointers to children elements as members.

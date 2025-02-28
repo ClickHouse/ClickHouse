@@ -68,14 +68,6 @@ protected:
     /// Adds diagnostics to the error message.
     void addDiagnostics(Exception & e) const;
 
-    /// Flush all asynchronous decompress request.
-    void flushAsynchronousDecompressRequests() const;
-
-    /// Set decompression mode: Synchronous/Asynchronous/SoftwareFallback.
-    /// The mode is "Synchronous" by default.
-    /// flushAsynchronousDecompressRequests must be called subsequently once set "Asynchronous" mode.
-    void setDecompressMode(ICompressionCodec::CodecMode mode) const;
-
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     explicit CompressedReadBufferBase(ReadBuffer * in = nullptr, bool allow_different_codecs_ = false, bool external_data_ = false);

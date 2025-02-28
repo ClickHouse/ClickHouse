@@ -7,7 +7,6 @@
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>

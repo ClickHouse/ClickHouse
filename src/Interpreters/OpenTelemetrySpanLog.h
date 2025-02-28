@@ -28,9 +28,6 @@ class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
 {
 public:
     using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
-
-    static const char * getDefaultPartitionBy() { return "toYYYYMM(finish_date)"; }
-    static const char * getDefaultOrderBy() { return "finish_date, finish_time_us, trace_id"; }
 };
 
 }

@@ -89,7 +89,7 @@ static void readData(const ISerialization & serialization, ColumnPtr & column, R
     settings.avg_value_size_hint = avg_value_size_hint;
     settings.position_independent_encoding = false;
     settings.native_format = true;
-    settings.format_settings = format_settings ? &*format_settings : nullptr;
+    settings.data_types_binary_encoding = format_settings && format_settings->native.decode_types_in_binary_format;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
 

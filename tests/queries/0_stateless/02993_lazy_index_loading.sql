@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS test;
-CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1, use_primary_key_cache = 0;
+CREATE TABLE test (s String) ENGINE = MergeTree ORDER BY s SETTINGS index_granularity = 1;
 
 SET optimize_trivial_insert_select = 1;
 INSERT INTO test SELECT randomString(1000) FROM numbers(100000);

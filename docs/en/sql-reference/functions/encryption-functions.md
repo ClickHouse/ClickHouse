@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/functions/encryption-functions
+slug: /en/sql-reference/functions/encryption-functions
 sidebar_position: 70
 sidebar_label: Encryption
 ---
@@ -12,7 +12,7 @@ Initialization vector length is always 16 bytes (bytes in excess of 16 are ignor
 
 Note that these functions work slowly until ClickHouse 21.1.
 
-## encrypt {#encrypt}
+## encrypt
 
 This function encrypts data using these modes:
 
@@ -21,7 +21,6 @@ This function encrypts data using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -104,7 +103,7 @@ Result:
 └──────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## aes_encrypt_mysql {#aes_encrypt_mysql}
+## aes_encrypt_mysql
 
 Compatible with mysql encryption and resulting ciphertext can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
@@ -145,7 +144,7 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 
 Result:
 
-```response
+```
 ┌─ciphertexts_equal─┐
 │                 1 │
 └───────────────────┘
@@ -176,7 +175,7 @@ SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '1234567891012131415161718
 
 Result:
 
-```response
+```text
 ┌─ciphertext───┐
 │ 24E9E4966469 │
 └──────────────┘
@@ -213,7 +212,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 1 row in set (0.00 sec)
 ```
 
-## decrypt {#decrypt}
+## decrypt
 
 This function decrypts ciphertext into a plaintext using these modes:
 
@@ -222,7 +221,6 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -295,7 +293,7 @@ Result:
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
 
-## tryDecrypt {#trydecrypt}
+## tryDecrypt
 
 Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.
 
@@ -334,7 +332,7 @@ ORDER BY user_id ASC
 
 Result:
 
-```response
+```
 ┌──────────────────dt─┬─user_id─┬─value──┐
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │
@@ -342,7 +340,7 @@ Result:
 └─────────────────────┴─────────┴────────┘
 ```
 
-## aes_decrypt_mysql {#aes_decrypt_mysql}
+## aes_decrypt_mysql
 
 Compatible with mysql encryption and decrypts data encrypted with [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 

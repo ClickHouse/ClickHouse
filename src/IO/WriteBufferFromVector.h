@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include <IO/AutoFinalizedWriteBuffer.h>
 #include <IO/WriteBuffer.h>
+
 
 namespace DB
 {
@@ -60,7 +60,7 @@ public:
         canceled = false;
     }
 
-protected:
+private:
     void finalizeImpl() override
     {
         vector.resize(
@@ -72,7 +72,6 @@ protected:
         set(nullptr, 0);
     }
 
-private:
     void nextImpl() override
     {
         if (finalized)

@@ -1,11 +1,9 @@
 ---
-description: "System table containing a list of user accounts configured on the server."
-slug: /operations/system-tables/users
-title: "system.users"
-keywords: ["system table", "users"]
+slug: /en/operations/system-tables/users
 ---
+# users
 
-Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured on the server.
+Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured at the server.
 
 Columns:
 - `name` ([String](../../sql-reference/data-types/string.md)) — User name.

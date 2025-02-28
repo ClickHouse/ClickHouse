@@ -35,7 +35,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void SerializationTuple::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & tuple = field.safeGet<Tuple>();
+    const auto & tuple = field.safeGet<const Tuple &>();
     for (size_t element_index = 0; element_index < elems.size(); ++element_index)
     {
         const auto & serialization = elems[element_index];
@@ -48,7 +48,7 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr, con
     const size_t size = elems.size();
 
     field = Tuple();
-    Tuple & tuple = field.safeGet<Tuple>();
+    Tuple & tuple = field.safeGet<Tuple &>();
     tuple.reserve(size);
     for (size_t i = 0; i < size; ++i)
         elems[i]->deserializeBinary(tuple.emplace_back(), istr, settings);
@@ -285,7 +285,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
             if (!first)
                 writeCString(",\n", ostr);
 
-            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(' ', (indent + 1) * 4, ostr);
             writeJSONString(elems[i]->getElementName(), ostr, settings);
             writeCString(": ", ostr);
             elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
@@ -293,7 +293,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         }
 
         writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', indent * 4, ostr);
         writeChar('}', ostr);
     }
     else
@@ -303,11 +303,11 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         {
             if (i != 0)
                 writeCString(",\n", ostr);
-            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(' ', (indent + 1) * 4, ostr);
             elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
         }
         writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', indent * 4, ostr);
         writeChar(']', ostr);
     }
 }
@@ -654,16 +654,6 @@ struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBul
 struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinaryBulkState
 {
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> states;
-
-    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
-    {
-        auto new_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
-        new_state->states.reserve(states.size());
-        for (const auto & state : states)
-            new_state->states.push_back(state ? state->clone() : nullptr);
-
-        return new_state;
-    }
 };
 
 void SerializationTuple::enumerateStreams(

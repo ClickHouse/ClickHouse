@@ -22,7 +22,6 @@
 #include <Common/parseAddress.h>
 #include <Common/ErrorCodes.h>
 #include <Common/BSONCXXHelper.h>
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Core/Joins.h>
 

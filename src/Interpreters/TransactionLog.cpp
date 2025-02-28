@@ -1,19 +1,16 @@
-#include <Core/ServerUUID.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/TransactionsInfoLog.h>
-#include <base/sort.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/threadPoolCallbackRunner.h>
+#include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/noexcept_scope.h>
-#include <Common/threadPoolCallbackRunner.h>
-
-#include <Poco/Util/LayeredConfiguration.h>
 
 
 namespace DB

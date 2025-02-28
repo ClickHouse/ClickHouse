@@ -35,7 +35,6 @@
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
 #include <base/coverage.h>
-#include <base/scope_guard.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
@@ -265,11 +264,7 @@ void BaseDaemon::initialize(Application & self)
     }
     umask(umask_num);
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, ""
-#if USE_SSL
-    , true // skip loading encryption keys from ZK
-#endif
-    );
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
     /// Write core dump on crash.
     {
@@ -452,12 +447,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     Poco::ErrorHandler::set(&killing_error_handler);
 
     signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
+    signal_listener_thread.start(*signal_listener);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     build_id = SymbolIndex::instance().getBuildIDHex();
 #endif
-
-    signal_listener_thread.start(*signal_listener);
 
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();

@@ -1,8 +1,6 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
-
-#include <iostream>
 #include <vector>
 
 #include <sys/types.h>

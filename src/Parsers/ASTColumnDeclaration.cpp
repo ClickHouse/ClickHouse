@@ -62,69 +62,69 @@ ASTPtr ASTColumnDeclaration::clone() const
     return res;
 }
 
-void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
+void ASTColumnDeclaration::formatImpl(const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;
 
-    format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
+    format_settings.writeIdentifier(name, /*ambiguous=*/true);
 
     if (type)
     {
-        ostr << ' ';
-        type->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ';
+        type->formatImpl(format_settings, state, frame);
     }
 
     if (null_modifier)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "")
                       << (*null_modifier ? "" : "NOT ") << "NULL" << (format_settings.hilite ? hilite_none : "");
     }
 
     if (default_expression)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << default_specifier << (format_settings.hilite ? hilite_none : "");
         if (!ephemeral_default)
         {
-            ostr << ' ';
-            default_expression->format(ostr, format_settings, state, frame);
+            format_settings.ostr << ' ';
+            default_expression->formatImpl(format_settings, state, frame);
         }
     }
 
     if (comment)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
-        comment->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COMMENT" << (format_settings.hilite ? hilite_none : "") << ' ';
+        comment->formatImpl(format_settings, state, frame);
     }
 
     if (codec)
     {
-        ostr << ' ';
-        codec->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ';
+        codec->formatImpl(format_settings, state, frame);
     }
 
     if (statistics_desc)
     {
-        ostr << ' ';
-        statistics_desc->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ';
+        statistics_desc->formatImpl(format_settings, state, frame);
     }
 
     if (ttl)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
-        ttl->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "TTL" << (format_settings.hilite ? hilite_none : "") << ' ';
+        ttl->formatImpl(format_settings, state, frame);
     }
 
     if (collation)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
-        collation->format(ostr, format_settings, state, frame);
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "COLLATE" << (format_settings.hilite ? hilite_none : "") << ' ';
+        collation->formatImpl(format_settings, state, frame);
     }
 
     if (settings)
     {
-        ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
-        settings->format(ostr, format_settings, state, frame);
-        ostr << ')';
+        format_settings.ostr << ' ' << (format_settings.hilite ? hilite_keyword : "") << "SETTINGS" << (format_settings.hilite ? hilite_none : "") << ' ' << '(';
+        settings->formatImpl(format_settings, state, frame);
+        format_settings.ostr << ')';
     }
 }
 

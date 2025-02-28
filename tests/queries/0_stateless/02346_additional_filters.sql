@@ -42,7 +42,7 @@ select * from system.numbers as t limit 5 settings additional_table_filters={'t'
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers' : 'number != 3'};
 select * from system.numbers limit 5 settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
 select * from (select number from system.numbers limit 5 union all select x from table_1) order by number settings additional_table_filters={'system.numbers':'number != 3','table_1':'x!=2'};
-select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x order by all settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
+select number, x, y from (select number from system.numbers limit 5) f any left join (select x, y from table_1) s on f.number = s.x settings additional_table_filters={'system.numbers' : 'number != 3', 'table_1' : 'x != 2'};
 select b + 1 as c from (select a + 1 as b from (select x + 1 as a from table_1)) settings additional_table_filters={'table_1' : 'x != 2 and x != 3'};
 
 -- { echoOff }

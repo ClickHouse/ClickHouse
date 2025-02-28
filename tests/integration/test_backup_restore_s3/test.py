@@ -18,7 +18,6 @@ node = cluster.add_instance(
         "configs/s3_settings.xml",
         "configs/blob_log.xml",
         "configs/remote_servers.xml",
-        "configs/query_log.xml",
     ],
     user_configs=[
         "configs/zookeeper_retries.xml",
@@ -334,9 +333,6 @@ def test_backup_from_s3_to_s3_disk_native_copy(storage_policy, to_disk):
     assert backup_events["S3CopyObject"] > 0
     assert restore_events["S3CopyObject"] > 0
 
-    # BACKUP shouldn't download any files from S3 except ".lock" file.
-    assert backup_events["S3GetObject"] == backup_events["BackupLockFileReads"]
-
 
 def test_backup_to_s3():
     storage_policy = "default"
@@ -540,11 +536,10 @@ def test_backup_with_fs_cache(
     # print(f"restore_events = {restore_events}")
 
     # BACKUP never updates the filesystem cache but it may read it if `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` allows that.
-    # And if allow_s3_native_copy == True then BACKUP shouldn't read MergeTree parts from S3 and thus it shouldn't request any files from the file cache.
-    if allow_backup_read_cache and in_cache_initially and not allow_s3_native_copy:
+    if allow_backup_read_cache and in_cache_initially:
         assert backup_events["CachedReadBufferReadFromCacheBytes"] > 0
         assert not "CachedReadBufferReadFromSourceBytes" in backup_events
-    elif allow_backup_read_cache and not allow_s3_native_copy:
+    elif allow_backup_read_cache:
         assert not "CachedReadBufferReadFromCacheBytes" in backup_events
         assert backup_events["CachedReadBufferReadFromSourceBytes"] > 0
     else:
@@ -763,55 +758,20 @@ def test_user_specific_auth(start_cluster):
     node.query("DROP USER superuser1, superuser2, regularuser")
 
 
-@pytest.mark.parametrize(
-    "allow_s3_native_copy,use_multipart_copy",
-    [(True, True), (True, False), (False, True), (False, False)],
-    ids=[
-        "native_multipart",
-        "native_single",
-        "non_native_multipart",
-        "non_native_single",
-    ],
-)
-def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_copy):
+def test_backup_to_s3_different_credentials():
     storage_policy = "policy_s3_restricted"
 
-    backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
-    settings = {"allow_s3_native_copy": allow_s3_native_copy}
-    size = 1000
-    if use_multipart_copy:
-        size = 10000000
-    (backup_events, _) = check_backup_and_restore(
-        storage_policy,
-        backup_destination,
-        backup_settings=settings,
-        restore_settings=settings,
-        size=size
-    )
-    check_system_tables(backup_events["query_id"])
+    def check_backup_restore(allow_s3_native_copy):
+        backup_name = new_backup_name()
+        backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
+        settings = {"allow_s3_native_copy": allow_s3_native_copy}
+        (backup_events, _) = check_backup_and_restore(
+            storage_policy,
+            backup_destination,
+            backup_settings=settings,
+            restore_settings=settings,
+        )
+        check_system_tables(backup_events["query_id"])
 
-
-def test_backup_restore_system_tables_with_plain_rewritable_disk():
-    instance = cluster.instances["node"]
-    backup_name = new_backup_name()
-    backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
-    )
-
-    instance.query("SYSTEM FLUSH LOGS")
-
-    backup_query_id = uuid.uuid4().hex
-    instance.query(
-        f"BACKUP TABLE system.query_log TO {backup_destination}",
-        query_id=backup_query_id,
-    )
-    restore_query_id = uuid.uuid4().hex
-    instance.query("DROP TABLE IF EXISTS data_restored SYNC")
-    instance.query(
-        f"""
-        RESTORE TABLE system.query_log AS data_restored FROM {backup_destination};
-        """,
-        query_id=restore_query_id,
-    )
-    instance.query("DROP TABLE data_restored SYNC")
+    check_backup_restore(False)
+    check_backup_restore(True)

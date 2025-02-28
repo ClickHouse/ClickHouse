@@ -18,27 +18,19 @@ class Stopwatch:
 
     @property
     def duration_seconds(self) -> float:
-        return (
-            datetime.datetime.now(datetime.timezone.utc) - self.start_time
-        ).total_seconds()
+        return (datetime.datetime.utcnow() - self.start_time).total_seconds()
 
     @property
     def start_time_str(self) -> str:
         return self.start_time_str_value
 
     def reset(self) -> None:
-        self.start_time = datetime.datetime.now(datetime.timezone.utc)
+        self.start_time = datetime.datetime.utcnow()
         self.start_time_str_value = self.start_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def run_fuzzer(fuzzer: str, timeout: int):
-    timeout_hard = timeout + 60
-    logging.info(
-        "Running fuzzer %s for %d seconds (hard timeout is %d)...",
-        fuzzer,
-        timeout,
-        timeout_hard,
-    )
+    logging.info("Running fuzzer %s...", fuzzer)
 
     seed_corpus_dir = f"{fuzzer}.in"
     with Path(seed_corpus_dir) as path:
@@ -97,8 +89,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
         custom_libfuzzer_options += f" -dict={fuzzer}.dict"
     custom_libfuzzer_options += f" -exact_artifact_path={exact_artifact_path}"
 
-    custom_libfuzzer_options += f" -timeout={timeout}"
-
     libfuzzer_corpora = f"{active_corpus_dir} {seed_corpus_dir}"
 
     cmd_line = f"{DEBUGGER} ./{fuzzer} {fuzzer_arguments}"
@@ -125,7 +115,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                 check=True,
                 shell=False,
                 errors="replace",
-                timeout=timeout_hard,
+                timeout=timeout,
                 env=env,
             )
     except subprocess.CalledProcessError:

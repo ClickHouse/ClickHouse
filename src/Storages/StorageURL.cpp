@@ -28,8 +28,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
-#include <Interpreters/ExpressionActions.h>
-
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
@@ -120,7 +118,7 @@ static const std::vector<std::shared_ptr<re2::RE2>> optional_regex_keys = {
 
 bool urlWithGlobs(const String & uri)
 {
-    return (uri.contains('{') && uri.contains('}')) || uri.contains('|');
+    return (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') != std::string::npos;
 }
 
 String getSampleURI(String uri, ContextPtr context)
@@ -1342,7 +1340,7 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
     if (http_method.empty())
         http_method = Poco::Net::HTTPRequest::HTTP_POST;
 
-    bool has_wildcards = uri.contains(PartitionedSink::PARTITION_ID_WILDCARD);
+    bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
     bool is_partitioned_implementation = partition_by_ast && has_wildcards;
@@ -1648,7 +1646,6 @@ void registerStorageURL(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::URL,
-            .has_builtin_setting_fn = Settings::hasBuiltin,
         });
 }
 

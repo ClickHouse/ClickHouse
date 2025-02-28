@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2985
+personal_ws-1.1 en 2984
 AArch
 ACLs
 ALTERs
@@ -48,10 +48,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
-AvroFormatSettings
 AzureQueue
-Azurite
-BFloat
 BIGINT
 BIGSERIAL
 BORO
@@ -88,8 +85,6 @@ BestEffortOrZero
 BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
-BetaBadge
-Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -173,7 +168,6 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
-ClickPipes
 ClickVisual
 ClickableSquare
 CloudAvailableBadge
@@ -208,9 +202,6 @@ Crowdsourced
 Ctrl
 CurrentMetrics
 CustomSeparated
-CustomSeparatedIgnoreSpaces
-CustomSeparatedIgnoreSpacesWithNames
-CustomSeparatedIgnoreSpacesWithNamesAndTypes
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBAs
@@ -231,8 +222,8 @@ Damerau
 DataGrip
 DataLens
 DataPacket
+DataTime
 DataTypes
-DataTypesMatching
 DatabaseCatalog
 DatabaseCatalogThreads
 DatabaseCatalogThreadsActive
@@ -253,10 +244,11 @@ Deduplication
 DefaultTableEngine
 DelayedInserts
 DeliveryTag
-DeltaLake
 Deltalake
+DeltaLake
+deltalakeCluster
+deltaLakeCluster
 Denormalize
-DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
@@ -300,7 +292,6 @@ ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
 ExecutablePool
-ExperimentalBadge
 ExtType
 ExternalDistributed
 FFFD
@@ -359,7 +350,6 @@ GetResolution
 GetUnidirectionalEdge
 GetUnidirectionalEdgeBoundary
 GetUnidirectionalEdgesFromHexagon
-Gini
 GitLab
 GlobalThread
 GlobalThreadActive
@@ -384,18 +374,21 @@ Heredoc
 HexAreaKm
 HexAreaM
 HexRing
-HiveText
 Holistics
 Homebrew
 Homebrew's
 HorizontalDivide
 Hostname
 HouseOps
+hudi
 Hudi
+hudiCluster
 HudiCluster
 HyperLogLog
 Hypot
 IANA
+icebergCluster
+IcebergCluster
 IDE
 IDEs
 IDNA
@@ -416,7 +409,6 @@ IPTrie
 IProcessor
 IPv
 ITION
-IcebergCluster
 Identifiant
 IdentifierQuotingRule
 IdentifierQuotingStyle
@@ -464,12 +456,10 @@ JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes
-JSONCompactEachRowWithProgress
 JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
-JSONCompactStringsEachRowWithProgress
 JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
@@ -488,7 +478,6 @@ JSONExtractString
 JSONExtractUInt
 JSONHas
 JSONLength
-JSONLines
 JSONObjectEachRow
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
@@ -549,8 +538,6 @@ Liao
 LibFuzzer
 LightHouse
 LineAsString
-LineAsStringWithNames
-LineAsStringWithNamesAndTypes
 LineString
 Linf
 LinfDistance
@@ -660,7 +647,6 @@ MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
 MySQLThreads
-MySQLWire
 NATS
 NCHAR
 NDJSON
@@ -704,7 +690,6 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
-ODBCDriver
 OFNS
 OLAP
 OLTP
@@ -823,7 +808,6 @@ PostLink
 PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
-PostgreSQLWire
 Postgres
 PostgresSQL
 Precompiled
@@ -832,11 +816,8 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
-PrettyFormatSettings
 PrettyJSONEachRow
-PrettyJSONLines
 PrettyMonoBlock
-PrettyNDJSON
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
 PrettySpace
@@ -845,7 +826,6 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
-PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
@@ -889,8 +869,6 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
-RawWithNames
-RawWithNamesAndTypes
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -938,7 +916,6 @@ RoaringBitmap
 RocksDB
 Rollup
 RowBinary
-RowBinaryFormatSettings
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -969,7 +946,6 @@ SaaS
 Sanjeev
 Sankey
 Scalable
-ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -1032,10 +1008,8 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
-SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
-SystemTableCloud
 TABLUM
 TAVG
 TCPConnection
@@ -1049,10 +1023,7 @@ TMIN
 TPCH
 TSDB
 TSVRaw
-TSVRawWithNames
-TSVRawWithNamesAndTypes
 TSVWithNames
-TSVWithNamesAndTypes
 TSVs
 TSan
 TThe
@@ -1245,7 +1216,6 @@ alphaTokens
 amplab
 analysisOfVariance
 analytics
-annindexes
 anonymize
 anonymized
 ansi
@@ -1263,7 +1233,6 @@ argMin
 argmax
 argmin
 arrayAUC
-arrayAUCPR
 arrayAll
 arrayAvg
 arrayCompact
@@ -1298,7 +1267,6 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
-arrayNormalizedGini
 arrayPartialReverseSort
 arrayPartialShuffle
 arrayPartialSort
@@ -1307,7 +1275,6 @@ arrayPopFront
 arrayProduct
 arrayPushBack
 arrayPushFront
-arrayROCAUC
 arrayRandomSample
 arrayReduce
 arrayReduceInRanges
@@ -1327,7 +1294,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
@@ -1343,7 +1309,6 @@ atan
 atanh
 atomicity
 auth
-authType
 authenticator
 authenticators
 autocompletion
@@ -1353,7 +1318,6 @@ autogen
 autogenerate
 autogenerated
 autogeneration
-autoscaling
 autostart
 avgWeighted
 avgweighted
@@ -1364,7 +1328,6 @@ azureBlobStorage
 azureBlobStorageCluster
 backend
 backoff
-backtick
 backticks
 backupview
 balancer
@@ -1425,6 +1388,7 @@ bools
 boringssl
 boundingRatio
 bozerkins
+broadcasted
 brotli
 bson
 bsoneachrow
@@ -1450,6 +1414,7 @@ cardinalities
 cardinality
 cartesian
 cassandra
+casted
 catboost
 catboostEvaluate
 categoricalInformationValue
@@ -1515,7 +1480,6 @@ codepoints
 collapsingmergetree
 combinator
 combinators
-compareSubstrings
 comparising
 composable
 composable
@@ -1535,7 +1499,6 @@ connectionId
 const
 contrib
 convertCharset
-cooldown
 coroutines
 corrMatrix
 corrStable
@@ -1655,15 +1618,12 @@ defaultValueOfArgumentType
 defaultValueOfTypeName
 delim
 deltaLake
-deltaLakeCluster
 deltaSum
 deltaSumTimestamp
 deltalake
-deltalakeCluster
 deltasum
 deltasumtimestamp
 demangle
-demangled
 denormalize
 denormalized
 denormalizing
@@ -1865,7 +1825,6 @@ geoip
 geospatial
 getClientHTTPHeader
 getMacro
-getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSetting
@@ -1980,13 +1939,10 @@ html
 http
 https
 hudi
-hudi
-hudiCluster
 hyperscan
 hypot
 hyvor
 iTerm
-icebergCluster
 icosahedron
 icudata
 idempotency
@@ -1999,7 +1955,6 @@ ilike
 incrementing
 indexHint
 indexOf
-indexOfAssumeSorted
 inequal
 infi
 inflight
@@ -2007,7 +1962,6 @@ infty
 initcap
 initcapUTF
 initialQueryID
-initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -2459,7 +2413,6 @@ pread
 preallocate
 prebuild
 prebuilt
-preconfigured
 preemptable
 preferServerCiphers
 prefetch
@@ -2467,7 +2420,6 @@ prefetched
 prefetches
 prefetching
 prefetchsize
-preflight
 preimage
 preloaded
 prem
@@ -2507,11 +2459,9 @@ protobuf
 protobuflist
 protobufsingle
 protocol
-protos
 proxied
 pseudorandom
 pseudorandomize
-pseudoterminal
 psql
 ptrs
 punycodeDecode
@@ -2696,7 +2646,6 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
-sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
@@ -2766,7 +2715,6 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
-sqlreference
 sqrt
 src
 srcReplicas
@@ -2799,7 +2747,6 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
-stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
 stringToH
@@ -2833,7 +2780,6 @@ submodule
 submodules
 subnet
 subnetwork
-suboptimal
 subpattern
 subpatterns
 subqueries
@@ -2881,7 +2827,6 @@ summapwithoverflow
 summingmergetree
 sumwithoverflow
 superaggregates
-superset
 supertype
 supremum
 symlink
@@ -2927,7 +2872,6 @@ timeZoneOffset
 timezones
 tinylog
 tmp
-toBFloat
 toBool
 toColumnTypeName
 toDate
@@ -3141,7 +3085,6 @@ userspace
 userver
 utils
 uuid
-uuids
 uuidv
 vCPU
 varPop
@@ -3200,7 +3143,6 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
-workfactor
 writability
 wrt
 wyHash
@@ -3223,6 +3165,4 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-groupArrayArray
-benchmarked
-FastFormats
+BFloat

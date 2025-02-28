@@ -3,8 +3,6 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
 
-#include <Poco/JSON/Object.h>
-
 namespace DB
 {
 
@@ -110,7 +108,7 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
     MutableSerializationInfos elems_cloned;
     elems_cloned.reserve(elems.size());
     for (const auto & elem : elems)
-        elems_cloned.push_back(elem ? elem->clone() : nullptr);
+        elems_cloned.push_back(elem->clone());
 
     auto ret = std::make_shared<SerializationInfoTuple>(std::move(elems_cloned), names);
     ret->data = data;
@@ -153,17 +151,15 @@ void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
         elem->deserializeFromKindsBinary(in);
 }
 
-void SerializationInfoTuple::toJSON(Poco::JSON::Object & object) const
+Poco::JSON::Object SerializationInfoTuple::toJSON() const
 {
-    SerializationInfo::toJSON(object);
+    auto object = SerializationInfo::toJSON();
     Poco::JSON::Array subcolumns;
     for (const auto & elem : elems)
-    {
-        Poco::JSON::Object sub_column_json;
-        elem->toJSON(sub_column_json);
-        subcolumns.add(sub_column_json);
-    }
+        subcolumns.add(elem->toJSON());
+
     object.set("subcolumns", subcolumns);
+    return object;
 }
 
 void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)

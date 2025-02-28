@@ -1,9 +1,7 @@
 ---
-description: "System table containing active roles for the current user."
-slug: /operations/system-tables/current-roles
-title: "system.current_roles"
-keywords: ["system table", "current_roles"]
+slug: /en/operations/system-tables/current-roles
 ---
+# current_roles
 
 Contains active roles of a current user. `SET ROLE` changes the contents of this table.
 
