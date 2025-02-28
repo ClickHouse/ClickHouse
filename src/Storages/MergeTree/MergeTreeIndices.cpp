@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <numeric>
@@ -15,6 +16,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
+{
+    return index.expression->getRequiredColumns();
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/operators/in
+slug: /sql-reference/operators/in
 ---
 # IN Operators
 
@@ -16,7 +16,7 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 
 If the left side is a single column that is in the index, and the right side is a set of constants, the system uses the index for processing the query.
 
-Don’t list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section [External data for query processing](../../engines/table-engines/special/external-data.md)), then use a subquery.
+Don't list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section [External data for query processing](../../engines/table-engines/special/external-data.md)), then use a subquery.
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
 
@@ -38,7 +38,7 @@ Result:
 └──────────────────────┘
 ```
 
-If the right side of the operator is the name of a table (for example, `UserID IN users`), this is equivalent to the subquery `UserID IN (SELECT * FROM users)`. Use this when working with external data that is sent along with the query. For example, the query can be sent together with a set of user IDs loaded to the ‘users’ temporary table, which should be filtered.
+If the right side of the operator is the name of a table (for example, `UserID IN users`), this is equivalent to the subquery `UserID IN (SELECT * FROM users)`. Use this when working with external data that is sent along with the query. For example, the query can be sent together with a set of user IDs loaded to the 'users' temporary table, which should be filtered.
 
 If the right side of the operator is a table name that has the Set engine (a prepared data set that is always in RAM), the data set will not be created over again for each query.
 
@@ -84,7 +84,7 @@ ORDER BY EventDate ASC
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the `IN` clause is always run just one time on a single server. There are no dependent subqueries.
 
-## NULL Processing
+## NULL Processing {#null-processing}
 
 During request processing, the `IN` operator assumes that the result of an operation with [NULL](../../sql-reference/syntax.md#null-literal) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
 
@@ -105,7 +105,7 @@ Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the follo
 └───┘
 ```
 
-You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can’t decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
+You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
 
 ``` sql
 SELECT y IN (NULL, 3)
@@ -119,7 +119,7 @@ FROM t_null
 └───────────────────────┘
 ```
 
-## Distributed Subqueries
+## Distributed Subqueries {#distributed-subqueries}
 
 There are two options for `IN` operators with subqueries (similar to `JOIN` operators): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
@@ -135,7 +135,7 @@ For a non-distributed query, use the regular `IN` / `JOIN`.
 
 Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
 
-Let’s look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
+Let's look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
 
 For a query to the **distributed_table**, the query will be sent to all the remote servers and run on them using the **local_table**.
 
@@ -153,7 +153,7 @@ SELECT uniq(UserID) FROM local_table
 
 and run on each of them in parallel, until it reaches the stage where intermediate results can be combined. Then the intermediate results will be returned to the requestor server and merged on it, and the final result will be sent to the client.
 
-Now let’s examine a query with `IN`:
+Now let's examine a query with `IN`:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
@@ -169,7 +169,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SEL
 
 In other words, the data set in the `IN` clause will be collected on each server independently, only across the data that is stored locally on each of the servers.
 
-This will work correctly and optimally if you are prepared for this case and have spread data across the cluster servers such that the data for a single UserID resides entirely on a single server. In this case, all the necessary data will be available locally on each server. Otherwise, the result will be inaccurate. We refer to this variation of the query as “local IN”.
+This will work correctly and optimally if you are prepared for this case and have spread data across the cluster servers such that the data for a single UserID resides entirely on a single server. In this case, all the necessary data will be available locally on each server. Otherwise, the result will be inaccurate. We refer to this variation of the query as "local IN".
 
 To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
@@ -191,7 +191,7 @@ SELECT UserID FROM local_table WHERE CounterID = 34
 
 For example, if you have a cluster of 100 servers, executing the entire query will require 10,000 elementary requests, which is generally considered unacceptable.
 
-In such cases, you should always use `GLOBAL IN` instead of `IN`. Let’s look at how it works for the query:
+In such cases, you should always use `GLOBAL IN` instead of `IN`. Let's look at how it works for the query:
 
 ``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
@@ -221,7 +221,7 @@ This is more optimal than using the normal `IN`. However, keep the following poi
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
-### Distributed Subqueries and max_rows_in_set
+### Distributed Subqueries and max_rows_in_set {#distributed-subqueries-and-max_rows_in_set}
 
 You can use [`max_rows_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) and [`max_bytes_in_set`](../../operations/settings/query-complexity.md#max-rows-in-set) to control how much data is transferred during distributed queries. 
 
@@ -233,7 +233,7 @@ select * from table1 where col1 global in (select col1 from table2 where <some_p
  
 If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](../../operations/settings/query-complexity.md#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
 
-### Distributed Subqueries and max_parallel_replicas
+### Distributed Subqueries and max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 
 When [max_parallel_replicas](#distributed-subqueries-and-max_parallel_replicas) is greater than 1, distributed queries are further transformed.
 
@@ -259,4 +259,4 @@ Therefore adding the [max_parallel_replicas](#distributed-subqueries-and-max_par
 
 One workaround if `local_table_2` does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
 
-If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](/docs/en/operations/settings/settings#parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.
+If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](/operations/settings/settings#parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.

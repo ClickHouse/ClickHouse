@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database, no-fasttest
+# Tags: no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage
 # no-fasttest: The test is slow (too many small blocks)
+# no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
+#     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

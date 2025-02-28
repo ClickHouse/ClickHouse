@@ -32,6 +32,7 @@ _workflow_config_job = Job.Config(
         else None
     ),
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.CI_CONFIG_JOB_NAME}'",
+    timeout=600,
 )
 
 _docker_build_job = Job.Config(
@@ -55,6 +56,16 @@ _final_job = Job.Config(
     command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.FINISH_WORKFLOW_JOB_NAME}'",
     run_unless_cancelled=True,
 )
+
+
+def _is_praktika_job(job_name):
+    if job_name in (
+        Settings.CI_CONFIG_JOB_NAME,
+        Settings.DOCKER_BUILD_JOB_NAME,
+        Settings.FINISH_WORKFLOW_JOB_NAME,
+    ):
+        return True
+    return False
 
 
 def _build_dockers(workflow, job_name):
@@ -244,11 +255,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     # checks:
-    result_ = _check_yaml_up_to_date()
-    if result_.status != Result.Status.SUCCESS:
-        print("ERROR: yaml files are outdated - regenerate, commit and push")
-        info_lines.append(result_.name + ": " + result_.info)
-    results.append(result_)
+    if results[-1].is_ok():
+        result_ = _check_yaml_up_to_date()
+        if result_.status != Result.Status.SUCCESS:
+            print("ERROR: yaml files are outdated - regenerate, commit and push")
+            info_lines.append(result_.name + ": " + result_.info)
+        results.append(result_)
 
     if results[-1].is_ok() and workflow.secrets:
         result_ = _check_secrets(workflow.secrets)
@@ -281,13 +293,13 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         cache_success_base64=[],
         cache_artifacts={},
         cache_jobs={},
+        filtered_jobs={},
         custom_data=custom_data,
     ).dump()
 
     if workflow.enable_merge_commit:
         assert False, "NOT implemented"
 
-    # config:
     if results[-1].is_ok() and workflow.dockers:
         sw_ = Utils.Stopwatch()
         print("Calculate docker's digests")
@@ -305,6 +317,34 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         results.append(
             Result.create_from(
                 name="Calculate docker digests", status=res, stopwatch=sw_
+            )
+        )
+
+    if workflow.workflow_filter_hooks:
+        sw_ = Utils.Stopwatch()
+        try:
+            for job in workflow.jobs:
+                if _is_praktika_job(job.name):
+                    continue
+                for hook in workflow.workflow_filter_hooks:
+                    should_skip, reason = hook(job.name)
+                    if should_skip:
+                        print(
+                            f"Job [{job.name}] set to skipped by custom hook [{hook.__name__}], reason [{reason}]"
+                        )
+                        workflow_config.set_job_as_filtered(job.name, reason)
+                        continue
+            status = Result.Status.SUCCESS
+            workflow_config.dump()
+            info = ""
+        except Exception as e:
+            status = Result.Status.ERROR
+            print(f"ERROR: Exception in workflow config hook: {e}")
+            traceback.print_exc()
+            info = f"{traceback.print_exc()}"
+        results.append(
+            Result.create_from(
+                name="Filter Hooks", status=status, stopwatch=sw_, info=info
             )
         )
 
@@ -412,10 +452,10 @@ def _finish_workflow(workflow, job_name):
 
     if failed_results:
         failed_jobs_csv = ",".join(failed_results)
-        if len(failed_jobs_csv) < 50:
+        if len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
-            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
+            ready_for_merge_description = f"Failed: {len(failed_results)} required jobs"
 
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()

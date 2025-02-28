@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/events
+description: "System table containing information about the number of events that have occurred in the system."
+slug: /operations/system-tables/events
+title: "system.events"
+keywords: ["system table", "events"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# events
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

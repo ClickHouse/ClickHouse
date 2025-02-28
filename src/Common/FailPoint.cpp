@@ -55,6 +55,8 @@ static struct InitFiu
     ONCE(smt_insert_fake_hardware_error) \
     ONCE(smt_sleep_after_hardware_in_insert) \
     ONCE(smt_throw_keeper_exception_after_successful_insert) \
+    ONCE(smt_lightweight_snapshot_fail) \
+    REGULAR(object_storage_queue_fail_commit) \
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
@@ -63,6 +65,7 @@ static struct InitFiu
     REGULAR(prefetched_reader_pool_failpoint) \
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
+    REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \

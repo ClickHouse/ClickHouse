@@ -20,6 +20,7 @@ endif ()
 add_warning(everything)
 add_warning(pedantic)
 add_warning(vla-cxx-extension)
+no_warning(return-type-c-linkage)
 no_warning(zero-length-array)
 no_warning(c++98-compat-pedantic)
 no_warning(c++98-compat)
@@ -43,7 +44,6 @@ no_warning(unused-template)
 no_warning(weak-template-vtables)
 no_warning(weak-vtables)
 no_warning(thread-safety-negative) # experimental flag, too many false positives
-no_warning(enum-constexpr-conversion) # breaks magic-enum library in clang-16
 no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 # TODO Enable conversion, sign-conversion, double-promotion warnings.

@@ -26,7 +26,7 @@ from env_helper import (
 )
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
-from report import FAILURE, SUCCESS, JobReport
+from report import FAILURE, SKIPPED, SUCCESS, JobReport
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
@@ -133,6 +133,14 @@ def main():
     is_aarch64 = "aarch64" in os.getenv("CHECK_NAME", "Performance Comparison").lower()
     if pr_info.number != 0 and is_aarch64 and "pr-performance" not in pr_info.labels:
         print("Skipped, not labeled with 'pr-performance'")
+        JobReport(
+            description="Skipped, not labeled with 'pr-performance'",
+            test_results=[],
+            status=SKIPPED.lower(),
+            start_time=stopwatch.start_time_str,
+            duration=stopwatch.duration_seconds,
+            additional_files=[],
+        ).dump()
         sys.exit(0)
 
     check_name_prefix = (
@@ -256,7 +264,6 @@ def main():
         start_time=stopwatch.start_time_str,
         duration=stopwatch.duration_seconds,
         additional_files=[v for _, v in paths.items()] + image_files,
-        check_name=check_name_with_group,
     ).dump()
 
     if status != SUCCESS:

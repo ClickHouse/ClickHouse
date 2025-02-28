@@ -20,6 +20,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -803,11 +804,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        setThreadName("MergeTreeIndex");
-
-                        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                        if (thread_group)
-                            CurrentThread::attachToGroupIfDetached(thread_group);
+                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
 
                         process_part(part_index);
                     },
@@ -1071,6 +1068,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
     const auto & key_indices = key_condition.getKeyIndices();
@@ -1084,7 +1082,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             if (i < index->size())
             {
                 index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                reverse_flags.push_back(!primary_key.reverse_flags.empty() && primary_key.reverse_flags[i]);
+                reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
             }
             else
             {
@@ -1519,6 +1517,15 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
 
+    MarkRanges index_ranges;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
+        index_ranges.push_back(index_range);
+    }
+
     std::vector<std::unique_ptr<MergeTreeIndexReader>> readers;
     for (const auto & index_helper : indices)
     {
@@ -1527,7 +1534,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 index_helper,
                 part,
                 index_marks_count,
-                ranges,
+                index_ranges,
                 mark_cache,
                 uncompressed_cache,
                 skipping_index_cache,

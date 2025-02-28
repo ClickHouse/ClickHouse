@@ -2,12 +2,10 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/TableExpressionModifiers.h>
-#include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <Interpreters/AggregateDescription.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/PreparedSets.h>
-#include <Planner/PlannerContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -35,6 +33,9 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
+
+class PlannerContext;
+using PlannerContextPtr = std::shared_ptr<PlannerContext>;
 
 struct PrewhereInfo
 {

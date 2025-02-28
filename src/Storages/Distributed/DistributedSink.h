@@ -5,6 +5,7 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>

@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/azure_queue_settings
+description: "System table containing information about settings of AzureQueue tables. Available from server version `24.10`."
+slug: /operations/system-tables/azure_queue_settings
+title: "system.azure_queue_settings"
+keywords: ["system table", "azure_queue_settings"]
 ---
-# azure_queue_settings
 
 Contains information about settings of [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) tables.
 Available from `24.10` server version.
@@ -16,5 +18,5 @@ Columns:
 - `description` ([String](../../sql-reference/data-types/string.md)) — Setting description.
 - `alterable` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the setting can be changes via `ALTER TABLE ... MODIFY SETTING`.
     - `0` — Current user can alter the setting.
-    - `1` — Current user can’t alter the setting.
+    - `1` — Current user can't alter the setting.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Setting type (implementation specific string value).

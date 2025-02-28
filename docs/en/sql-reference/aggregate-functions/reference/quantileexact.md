@@ -1,11 +1,13 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileexact
+slug: /sql-reference/aggregate-functions/reference/quantileexact
 sidebar_position: 173
+title: "quantileExact Functions"
+description: "quantileExact, quantileExactLow, quantileExactHigh, quantileExactExclusive, quantileExactInclusive functions"
 ---
 
 # quantileExact Functions
 
-## quantileExact
+## quantileExact {#quantileexact}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -71,7 +73,7 @@ Result:
 └───────────────────────┘
 ```
 
-## quantileExactLow
+## quantileExactLow {#quantileexactlow}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -89,7 +91,7 @@ SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 └───────────────────────────────┘
 ```
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/ru/sql-reference/aggregate-functions/reference/quantiles) function.
 
 **Syntax**
 
@@ -129,7 +131,7 @@ Result:
 │                        4 │
 └──────────────────────────┘
 ```
-## quantileExactHigh
+## quantileExactHigh {#quantileexacthigh}
 
 Similar to `quantileExact`, this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -180,7 +182,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## quantileExactExclusive
+## quantileExactExclusive {#quantileexactexclusive}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
@@ -232,7 +234,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## quantileExactInclusive
+## quantileExactInclusive {#quantileexactinclusive}
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 

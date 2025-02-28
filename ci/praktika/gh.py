@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Any, List, Union
+from typing import Any
 
 from ._environment import _Environment
 from .result import Result
@@ -104,6 +104,13 @@ class GH:
         for line in lines:
             print(line)
         print("::endgroup::")
+
+    @classmethod
+    def print_actions_debug_info(cls):
+        cls.print_log_in_group("GITHUB_ENVS", Shell.get_output("env | grep ^GITHUB_"))
+        cls.print_log_in_group(
+            "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
+        )
 
 
 if __name__ == "__main__":
