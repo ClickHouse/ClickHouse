@@ -1,7 +1,7 @@
 ---
-title : CapnProto
+title: CapnProto
 slug: /interfaces/formats/CapnProto
-keywords : [CapnProto]
+keywords: [CapnProto]
 input_format: true
 output_format: true
 alias: []
