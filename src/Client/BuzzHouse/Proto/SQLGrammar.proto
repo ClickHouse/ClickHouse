@@ -2368,11 +2368,6 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
-message JoinedDerivedQuery {
-    required ExplainQuery select = 1;
-    optional Table table_alias = 2;
-}
-
 enum FileCompression {
     COMPgz = 1;
     COMPbr = 2;
@@ -2414,6 +2409,7 @@ message TableOrFunction {
     oneof jtf_oneof {
         ExprSchemaTable est = 1;
         TableFunction tfunc = 2;
+        ExplainQuery select = 3;
     }
 }
 
@@ -2508,8 +2504,7 @@ message JoinedTableOrFunction {
 message TableOrSubquery {
     oneof tos_oneof {
         JoinedTableOrFunction joined_table = 1;
-        JoinedDerivedQuery joined_derived_query = 2;
-        JoinedQuery joined_query = 3;
+        JoinedQuery joined_query = 2;
     }
 }
 
