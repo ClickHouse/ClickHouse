@@ -30,7 +30,7 @@ By default, `DELETE` statements wait until marking the rows as deleted is comple
 
 The mutation does not physically delete the rows that have been marked as deleted, this will only happen during the next merge. As a result, it is possible that for an unspecified period, data is not actually deleted from storage and is only marked as deleted.
 
-If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](/docs/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
+If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
 
 ## Deleting large amounts of data {#deleting-large-amounts-of-data}
 
@@ -42,7 +42,7 @@ If you anticipate frequent deletes, consider using a [custom partitioning key](/
 
 ### Lightweight `DELETE`s with projections {#lightweight-deletes-with-projections}
 
-By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](/docs/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
+By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
 
 ## Performance considerations when using lightweight `DELETE` {#performance-considerations-when-using-lightweight-delete}
 

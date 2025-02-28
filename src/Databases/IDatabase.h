@@ -3,7 +3,7 @@
 #include <Core/UUID.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/executeQuery.h>
+#include <Interpreters/QueryFlags.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>

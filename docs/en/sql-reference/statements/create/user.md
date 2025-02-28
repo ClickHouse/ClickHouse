@@ -43,7 +43,7 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
 - `IDENTIFIED BY 'qwerty'`
 
-Password complexity requirements can be edited in [config.xml](/docs/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
+Password complexity requirements can be edited in [config.xml](/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
 
 ```xml
 <clickhouse>

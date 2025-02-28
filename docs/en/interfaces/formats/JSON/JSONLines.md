@@ -1,7 +1,7 @@
 ---
-title : JSONLines
+title: JSONLines
 slug: /interfaces/formats/JSONLines
-keywords : [JSONLines]
+keywords: [JSONLines]
 ---
 
 ## Description {#description}
