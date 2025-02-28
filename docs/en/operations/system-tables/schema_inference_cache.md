@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about all cached file schemas."
 slug: /operations/system-tables/schema_inference_cache
-title: "schema_inference_cache"
+title: "system.schema_inference_cache"
 keywords: ["system table", "schema_inference_cache"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -11,12 +11,12 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 Contains information about all cached file schemas.
 
 Columns:
-- `storage` ([String](/docs/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
-- `source` ([String](/docs/sql-reference/data-types/string.md)) — File source.
-- `format` ([String](/docs/sql-reference/data-types/string.md)) — Format name.
-- `additional_format_info` ([String](/docs/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
-- `registration_time` ([DateTime](/docs/sql-reference/data-types/datetime.md)) — Timestamp when schema was added in cache.
-- `schema` ([String](/docs/sql-reference/data-types/string.md)) - Cached schema.
+- `storage` ([String](/sql-reference/data-types/string.md)) — Storage name: File, URL, S3 or HDFS.
+- `source` ([String](/sql-reference/data-types/string.md)) — File source.
+- `format` ([String](/sql-reference/data-types/string.md)) — Format name.
+- `additional_format_info` ([String](/sql-reference/data-types/string.md)) - Additional information required to identify the schema. For example, format specific settings.
+- `registration_time` ([DateTime](/sql-reference/data-types/datetime.md)) — Timestamp when schema was added in cache.
+- `schema` ([String](/sql-reference/data-types/string.md)) - Cached schema.
 
 **Example**
 
@@ -71,4 +71,4 @@ schema:                 id Nullable(Float64), age Nullable(Float64), name Nullab
 
 
 **See also**
-- [Automatic schema inference from input data](/docs/interfaces/schema-inference.md)
+- [Automatic schema inference from input data](/interfaces/schema-inference.md)
