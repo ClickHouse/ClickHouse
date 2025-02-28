@@ -1169,6 +1169,11 @@ def replace_in_file(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's|{what}|{with_what}|g' {filename}")
 
 
+def prlimit(command, limit):
+    """Limit memory usage for each test to avoid MEMORY_LIMIT_EXCEEDED errors on server"""
+    return f"prlimit --as={limit} {command}"
+
+
 class TestResult:
     def __init__(
         self,
@@ -1890,6 +1895,8 @@ class TestCase:
             )
 
         command = pattern.format(**params)
+        if args.memory_limit:
+            command = prlimit(command, args.memory_limit)
 
         # pylint:disable-next=consider-using-with; TODO: fix
         proc = Popen(command, shell=True, env=os.environ, start_new_session=True)
@@ -3768,6 +3775,12 @@ def parse_args():
         "--capture-client-stacktrace",
         action="store_true",
         help="Capture stacktraces from clickhouse-client/local on errors",
+    )
+    parser.add_argument(
+        "--memory-limit",
+        type=int,
+        default=5 << 30,
+        help="Limit memory for the test (for now it is address space, not a real memory, so the limit could be higher the real memory usage)",
     )
 
     return parser.parse_args()

@@ -275,6 +275,7 @@ function run_tests
     export CLICKHOUSE_SCHEMA_FILES="$FASTTEST_DATA/format_schemas"
 
     local test_opts=(
+        --memory-limit $((5<<30))
         --hung-check
         --fast-tests-only
         --no-random-settings

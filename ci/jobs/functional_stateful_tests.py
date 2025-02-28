@@ -36,7 +36,7 @@ def run_test(
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
 
-    test_command = f"clickhouse-test --jobs 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless \
+    test_command = f"clickhouse-test --memory-limit {20<<30} --jobs 2 --testname --shard --zookeeper --check-zookeeper-session --no-stateless \
         --hung-check --print-time \
         --capture-client-stacktrace --queries ./tests/queries -- '{test}' \
         | ts '%Y-%m-%d %H:%M:%S' | tee -a \"{test_output_file}\""
