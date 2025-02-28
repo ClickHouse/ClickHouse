@@ -10,6 +10,16 @@ ColumnPtr FunctionToExecutableFunctionAdaptor::executeImpl(const ColumnsWithType
     return function->executeImpl(arguments, result_type, input_rows_count);
 }
 
+ColumnPtr FunctionToExecutableFunctionAdaptor::executeImplWithProfile(
+    const ColumnsWithTypeAndName& arguments,
+    const DataTypePtr& result_type,
+    size_t input_rows_count,
+    FunctionExecuteProfile * profile) const
+{
+    checkFunctionArgumentSizes(arguments, input_rows_count);
+    return function->executeImplWithProfile(arguments, result_type, input_rows_count, profile);
+}
+
 ColumnPtr FunctionToExecutableFunctionAdaptor::executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);

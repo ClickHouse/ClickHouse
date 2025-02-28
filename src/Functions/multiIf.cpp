@@ -5,11 +5,13 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFunction.h>
 #include <Columns/MaskOperations.h>
 #include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -162,12 +164,22 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        return this->executeImplWithProfile(args, result_type, input_rows_count, nullptr);
+    }
+
+    ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const override
+    {
         /// Fast path when data is empty
         if (input_rows_count == 0)
             return result_type->createColumn();
 
+        Stopwatch watch;
         ColumnsWithTypeAndName arguments = args;
-        executeShortCircuitArguments(arguments);
+        if (profile)
+            executeShortCircuitArguments<true>(arguments, profile);
+        else
+            executeShortCircuitArguments<false>(arguments, nullptr);
+
         /** We will gather values from columns in branches to result column,
         *  depending on values of conditions.
         */
@@ -242,6 +254,15 @@ public:
                 break;
         }
 
+        auto take_profile = [](Stopwatch & watch_, size_t rows_, FunctionExecuteProfile * profile_)
+        {
+            if (profile_)
+            {
+                profile_->executed_rows = rows_;
+                profile_->executed_elapsed = watch_.elapsed();
+            }
+        };
+
         /// Special case if first instruction condition is always true and source is constant
         if (instructions.size() == 1 && instructions.front().source_is_constant
             && instructions.front().condition_always_true)
@@ -249,6 +270,7 @@ public:
             MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
             res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
+            take_profile(watch, input_rows_count, profile);
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
@@ -263,6 +285,7 @@ public:
             MutableColumnPtr res = return_type->createColumn();
             res->reserve(rows);
             executeInstructions(instructions, rows, res);
+            take_profile(watch, rows, profile);
             return std::move(res);
         }
 
@@ -282,6 +305,7 @@ public:
             auto & res_data = assert_cast<ColumnVectorOrDecimal<FIELD> &>(*res).getData(); \
             executeInstructionsColumnar<FIELD, INDEX, false>(instructions, rows, res_data, nullptr); \
         } \
+        take_profile(watch, input_rows_count, profile); \
         return std::move(res); \
     }
 
@@ -457,13 +481,20 @@ private:
         }
     }
 
-    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
+    template <bool with_profile>
+    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments, FunctionExecuteProfile * profile)
     {
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index < 0)
             return;
 
-        executeColumnIfNeeded(arguments[0]);
+        if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
+        {
+            profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecuteProfile()));
+            executeColumnIfNeeded(arguments[0], false, &(profile->argument_profiles.back().second));
+        }
+        else
+            executeColumnIfNeeded(arguments[0]);
 
         /// Let's denote x_i' = maskedExecute(x_i, mask).
         /// multiIf(x_0, y_0, x_1, y_1, x_2, y_2, ..., x_{n-1}, y_{n-1}, y_n)
@@ -497,7 +528,14 @@ private:
             {
                 copyMask(mask, condition_mask);
                 condition_mask_info = extractMask(condition_mask, cond_column);
-                maskedExecute(arguments[i], condition_mask, condition_mask_info);
+                if constexpr (with_profile)
+                {
+                    profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                    auto & arg_profile = profile->argument_profiles.back().second;
+                    maskedExecute(arguments[i], condition_mask, condition_mask_info, &arg_profile);
+                }
+                else
+                    maskedExecute(arguments[i], condition_mask, condition_mask_info, nullptr);
             }
 
             /// Check if the condition is always true and we don't need to execute the rest arguments.
@@ -516,14 +554,41 @@ private:
             if (!mask_info.has_ones)
                 break;
 
-            maskedExecute(arguments[i], mask, mask_info);
+            if constexpr (with_profile)
+            {
+                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                auto & arg_profile = profile->argument_profiles.back().second;
+                maskedExecute(arguments[i], mask, mask_info, &arg_profile);
+
+            }
+            else
+                maskedExecute(arguments[i], mask, mask_info, nullptr);
             ++i;
         }
 
         /// We could skip some arguments execution, but we cannot leave them as ColumnFunction.
         /// So, create an empty column with the execution result type.
         for (; i <= last_short_circuit_argument_index; ++i)
-            executeColumnIfNeeded(arguments[i], true);
+        {
+            if (with_profile && checkAndGetShortCircuitArgument(arguments[i].column))
+            {
+                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                executeColumnIfNeeded(arguments[i], true, &(profile->argument_profiles.back().second));
+            }
+            else
+                executeColumnIfNeeded(arguments[i], true);
+        }
+
+        if constexpr (with_profile)
+        {
+            size_t side_elapsed = 0;
+            for (const auto & [_, arg_profile] : profile->argument_profiles)
+            {
+                side_elapsed += arg_profile.short_circuit_side_elapsed;
+            }
+            profile->short_circuit_side_elapsed = side_elapsed;
+        }
+
     }
 
     const bool allow_execute_multiif_columnar;
