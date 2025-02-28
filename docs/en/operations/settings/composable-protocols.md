@@ -1,14 +1,16 @@
 ---
-slug: /en/operations/settings/composable-protocols
+slug: /operations/settings/composable-protocols
 sidebar_position: 64
 sidebar_label: Composable Protocols
+title: "Composable Protocols"
+description: "Composable protocols allows more flexible configuration of TCP access to the ClickHouse server."
 ---
 
 # Composable Protocols
 
 Composable protocols allows more flexible configuration of TCP access to the ClickHouse server. This configuration can co-exist with or replace conventional configuration.
 
-## Composable protocols section is denoted as `protocols` in configuration xml
+## Composable protocols section is denoted as `protocols` in configuration xml {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 **Example:**
 ``` xml
 <protocols>
@@ -16,7 +18,7 @@ Composable protocols allows more flexible configuration of TCP access to the Cli
 </protocols>
 ```
 
-## Basic modules define protocol layers
+## Basic modules define protocol layers {#basic-modules-define-protocol-layers}
 **Example:**
 ``` xml
 <protocols>
@@ -44,7 +46,7 @@ where:
 `gRPC` protocol handler is not implemented for `Composable protocols`
 :::
  
-## Endpoint (i.e. listening port) is denoted by `<port>` and (optional) `<host>` tags
+## Endpoint (i.e. listening port) is denoted by `<port>` and (optional) `<host>` tags {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 **Example:**
 ``` xml
 <protocols>
@@ -62,7 +64,7 @@ where:
 ```
 If `<host>` is omitted, then `<listen_host>` from root config is used.
 
-## Layers sequence is defined by `<impl>` tag, referencing another module
+## Layers sequence is defined by `<impl>` tag, referencing another module {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 **Example:** definition for HTTPS protocol
 ``` xml
 <protocols>
@@ -83,7 +85,7 @@ If `<host>` is omitted, then `<listen_host>` from root config is used.
 </protocols>
 ```
 
-## Endpoint can be attached to any layer
+## Endpoint can be attached to any layer {#endpoint-can-be-attached-to-any-layer}
 **Example:** definition for HTTP (port 8123) and HTTPS (port 8443) endpoints
 ``` xml
 <protocols>
@@ -104,7 +106,7 @@ If `<host>` is omitted, then `<listen_host>` from root config is used.
 </protocols>
 ```
 
-## Additional endpoints can be defined by referencing any module and omitting `<type>` tag
+## Additional endpoints can be defined by referencing any module and omitting `<type>` tag {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 **Example:** `another_http` endpoint is defined for `plain_http` module
 ``` xml
 <protocols>
@@ -131,7 +133,7 @@ If `<host>` is omitted, then `<listen_host>` from root config is used.
 </protocols>
 ```
 
-## Some modules can contain specific for its layer parameters
+## Some modules can contain specific for its layer parameters {#some-modules-can-contain-specific-for-its-layer-parameters}
 **Example:** for TLS layer private key (`privateKeyFile`) and certificate files (`certificateFile`) can be specified
 ``` xml
 <protocols>

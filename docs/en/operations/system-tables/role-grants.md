@@ -1,7 +1,7 @@
 ---
 description: "System table containing the role grants for users and roles."
-slug: /en/operations/system-tables/role-grants
-title: "role_grants"
+slug: /operations/system-tables/role-grants
+title: "system.role_grants"
 keywords: ["system table", "role_grants"]
 ---
 

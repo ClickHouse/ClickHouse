@@ -87,6 +87,12 @@ CONV_FN(Function, func)
     ret += func.function();
 }
 
+CONV_FN(Cluster, clust)
+{
+    ret += " ON CLUSTER ";
+    ret += clust.cluster();
+}
+
 CONV_FN(Window, win)
 {
     ret += "w";
@@ -653,6 +659,12 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_MINUS:
             ret += " - ";
             break;
+        case BINOP_DIV:
+            ret += " DIV ";
+            break;
+        case BINOP_MOD:
+            ret += " MOD ";
+            break;
     }
 }
 
@@ -740,6 +752,18 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
             }
         }
         break;
+        case BottomTypeNameType::kBoolean:
+            ret += "Bool";
+            break;
+        case BottomTypeNameType::kUuid:
+            ret += "UUID";
+            break;
+        case BottomTypeNameType::kIPv4:
+            ret += "IPv4";
+            break;
+        case BottomTypeNameType::kIPv6:
+            ret += "IPv6";
+            break;
         default: {
             if (lcard)
             {
@@ -798,12 +822,6 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                         }
                     }
                     break;
-                    case BottomTypeNameType::kBoolean:
-                        ret += "Bool";
-                        break;
-                    case BottomTypeNameType::kUuid:
-                        ret += "UUID";
-                        break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
@@ -878,12 +896,6 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                         ret += ")";
                     }
                     break;
-                    case BottomTypeNameType::kIPv4:
-                        ret += "IPv4";
-                        break;
-                    case BottomTypeNameType::kIPv6:
-                        ret += "IPv6";
-                        break;
                     default:
                         ret += "Int";
                 }
@@ -1212,7 +1224,7 @@ CONV_FN(SQLFuncCall, sfc)
         ret += ')';
     }
     ret += '(';
-    if (sfc.args_size() == 1 && sfc.distinct())
+    if (sfc.args_size() > 0 && sfc.distinct())
     {
         ret += "DISTINCT ";
     }
@@ -2397,6 +2409,10 @@ CONV_FN(CreateDatabase, create_database)
         ret += "IF NOT EXISTS ";
     }
     DatabaseToString(ret, create_database.database());
+    if (create_database.has_cluster())
+    {
+        ClusterToString(ret, create_database.cluster());
+    }
     ret += " ENGINE = ";
     DatabaseEngineToString(ret, create_database.dengine());
     if (create_database.has_comment())
@@ -2410,6 +2426,10 @@ CONV_FN(CreateFunction, create_function)
 {
     ret += "CREATE FUNCTION ";
     FunctionToString(ret, create_function.function());
+    if (create_function.has_cluster())
+    {
+        ClusterToString(ret, create_function.cluster());
+    }
     ret += " AS ";
     LambdaExprToString(ret, create_function.lexpr());
 }
@@ -2494,6 +2514,12 @@ CONV_FN(IndexParam, ip)
     else if (ip.has_dval())
     {
         ret += std::to_string(ip.dval());
+    }
+    else if (ip.has_sval())
+    {
+        ret += "'";
+        ret += ip.sval();
+        ret += "'";
     }
     else
     {
@@ -2830,6 +2856,10 @@ CONV_FN(CreateTable, create_table)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_table.est());
+    if (create_table.has_cluster())
+    {
+        ClusterToString(ret, create_table.cluster());
+    }
     ret += " ";
     if (create_table.has_table_def())
     {
@@ -2904,6 +2934,10 @@ CONV_FN(Drop, dt)
     {
         ret += ", ";
         SQLObjectNameToString(ret, dt.other_objects(i));
+    }
+    if (dt.has_cluster())
+    {
+        ClusterToString(ret, dt.cluster());
     }
     if (dt.sync())
     {
@@ -3062,6 +3096,10 @@ CONV_FN(LightDelete, del)
 {
     ret += "DELETE FROM ";
     ExprSchemaTableToString(ret, del.est());
+    if (del.has_cluster())
+    {
+        ClusterToString(ret, del.cluster());
+    }
     if (del.has_partition())
     {
         ret += " IN ";
@@ -3095,6 +3133,10 @@ CONV_FN(Truncate, trunc)
             break;
         default:
             ret += "t0";
+    }
+    if (trunc.has_cluster())
+    {
+        ClusterToString(ret, trunc.cluster());
     }
     if (trunc.sync())
     {
@@ -3173,6 +3215,10 @@ CONV_FN(OptimizeTable, ot)
 {
     ret += "OPTIMIZE TABLE ";
     ExprSchemaTableToString(ret, ot.est());
+    if (ot.has_cluster())
+    {
+        ClusterToString(ret, ot.cluster());
+    }
     if (ot.has_partition())
     {
         ret += " ";
@@ -3208,6 +3254,10 @@ CONV_FN(ExchangeTables, et)
     ExprSchemaTableToString(ret, et.est1());
     ret += " AND ";
     ExprSchemaTableToString(ret, et.est2());
+    if (et.has_cluster())
+    {
+        ClusterToString(ret, et.cluster());
+    }
     if (et.has_setting_values())
     {
         ret += " SETTINGS ";
@@ -3689,6 +3739,10 @@ CONV_FN(AlterTable, alter_table)
     }
     ret += "TABLE ";
     ExprSchemaTableToString(ret, alter_table.est());
+    if (alter_table.has_cluster())
+    {
+        ClusterToString(ret, alter_table.cluster());
+    }
     ret += " ";
     AlterTableItemToString(ret, alter_table.alter());
     for (int i = 0; i < alter_table.other_alters_size(); i++)
@@ -3707,6 +3761,10 @@ CONV_FN(Attach, at)
 {
     ret += "ATTACH ";
     ret += SQLObject_Name(at.sobject());
+    if (at.has_cluster())
+    {
+        ClusterToString(ret, at.cluster());
+    }
     ret += " ";
     SQLObjectNameToString(ret, at.object());
     if (at.sobject() != SQLObject::DATABASE && at.has_as_replicated())
@@ -3726,6 +3784,10 @@ CONV_FN(Detach, dt)
 {
     ret += "DETACH ";
     ret += SQLObject_Name(dt.sobject());
+    if (dt.has_cluster())
+    {
+        ClusterToString(ret, dt.cluster());
+    }
     ret += " ";
     SQLObjectNameToString(ret, dt.object());
     if (dt.permanently())

@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/special/url
+slug: /engines/table-engines/special/url
 sidebar_position: 80
 sidebar_label:  URL
+title: "URL Table Engine"
+description: "Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the File engine."
 ---
 
 # URL Table Engine
@@ -107,5 +109,5 @@ SELECT * FROM url_engine_table
 
 ## Storage Settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/docs/en/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.

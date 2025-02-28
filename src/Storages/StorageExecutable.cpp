@@ -5,6 +5,8 @@
 
 #include <boost/algorithm/string/split.hpp>
 
+#include <Columns/IColumn.h>
+
 #include <Common/filesystemHelpers.h>
 
 #include <Core/Block.h>

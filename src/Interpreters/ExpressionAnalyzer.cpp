@@ -171,6 +171,8 @@ bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column)
     return true;
 }
 
+ExpressionAnalyzerData::ExpressionAnalyzerData() = default;
+
 ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
@@ -1029,7 +1031,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
-                context, analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
+                analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 

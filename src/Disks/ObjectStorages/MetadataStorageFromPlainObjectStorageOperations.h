@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <map>
 
+
 namespace DB
 {
 
@@ -30,6 +31,7 @@ public:
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
+
 
 class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public IMetadataOperation
 {
@@ -59,6 +61,7 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
+
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
@@ -68,7 +71,7 @@ private:
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    std::string key_prefix;
+    InMemoryDirectoryPathMap::RemotePathInfo info;
     bool remove_attempted = false;
 
 public:
@@ -82,6 +85,7 @@ public:
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
+
 
 class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
 {
@@ -100,6 +104,7 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
+
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
 {
 private:
@@ -117,4 +122,5 @@ public:
     void execute(std::unique_lock<SharedMutex> & metadata_lock) override;
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
+
 }

@@ -1,11 +1,11 @@
 ---
 description: "System table containing information useful for an overview of memory usage and ProfileEvents of users."
-slug: /en/operations/system-tables/user_processes
-title: "user_processes"
+slug: /operations/system-tables/user_processes
+title: "system.user_processes"
 keywords: ["system table", "user_processes"]
 ---
 
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

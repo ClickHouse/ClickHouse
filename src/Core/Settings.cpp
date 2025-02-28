@@ -59,6 +59,11 @@ namespace ErrorCodes
   *
   * When adding new or changing existing settings add them to the settings changes history in SettingsChangesHistory.cpp
   * for tracking settings changes in different versions and for special `compatibility` settings to work correctly.
+  *
+  * The settings in this list are used to autogenerate the markdown documentation. You can find the script which
+  * generates the markdown from source here: https://github.com/ClickHouse/clickhouse-docs/blob/main/scripts/settings/autogenerate-settings.sh
+  *
+  * If a setting has an effect only in ClickHouse Cloud, then please include in the description: "Only has an effect in ClickHouse Cloud."
   */
 
 // clang-format off
@@ -359,8 +364,11 @@ Each time this number of parts was uploaded to S3, s3_min_upload_part_size is mu
     DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
 Maximum part number number for s3 upload part.
 )", 0) \
+    DECLARE(Bool, s3_allow_multipart_copy, true, R"(
+Allow multipart copy in S3.
+)", 0) \
     DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
-Maximum size for a single copy operation in s3
+Maximum size for single-operation copy in s3. This setting is used only if s3_allow_multipart_copy is true.
 )", 0) \
     DECLARE(UInt64, azure_upload_part_size_multiply_factor, 2, R"(
 Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage.
@@ -949,7 +957,7 @@ Number of threads to use for merge intermediate aggregation results in memory ef
 Enable memory bound merging strategy for aggregation.
 )", 0) \
     DECLARE(Bool, enable_positional_arguments, true, R"(
-Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
+Enables or disables supporting positional arguments for [GROUP BY](/sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
 
 Possible values:
 
@@ -1001,18 +1009,18 @@ Possible values:
 )", 0) \
     \
     DECLARE(Bool, group_by_use_nulls, false, R"(
-Changes the way the [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
+Changes the way the [GROUP BY clause](/sql-reference/statements/select/group-by.md) treats the types of aggregation keys.
 When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
 Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
 
 Possible values:
 
 - 0 — The default value for the aggregation key type is used to produce missing values.
-- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/docs/en/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/docs/en/sql-reference/syntax.md) for rows that didn't use it.
+- 1 — ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/sql-reference/data-types/nullable.md/#data_type-nullable). Columns for corresponding aggregation keys are filled with [NULL](/sql-reference/syntax.md) for rows that didn't use it.
 
 See also:
 
-- [GROUP BY clause](/docs/en/sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by.md)
 )", 0) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
@@ -1598,7 +1606,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 )", 0) \
     DECLARE(Milliseconds, log_queries_min_query_duration_ms, 0, R"(
-If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/en/slow-query-log.html)), and this basically means that you will not find them in the following tables:
+If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/slow-query-log.html)), and this basically means that you will not find them in the following tables:
 
 - `system.query_log`
 - `system.query_thread_log`
@@ -1672,7 +1680,7 @@ Possible values:
 
 **See Also**
 
-- [max_concurrent_queries](/docs/en/operations/server-configuration-parameters/settings.md/#max_concurrent_queries)
+- [max_concurrent_queries](/operations/server-configuration-parameters/settings#max_concurrent_queries)
 )", 0) \
     DECLARE(UInt64, max_concurrent_queries_for_user, 0, R"(
 The maximum number of simultaneously processed queries per user.
@@ -1707,7 +1715,7 @@ For async INSERT queries in the replicated table, specifies that deduplication o
     \
     DECLARE(UInt64Auto, insert_quorum, 0, R"(
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
 :::
 
 Enables the quorum writes.
@@ -1744,7 +1752,7 @@ See also:
 )", 0) \
     DECLARE(Bool, insert_quorum_parallel, true, R"(
 :::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information.
+This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
 :::
 
 Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
@@ -1762,7 +1770,7 @@ See also:
 )", 0) \
     DECLARE(UInt64, select_sequential_consistency, 0, R"(
 :::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/docs/en/cloud/reference/shared-merge-tree/#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
+This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
 :::
 
 Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
@@ -2564,7 +2572,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/docs/en/operations/settings/query-complexity.md/#max_bytes_in_join)), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
+ The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/query-complexity#settings-max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
  Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
 
@@ -2827,6 +2835,9 @@ Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
+    DECLARE(Bool, restore_replicated_merge_tree_to_shared_merge_tree, false, R"(
+Replace table engine from Replicated*MergeTree -> Shared*MergeTree during RESTORE.
+)", 0) \
     \
     DECLARE(Bool, log_profile_events, true, R"(
 Log query performance statistics into the query_log, query_thread_log and query_views_log.
@@ -2837,7 +2848,7 @@ Log query settings into the query_log and OpenTelemetry span log.
     DECLARE(Bool, log_query_threads, false, R"(
 Setting up query threads logging.
 
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
+Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](/operations/server-configuration-parameters/settings.md/#query_thread_log) server configuration parameter.
 
 Possible values:
 
@@ -2853,7 +2864,7 @@ log_query_threads=1
     DECLARE(Bool, log_query_views, true, R"(
 Setting up query views logging.
 
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](../../operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
+When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](/operations/server-configuration-parameters/settings.md/#query_views_log) server configuration parameter.
 
 Example:
 
@@ -2893,7 +2904,7 @@ Result:
     DECLARE(Int64, query_metric_log_interval, -1, R"(
 The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
 
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](../../operations/server-configuration-parameters/settings.md/#query_metric_log) or default to 1000 if not present.
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/operations/server-configuration-parameters/settings.md/#query_metric_log) or default to 1000 if not present.
 
 To disable the collection of a single query, set `query_metric_log_interval` to 0.
 
@@ -3014,7 +3025,7 @@ Use virtual row while reading in order of primary key or its monotonic function 
 Enable ORDER BY optimization in window clause for reading data in corresponding order in MergeTree tables.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
-Enables [GROUP BY](../../sql-reference/statements/select/group-by.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
+Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
 Possible values:
 
@@ -3023,7 +3034,7 @@ Possible values:
 
 **See Also**
 
-- [GROUP BY optimization](../../sql-reference/statements/select/group-by.md/#aggregation-in-order)
+- [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 )", 0) \
     DECLARE(Bool, read_in_order_use_buffering, true, R"(
 Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
@@ -3230,7 +3241,7 @@ Restriction on deleting tables in query time. The value 0 means that you can del
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-table-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
 :::
 )", 0) \
     DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
@@ -3239,7 +3250,7 @@ Restriction on dropping partitions in query time. The value 0 means that you can
 Cloud default value: 1 TB.
 
 :::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/docs/en/operations/server-configuration-parameters/settings.md/#max-partition-size-to-drop)
+This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
 :::
 )", 0) \
     \
@@ -3456,7 +3467,7 @@ Enabled by default.
 If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that will help with partition pruning/secondary indexes/optimize_aggregation_in_order/optimize_read_in_order/optimize_trivial_count
 )", 0) \
     DECLARE(UInt64, mutations_sync, 0, R"(
-Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN` queries ([mutations](../../sql-reference/statements/alter/index.md/#mutations)) synchronously.
+Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN|MATERIALIZE STATISTICS` queries ([mutations](../../sql-reference/statements/alter/index.md/#mutations)) synchronously.
 
 Possible values:
 
@@ -4544,7 +4555,14 @@ Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated dat
 Cloud mode
 )", 0) \
     DECLARE(UInt64, cloud_mode_engine, 1, R"(
-The engine family allowed in Cloud. 0 - allow everything, 1 - rewrite DDLs to use *ReplicatedMergeTree, 2 - rewrite DDLs to use SharedMergeTree. UInt64 to minimize public part
+The engine family allowed in Cloud.
+
+- 0 - allow everything
+- 1 - rewrite DDLs to use *ReplicatedMergeTree
+- 2 - rewrite DDLs to use SharedMergeTree
+- 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
+
+UInt64 to minimize public part
 )", 0) \
     DECLARE(UInt64, cloud_mode_database_engine, 1, R"(
 The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
@@ -4632,7 +4650,8 @@ Possible values:
     DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
 Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
 Useful to avoid long optimization times for complex queries.
-If the actual number of optimizations exceeds this setting, an exception is thrown.
+In the EXPLAIN PLAN query, stop applying optimizations after this limit is reached and return the plan as is.
+For regular query execution if the actual number of optimizations exceeds this setting, an exception is thrown.
 
 :::note
 This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
@@ -4947,7 +4966,7 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only available in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
 )", 0) \
     \
     DECLARE(Bool, async_insert, false, R"(
@@ -5245,58 +5264,58 @@ If reading `sample.csv` is successful, file will be renamed to `processed_sample
     \
     /* CLOUD ONLY */ \
     DECLARE(Bool, read_through_distributed_cache, false, R"(
-Only in ClickHouse Cloud. Allow reading from distributed cache
+Only has an effect in ClickHouse Cloud. Allow reading from distributed cache
 )", 0) \
     DECLARE(Bool, write_through_distributed_cache, false, R"(
-Only in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
+Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
 )", 0) \
     DECLARE(Bool, distributed_cache_throw_on_error, false, R"(
-Only in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
+Only has an effect in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
 )", 0) \
     DECLARE(DistributedCacheLogMode, distributed_cache_log_mode, DistributedCacheLogMode::LOG_ON_ERROR, R"(
-Only in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
+Only has an effect in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
 )", 0) \
     DECLARE(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, R"(
-Only in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
+Only has an effect in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
 )", 0) \
     DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
-Only in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
+Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
-Only in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
+Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
 )", 0) \
     DECLARE(UInt64, distributed_cache_receive_timeout_milliseconds, 10000, R"(
-Only in ClickHouse Cloud. Wait time in milliseconds to receive any kind of response from distributed cache
+Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive any kind of response from distributed cache
 )", 0) \
     DECLARE(UInt64, distributed_cache_wait_connection_from_pool_milliseconds, 100, R"(
-Only in ClickHouse Cloud. Wait time in milliseconds to receive connection from connection pool if distributed_cache_pool_behaviour_on_limit is wait
+Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive connection from connection pool if distributed_cache_pool_behaviour_on_limit is wait
 )", 0) \
     DECLARE(Bool, distributed_cache_bypass_connection_pool, false, R"(
-Only in ClickHouse Cloud. Allow to bypass distributed cache connection pool
+Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connection pool
 )", 0) \
     DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
-Only in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
+Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
 )", 0) \
     DECLARE(UInt64, distributed_cache_read_alignment, 0, R"(
-Only in ClickHouse Cloud. A setting for testing purposes, do not change it
+Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
 )", 0) \
     DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS, R"(
-Only in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
+Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
 )", 0) \
     DECLARE(UInt64, distributed_cache_data_packet_ack_window, DistributedCache::ACK_DATA_PACKET_WINDOW, R"(
-Only in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
+Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
 )", 0) \
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
-Only in ClickHouse Cloud. Discard connection if some data is unread.
+Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
     DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
-Only in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
+Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
-Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
-Only in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
+Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
     \
     DECLARE(Bool, parallelize_output_from_storages, true, R"(
@@ -5353,7 +5372,7 @@ SELECT * FROM test_table
 Rewrite count distinct to subquery of group by
 )", 0) \
     DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
-Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/docs/en/interfaces/cli) or using the [gRPC interface](/docs/en/interfaces/grpc).
+Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/interfaces/cli) or using the [gRPC interface](/interfaces/grpc).
 )", 0) \
     DECLARE(Bool, compatibility_ignore_auto_increment_in_create_table, false, R"(
 Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
@@ -5655,12 +5674,12 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only available in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
+Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
 )", 0) \
     DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
-Only available in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
+Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
 Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
@@ -5670,7 +5689,7 @@ Ratio threshold of NULL values to execute functions with Nullable arguments only
 When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
 )", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
-Only available in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
+Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
@@ -5789,6 +5808,10 @@ Build local plan for local replica
 )", BETA) \
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
+)", BETA) \
+    \
+    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
+The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
     \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
@@ -5960,7 +5983,7 @@ Allow experimental vector similarity index
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_shared_set_join, false, R"(
-Only in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
+Only has an effect in ClickHouse Cloud. Allow to create ShareSet and SharedJoin
 )", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.

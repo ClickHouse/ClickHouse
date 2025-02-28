@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about quotas."
-slug: /en/operations/system-tables/quotas
-title: "quotas"
+slug: /operations/system-tables/quotas
+title: "system.quotas"
 keywords: ["system table", "quotas", "quota"]
 ---
 
