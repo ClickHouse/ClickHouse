@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/set-role
+slug: /sql-reference/statements/set-role
 sidebar_position: 51
 sidebar_label: SET ROLE
 title: "SET ROLE Statement"
@@ -11,17 +11,17 @@ Activates roles for the current user.
 SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 ```
 
-## SET DEFAULT ROLE
+## SET DEFAULT ROLE {#set-default-role}
 
 Sets default roles to a user.
 
-Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn’t granted to a user, ClickHouse throws an exception.
+Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn't granted to a user, ClickHouse throws an exception.
 
 ``` sql
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
 ```
 
-## Examples
+## Examples {#examples}
 
 Set multiple default roles to a user:
 

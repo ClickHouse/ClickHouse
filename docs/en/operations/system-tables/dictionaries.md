@@ -1,9 +1,10 @@
 ---
-slug: /en/operations/system-tables/dictionaries
+description: "System table containing information about dictionaries"
+slug: /operations/system-tables/dictionaries
+title: "system.dictionaries"
+keywords: ["system table", "dictionaries"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# dictionaries
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -39,7 +40,7 @@ Columns:
 - `loading_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
 - `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes.
 - `loading_duration` ([Float32](../../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
-- `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
+- `last_exception` ([String](../../sql-reference/data-types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 - `comment` ([String](../../sql-reference/data-types/string.md)) — Text of the comment to dictionary.
 
 **Example**

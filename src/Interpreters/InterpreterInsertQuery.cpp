@@ -19,6 +19,8 @@
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -33,6 +35,7 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+#include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -411,6 +414,12 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
 
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
 
+    /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
+    /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
+    /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
+    /// but currently we don't have methods for serialization of nested structures "as a whole".
+    out.addSource(std::make_shared<NestedElementsValidationTransform>(input_header()));
+
     /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
 
     /// Add implicit sign constraint for Collapsing and VersionedCollapsing tables.
@@ -449,7 +458,8 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
         context_ptr,
         null_as_default);
 
-    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(query_sample_block, adding_missing_defaults_dag.getRequiredColumnsNames(), context_ptr);
+    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)

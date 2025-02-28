@@ -245,9 +245,9 @@ public:
     bool appendRecord(ChangelogRecord && record)
     {
         const auto * file_buffer = tryGetFileBaseBuffer();
-        assert(file_buffer && current_file_description);
+        chassert(file_buffer && current_file_description);
 
-        assert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
+        chassert(record.header.index - getStartIndex() <= current_file_description->expectedEntriesCountInLog());
         // check if log file reached the limit for amount of records it can contain
         if (record.header.index - getStartIndex() == current_file_description->expectedEntriesCountInLog())
         {
@@ -327,7 +327,7 @@ public:
 
     uint64_t getStartIndex() const
     {
-        assert(current_file_description);
+        chassert(current_file_description);
         return current_file_description->from_log_index;
     }
 
@@ -1768,7 +1768,7 @@ try
                         changelog_description.from_log_index);
                 }
             }
-            else if ((changelog_description.from_log_index - last_read_index) > 1)
+            else if (changelog_description.from_log_index > last_read_index && (changelog_description.from_log_index - last_read_index) > 1)
             {
                 if (!last_log_read_result->error)
                 {
@@ -1836,7 +1836,7 @@ try
         assert(!existing_changelogs.empty());
 
         /// Continue to write into incomplete existing log if it didn't finish with error
-        const auto & description = existing_changelogs[last_log_read_result->log_start_index];
+        auto & description = existing_changelogs[last_log_read_result->log_start_index];
 
         const auto remove_invalid_logs = [&]
         {
@@ -1861,7 +1861,8 @@ try
             LOG_INFO(log, "Changelog {} read finished with error but some logs were read from it, file will not be removed", description->path);
             remove_invalid_logs();
             entry_storage.cleanAfter(last_log_read_result->last_read_index);
-            move_from_latest_logs_disks(existing_changelogs.at(last_log_read_result->log_start_index));
+            description->broken_at_end = true;
+            move_from_latest_logs_disks(description);
         }
         /// don't mix compressed and uncompressed writes
         else if (compress_logs == last_log_read_result->compressed_log)
@@ -2189,12 +2190,23 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             else
                 description = std::prev(index_changelog)->second;
 
-            auto log_disk = description->disk;
-            auto latest_log_disk = getLatestLogDisk();
-            if (log_disk != latest_log_disk)
-                moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
+            /// if the changelog is broken at end, we cannot append it with new logs
+            /// we create a new file starting with the required index
+            if (description->broken_at_end)
+            {
+                LOG_INFO(log, "Cannot write into {} because it has broken changelog at end, rotating", description->path);
+                current_writer->rotate(index);
+            }
+            else
+            {
+                auto log_disk = description->disk;
+                auto latest_log_disk = getLatestLogDisk();
+                if (log_disk != latest_log_disk)
+                    moveChangelogBetweenDisks(log_disk, description, latest_log_disk, description->path, keeper_context);
 
-            current_writer->setFile(std::move(description), WriteMode::Append);
+                LOG_INFO(log, "Writing into {}", description->path);
+                current_writer->setFile(std::move(description), WriteMode::Append);
+            }
 
             /// Remove all subsequent files if overwritten something in previous one
             auto to_remove_itr = existing_changelogs.upper_bound(index);

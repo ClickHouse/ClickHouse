@@ -51,6 +51,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsBool allow_native_copy;
     extern const S3RequestSettingsBool check_objects_after_upload;
     extern const S3RequestSettingsUInt64 max_part_number;
+    extern const S3RequestSettingsBool allow_multipart_copy;
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
@@ -687,7 +688,10 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-            if (!supports_multipart_copy || size <= request_settings[S3RequestSetting::max_single_operation_copy_size])
+            bool use_single_operation_copy = !supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]);
+
+            if (use_single_operation_copy)
                 performSingleOperationCopy();
             else
                 performMultipartUploadCopy();
@@ -811,7 +815,21 @@ namespace
             }
         }
 
-        void performMultipartUploadCopy() { UploadHelper::performMultipartUpload(offset, size); }
+        void performMultipartUploadCopy()
+        {
+            try
+            {
+                UploadHelper::performMultipartUpload(offset, size);
+            }
+            catch (const S3Exception & e)
+            {
+                if (e.getS3ErrorCode() != Aws::S3::S3Errors::ACCESS_DENIED)
+                    throw;
+
+                tryLogCurrentException(log, "Multi part copy failed, trying with regular upload");
+                fallback_method();
+            }
+        }
 
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
@@ -897,7 +915,6 @@ void copyS3File(
 
     std::function<void()> fallback_method = [&] mutable
     {
-
         copyDataToS3File(
             fallback_file_reader,
             src_offset,

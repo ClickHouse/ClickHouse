@@ -23,6 +23,9 @@
 #    include <Common/ZooKeeper/ZooKeeperIO.h>
 #    include <Common/logger_useful.h>
 #    include <Common/setThreadName.h>
+#    include <Compression/CompressionFactory.h>
+
+#    include <boost/algorithm/string/trim.hpp>
 
 
 #    ifdef POCO_HAVE_FD_EPOLL
@@ -622,8 +625,8 @@ void KeeperTCPHandler::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
         compressed_out->cancel();
-    chassert(out);
-    out->cancel();
+    if (out)
+        out->cancel();
 }
 
 ReadBuffer & KeeperTCPHandler::getReadBuffer()

@@ -18,7 +18,6 @@
 #    include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #    include <Client/BuzzHouse/Generator/QueryOracle.h>
 #    include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#    include <Client/BuzzHouse/Generator/SystemTables.h>
 #endif
 
 namespace DB
@@ -334,13 +333,13 @@ bool Client::processWithFuzzing(const String & full_query)
 
 #if USE_BUZZHOUSE
 
-void Client::processQueryAndLog(std::ofstream & outf, const std::string & full_query)
+bool Client::logAndProcessQuery(std::ofstream & outf, const String & full_query)
 {
-    processTextAsSingleQuery(full_query);
     outf << full_query << std::endl;
+    return processTextAsSingleQuery(full_query);
 }
 
-bool Client::processBuzzHouseQuery(const std::string & full_query)
+bool Client::processBuzzHouseQuery(const String & full_query)
 {
     bool server_up = true;
     ASTPtr orig_ast;
@@ -400,11 +399,11 @@ static void finishBuzzHouse(int num)
 bool Client::buzzHouse()
 {
     bool server_up = true;
-    std::string full_query;
+    String full_query;
     BuzzHouse::FuzzConfig fc(this, buzz_house_options_path);
     BuzzHouse::ExternalIntegrations ei(fc);
 
-    //set time to run, but what if a query runs for too long?
+    /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
     if (fc.time_to_run > 0)
     {
@@ -424,71 +423,130 @@ bool Client::buzzHouse()
     }
     else
     {
-        std::string full_query2;
+        String full_query2;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
-        bool replica_setup = false;
-        bool has_cloud_features = false;
+        bool first = true;
+        bool replica_setup = true;
+        bool has_cloud_features = true;
         BuzzHouse::RandomGenerator rg(fc.seed);
         std::ofstream outf(fc.log_path, std::ios::out | std::ios::trunc);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
         BuzzHouse::SQLQuery sq4;
-        int nsuccessfull_create_database = 0;
-        int total_create_database_tries = 0;
-        int nsuccessfull_create_table = 0;
-        int total_create_table_tries = 0;
+        uint32_t nsuccessfull_create_database = 0;
+        uint32_t total_create_database_tries = 0;
+        const uint32_t max_initial_databases = std::min(UINT32_C(3), fc.max_databases);
+        uint32_t nsuccessfull_create_table = 0;
+        uint32_t total_create_table_tries = 0;
+        const uint32_t max_initial_tables = std::min(UINT32_C(10), fc.max_tables);
 
         GOOGLE_PROTOBUF_VERIFY_VERSION;
 
-        processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
-        processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
-        has_cloud_features |= !have_error;
+        has_cloud_features &= processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        has_cloud_features &= processTextAsSingleQuery("CREATE DATABASE fuzztest Engine=Shared;");
         std::cout << "Cloud features " << (has_cloud_features ? "" : "not ") << "detected" << std::endl;
-        processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
-        replica_setup |= !have_error;
+        replica_setup &= processTextAsSingleQuery("CREATE TABLE tx (c0 Int) Engine=ReplicatedMergeTree() ORDER BY tuple();");
         std::cout << "Replica setup " << (replica_setup ? "" : "not ") << "detected" << std::endl;
-        processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
-        processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        auto u = processTextAsSingleQuery("DROP TABLE IF EXISTS tx;");
+        UNUSED(u);
+        auto v = processTextAsSingleQuery("DROP DATABASE IF EXISTS fuzztest;");
+        UNUSED(v);
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
-        processQueryAndLog(
-            outf,
-            "SET engine_file_truncate_on_insert = 1, allow_aggregate_partitions_independently = 1, allow_archive_path_syntax = 1, "
-            "allow_asynchronous_read_from_io_pool_for_merge_tree = 1, allow_changing_replica_until_first_data_packet = 1, "
-            "allow_create_index_without_type = 1, allow_custom_error_code_in_throwif = 1, allow_ddl = 1, "
-            "allow_deprecated_database_ordinary = 1, allow_deprecated_error_prone_window_functions = 1, "
-            "allow_deprecated_snowflake_conversion_functions = 1, allow_deprecated_syntax_for_merge_tree = 1, allow_distributed_ddl = 1, "
-            "allow_drop_detached = 1, allow_execute_multiif_columnar = 1, allow_experimental_analyzer = 1, allow_experimental_codecs = 1, "
-            "allow_experimental_database_materialized_mysql = 1, allow_experimental_database_materialized_postgresql = 1, "
-            "allow_experimental_dynamic_type = 1, allow_experimental_full_text_index = 1, allow_experimental_funnel_functions = 1, "
-            "allow_experimental_hash_functions = 1, allow_experimental_inverted_index = 1, "
-            "allow_experimental_join_right_table_sorting = 1, allow_experimental_json_type = 1, "
-            "allow_experimental_kafka_offsets_storage_in_keeper = 1, allow_experimental_live_view = 1, "
-            "allow_experimental_materialized_postgresql_table = 1, allow_experimental_nlp_functions = 1, "
-            "allow_experimental_parallel_reading_from_replicas = 1, allow_experimental_query_deduplication = 1, "
-            "allow_experimental_shared_set_join = 1, allow_experimental_statistics = 1, allow_experimental_time_series_table = 1, "
-            "allow_experimental_variant_type = 1, allow_experimental_vector_similarity_index = 1, allow_experimental_window_view = 1, "
-            "allow_get_client_http_header = 1, allow_hyperscan = 1, allow_introspection_functions = 1, "
-            "allow_materialized_view_with_bad_select = 1, allow_named_collection_override_by_default = 1, allow_non_metadata_alters = 1, "
-            "allow_nonconst_timezone_arguments = 1, allow_nondeterministic_mutations = 1, "
-            "allow_nondeterministic_optimize_skip_unused_shards = 1, allow_prefetched_read_pool_for_local_filesystem = 1, "
-            "allow_prefetched_read_pool_for_remote_filesystem = 1, allow_push_predicate_when_subquery_contains_with = 1, "
-            "allow_reorder_prewhere_conditions = 1, allow_settings_after_format_in_insert = 1, allow_simdjson = 1, "
-            "allow_statistics_optimize = 1, allow_suspicious_codecs = 1, allow_suspicious_fixed_string_types = 1, allow_suspicious_indices "
-            "= 1, allow_suspicious_low_cardinality_types = 1, allow_suspicious_primary_key = 1, allow_suspicious_ttl_expressions = 1, "
-            "allow_suspicious_variant_types = 1, allow_suspicious_types_in_group_by = 1, allow_suspicious_types_in_order_by = 1, "
-            "allow_unrestricted_reads_from_keeper = 1, enable_analyzer = 1, enable_zstd_qat_codec = 1, type_json_skip_duplicated_paths = "
-            "1, "
-            "allow_experimental_database_iceberg = 1, allow_experimental_bfloat16_type = 1, allow_not_comparable_types_in_order_by = 1, "
-            "allow_not_comparable_types_in_comparison_functions = 1;");
-        processQueryAndLog(outf, rg.nextBool() ? "SET s3_truncate_on_insert = 1;" : "SET s3_create_new_file_on_insert = 1;");
+        DB::Strings defaultSettings
+            = {"engine_file_truncate_on_insert",
+               "allow_aggregate_partitions_independently",
+               "allow_archive_path_syntax",
+               "allow_asynchronous_read_from_io_pool_for_merge_tree",
+               "allow_changing_replica_until_first_data_packet",
+               "allow_create_index_without_type",
+               "allow_custom_error_code_in_throwif",
+               "allow_ddl",
+               "allow_deprecated_database_ordinary",
+               "allow_deprecated_error_prone_window_functions",
+               "allow_deprecated_snowflake_conversion_functions",
+               "allow_deprecated_syntax_for_merge_tree",
+               "allow_distributed_ddl",
+               "allow_drop_detached",
+               "allow_execute_multiif_columnar",
+               "allow_experimental_analyzer",
+               "allow_experimental_codecs",
+               "allow_experimental_database_materialized_mysql",
+               "allow_experimental_database_materialized_postgresql",
+               "allow_experimental_dynamic_type",
+               "allow_experimental_full_text_index",
+               "allow_experimental_funnel_functions",
+               "allow_experimental_hash_functions",
+               "allow_experimental_inverted_index",
+               "allow_experimental_join_right_table_sorting",
+               "allow_experimental_json_type",
+               "allow_experimental_kafka_offsets_storage_in_keeper",
+               "allow_experimental_live_view",
+               "allow_experimental_materialized_postgresql_table",
+               "allow_experimental_nlp_functions",
+               "allow_experimental_parallel_reading_from_replicas",
+               "allow_experimental_query_deduplication",
+               "allow_experimental_shared_set_join",
+               "allow_experimental_statistics",
+               "allow_experimental_time_series_table",
+               "allow_experimental_variant_type",
+               "allow_experimental_vector_similarity_index",
+               "allow_experimental_window_view",
+               "allow_get_client_http_header",
+               "allow_hyperscan",
+               "allow_introspection_functions",
+               "allow_materialized_view_with_bad_select",
+               "allow_named_collection_override_by_default",
+               "allow_non_metadata_alters",
+               "allow_nonconst_timezone_arguments",
+               "allow_nondeterministic_mutations",
+               "allow_nondeterministic_optimize_skip_unused_shards",
+               "allow_prefetched_read_pool_for_local_filesystem",
+               "allow_prefetched_read_pool_for_remote_filesystem",
+               "allow_push_predicate_when_subquery_contains_with",
+               "allow_reorder_prewhere_conditions",
+               "allow_settings_after_format_in_insert",
+               "allow_simdjson",
+               "allow_statistics_optimize",
+               "allow_suspicious_codecs",
+               "allow_suspicious_fixed_string_types",
+               "allow_suspicious_indices",
+               "allow_suspicious_low_cardinality_types",
+               "allow_suspicious_primary_key",
+               "allow_suspicious_ttl_expressions",
+               "allow_suspicious_variant_types",
+               "allow_suspicious_types_in_group_by",
+               "allow_suspicious_types_in_order_by",
+               "allow_unrestricted_reads_from_keeper",
+               "enable_analyzer",
+               "enable_zstd_qat_codec",
+               "type_json_skip_duplicated_paths",
+               "allow_experimental_database_iceberg",
+               "allow_experimental_bfloat16_type",
+               "allow_not_comparable_types_in_order_by",
+               "allow_not_comparable_types_in_comparison_functions"};
+        defaultSettings.emplace_back(rg.nextBool() ? "s3_truncate_on_insert" : "s3_create_new_file_on_insert");
 
-        //Load server configurations for the fuzzer
+        full_query.resize(0);
+        for (const auto & entry : defaultSettings)
+        {
+            full_query += fmt::format("{}{} = 1", first ? "" : ", ", entry);
+            first = false;
+        }
+        auto w = logAndProcessQuery(outf, fmt::format("SET {};", full_query));
+        UNUSED(w);
+        if (ei.hasClickHouseExtraServerConnection())
+        {
+            ei.setDefaultSettings(BuzzHouse::PeerTableDatabase::ClickHouse, defaultSettings);
+        }
+
+        /// Load server configurations for the fuzzer
         fc.loadServerConfigurations();
-        loadFuzzerSettings(fc);
-        SCOPE_EXIT({ BuzzHouse::clearSystemTables(); });
-        BuzzHouse::loadSystemTables(has_cloud_features);
+        loadFuzzerServerSettings(fc);
+        loadFuzzerTableSettings(fc);
+        loadFuzzerOracleSettings(fc);
+        loadSystemTables(fc);
 
         full_query2.reserve(8192);
         BuzzHouse::StatementGenerator gen(fc, ei, has_cloud_features, replica_setup);
@@ -498,9 +556,9 @@ bool Client::buzzHouse()
             sq1.Clear();
             full_query.resize(0);
 
-            if (total_create_database_tries < 10 && nsuccessfull_create_database < 3)
+            if (total_create_database_tries < 10 && nsuccessfull_create_database < max_initial_databases)
             {
-                (void)gen.generateNextCreateDatabase(rg, sq1.mutable_inner_query()->mutable_create_database());
+                gen.generateNextCreateDatabase(rg, sq1.mutable_explain()->mutable_inner_query()->mutable_create_database());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= processBuzzHouseQuery(full_query);
@@ -511,9 +569,9 @@ bool Client::buzzHouse()
             }
             else if (
                 gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
-                && nsuccessfull_create_table < 10)
+                && nsuccessfull_create_table < max_initial_tables)
             {
-                (void)gen.generateNextCreateTable(rg, sq1.mutable_inner_query()->mutable_create_table());
+                gen.generateNextCreateTable(rg, sq1.mutable_explain()->mutable_inner_query()->mutable_create_table());
                 BuzzHouse::SQLQueryToString(full_query, sq1);
                 outf << full_query << std::endl;
                 server_up &= processBuzzHouseQuery(full_query);
@@ -530,143 +588,164 @@ bool Client::buzzHouse()
                     * static_cast<uint32_t>(fc.use_dump_table_oracle
                                             && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
                 const uint32_t peer_oracle
-                    = 15 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
+                    = 30 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t run_query = 910;
                 const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query;
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
                 const uint32_t nopt = next_dist(rg.generator);
 
+                if (nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
+                {
+                    qo.resetOracleValues();
+                }
                 if (correctness_oracle && nopt < (correctness_oracle + 1))
                 {
-                    //correctness test query
-                    (void)qo.generateCorrectnessTestFirstQuery(rg, gen, sq1);
+                    /// Correctness test query
+                    qo.generateCorrectnessTestFirstQuery(rg, gen, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Correctness query");
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     sq2.Clear();
                     full_query.resize(0);
-                    (void)qo.generateCorrectnessTestSecondQuery(sq1, sq2);
+                    qo.generateCorrectnessTestSecondQuery(sq1, sq2);
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.processOracleQueryResult(false, !have_error, "Correctness query");
+                    qo.processSecondOracleQueryResult(!have_error, ei, "Correctness query");
                 }
                 else if (settings_oracle && nopt < (correctness_oracle + settings_oracle + 1))
                 {
-                    //test running query with different settings
-                    (void)qo.generateFirstSetting(rg, sq1);
+                    /// Test running query with different settings
+                    qo.generateFirstSetting(rg, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
+                    qo.setIntermediateStepSuccess(!have_error);
 
                     sq2.Clear();
                     full_query2.resize(0);
-                    (void)qo.generateOracleSelectQuery(rg, false, gen, sq2);
+                    qo.generateOracleSelectQuery(rg, BuzzHouse::PeerQuery::None, gen, sq2);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Multi setting query");
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     sq3.Clear();
                     full_query.resize(0);
-                    (void)qo.generateSecondSetting(sq1, sq3);
+                    qo.generateSecondSetting(sq1, sq3);
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
+                    qo.setIntermediateStepSuccess(!have_error);
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(false, !have_error, "Multi setting query");
+                    qo.processSecondOracleQueryResult(!have_error, ei, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
                 {
-                    bool second_success = true;
                     const BuzzHouse::SQLTable & t
                         = rg.pickRandomlyFromVector(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_dump_table_oracle));
 
-                    //test in and out formats
+                    /// Test in and out formats
                     full_query2.resize(0);
-                    (void)qo.dumpTableContent(rg, gen, t, sq1);
+                    qo.dumpTableContent(rg, gen, t, sq1);
                     BuzzHouse::SQLQueryToString(full_query2, sq1);
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Dump and read table");
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     sq2.Clear();
-                    (void)qo.generateExportQuery(rg, gen, t, sq2);
+                    qo.generateExportQuery(rg, gen, t, sq2);
                     BuzzHouse::SQLQueryToString(full_query, sq2);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    second_success &= !have_error;
+                    qo.setIntermediateStepSuccess(!have_error);
 
                     sq3.Clear();
                     full_query.resize(0);
-                    (void)qo.generateClearQuery(t, sq3);
+                    qo.generateClearQuery(t, sq3);
                     BuzzHouse::SQLQueryToString(full_query, sq3);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    second_success &= !have_error;
+                    qo.setIntermediateStepSuccess(!have_error);
 
                     sq4.Clear();
                     full_query.resize(0);
-                    (void)qo.generateImportQuery(gen, t, sq2, sq4);
+                    qo.generateImportQuery(gen, t, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-                    second_success &= !have_error;
+                    qo.setIntermediateStepSuccess(!have_error);
 
                     outf << full_query2 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query2);
-                    second_success &= !have_error;
-                    (void)qo.processOracleQueryResult(false, second_success, "Dump and read table");
+                    qo.processSecondOracleQueryResult(!have_error, ei, "Dump and read table");
                 }
                 else if (peer_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + 1))
                 {
-                    bool second_success = true;
+                    /// Test results with peer tables
+                    bool has_success = false;
+                    BuzzHouse::PeerQuery nquery
+                        = ((!ei.hasMySQLConnection() && !ei.hasPostgreSQLConnection() && !ei.hasSQLiteConnection()) || rg.nextBool())
+                            && gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_clickhouse_table_peer_oracle)
+                        ? BuzzHouse::PeerQuery::ClickHouseOnly
+                        : BuzzHouse::PeerQuery::AllPeers;
+                    const bool clickhouse_only = nquery == BuzzHouse::PeerQuery::ClickHouseOnly;
 
-                    //test results with peer tables
                     sq1.Clear();
-                    full_query.resize(0);
-                    (void)qo.generateOracleSelectQuery(rg, true, gen, sq1);
-                    BuzzHouse::SQLQueryToString(full_query, sq1);
-                    outf << full_query << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query);
-                    (void)qo.processOracleQueryResult(true, !have_error, "Peer table query");
-
                     sq2.Clear();
-                    (void)qo.replaceQueryWithTablePeers(rg, sq1, gen, peer_queries, sq2);
-                    (void)qo.truncatePeerTables(gen);
+                    qo.generateOracleSelectQuery(rg, nquery, gen, sq1);
+                    qo.replaceQueryWithTablePeers(rg, sq1, gen, peer_queries, sq2);
+
+                    if (clickhouse_only)
+                    {
+                        ei.replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
+                    }
+                    qo.truncatePeerTables(gen);
                     for (const auto & entry : peer_queries)
                     {
                         full_query2.resize(0);
                         BuzzHouse::SQLQueryToString(full_query2, entry);
                         outf << full_query2 << std::endl;
                         server_up &= processBuzzHouseQuery(full_query2);
-                        second_success &= !have_error;
+                        qo.setIntermediateStepSuccess(!have_error);
                     }
-                    (void)qo.optimizePeerTables(gen);
+                    qo.optimizePeerTables(gen);
+
+                    full_query.resize(0);
+                    BuzzHouse::SQLQueryToString(full_query, sq1);
+                    outf << full_query << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query);
+                    qo.processFirstOracleQueryResult(!have_error, ei);
 
                     full_query2.resize(0);
                     BuzzHouse::SQLQueryToString(full_query2, sq2);
                     outf << full_query2 << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query2);
-                    second_success &= !have_error;
-                    (void)qo.processOracleQueryResult(false, second_success, "Peer table query");
+                    if (clickhouse_only)
+                    {
+                        has_success = ei.performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, full_query2);
+                    }
+                    else
+                    {
+                        server_up &= processBuzzHouseQuery(full_query2);
+                        has_success = !have_error;
+                    }
+                    qo.processSecondOracleQueryResult(has_success, ei, "Peer table query");
                 }
                 else if (run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + run_query + 1))
                 {
-                    (void)gen.generateNextStatement(rg, sq1);
+                    gen.generateNextStatement(rg, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
-
                     gen.updateGenerator(sq1, ei, !have_error);
                 }
                 else
                 {
-                    assert(0);
+                    chassert(0);
                 }
             }
         }

@@ -2,6 +2,8 @@ import glob
 from itertools import chain
 from pathlib import Path
 
+from praktika import Artifact, Job
+
 from . import Workflow
 from .mangle import _get_workflows
 from .settings import GHRunners, Settings
@@ -20,9 +22,35 @@ class Validator:
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
-        workflows = _get_workflows()
+        if Settings.USE_CUSTOM_GH_AUTH:
+            cls.evaluate_check_simple(
+                Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,
+                f"Setting SECRET_GH_APP_ID and SECRET_GH_APP_PEM_KEY must be provided with USE_CUSTOM_GH_AUTH == True",
+            )
+
+        workflows = _get_workflows(_for_validation_check=True)
         for workflow in workflows:
             print(f"Validating workflow [{workflow.name}]")
+            if Settings.USE_CUSTOM_GH_AUTH:
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_ID)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_ID}] must be configured for workflow",
+                    workflow.name,
+                )
+                secret = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY)
+                cls.evaluate_check(
+                    bool(secret),
+                    f"Secret [{Settings.SECRET_GH_APP_PEM_KEY}] must be configured for workflow",
+                    workflow.name,
+                )
+
+            for job in workflow.jobs:
+                cls.evaluate_check(
+                    isinstance(job, Job.Config),
+                    f"Invalid job type [{job}]",
+                    workflow.name,
+                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
@@ -58,6 +86,11 @@ class Validator:
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
+                    cls.evaluate_check(
+                        isinstance(artifact, Artifact.Config),
+                        f"Must be Artifact.Config type, not {type(artifact)}: [{artifact}]",
+                        workflow.name,
+                    )
                     if artifact.is_s3_artifact():
                         assert (
                             Settings.S3_ARTIFACT_PATH
@@ -73,11 +106,6 @@ class Validator:
                             assert not any(
                                 [r in GHRunners for r in job.runs_on]
                             ), f"GH runners [{job.name}:{job.runs_on}] must not be used with S3 as artifact storage"
-
-                if job.allow_merge_on_failure:
-                    assert (
-                        workflow.enable_merge_ready_status
-                    ), f"Job property allow_merge_on_failure must be used only with enabled workflow.enable_merge_ready_status, workflow [{workflow.name}], job [{job.name}]"
 
             if workflow.enable_cache:
                 assert (

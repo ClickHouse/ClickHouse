@@ -349,6 +349,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
+    result.etag = object_info.etag;
     result.attributes = object_info.metadata;
 
     return result;
@@ -528,6 +529,11 @@ ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & p
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
     return key_generator->generate(path, /* is_directory */ false, key_prefix);
+}
+
+bool S3ObjectStorage::areObjectKeysRandom() const
+{
+    return key_generator->isRandom();
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()

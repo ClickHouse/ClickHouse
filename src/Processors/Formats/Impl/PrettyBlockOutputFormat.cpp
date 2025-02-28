@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <IO/WriteBuffer.h>
@@ -159,14 +160,8 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
             {
                 thread.emplace([this, thread_group = CurrentThread::getGroup()]
                 {
-                    SCOPE_EXIT_SAFE(
-                        if (thread_group)
-                            CurrentThread::detachFromGroupIfNotDetached();
-                    );
-                    if (thread_group)
-                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    ThreadGroupSwitcher switcher(thread_group, "PrettyWriter");
 
-                    setThreadName("PrettyWriter");
                     writingThread();
                 });
             }
@@ -229,6 +224,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     if (format_settings.pretty.fallback_to_vertical
         && displayed_rows == 0
         && num_rows <= format_settings.pretty.fallback_to_vertical_max_rows_per_chunk
+        && num_columns >= format_settings.pretty.fallback_to_vertical_min_columns
         && (table_width >= format_settings.pretty.fallback_to_vertical_min_table_width || has_newlines))
     {
         use_vertical_format = true;

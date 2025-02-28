@@ -1,13 +1,13 @@
 #pragma once
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Columns/IColumn.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
