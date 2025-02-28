@@ -258,12 +258,23 @@ void ExecutableEvolutionFunction::fillMissingElementsInPermutation(std::vector<s
 
 void ExecutableEvolutionFunction::lazyInitialize() const
 {
-    std::stack<ExecutableEvolutionFunction::TraverseItem> walk_stack;
+    /// To process schema evolution in case when we have tree-based tuple we use DFS
+    /// and process 3-stage pipeline, which was described above.
+    /// Struct below is state of out DFS algorithm.
+    struct TraverseItem
+    {
+        Poco::JSON::Array::Ptr old_subfields = nullptr;
+        Poco::JSON::Array::Ptr fields = nullptr;
+        std::vector<String> current_path = {};
+        std::vector<std::vector<size_t>> permutations = {};
+    };
+
+    std::stack<TraverseItem> walk_stack;
     {
         auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
         auto old_subfields = old_json->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
 
-        walk_stack.push(ExecutableEvolutionFunction::TraverseItem{old_subfields, subfields, {}, {}});
+        walk_stack.push(TraverseItem{old_subfields, subfields, {}, {}});
     }
 
     while (!walk_stack.empty())

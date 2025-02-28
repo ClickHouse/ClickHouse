@@ -97,17 +97,6 @@ public:
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
 
 private:
-    /// To process schema evolution in case when we have tree-based tuple we use DFS
-    /// and process 3-stage pipeline, which was described above.
-    /// Struct below is state of out DFS algorithm.
-    struct TraverseItem
-    {
-        Poco::JSON::Array::Ptr old_subfields;
-        Poco::JSON::Array::Ptr fields;
-        std::vector<String> current_path;
-        std::vector<std::vector<size_t>> permutations;
-    };
-
     void lazyInitialize() const;
     static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size);
 
