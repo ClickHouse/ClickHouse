@@ -5,6 +5,7 @@
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
@@ -1128,6 +1129,32 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
              {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_io_thread_pool_size",
+             {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_io_thread_pool_free_size",
+             {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"io_thread_pool_queue_size",
+             {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_backups_io_thread_pool_size",
+             {getBackupsIOThreadPool().isInitialized() ? std::to_string(getBackupsIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_backups_io_thread_pool_free_size",
+             {getBackupsIOThreadPool().isInitialized() ? std::to_string(getBackupsIOThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"backups_io_thread_pool_queue_size",
+             {getBackupsIOThreadPool().isInitialized() ? std::to_string(getBackupsIOThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_fetch_partition_thread_pool_size",
+             {getFetchPartitionThreadPool().isInitialized() ? std::to_string(getFetchPartitionThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_active_parts_loading_thread_pool_size",
+             {getActivePartsLoadingThreadPool().isInitialized() ? std::to_string(getActivePartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_outdated_parts_loading_thread_pool_size",
+             {getOutdatedPartsLoadingThreadPool().isInitialized() ? std::to_string(getOutdatedPartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_parts_cleaning_thread_pool_size",
+             {getPartsCleaningThreadPool().isInitialized() ? std::to_string(getPartsCleaningThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_prefixes_deserialization_thread_pool_size",
+             {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_prefixes_deserialization_thread_pool_free_size",
+             {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"prefixes_deserialization_thread_pool_thread_pool_queue_size",
+             {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
