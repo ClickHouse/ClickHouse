@@ -15,7 +15,7 @@ private:
 
     MD5Impl md5_hash1, md5_hash2;
     Poco::DigestEngine::Digest first_digest, second_digest;
-    uint64_t query_duration_ms1 = 0, memory_usage1 = 0, query_duration_ms2 = 0, memory_usage2 = 0;
+    PerformanceResult res1, res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
     bool first_success = true, other_steps_sucess = true, can_test_query_success, measure_performance;
