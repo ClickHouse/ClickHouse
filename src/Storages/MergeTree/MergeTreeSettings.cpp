@@ -19,6 +19,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
+#include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
@@ -489,7 +490,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
-            number_of_free_entries_in_pool_to_execute_mutation,
+            number_of_free_entries_in_pool_to_execute_mutation.value,
             background_pool_tasks);
     }
 
@@ -501,7 +502,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_lower_max_size_of_merge,
+            number_of_free_entries_in_pool_to_lower_max_size_of_merge.value,
             background_pool_tasks);
     }
 
@@ -513,7 +514,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_optimize_entire_partition,
+            number_of_free_entries_in_pool_to_execute_optimize_entire_partition.value,
             background_pool_tasks);
     }
 
@@ -523,7 +524,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
-            index_granularity);
+            index_granularity.value);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
@@ -535,8 +536,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity_bytes: {} is lower than specified min_index_granularity_bytes: {}",
-            index_granularity_bytes,
-            min_index_granularity_bytes);
+            index_granularity_bytes.value,
+            min_index_granularity_bytes.value);
     }
 
     // If min_bytes_to_rebalance_partition_over_jbod is not disabled i.e > 0 b, then always ensure that
@@ -548,7 +549,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
-            min_bytes_to_rebalance_partition_over_jbod,
+            min_bytes_to_rebalance_partition_over_jbod.value,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
 
@@ -557,7 +558,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period, cleanup_delay_period);
+            max_cleanup_delay_period.value, cleanup_delay_period.value);
     }
 
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
@@ -565,7 +566,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
+            max_merge_selecting_sleep_ms.value, merge_selecting_sleep_ms.value);
     }
 
     if (merge_selecting_sleep_slowdown_factor < 1.f)
@@ -573,7 +574,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor);
+            merge_selecting_sleep_slowdown_factor.value);
     }
 }
 

@@ -56,7 +56,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     if (read_until_position)
     {
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -99,7 +99,7 @@ bool ReadBufferFromWebServer::nextImpl()
             return false;
 
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
     }
 
     if (!impl)
