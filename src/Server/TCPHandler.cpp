@@ -53,6 +53,9 @@
 #include <base/defines.h>
 #include <base/scope_guard.h>
 
+#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnSparse.h>
+
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
@@ -2327,6 +2330,30 @@ void TCPHandler::initBlockInput(QueryState & state)
 }
 
 
+CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_settings, Protocol::Compression compression)
+{
+    std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
+    std::optional<int> level;
+    if (method == "ZSTD")
+        level = query_settings[Setting::network_zstd_compression_level];
+
+    if (compression == Protocol::Compression::Enable)
+    {
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !query_settings[Setting::allow_suspicious_codecs],
+            query_settings[Setting::allow_experimental_codecs],
+            query_settings[Setting::enable_deflate_qpl_codec],
+            query_settings[Setting::enable_zstd_qat_codec]);
+
+        return CompressionCodecFactory::instance().get(method, level);
+    }
+
+    return nullptr;
+}
+
+
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
@@ -2334,24 +2361,8 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
         const Settings & query_settings = state.query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
-            std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
-            std::optional<int> level;
-            if (method == "ZSTD")
-                level = query_settings[Setting::network_zstd_compression_level];
-
-            if (state.compression == Protocol::Compression::Enable)
-            {
-                CompressionCodecFactory::instance().validateCodec(
-                    method,
-                    level,
-                    !query_settings[Setting::allow_suspicious_codecs],
-                    query_settings[Setting::allow_experimental_codecs],
-                    query_settings[Setting::enable_deflate_qpl_codec],
-                    query_settings[Setting::enable_zstd_qat_codec]);
-
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
-            }
+            if (auto codec = getCompressionCodec(query_settings, state.compression))
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
             else
                 state.maybe_compressed_out = out;
         }
@@ -2441,8 +2452,42 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
 }
 
 
-void TCPHandler::sendData(QueryState & state, const Block & block)
+static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
 {
+    if (!codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+        return block;
+
+    Block res;
+    res.info = block.info;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+
+        // TODO(nickitat): support Tuple
+        if (!elem.type->haveSubtypes() || elem.type->lowCardinality() || elem.type->isNullable() || isArray(elem.type->getTypeId()))
+        {
+            auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
+            { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
+            auto col = ColumnBlob::create(std::move(task), column.column);
+            col->convertTo();
+
+            column.column = std::move(col);
+        }
+
+        res.insert(std::move(column));
+    }
+    return res;
+}
+
+
+void TCPHandler::sendData(QueryState & state, const Block & block_)
+{
+    auto block = prepare(
+        block_,
+        getCompressionCodec(state.query_context->getSettingsRef(), state.compression),
+        client_tcp_protocol_version,
+        getFormatSettings(state.query_context));
+
     initBlockOutput(state, block);
 
     size_t prev_bytes_written_out = out->count();
