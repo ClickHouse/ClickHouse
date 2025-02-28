@@ -1,7 +1,7 @@
 ---
-title : PrettyCompactMonoBlock
+title: PrettyCompactMonoBlock
 slug: /interfaces/formats/PrettyCompactMonoBlock
-keywords : [PrettyCompactMonoBlock]
+keywords: [PrettyCompactMonoBlock]
 input_format: false
 output_format: true
 alias: []

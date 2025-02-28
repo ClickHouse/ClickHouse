@@ -2,7 +2,7 @@
     <remote_servers>
         <test_incorrect_cluster_no_shard_name>
             <node>
-                <shard_name>First</shard_name>
+                <name>First</name>
                 <host>localhost</host>
                 <port>9000</port>
             </node>
