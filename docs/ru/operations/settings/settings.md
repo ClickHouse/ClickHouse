@@ -430,7 +430,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](/operations/settings/formats#input_format_null_as_default), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
@@ -444,7 +444,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](/operations/settings/formats#input_format_null_as_default) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
@@ -593,7 +593,7 @@ ClickHouse может парсить только базовый формат `Y
 
 ## join_default_strictness {#settings-join_default_strictness}
 
-Устанавливает строгость по умолчанию для [JOIN](../../sql-reference/statements/select/join.md#select-join).
+Устанавливает строгость по умолчанию для [JOIN](/sql-reference/statements/select/join).
 
 Возможные значения:
 
@@ -618,7 +618,7 @@ ClickHouse может парсить только базовый формат `Y
 
 При использовании алгоритма `hash` правая часть `JOIN` загружается в оперативную память.
 
-При использовании алгоритма `partial_merge` сервер сортирует данные и сбрасывает их на диск. Работа алгоритма `merge` в ClickHouse немного отличается от классической реализации. Сначала ClickHouse сортирует правую таблицу по блокам на основе [ключей соединения](../../sql-reference/statements/select/join.md#select-join) и для отсортированных блоков строит индексы min-max. Затем он сортирует куски левой таблицы на основе ключей соединения и объединяет их с правой таблицей операцией `JOIN`. Созданные min-max индексы используются для пропуска тех блоков из правой таблицы, которые не участвуют в данной операции `JOIN`.
+При использовании алгоритма `partial_merge` сервер сортирует данные и сбрасывает их на диск. Работа алгоритма `merge` в ClickHouse немного отличается от классической реализации. Сначала ClickHouse сортирует правую таблицу по блокам на основе [ключей соединения](/sql-reference/statements/select/join) и для отсортированных блоков строит индексы min-max. Затем он сортирует куски левой таблицы на основе ключей соединения и объединяет их с правой таблицей операцией `JOIN`. Созданные min-max индексы используются для пропуска тех блоков из правой таблицы, которые не участвуют в данной операции `JOIN`.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -637,7 +637,7 @@ ClickHouse может парсить только базовый формат `Y
 
 См. также:
 
--   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
+-   [Секция JOIN](/sql-reference/statements/select/join)
 -   [Движок таблиц Join](../../engines/table-engines/special/join.md)
 -   [join_default_strictness](#settings-join_default_strictness)
 
@@ -2431,7 +2431,7 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 ## transform_null_in {#transform_null_in}
 
-Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
+Разрешает сравнивать значения [NULL](/operations/settings/formats#input_format_null_as_default) в операторе [IN](../../sql-reference/operators/in.md).
 
 По умолчанию, значения `NULL` нельзя сравнивать, поскольку `NULL` обозначает неопределённое значение. Следовательно, сравнение `expr = NULL` должно всегда возвращать `false`. С этой настройкой `NULL = NULL` возвращает `true` в операторе `IN`.
 

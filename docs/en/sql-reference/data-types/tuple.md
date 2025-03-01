@@ -62,7 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 ## Data Type Detection {#data-type-detection}
 
-When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](../../sql-reference/syntax.md#null-literal), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/operations/settings/formats#input_format_null_as_default), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
 
 Example of automatic data type detection:
 
