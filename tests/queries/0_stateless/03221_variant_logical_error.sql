@@ -14,7 +14,6 @@ insert into test VALUES ('', {});
 insert into test VALUES ('a', {'a':'a', 'b':1, 'c': '2020-01-01 10:10:10'});
 insert into test VALUES ('a', {'a':'b', 'b':1, 'c': '2020-01-01'});
 insert into test VALUES ('z', {'a':'a'});
-
 insert into test VALUES ('a', {'a': Null});
 insert into test VALUES ('a', {'a': Null, 'a': Null});
 insert into test VALUES ('a', {'a': Null, 'c': Null});
