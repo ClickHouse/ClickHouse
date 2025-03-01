@@ -21,6 +21,7 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
     {
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = recursiveRemoveSparse(src_column.column);
+        src_column.column = src_column.column->convertToFullColumnIfConst();
         result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
