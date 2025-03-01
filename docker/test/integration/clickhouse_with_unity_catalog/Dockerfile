@@ -11,7 +11,7 @@ RUN git clone https://github.com/unitycatalog/unitycatalog.git && cd unitycatalo
             build/sbt -mem 4096 package && \
             sed -i 's/\\"nullable\\":true/\\"nullable\\":false/g' etc/data/external/unity/default/tables/user_countries/_delta_log/00000000000000000000.json
 
-RUN curl -fsSL -O https://dlcdn.apache.org/spark/spark-3.5.4/spark-3.5.4-bin-hadoop3.tgz \
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.4/spark-3.5.4-bin-hadoop3.tgz \
     && tar xzvf spark-3.5.4-bin-hadoop3.tgz -C / \
     && rm spark-3.5.4-bin-hadoop3.tgz
 
