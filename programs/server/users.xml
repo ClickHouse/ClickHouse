@@ -74,6 +74,7 @@
                      Strongly recommended that regexp is ends with $
                  All results of DNS requests are cached till server restart.
             -->
+            <!-- By default, default user with no password only accept connection from localhost. -->
             <networks>
                 <ip>::1</ip>
                 <ip>127.0.0.1</ip>
