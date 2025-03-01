@@ -224,8 +224,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(data_part, res.read_mark_ranges));
                 LOG_DEBUG(
                     log,
-                    "Mark ranges info, part_name: {}, ranges: {}",
+                    "Mark ranges info, part_name: {}, num_read_rows: {}, ranges: {}",
                     data_part->name,
+                    res.num_read_rows,
                     toString(res.read_mark_ranges));
             }
 
