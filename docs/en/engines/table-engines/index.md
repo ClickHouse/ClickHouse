@@ -89,9 +89,9 @@ Engines in the family:
 
 ## Virtual Columns {#table_engines-virtual_columns}
 
-Virtual column is an integral table engine attribute that is defined in the engine source code.
+A virtual column is an integral table engine attribute that is defined in the engine source code.
 
-You shouldn't specify virtual columns in the `CREATE TABLE` query and you can't see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can't insert data into virtual columns.
+You shouldn't specify virtual columns in the `CREATE TABLE` query, and you can't see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can't insert data into virtual columns.
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
