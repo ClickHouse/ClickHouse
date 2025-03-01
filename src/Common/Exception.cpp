@@ -229,7 +229,7 @@ Exception::FramePointers Exception::getStackFramePointers() const
     return frame_pointers;
 }
 
-thread_local std::atomic<UInt64> Exception::parent_thread_id = 0;
+//thread_local std::atomic<UInt64> Exception::parent_thread_id = 0;
 
 thread_local bool Exception::enable_job_stack_trace = false;
 thread_local bool Exception::can_use_thread_frame_pointers = false;
