@@ -64,7 +64,7 @@ public:
         message_format_string_args = msg.format_string_args;
     }
 
-//    static thread_local std::atomic<UInt64> parent_thread_id;
+    inline static thread_local std::atomic<UInt64> parent_thread_id = 0;
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
