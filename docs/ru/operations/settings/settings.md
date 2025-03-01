@@ -123,7 +123,7 @@ ClickHouse применяет настройку в тех случаях, ко�
 **См. также**
 
 -   [max_block_size](#setting-max_block_size)
--   [min_insert_block_size_rows](#min-insert-block-size-rows)
+-   [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 
 ## enable_http_compression {#settings-enable_http_compression}
 
@@ -1007,7 +1007,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Это значение намного больше, чем `max_block_size`. Это сделано, потому что некоторые движки таблиц (`*MergeTree`) будут на каждый вставляемый блок формировать кусок данных на диске, что является довольно большой сущностью. Также, в таблицах типа `*MergeTree`, данные сортируются при вставке, и достаточно большой размер блока позволяет отсортировать больше данных в оперативке.
 
-## min_insert_block_size_rows {#min-insert-block-size-rows}
+## min_insert_block_size_rows {/operations/settings/settings#min_insert_block_size_rows}
 
 Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера.
 
@@ -1018,7 +1018,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 1048576.
 
-## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+## min_insert_block_size_bytes {/operations/settings/settings#min_insert_block_size_bytes}
 
 Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера.
 
@@ -2607,7 +2607,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также:**
 
--   [min_insert_block_size_rows](#min-insert-block-size-rows)
+-   [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 
 ## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
 
@@ -2622,7 +2622,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также:**
 
--   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+-   [min_insert_block_size_bytes](/operations/settings/settings#min_insert_block_size_bytes)
 
 ## output_format_pretty_grid_charset {#output-format-pretty-grid-charset}
 

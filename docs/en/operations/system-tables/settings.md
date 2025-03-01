@@ -92,7 +92,7 @@ Possible values:
 
 **See Also**
 
-- [min_insert_block_size_rows](#min-insert-block-size-rows)
+- [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -116,7 +116,7 @@ Possible values:
 
 **See also**
 
-- [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+- [min_insert_block_size_bytes](/operations/settings/settings#min_insert_block_size_bytes)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
