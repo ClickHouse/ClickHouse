@@ -914,7 +914,7 @@ arrayDistinct(array)
 
 **参数**
 
--   `array` –类型为[数组](/data_types/array/)。
+-   `array` –类型为[数组](/sql-reference/data-types/array)。
 
 **返回值**
 
