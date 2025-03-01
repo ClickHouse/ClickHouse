@@ -28,7 +28,7 @@ ClickHouse не удаляет данные в реальном времени, 
 
 Это - самый распространенный подход к тому, чтобы обеспечить соблюдение принципов [GDPR](https://gdpr-info.eu) в вашей системе на ClickHouse.
 
-Подробнее смотрите в разделе [Мутации](../../sql-reference/statements/alter/index.md#alter-mutations).
+Подробнее смотрите в разделе [Мутации](/sql-reference/statements/alter#mutations).
 
 ## DROP PARTITION {#drop-partition}
 

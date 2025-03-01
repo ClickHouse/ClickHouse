@@ -323,8 +323,8 @@ now()
 ```
 
 There are also:
-- [Regular functions](../sql-reference/functions/overview).
-- [Aggregate functions](../sql-reference/aggregate-functions/index.md).
+- [Regular functions](/sql-reference/functions/overview).
+- [Aggregate functions](/sql-reference/aggregate-functions).
 
 Some aggregate functions can contain two lists of arguments in brackets. For example: 
 
@@ -361,9 +361,9 @@ Data types and table engines in the `CREATE` query are written the same way as i
 In other words, they may or may not contain an argument list in brackets. 
 
 For more information, see the sections:
-- [Data types](/docs/sql-reference/data-types/index.md)
-- [Table engines](/docs/engines/table-engines/index.md)
-- [CREATE](/docs/sql-reference/statements/create/index.md).
+- [Data types](/sql-reference/data-types/index.md)
+- [Table engines](/engines/table-engines/index.md)
+- [CREATE](/sql-reference/statements/create/index.md).
 
 ## Expressions {#expressions}
 
@@ -449,4 +449,4 @@ You can change this default behavior by setting [prefer_column_name_to_alias](..
 ## Asterisk {#asterisk}
 
 In a `SELECT` query, an asterisk can replace the expression. 
-For more information, see the section [SELECT](/docs/sql-reference/statements/select/index.md#asterisk).
+For more information, see the section [SELECT](/sql-reference/statements/select/index.md#asterisk).
