@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Common/logger_useful.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -69,9 +70,12 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Distinct - Union - Something
         ///                  - Something
 
+        union_step->liftedUpDueToDistinct() = true;
+
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
         std::swap(parent_node->children.front(), child_node->children.front());
+        distinct->disallowInOrderOptimization() = true;
 
         ///       - Distinct - Something
         /// Union - Something
@@ -83,13 +87,20 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
             distinct_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &distinct_node;
 
-            distinct_node.step = std::make_unique<DistinctStep>(
+            auto new_distinct = std::make_unique<DistinctStep>(
                 distinct_node.children.front()->step->getOutputHeader(),
                 distinct->getSetSizeLimits(),
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
-            distinct_node.step->setStepDescription(distinct->getStepDescription());
+            new_distinct->setStepDescription(distinct->getStepDescription());
+            if (union_step->parallelReplicas())
+            {
+                // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Disallow distinct in order: {}", StackTrace().toString());
+                new_distinct->disallowInOrderOptimization() = true;
+            }
+
+            distinct_node.step = std::move(new_distinct);
         }
 
         ///       - Distinct - Something

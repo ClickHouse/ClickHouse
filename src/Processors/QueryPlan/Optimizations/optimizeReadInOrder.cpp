@@ -1253,6 +1253,16 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!distinct->getSortDescription().empty())
         return;
 
+    // LOG_DEBUG(
+    //     getLogger(__PRETTY_FUNCTION__),
+    //     "Distinct in order is (not) dissallowed: {}\n{}",
+    //     distinct->disallowInOrderOptimization(),
+    //     StackTrace().toString());
+    if (distinct->disallowInOrderOptimization())
+    {
+        return;
+    }
+
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
     if (order_info.input_order)
         distinct->applyOrder(std::move(order_info.sort_description));
