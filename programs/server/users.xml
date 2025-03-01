@@ -75,7 +75,8 @@
                  All results of DNS requests are cached till server restart.
             -->
             <networks>
-                <ip>::/0</ip>
+                <ip>::1</ip>
+                <ip>127.0.0.1</ip>
             </networks>
 
             <!-- Settings profile for user. -->
