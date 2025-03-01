@@ -1,6 +1,6 @@
 #include <Databases/DataLake/UnityCatalog.h>
 
-#if USE_AVRO
+#if USE_PARQUET
 
 #include <DataTypes/DataTypeNullable.h>
 #include <Poco/URI.h>

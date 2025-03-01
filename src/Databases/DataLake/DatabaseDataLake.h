@@ -1,7 +1,8 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
+#if USE_AVRO && USE_PARQUET
+
 #include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>

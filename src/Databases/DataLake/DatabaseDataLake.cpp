@@ -1,6 +1,7 @@
 #include <Databases/DataLake/DatabaseDataLake.h>
 
-#if USE_AVRO
+#if USE_AVRO && USE_PARQUET
+
 #include <Access/Common/HTTPAuthenticationScheme.h>
 #include <Core/Settings.h>
 

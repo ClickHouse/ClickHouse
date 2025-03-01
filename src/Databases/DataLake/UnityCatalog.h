@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
+#if USE_PARQUET
 
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
