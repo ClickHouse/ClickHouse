@@ -2,8 +2,6 @@
 
 #include <optional>
 
-#include <boost/geometry.hpp>
-
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
@@ -168,6 +166,8 @@ public:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
+        struct Polygon;
+
         enum Function
         {
             /// Atoms of a Boolean expression.
@@ -198,11 +198,10 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement() = default;
-        RPNElement(Function function_) : function(function_) {} /// NOLINT
-        RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
-        RPNElement(Function function_, size_t key_column_, const Range & range_)
-            : function(function_), range(range_), key_column(key_column_) {}
+        RPNElement();
+        explicit RPNElement(Function function_);
+        RPNElement(Function function_, size_t key_column_);
+        RPNElement(Function function_, size_t key_column_, const Range & range_);
 
         String toString() const;
         String toString(std::string_view column_name, bool print_constants) const;
@@ -236,9 +235,7 @@ public:
         };
         std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
 
-        using Point = boost::geometry::model::d2::point_xy<Float64>;
-        using Polygon = boost::geometry::model::polygon<Point>;
-        Polygon polygon;
+        std::shared_ptr<Polygon> polygon;
 
         MonotonicFunctionsChain monotonic_functions_chain;
 
