@@ -374,7 +374,7 @@ In this case, the log will be printed to the console, which is convenient during
 If the configuration file is in the current directory, you do not need to specify the `--config-file` parameter. By default, it uses `./config.xml`.
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
-By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
+By default, access is only allowed from localhost for the `default` user, without a password. See `user/default/networks`.
 For more information, see the section ["Configuration Files"](/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
