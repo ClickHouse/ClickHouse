@@ -51,6 +51,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+namespace Setting
+{
+extern const SettingsBool s3_disable_checksum;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -391,6 +396,22 @@ struct BackupsWorker::BackupStarter
         auto process_list_element = backup_context->getProcessListElement();
         if (process_list_element)
             process_list_element_holder = process_list_element->getProcessListEntry();
+
+        // If user has customized backup bandwidth with S3 checksum enabled,
+        // warn for the effective bandwidth mismatch with user's setup
+        if (!query_context->getSettingsRef()[Setting::s3_disable_checksum]
+            && backup_info.backup_engine_name == "S3"
+            && query_context->getBackupsThrottler())
+        {
+            UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
+            LOG_WARNING(
+                log,
+                "When s3 checksum is enabled (s3_disable_checksum = 0) during backup from local to S3, each local file "
+                "will be read twice: once for checksum calculation and once for data transfer.  As a result, the effective "
+                "bandwidth will be roughly half of the configured max_backup_bandwidth. To align the effective bandwidth "
+                "with max_backup_bandwidth, you could either disable checksum (SET s3_disable_checksum = 1) or "
+                "adjust max_backup_bandwidth accordingly. Current bandwidth max_backup_bandwidth is {}", queryMaxSpeed);
+        }
 
         backups_worker.addInfo(backup_id,
             backup_name_for_logging,
