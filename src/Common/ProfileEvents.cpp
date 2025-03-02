@@ -968,7 +968,7 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
-    M(QueryPreempted, "How many times tasks are stopped and waiting due to 'priority' setting", ValueType::Number) \
+    M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
