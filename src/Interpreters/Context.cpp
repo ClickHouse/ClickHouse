@@ -1957,7 +1957,7 @@ std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UIn
     if (ok)
         shared->concurrent_threads_scheduler = scheduler;
     else
-        LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", value);
+        LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", scheduler);
 
     // Set the limit
     SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
