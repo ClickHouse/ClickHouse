@@ -68,11 +68,7 @@ public:
     }
 
     /// Parse the number at the end of the path.
-    UInt64 getNumber() const
-    {
-        checkCreated();
-        return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
-    }
+    UInt64 getNumber() const;
 
     void unlock();
 

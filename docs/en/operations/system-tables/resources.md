@@ -1,11 +1,11 @@
 ---
 description: "System table containing information about resources residing on the local server with one row for every resource."
 slug: /operations/system-tables/resources
-title: "resources"
+title: "system.system.resources"
 keywords: ["system table", "resources"]
 ---
 
-Contains information about [resources](/docs/operations/workload-scheduling.md#workload_entity_storage) residing on the local server. The table contains a row for every resource.
+Contains information about [resources](/operations/workload-scheduling.md#workload_entity_storage) residing on the local server. The table contains a row for every resource.
 
 Example:
 

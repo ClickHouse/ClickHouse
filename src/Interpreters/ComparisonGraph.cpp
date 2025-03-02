@@ -5,7 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -150,7 +150,7 @@ bool less(const Field & lhs, const Field & rhs)
 {
     try
     {
-        return applyVisitor(FieldVisitorAccurateLess{}, lhs, rhs);
+        return accurateLess(lhs, rhs);
     }
     catch (const DB::Exception & e)
     {
@@ -176,7 +176,7 @@ bool equals(const Field & lhs, const Field & rhs)
 {
     try
     {
-        return applyVisitor(FieldVisitorAccurateEquals{}, lhs, rhs);
+        return accurateEquals(lhs, rhs);
     }
     catch (const DB::Exception & e)
     {

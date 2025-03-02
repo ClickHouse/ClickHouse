@@ -313,8 +313,10 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
 
         auto structure_literal = std::make_shared<ASTLiteral>(structure_);
         auto format_literal = std::make_shared<ASTLiteral>(format_);
-        auto is_format_arg
-            = [](const std::string & s) -> bool { return s == "auto" || FormatFactory::instance().getAllFormats().contains(s); };
+        auto is_format_arg = [] (const std::string & s) -> bool
+        {
+            return s == "auto" || FormatFactory::instance().getAllFormats().contains(Poco::toLower(s));
+        };
 
         /// (connection_string, container_name, blobpath)
         if (args.size() == 3)
