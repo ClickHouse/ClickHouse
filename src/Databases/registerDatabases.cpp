@@ -37,7 +37,7 @@ void registerDatabaseS3(DatabaseFactory & factory);
 void registerDatabaseHDFS(DatabaseFactory & factory);
 #endif
 
-#if USE_AVRO
+#if USE_AVRO && USE_PARQUET
 void registerDatabaseDataLake(DatabaseFactory & factory);
 #endif
 
@@ -75,7 +75,7 @@ void registerDatabases()
     registerDatabaseHDFS(factory);
 #endif
 
-#if USE_AVRO
+#if USE_AVRO && USE_PARQUET
     registerDatabaseDataLake(factory);
 #endif
 

@@ -4,8 +4,14 @@
 #include <IO/ReadHelpers.h>
 #include <Core/Types.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int DATALAKE_DATABASE_ERROR;
+}
+
 namespace DataLake
 {
+
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
     const std::string & endpoint,
     DB::ContextPtr context,
@@ -55,9 +61,8 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     }
     catch (const Poco::Exception & poco_ex)
     {
-        DB::Exception our_ex(DB::Exception::CreateFromPocoTag{}, poco_ex);
-        our_ex.addMessage("Cannot parse json {}", json_str);
-        throw our_ex;
+        std::string message = poco_ex.displayText() + " Cannot parse json: " + json_str;
+        throw DB::Exception::createRuntime(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, std::move(message));
     }
 }
 
