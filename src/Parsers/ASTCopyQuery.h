@@ -10,7 +10,10 @@ namespace DB
 
 class ReadBuffer;
 
-/// COPY query
+/* Useful for expressions like COPY table_name FROM/TO output_file.
+ * This AST node is relevant only for Postgres wire protocol.
+ * For more information see https://www.postgresql.org/docs/current/sql-copy.html
+ */
 class ASTCopyQuery : public IAST
 {
 public:

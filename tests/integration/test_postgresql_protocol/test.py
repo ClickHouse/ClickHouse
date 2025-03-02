@@ -232,6 +232,7 @@ def test_copy_command(started_cluster):
     cur.execute("drop table if exists test;")
     cur.execute("drop table if exists test_recreated;")
 
+    # test copy to -> copy from cycle for simple table
     cur.execute("create table test (x UInt32) engine=Memory();")
     cur.execute("insert into test values (42),(43),(44),(45);")
     cur.execute("select * from test order by x;")
@@ -252,6 +253,7 @@ def test_copy_command(started_cluster):
     cur.execute("drop table if exists test;")
     cur.execute("drop table if exists test_recreated;")
 
+    # test copy to -> copy from cycle for complex table
     cur.execute("create table test (x UInt32, y String) engine=Memory();")
     cur.execute("insert into test values (42,'a'),(43,'b'),(44,'c'),(45,'d');")
     cur.execute("select * from test order by x;")
