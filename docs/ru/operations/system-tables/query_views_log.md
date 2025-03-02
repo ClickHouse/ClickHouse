@@ -36,7 +36,7 @@ ClickHouse не удаляет данные из таблицы автомати
 -   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных строк.
 -   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных байт.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — максимальная разница между объемом выделенной и освобожденной памяти в контексте этого представления.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — события профиля, которые измеряют различные показатели. Их описание можно найти в таблице [system.events](../../operations/system-tables/events.md#system_tables-events).
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — события профиля, которые измеряют различные показатели. Их описание можно найти в таблице [system.events](/operations/system-tables/events).
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — статус представления. Возможные значения:
     -   `'QueryStart' = 1` — успешное начало выполнения представления. Не должно отображаться.
     -   `'QueryFinish' = 2` — успешное завершение выполнения представления.

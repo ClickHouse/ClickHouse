@@ -62,7 +62,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE USER](../sql-reference/statements/create/user.md#create-user-statement)
+- [CREATE USER](/sql-reference/statements/create/user)
 - [ALTER USER](../sql-reference/statements/alter/user.md)
 - [DROP USER](../sql-reference/statements/drop.md#drop-user)
 - [SHOW CREATE USER](/sql-reference/statements/show#show-create-user)
@@ -89,7 +89,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE ROLE](../sql-reference/statements/create/index.md#create-role-statement)
+- [CREATE ROLE](/sql-reference/statements/create/role)
 - [ALTER ROLE](../sql-reference/statements/alter/role.md)
 - [DROP ROLE](../sql-reference/statements/drop.md#drop-role)
 - [SET ROLE](../sql-reference/statements/set-role.md)

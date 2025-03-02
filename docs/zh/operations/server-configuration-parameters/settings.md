@@ -146,10 +146,10 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
 -   root_path – Prefix for keys.
--   metrics – Sending data from the [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) 桌子
--   events – Sending deltas data accumulated for the time period from the [系统。活动](../../operations/system-tables/events.md#system_tables-events) 桌子
--   events_cumulative – Sending cumulative data from the [系统。活动](../../operations/system-tables/events.md#system_tables-events) 桌子
--   asynchronous_metrics – Sending data from the [系统。asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) 桌子
+-   metrics – Sending data from the [系统。指标](/operations/system-tables/metrics) 桌子
+-   events – Sending deltas data accumulated for the time period from the [系统。活动](/operations/system-tables/events) 桌子
+-   events_cumulative – Sending cumulative data from the [系统。活动](/operations/system-tables/events) 桌子
+-   asynchronous_metrics – Sending data from the [系统。asynchronous_metrics](/operations/system-tables/asynchronous_metrics) 桌子
 
 您可以配置多个 `<graphite>` 条款 例如，您可以使用它以不同的时间间隔发送不同的数据。
 
@@ -592,7 +592,7 @@ SSL客户端/服务器配置。
 
 ## trace_log {#server_configuration_parameters-trace_log}
 
-设置为 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表操作。
+设置为 [trace_log](/operations/system-tables/trace_log) 系统表操作。
 
 参数:
 

@@ -2206,7 +2206,7 @@ SELECT * FROM test_table
 
 См. также:
 
--   Системная таблица [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace_log](/operations/system-tables/trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
@@ -2229,7 +2229,7 @@ SELECT * FROM test_table
 
 См. также:
 
--   Системная таблица [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace_log](/operations/system-tables/trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -2245,7 +2245,7 @@ SELECT * FROM test_table
 **См. также**
 
 -   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
--   Системная таблица [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace_log](/operations/system-tables/trace_log)
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 

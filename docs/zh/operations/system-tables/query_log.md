@@ -83,7 +83,7 @@ ClickHouse不会自动从表中删除数据。更多详情请看 [introduction](
 -   `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` The UserAgent header passed in the HTTP request。
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — 在[quotas](../../operations/quotas.md) 配置里设置的“quota key” （见 `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `ProfileEvents` ([Map(String, UInt64))](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](../../operations/system-tables/events.md#system_tables-events)
+-   `ProfileEvents` ([Map(String, UInt64))](../../sql-reference/data-types/array.md)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](/operations/system-tables/events)
 -   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
 -   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — 参与查询的线程数.
 -   `Settings.Names` ([Array（String)](../../sql-reference/data-types/array.md)) — 客户端运行查询时更改的设置的名称。 要启用对设置的日志记录更改，请将log_query_settings参数设置为1。

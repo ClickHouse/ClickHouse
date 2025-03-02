@@ -1190,7 +1190,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   系统表 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   系统表 [trace_log](/operations/system-tables/trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
@@ -1213,7 +1213,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   系统表 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   系统表 [trace_log](/operations/system-tables/trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -1229,7 +1229,7 @@ ClickHouse生成异常
 **另请参阅**
 
 -   [采样查询探查器](../optimizing-performance/sampling-query-profiler.md)
--   系统表 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   系统表 [trace_log](/operations/system-tables/trace_log)
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 

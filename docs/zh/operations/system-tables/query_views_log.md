@@ -36,7 +36,7 @@ ClickHouse不会自动从表中删除数据. 详见 [Introduction](../../operati
 -   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 写入行数.
 -   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 写入字节数.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — 在此视图上下文中, 已分配内存和已释放内存之间的最大差值.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents度量不同的指标. 它们的描述可以在表 [system.events](../../operations/system-tables/events.md#system_tables-events) 中找到.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents度量不同的指标. 它们的描述可以在表 [system.events](/operations/system-tables/events) 中找到.
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — 视图状态. 值:
     -   `'QueryStart' = 1` — 成功启动视图执行. 不应该出现.
     -   `'QueryFinish' = 2` — 视图执行成功结束.

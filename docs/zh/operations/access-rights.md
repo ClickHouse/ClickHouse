@@ -86,7 +86,7 @@ ClickHouse权限实体包括：
 
 查询管理:
 
-- [CREATE ROLE](../sql-reference/statements/create.md#create-role-statement)
+- [CREATE ROLE](/sql-reference/statements/create/role)
 - [ALTER ROLE](../sql-reference/statements/alter.md#alter-role-statement)
 - [DROP ROLE](../sql-reference/statements/misc.md#drop-role-statement)
 - [SET ROLE](../sql-reference/statements/misc.md#set-role-statement)

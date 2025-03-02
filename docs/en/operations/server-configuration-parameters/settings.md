@@ -1534,10 +1534,10 @@ Settings:
 - `interval` – The interval for sending, in seconds.
 - `timeout` – The timeout for sending data, in seconds.
 - `root_path` – Prefix for keys.
-- `metrics` – Sending data from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Sending deltas data accumulated for the time period from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `events_cumulative` – Sending cumulative data from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Sending data from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Sending data from the [system.metrics](/operations/system-tables/metrics) table.
+- `events` – Sending deltas data accumulated for the time period from the [system.events](/operations/system-tables/events) table.
+- `events_cumulative` – Sending cumulative data from the [system.events](/operations/system-tables/events) table.
+- `asynchronous_metrics` – Sending data from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
 
 You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
 
@@ -2778,9 +2778,9 @@ Settings:
 
 - `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from '/'.
 - `port` – Port for `endpoint`.
-- `metrics` – Expose metrics from the [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) table.
-- `events` – Expose metrics from the [system.events](../../operations/system-tables/events.md#system_tables-events) table.
-- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) table.
+- `metrics` – Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.
+- `events` – Expose metrics from the [system.events](/operations/system-tables/events) table.
+- `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
 - `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
 
 **Example**
@@ -2980,7 +2980,7 @@ Additionally:
 
 ## trace_log {#trace_log}
 
-Settings for the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
+Settings for the [trace_log](/operations/system-tables/trace_log) system table operation.
 
 <SystemLogParameters/>
 

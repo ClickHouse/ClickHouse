@@ -3235,7 +3235,7 @@ Result:
 
 Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
 
-The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user)).
 
 **Syntax**
 
@@ -3263,7 +3263,7 @@ enabledProfiles()
 
 ## defaultProfiles {#defaultprofiles}
 
-Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
+Returns all the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user) statement).
 
 **Syntax**
 

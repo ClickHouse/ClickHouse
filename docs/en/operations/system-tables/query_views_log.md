@@ -42,7 +42,7 @@ Columns:
 - `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
 - `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
-- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](../../operations/system-tables/events.md#system_tables-events).
+- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](/operations/system-tables/events).
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:
     - `'QueryStart' = 1` — Successful start the view execution. Should not appear.
     - `'QueryFinish' = 2` — Successful end of the view execution.

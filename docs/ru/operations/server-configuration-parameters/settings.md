@@ -312,9 +312,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 -   timeout – Таймаут отправки данных в секундах.
 -   root_path – Префикс для ключей.
 -   metrics – Отправка данных из таблицы [system.metrics](../../operations/server-configuration-parameters/settings.md#system_tables-metrics).
--   events – Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](../../operations/server-configuration-parameters/settings.md#system_tables-events).
--   events_cumulative – Отправка суммарных данных из таблицы [system.events](../../operations/server-configuration-parameters/settings.md#system_tables-events).
--   asynchronous_metrics – Отправка данных из таблицы [system.asynchronous_metrics](../../operations/server-configuration-parameters/settings.md#system_tables-asynchronous_metrics).
+-   events – Отправка дельты данных, накопленной за промежуток времени из таблицы [system.events](/operations/system-tables/events).
+-   events_cumulative – Отправка суммарных данных из таблицы [system.events](/operations/system-tables/events).
+-   asynchronous_metrics – Отправка данных из таблицы [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics).
 
 Можно определить несколько секций `<graphite>`, например, для передачи различных данных с различной частотой.
 
@@ -1212,9 +1212,9 @@ ClickHouse использует потоки из глобального пул�
 
 -   `endpoint` – путь по которому будет осуществляться экспорт данных метрик по HTTP протоколу для сбора с помощью prometheus. Должен начинаться с ‘/’.
 -   `port` – порт по которому будет доступен endpoint для сбора метрик.
--   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system-tables/metrics.md#system_tables-metrics).
--   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system-tables/events.md#system_tables-events).
--   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous_metrics](../system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
+-   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](/operations/system-tables/metrics).
+-   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](/operations/system-tables/events).
+-   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics).
 -   `errors` - флаг для экспорта количества ошибок (по кодам) случившихся с момента последнего рестарта сервера. Эта информация может быть получена из таблицы [system.errors](../system-tables/asynchronous_metrics.md#system_tables-errors)
 
 **Пример**
@@ -1389,7 +1389,7 @@ ClickHouse использует потоки из глобального пул�
 
 ## trace_log {#server_configuration_parameters-trace_log}
 
-Настройки для [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table operation.
+Настройки для [trace_log](/operations/system-tables/trace_log) system table operation.
 
 Параметры:
 
