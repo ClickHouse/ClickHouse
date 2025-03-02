@@ -481,7 +481,7 @@ public:
         out.write('R');
         writeBinaryBigEndian(size(), out);
         writeBinaryBigEndian(static_cast<Int32>(10), out);
-        writeNullTerminatedString(supported_method.data(), out);
+        writeNullTerminatedString(supported_method, out);
         out.write(0);
     }
 
@@ -1316,7 +1316,7 @@ public:
         auto proof = parseProof(rsp_continue->sasl_mechanism);
         auth_message += ",c=" + parseResponse(rsp_continue->sasl_mechanism, "c=") + ",r=" + parseResponse(rsp_continue->sasl_mechanism, "r=");
 
-        auto credentials = ScramSHA256Credentials(user_name, parseProof(rsp_continue->sasl_mechanism), auth_message, num_iterations);
+        auto credentials = ScramSHA256Credentials(user_name, proof, auth_message, num_iterations);
         session.authenticate(credentials, address);
     }
 
