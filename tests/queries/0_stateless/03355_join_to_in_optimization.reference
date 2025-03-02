@@ -1,39 +1,39 @@
-CreatingSets (Create sets before main query execution)
-Header: __table1.number UInt64
-  Expression (Project names)
-  Header: number UInt64
-  Actions: INPUT : 0 -> __table1.number UInt64 : 0
-           ALIAS __table1.number :: 0 -> number UInt64 : 1
-  Positions: 1
-    Expression (Projection)
+Expression ((Project names + Projection))
+Header: number UInt64
+Actions: INPUT : 0 -> __table1.number UInt64 : 0
+         ALIAS __table1.number :: 0 -> number UInt64 : 1
+Positions: 1
+  CreatingSets (Create sets before main query execution)
+  Header: __table1.number UInt64
+    Filter (WHERE)
     Header: __table1.number UInt64
-    Actions: INPUT :: 0 -> __table1.number UInt64 : 0
-    Positions: 0
-      Filter ((WHERE + Change column names to column identifiers))
+            in(__table1.number, set column) UInt8
+    Filter column: in(__table1.number, set column)
+    Actions: INPUT : 0 -> __table1.number UInt64 : 0
+             COLUMN Set -> set column Set : 1
+             FUNCTION in(__table1.number : 0, set column :: 1) -> in(__table1.number, set column) UInt8 : 2
+    Positions: 0 2
+      Expression (Change column names to column identifiers)
       Header: __table1.number UInt64
-              in(__table1.number, set column) UInt8
-      Filter column: in(__table1.number, set column)
       Actions: INPUT : 0 -> number UInt64 : 0
-               COLUMN Set -> set column Set : 1
-               ALIAS number : 0 -> __table1.number UInt64 : 2
-               FUNCTION in(number :: 0, set column :: 1) -> in(__table1.number, set column) UInt8 : 3
-      Positions: 2 3
+               ALIAS number :: 0 -> __table1.number UInt64 : 1
+      Positions: 1
         ReadFromSystemNumbers
         Header: number UInt64
-  CreatingSet (Create set for subquery)
-  Empty header
-  Set: __set_0_0
-    Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
-    Header: __table2.x UInt64
-    Actions: INPUT : 0 -> number UInt64 : 0
-             COLUMN Const(UInt8) -> 13_UInt8 UInt8 : 1
-             ALIAS number :: 0 -> __table3.number UInt64 : 2
-             FUNCTION multiply(__table3.number :: 2, 13_UInt8 :: 1) -> multiply(__table3.number, 13_UInt8) UInt64 : 0
-             ALIAS multiply(__table3.number, 13_UInt8) :: 0 -> x UInt64 : 1
-             ALIAS x :: 1 -> __table2.x UInt64 : 0
-    Positions: 0
-      ReadFromSystemNumbers
-      Header: number UInt64
+    CreatingSet (Create set for subquery)
+    Empty header
+    Set: __set_0_0
+      Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+      Header: __table2.x UInt64
+      Actions: INPUT : 0 -> number UInt64 : 0
+               COLUMN Const(UInt8) -> 13_UInt8 UInt8 : 1
+               ALIAS number :: 0 -> __table3.number UInt64 : 2
+               FUNCTION multiply(__table3.number :: 2, 13_UInt8 :: 1) -> multiply(__table3.number, 13_UInt8) UInt64 : 0
+               ALIAS multiply(__table3.number, 13_UInt8) :: 0 -> x UInt64 : 1
+               ALIAS x :: 1 -> __table2.x UInt64 : 0
+      Positions: 0
+        ReadFromSystemNumbers
+        Header: number UInt64
 CreatingSets (Create sets before main query execution)
 Header: a UInt64
         b UInt64

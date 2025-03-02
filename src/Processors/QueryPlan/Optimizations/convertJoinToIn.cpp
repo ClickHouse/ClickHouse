@@ -49,39 +49,6 @@ bool findReadingStep(QueryPlan::Node & node)
     return false;
 }
 
-bool hasJoinNode(QueryPlan::Node * root, QueryPlan::Node * join)
-{
-    if (root == join)
-        return true;
-
-    for (auto child : root->children)
-    {
-        if (hasJoinNode(child, join))
-            return true;
-    }
-
-    return false;
-}
-
-QueryPlan::Node * getRoot(QueryPlan::Nodes & nodes, QueryPlan::Node * join_node)
-{
-    std::unordered_map<QueryPlan::Node *, bool> h;
-    for (auto & n : nodes)
-    {
-        for (auto child : n.children)
-            h[child] = false;
-        if (!h.contains(&n))
-            h[&n] = true;
-    }
-    for (const auto & [n, is_root] : h)
-    {
-        if (is_root && hasJoinNode(n, join_node))
-            return n;
-    }
-    chassert(false);
-    return nullptr;
-}
-
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     auto & parent = parent_node->step;
@@ -181,24 +148,20 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// creating_set_step as right subtree
     auto creating_set_step = future_set->build(right_predicate_header, context);
 
-    auto & new_root = *getRoot(nodes, parent_node);
-
-    /// Replace JoinStepLogical with FilterStep, but keep left subtree and remove right subtree
-    parent_node->step = std::move(filter_step);
+    QueryPlan::Node * left_tree = parent_node->children[0];
     QueryPlan::Node * right_tree = parent_node->children[1];
-    parent_node->children.pop_back();
+    parent_node->children.clear();
+    parent_node->step = std::move(creating_sets_step);
 
-    /// CreatingSetsStep should be the root, use swap
-    auto & old_root = nodes.emplace_back();
-    std::swap(new_root, old_root);
-    new_root.step = std::move(creating_sets_step);
-    new_root.children.push_back(&old_root);
+    auto & filter_node = nodes.emplace_back();
+    filter_node.step = std::move(filter_step);
+    filter_node.children.push_back(left_tree);
+    parent_node->children.push_back(&filter_node);
 
-    /// Attach CreatingSetStep node to the CreatingSetsStep node
     auto & creating_set_node = nodes.emplace_back();
     creating_set_node.step = std::move(creating_set_step);
     creating_set_node.children.push_back(right_tree);
-    new_root.children.push_back(&creating_set_node);
+    parent_node->children.push_back(&creating_set_node);
 
     return 1;
 }
