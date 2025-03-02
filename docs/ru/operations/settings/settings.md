@@ -1018,7 +1018,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 1048576.
 
-## min_insert_block_size_bytes {min_insert_block_size_bytes}
+## min_insert_block_size_bytes {#min_insert_block_size_bytes}
 
 Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера.
 
