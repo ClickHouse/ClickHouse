@@ -481,7 +481,7 @@ public:
         out.write('R');
         writeBinaryBigEndian(size(), out);
         writeBinaryBigEndian(static_cast<Int32>(10), out);
-        writeNullTerminatedString(supported_method, out);
+        writeNullTerminatedString(String(supported_method), out);
         out.write(0);
     }
 
