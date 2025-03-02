@@ -175,7 +175,7 @@ StorageFileLog::StorageFileLog(
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
-    , log(getLogger("StorageFileLog (" + table_id.getNameForLogs() + ")"))
+    , log(getLogger("StorageFileLog (" + table_id_.getNameForLogs() + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
     , milliseconds_to_wait((*filelog_settings)[FileLogSetting::poll_directory_watch_events_backoff_init].totalMilliseconds())
 {
@@ -756,7 +756,7 @@ bool StorageFileLog::streamToViews()
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id_.getNameForLogs());
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
