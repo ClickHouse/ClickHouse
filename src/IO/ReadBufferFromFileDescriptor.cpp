@@ -115,6 +115,9 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
     return bytes_read;
 }
 
+ThrottlerPtr ReadBufferFromFileDescriptor::getThrottler() {
+    return throttler;
+}
 
 bool ReadBufferFromFileDescriptor::nextImpl()
 {

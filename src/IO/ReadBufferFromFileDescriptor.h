@@ -23,6 +23,7 @@ protected:
     int fd;
 
     ThrottlerPtr throttler;
+    ThrottlerPtr getThrottler();
 
     bool nextImpl() override;
     void prefetch(Priority priority) override;
