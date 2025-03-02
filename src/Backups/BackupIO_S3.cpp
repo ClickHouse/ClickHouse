@@ -114,6 +114,7 @@ namespace
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
+        // std::unique_ptr<S3::Client> ClientFactory::create(
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,

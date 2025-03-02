@@ -128,6 +128,10 @@ void AsynchronousReadBufferFromFileDescriptor::finalize()
     }
 }
 
+ThrottlerPtr AsynchronousReadBufferFromFileDescriptor::getThrottler() {
+    return throttler;
+}
+
 
 AsynchronousReadBufferFromFileDescriptor::AsynchronousReadBufferFromFileDescriptor(
     IAsynchronousReader & reader_,

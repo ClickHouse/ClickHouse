@@ -630,8 +630,21 @@ namespace
             ProfileEvents::increment(ProfileEvents::S3UploadPart);
             if (client_ptr->isClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskS3UploadPart);
-
-            auto outcome = client_ptr->UploadPart(req);
+            if(client_ptr->isChecksumEnabled()
+                && ( dynamic_cast<AsynchronousReadBufferFromFileDescriptor*>(buffer.get())
+                    || dynamic_cast<ReadBufferFromFileDescriptor*>(buffer.get()) )){
+                // In case of checksum enabled, the bandwidth is in fact reduced. We need to manually
+                // ReadBufferFromFileDescriptor
+                LOG_TRACE(
+                    log,
+                    "Checksum enabled. Will reader side bandwidth to keep overall bandwidth.",
+                    );
+                break;
+                // const std::function<std::unique_ptr<SeekableReadBuffer>()> & create_read_buffer,
+                std::unique_ptr<SeekableReadBuffer> buffer = create_read_buffer();
+                if()
+            }
+            auto outcome = client_ptr->UploadPart(req); // 在S3Client.h
             if (blob_storage_log)
                 blob_storage_log->addEvent(BlobStorageLogElement::EventType::MultiPartUploadWrite,
                                            dest_bucket, dest_key, /* local_path_ */ {}, size,
