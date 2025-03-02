@@ -566,7 +566,7 @@ ClickHouse может парсить только базовый формат `Y
 -   [Тип данных DateTime.](../../sql-reference/data-types/datetime.md)
 -   [Функции для работы с датой и временем.](../../sql-reference/functions/date-time-functions.md)
 
-## date_time_output_format {#settings-date_time_output_format}
+## date_time_output_format {#date_time_output_format}
 
 Позволяет выбрать разные выходные форматы текстового представления даты и времени.
 
@@ -1007,7 +1007,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Это значение намного больше, чем `max_block_size`. Это сделано, потому что некоторые движки таблиц (`*MergeTree`) будут на каждый вставляемый блок формировать кусок данных на диске, что является довольно большой сущностью. Также, в таблицах типа `*MergeTree`, данные сортируются при вставке, и достаточно большой размер блока позволяет отсортировать больше данных в оперативке.
 
-## min_insert_block_size_rows {/operations/settings/settings#min_insert_block_size_rows}
+## min_insert_block_size_rows {#min_insert_block_size_rows}
 
 Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера.
 
