@@ -154,7 +154,7 @@ void CertificateReloader::tryLoadACMECertificate(const Poco::Util::AbstractConfi
 void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
     /// fixme fail if both acme and certificateFile/privateKeyFile are set
-    if conifg.has("acme")
+    if (config.has("acme"))
     {
         tryLoadACMECertificate(config, ctx, prefix);
         return;
