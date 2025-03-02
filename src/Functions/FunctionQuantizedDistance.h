@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
