@@ -37,5 +37,3 @@ SELECT hex(quantize8Bit(cast([-1.0, -1.0, -1.0, -1.0] as Array(Float32))));
 
 SELECT hex(quantize8Bit(cast([0.5, 0.25, 0.125, 0.0625] as Array(Float32))));
 SELECT hex(quantize8Bit(cast([1.0, 0.999999, 0.500001, 0.499999] as Array(Float32))));
-
--- SELECT hex(quantize8Bit(cast([] as Array(Float32))));

@@ -1,0 +1,107 @@
+<?xml version="1.0"?>
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+        <allow_suspicious_fixed_string_types>1</allow_suspicious_fixed_string_types>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>x</name>
+            <values>
+                <value>1</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>y</name>
+            <values>
+                <value>1000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE DATABASE IF NOT EXISTS test
+    </create_query>
+
+    <create_query>
+        DROP TABLE IF EXISTS test.vectors
+    </create_query>
+
+    <create_query>
+
+        CREATE TABLE test.vectors
+        (
+            id UInt64,
+            vector Array(Float32)
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS index_granularity = 128;
+
+    </create_query>
+
+    <!-- Generate random vectors and their quantized versions -->
+    <fill_query>      
+
+    INSERT INTO test.vectors
+    SELECT
+        key AS id,
+        groupArray(r) AS vector
+    FROM
+    (
+        SELECT 
+            number AS seq,
+            intDiv(number, 2048) AS key,  -- every 2048 numbers share the same key
+            randCanonical() AS r
+        FROM numbers(280000 * 2048)
+    )
+    GROUP BY key
+    ORDER BY key
+
+    </fill_query>
+
+    <fill_query>      
+
+    ALTER TABLE test.vectors
+    ADD COLUMN vector_quantized FixedString(256);
+
+    </fill_query>
+
+    <fill_query>      
+
+    ALTER TABLE test.vectors
+    UPDATE vector_quantized = quantize1Bit(vector)
+    WHERE 1;
+
+    </fill_query>
+
+    <!-- Benchmark Query 1: L2Distance -->
+    <query>
+        SELECT
+            L2Distance(
+                (SELECT vector FROM test.vectors LIMIT 1 OFFSET 0),
+                vector
+            ) as distance
+        FROM test.vectors
+        ORDER BY distance ASC
+        LIMIT 10
+    </query>
+
+    <!-- Benchmark Query 2: quantized1BitL2Distance -->
+    <query>
+        SELECT
+            quantized1BitL2Distance(
+                (SELECT vector_quantized FROM test.vectors LIMIT 1 OFFSET 0),
+                vector_quantized
+            ) as distance
+        FROM test.vectors
+        ORDER BY distance ASC
+        LIMIT 10
+    </query>
+
+    <drop_query>
+        DROP TABLE test.vectors
+    </drop_query>
+</test>
