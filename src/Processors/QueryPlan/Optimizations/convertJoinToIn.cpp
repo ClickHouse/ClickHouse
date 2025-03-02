@@ -111,6 +111,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!(left && !right))
         return 0;
 
+    if (join_info.expression.condition.predicates.empty())
+        return 0;
+
     Header left_predicate_header;
     Header right_predicate_header;
     /// column in predicate is null, so get column here
