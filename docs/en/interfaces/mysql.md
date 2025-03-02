@@ -22,7 +22,7 @@ If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver))
 If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
 ::::note
-To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/settings/settings.md#prefer-column-name-to-alias).
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](/operations/settings/settings#prefer_column_name_to_alias).
 This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 ::::
 
@@ -148,8 +148,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](/operations/settings/settings-users#user-namepassword) in configuration file.
+If user password is specified using [SHA256](/sql-reference/functions/hash-functions#sha1-sha224-sha256-sha512-sha512_256), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
 
 Restrictions:
 

@@ -44,7 +44,7 @@ For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` c
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) setting.
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
 
 ## Example {#example}
 

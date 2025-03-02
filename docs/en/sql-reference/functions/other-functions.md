@@ -240,7 +240,7 @@ Result:
 
 ## blockSize {#blockSize}
 
-In ClickHouse, queries are processed in [blocks](../../development/architecture.md/#block-block) (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
 
 **Syntax**
