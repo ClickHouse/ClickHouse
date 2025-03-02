@@ -9,7 +9,7 @@ sidebar_label: GRANT
 - Присваивает [привилегии](#grant-privileges) пользователям или ролям ClickHouse.
 - Назначает роли пользователям или другим ролям.
 
-Отозвать привилегию можно с помощью выражения [REVOKE](revoke.md). Чтобы вывести список присвоенных привилегий, воспользуйтесь выражением [SHOW GRANTS](show.md#show-grants-statement).
+Отозвать привилегию можно с помощью выражения [REVOKE](revoke.md). Чтобы вывести список присвоенных привилегий, воспользуйтесь выражением [SHOW GRANTS](/sql-reference/statements/show#show-grants).
 
 ## Синтаксис присвоения привилегий {#grant-privigele-syntax}
 

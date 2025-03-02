@@ -8,7 +8,7 @@ sidebar_label: 授权操作
 -   给ClickHouse的用户或角色赋予 [权限](#grant-privileges)
 -   将角色分配给用户或其他角色
 
-取消权限，使用 [REVOKE](../../sql-reference/statements/revoke.md)语句。查看已授权的权限请使用 [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement)。
+取消权限，使用 [REVOKE](../../sql-reference/statements/revoke.md)语句。查看已授权的权限请使用 [SHOW GRANTS](/sql-reference/statements/show#show-grants)。
 
 ## 授权操作语法 {#grant-privigele-syntax}
 

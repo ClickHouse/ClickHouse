@@ -3541,7 +3541,7 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 
 **See also**
 
-- [Access Control and Account Management](../../guides/sre/user-management/index.md#access-control)
+- [Access Control and Account Management](/operations/access-rights#access-control-usage)
 
 Type: String
 
