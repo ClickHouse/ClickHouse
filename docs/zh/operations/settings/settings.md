@@ -407,7 +407,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 可能的值:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](../../sql-reference/data-types/nullable.md#data_type-nullable)，和空单元格填充 [NULL](../../sql-reference/syntax.md).
+-   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](/sql-reference/data-types/nullable)，和空单元格填充 [NULL](../../sql-reference/syntax.md).
 
 默认值：0。
 

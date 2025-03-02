@@ -504,7 +504,7 @@ SSL客户端/服务器配置。
 
 记录与之关联的事件 [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). 例如，添加或合并数据。 您可以使用日志来模拟合并算法并比较它们的特征。 您可以可视化合并过程。
 
-查询记录在 [系统。part_log](../../operations/system-tables/part_log.md#system_tables-part-log) 表，而不是在一个单独的文件。 您可以在以下命令中配置此表的名称 `table` 参数（见下文）。
+查询记录在 [系统。part_log](/operations/system-tables/part_log) 表，而不是在一个单独的文件。 您可以在以下命令中配置此表的名称 `table` 参数（见下文）。
 
 使用以下参数配置日志记录:
 
@@ -542,7 +542,7 @@ SSL客户端/服务器配置。
 
 用于记录接收到的查询的设置 [log_queries=1](../settings/settings.md) 设置。
 
-查询记录在 [系统。query_log](../../operations/system-tables/query_log.md#system_tables-query_log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
+查询记录在 [系统。query_log](/operations/system-tables/query_log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
 
 使用以下参数配置日志记录:
 

@@ -3400,7 +3400,7 @@ Result:
 
 Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
-In contrast to [queryID](#queryid) function, `initialQueryID` returns the same results on different shards (see example).
+In contrast to [queryID](/sql-reference/functions/other-functions#queryid) function, `initialQueryID` returns the same results on different shards (see example).
 
 **Syntax**
 

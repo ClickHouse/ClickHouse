@@ -141,4 +141,4 @@ Settings:             {'background_pool_size':'32','load_balancing':'random','al
 
 **另请参阅**
 
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — 这个表包含了每个查询执行线程的信息
+-   [system.query_thread_log](/operations/system-tables/query_thread_log) — 这个表包含了每个查询执行线程的信息

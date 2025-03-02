@@ -122,7 +122,7 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 **См. также**
 
--   [max_block_size](#setting-max_block_size)
+-   [max_block_size](/operations/settings/settings#max_block_size)
 -   [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 
 ## enable_http_compression {#settings-enable_http_compression}
@@ -430,7 +430,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](/operations/settings/formats#input_format_null_as_default), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Включает или отключает инициализацию [значениями по умолчанию](/sql-reference/statements/create/table) ячеек с [NULL](/operations/settings/formats#input_format_null_as_default), если тип данных столбца не позволяет [хранить NULL](/sql-reference/data-types/nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
@@ -444,7 +444,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](/operations/settings/formats#input_format_null_as_default) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Включает или отключает вставку [значений по умолчанию](/sql-reference/statements/create/table) вместо [NULL](/operations/settings/formats#input_format_null_as_default) в столбцы, которые не позволяют [хранить NULL](/sql-reference/data-types/nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
@@ -529,12 +529,12 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 Поддерживаемые форматы:
 
-- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
-- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
-- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
-- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
-- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
-- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
+- [CSVWithNamesAndTypes](/docs/interfaces/formats/CSVWithNamesAndTypes)
+- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 Возможные значения:
 
@@ -648,7 +648,7 @@ ClickHouse может парсить только базовый формат `Y
 Возможные значения:
 
 -   0 — пустые ячейки заполняются значением по умолчанию соответствующего типа поля.
--   1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable), а пустые ячейки заполняются значениями [NULL](../../sql-reference/syntax.md).
+-   1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](/sql-reference/data-types/nullable), а пустые ячейки заполняются значениями [NULL](../../sql-reference/syntax.md).
 
 ## partial_merge_join_optimizations {#partial_merge_join_optimizations}
 
@@ -2325,7 +2325,7 @@ SELECT * FROM test_table
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
-Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](/engines/table-engines/special/distributed)).
 
 По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `distributed_foreground_insert=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
 
@@ -2338,12 +2338,12 @@ SELECT * FROM test_table
 
 **См. также**
 
--   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Движок Distributed](/engines/table-engines/special/distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 
 ## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
 
-Включает или отключает режим вставки данных в [Distributed](../../engines/table-engines/special/distributed.md#distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
+Включает или отключает режим вставки данных в [Distributed](/engines/table-engines/special/distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
 
 По умолчанию при вставке данных в `Distributed` таблицу с несколькими шардами и при отсутствии ключа шардирования сервер ClickHouse будет отклонять любой запрос на вставку данных. Когда `insert_distributed_one_random_shard = 1`, вставки принимаются, а данные записываются в случайный шард.
 
@@ -2356,7 +2356,7 @@ SELECT * FROM test_table
 
 ## insert_shard_id {#insert_shard_id}
 
-Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
+Если не `0`, указывает, в какой шард [Distributed](/engines/table-engines/special/distributed) таблицы данные будут вставлены синхронно.
 
 Если значение настройки `insert_shard_id` указано неверно, сервер выдаст ошибку.
 
@@ -2369,7 +2369,7 @@ SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 Возможные значения:
 
 -   0 — выключено.
--   Любое число от `1` до `shards_num` соответствующей [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы.
+-   Любое число от `1` до `shards_num` соответствующей [Distributed](/engines/table-engines/special/distributed) таблицы.
 
 Значение по умолчанию: `0`.
 
@@ -3049,7 +3049,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## allow_nullable_key {#allow-nullable-key}
 
-Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
+Включает или отключает поддержку типа [Nullable](/sql-reference/data-types/nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
 
 Возможные значения:
 
@@ -3109,7 +3109,7 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
-Позволяет использовать по умолчанию тип данных [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
+Позволяет использовать по умолчанию тип данных [Nullable](/sql-reference/data-types/nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
 
 Возможные значения:
 

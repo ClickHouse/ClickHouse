@@ -189,4 +189,4 @@ used_table_functions:                  []
 
 **См. также**
 
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
+-   [system.query_thread_log](/operations/system-tables/query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.

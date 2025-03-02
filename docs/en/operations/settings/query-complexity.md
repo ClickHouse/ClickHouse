@@ -113,11 +113,11 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
+Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory).
 
 Possible values:
 
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
 - 0 — `GROUP BY` in external memory disabled.
 
 Default value: `0`.
@@ -179,7 +179,7 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'.
 
-Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](/operations/settings/settings#max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
 
 Default value: `throw`.
 

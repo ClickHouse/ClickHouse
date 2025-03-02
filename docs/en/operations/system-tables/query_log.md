@@ -210,4 +210,4 @@ query_cache_usage:                     None
 
 **See Also**
 
-- [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+- [system.query_thread_log](/operations/system-tables/query_thread_log) — This table contains information about each query execution thread.

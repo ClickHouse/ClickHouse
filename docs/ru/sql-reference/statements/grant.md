@@ -499,7 +499,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 - `dictGet`. Алиасы: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Разрешает вызывать функции [dictGet](../functions/ext-dict-functions.md#dictget), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin).
+Разрешает вызывать функции [dictGet](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull), [dictHas](../functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../functions/ext-dict-functions.md#dictisin).
 
 Уровень: `DICTIONARY`.
 

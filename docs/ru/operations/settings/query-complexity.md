@@ -99,11 +99,11 @@ sidebar_label: "Ограничения на сложность запроса"
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
+Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](/sql-reference/statements/select/group-by#group-by-in-external-memory).
 
 Возможные значения:
 
--   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause).
+-   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](/sql-reference/statements/select/group-by).
 -   0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -141,7 +141,7 @@ sidebar_label: "Ограничения на сложность запроса"
 
 Что делать, если объём результата превысил одно из ограничений: throw или break. По умолчанию: throw.
 
-Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#setting-max_result_rows), кратно [max_block_size](../settings/settings.md#setting-max_block_size) и зависит от [max_threads](../settings/settings.md#settings-max_threads).
+Использование break по смыслу похоже на LIMIT. Break прерывает выполнение только на уровне блока. Т.е. число строк которые вернет запрос будет больше чем ограничение [max_result_rows](#setting-max_result_rows), кратно [max_block_size](/operations/settings/settings#max_block_size) и зависит от [max_threads](../settings/settings.md#settings-max_threads).
 
 Пример:
 

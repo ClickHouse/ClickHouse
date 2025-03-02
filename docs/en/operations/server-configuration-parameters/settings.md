@@ -15,7 +15,7 @@ import SystemLogParameters from '@site/docs/operations/server-configuration-para
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/operations/configuration-files).
 
 Other settings are described in the "[Settings](/operations/settings/overview)" section.
-Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
+Before studying the settings, we recommend to read the [Configuration files](/operations/configuration-files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
 
@@ -466,7 +466,7 @@ Limit on total number of concurrently executed queries. Note that limits on `INS
 
 See also:
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](#max_concurrent_select_queries)
+- [`max_concurrent_select_queries`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_all_users`](/operations/settings/settings/#max_concurrent_queries_for_all_users)
 
 :::note
@@ -520,8 +520,8 @@ Waiting queries are not counted when limits controlled by the following settings
 
 - [`max_concurrent_queries`](#max_concurrent_queries)
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](/operations/settings/settings#max_concurrent_select_queries)
+- [`max_concurrent_select_queries`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
+- [`max_concurrent_queries_for_user`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
@@ -1188,7 +1188,7 @@ We recommend not changing this if you have just started using ClickHouse.
 - `min_part_size` – The minimum size of a data part.
 - `min_part_size_ratio` – The ratio of the data part size to the table size.
 - `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
-- `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
+- `level` – Compression level. See [Codecs](/sql-reference/statements/create/table#general-purpose-codecs).
 
 :::note
 You can configure multiple `<case>` sections.
@@ -1218,7 +1218,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 
 ## encryption {#encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](/sql-reference/statements/create/table#encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
 Keys can be hex or string with a length equal to 16 bytes.
 
@@ -1751,7 +1751,7 @@ Keep in mind that this setting would not work without "CAP_IPC_LOCK" capability.
 
 The path to the file with substitutions. Both XML and YAML formats are supported.
 
-For more information, see the section "[Configuration files](../../operations/configuration-files.md#configuration_files)".
+For more information, see the section "[Configuration files](/operations/configuration-files)".
 
 **Example**
 
@@ -2717,7 +2717,7 @@ Keys for server/client settings:
 
 Logging events that are associated with [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
-Queries are logged in the [system.part_log](../../operations/system-tables/part_log.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
+Queries are logged in the [system.part_log](/operations/system-tables/part_log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
 
 <SystemLogParameters/>
 
@@ -2781,7 +2781,7 @@ Settings:
 - `metrics` – Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.
 - `events` – Expose metrics from the [system.events](/operations/system-tables/events) table.
 - `asynchronous_metrics` – Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.
-- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](../../operations/system-tables/asynchronous_metrics.md#system_tables-errors) as well.
+- `errors` - Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/operations/system-tables/errors) as well.
 
 **Example**
 
@@ -2812,7 +2812,7 @@ curl 127.0.0.1:9363/metrics
 
 Setting for logging queries received with the [log_queries=1](../../operations/settings/settings.md) setting.
 
-Queries are logged in the [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_log](/operations/system-tables/query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 <SystemLogParameters/>
 
@@ -2899,9 +2899,9 @@ The following settings are available:
 
 ## query_thread_log {#query_thread_log}
 
-Setting for logging threads of queries received with the [log_query_threads=1](../../operations/settings/settings.md#log-query-threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](/operations/settings/settings#log_query_threads) setting.
 
-Queries are logged in the [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_thread_log](/operations/system-tables/query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 <SystemLogParameters/>
 
@@ -2924,9 +2924,9 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#log-query-views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/operations/settings/settings#log_query_views) setting.
 
-Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_views_log](/operations/system-tables/query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 <SystemLogParameters/>
 
@@ -2949,7 +2949,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## text_log {#text_log}
 
-Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
+Settings for the [text_log](/operations/system-tables/text_log) system table for logging text messages.
 
 <SystemLogParameters/>
 
@@ -3002,7 +3002,7 @@ The default server configuration file `config.xml` contains the following settin
 
 ## asynchronous_insert_log {#asynchronous_insert_log}
 
-Settings for the [asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) system table for logging async inserts.
+Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronous_insert_log) system table for logging async inserts.
 
 <SystemLogParameters/>
 
@@ -3149,7 +3149,7 @@ Configuration of clusters used by the [Distributed](../../engines/table-engines/
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
-For the value of the `incl` attribute, see the section "[Configuration files](../../operations/configuration-files.md#configuration_files)".
+For the value of the `incl` attribute, see the section "[Configuration files](/operations/configuration-files)".
 
 **See Also**
 
@@ -3305,7 +3305,7 @@ Default:
 
 ## user_defined_path {#user_defined_path}
 
-The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](../../sql-reference/functions/overview#user-defined-functions).
+The directory with user defined files. Used for SQL user defined functions [SQL User Defined Functions](/sql-reference/functions/udf).
 
 **Example**
 
@@ -3460,7 +3460,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 
 - [Replication](../../engines/table-engines/mergetree-family/replication.md)
 - [ZooKeeper Programmer's Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
-- [Optional secured communication between ClickHouse and Zookeeper](../ssl-zookeeper.md#secured-communication-with-zookeeper)
+- [Optional secured communication between ClickHouse and Zookeeper](/operations/ssl-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
@@ -3607,7 +3607,7 @@ Section of the configuration file that contains settings:
 - Path to folder where users created by SQL commands are stored.
 - ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
-If this section is specified, the path from [users_config](../../operations/server-configuration-parameters/settings.md#users-config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
+If this section is specified, the path from [users_config](/operations/server-configuration-parameters/settings#users_config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
 The `user_directories` section can contain any number of items, the order of the items means their precedence (the higher the item the higher the precedence).
 
@@ -3710,7 +3710,7 @@ Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, d
 User wishing to see secrets must also have
 [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
 Possible values:
 
