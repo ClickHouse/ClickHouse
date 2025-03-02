@@ -173,7 +173,8 @@ CREATE TABLE git.line_changes
 ) ENGINE = MergeTree ORDER BY time;
 ```
 
-Insert the data using `INSERT INTO SELECT` and the [s3 function](/docs/integrations/s3/s3-table-functions/). For example, below, we insert the ClickHouse files into each of their respective tables:
+Insert the data using `INSERT INTO SELECT` and the [s3 function](/sql-reference/table-functions/s3). For example, below, we insert the ClickHouse files into each of their respective tables:
+
 
 *commits*
 

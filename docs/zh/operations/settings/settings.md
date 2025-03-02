@@ -369,7 +369,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## join_default_strictness {#settings-join_default_strictness}
 
-设置默认严格性 [加入子句](../../sql-reference/statements/select/join.md#select-join).
+设置默认严格性 [加入子句](/sql-reference/statements/select/join).
 
 可能的值:
 
@@ -396,7 +396,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 另请参阅:
 
--   [JOIN子句](../../sql-reference/statements/select/join.md#select-join)
+-   [JOIN子句](/sql-reference/statements/select/join)
 -   [联接表引擎](../../engines/table-engines/special/join.md)
 -   [join_default_strictness](#settings-join_default_strictness)
 
@@ -566,7 +566,7 @@ log_query_threads=1
 
 默认值略高于 `max_block_size`. 这样做的原因是因为某些表引擎 (`*MergeTree`）在磁盘上为每个插入的块形成一个数据部分，这是一个相当大的实体。 同样, `*MergeTree` 表在插入过程中对数据进行排序，并且足够大的块大小允许在RAM中对更多数据进行排序。
 
-## min_insert_block_size_rows {#min-insert-block-size-rows}
+## min_insert_block_size_rows {#min_insert_block_size_rows}
 
 设置块中可以通过以下方式插入到表中的最小行数 `INSERT` 查询。 较小尺寸的块被压扁成较大的块。
 
@@ -577,7 +577,7 @@ log_query_threads=1
 
 默认值：1048576。
 
-## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+## min_insert_block_size_bytes {#min_insert_block_size_bytes}
 
 设置块中的最小字节数，可以通过以下方式插入到表中 `INSERT` 查询。 较小尺寸的块被压扁成较大的块。
 
@@ -1281,7 +1281,7 @@ ClickHouse生成异常
 
 ## transform_null_in {#transform_null_in}
 
-为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](../../sql-reference/syntax.md#null-literal) 值的相等性。
+为[IN](../../sql-reference/operators/in.md) 运算符启用[NULL](/operations/settings/formats#input_format_null_as_default) 值的相等性。
 
 默认情况下，无法比较 `NULL` 值，因为 `NULL` 表示未定义的值。 因此，比较 `expr = NULL` 必须始终返回 `false`。 在此设置下，`NULL = NULL` 为IN运算符返回 `true`.
 
