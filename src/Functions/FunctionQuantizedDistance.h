@@ -12,12 +12,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 template <typename Kernel, const char * function_name>
-class FunctionQuantizedL2Distance : public IFunction
+class FunctionQuantizedDistance : public IFunction
 {
 public:
     static constexpr auto name = function_name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedL2Distance<Kernel, function_name>>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizedDistance<Kernel, function_name>>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
