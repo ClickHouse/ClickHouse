@@ -98,6 +98,7 @@ private:
     bool processPrepareStatement(const String & query);
     bool processExecute(const String & query, ContextMutablePtr query_context);
     bool processDeallocate(const String & query);
+    bool processCopyQuery(const String & query);
 
     void processParseQuery();
     void processDescribeQuery();
