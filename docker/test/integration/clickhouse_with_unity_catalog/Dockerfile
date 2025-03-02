@@ -2,7 +2,7 @@
 ARG FROM_TAG=latest
 FROM clickhouse/integration-test:$FROM_TAG
 
-RUN apt update && env DEBIAN_FRONTEND=noninteractive apt-get -y install openjdk-17-jdk-headless && update-alternatives --config java && update-alternatives --config javac
+RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get -y install openjdk-17-jdk-headless && update-alternatives --config java && update-alternatives --config javac
 
 # Clone unity catalog and hack their sample data because it contains inconsistent DeltaLake definition
 # Columns marked as nullable while they are not nullable and catalog shows them as non-nullable
