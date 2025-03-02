@@ -128,36 +128,18 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     return it;
 }
 
-
-void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
+void CertificateReloader::tryLoadACMECertificate(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
-    /// If at least one of the files is modified - recreate
-
-    // std::string new_cert_path = config.getString(prefix + "certificateFile", "");
-    // std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
-
-    /// For empty paths (that means, that user doesn't want to use certificates)
-    /// no processing required
-
-    // if (new_cert_path.empty() || new_key_path.empty())
-    // {
-    //     LOG_WARNING(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
-    //     return;
-    // }
-
-    if (!config.has("acme"))
-        return;
-
     try
     {
-        auto maybe_certificates = ACMEClient::ACMEClient::instance().requestCertificate(config);
-        if (!maybe_certificates)
+        auto key_certificate_pair = ACMEClient::ACMEClient::instance().requestCertificate(config);
+        if (!key_certificate_pair)
         {
-            LOG_WARNING(log, "Certificates are not ready yet.");
+            LOG_WARNING(log, "ACME certificate is not ready yet.");
             return;
         }
 
-        auto [pkey, certificate] = maybe_certificates.value();
+        auto [pkey, certificate] = key_certificate_pair.value();
         auto it = findOrInsert(ctx, prefix);
         it->data.set(std::make_unique<const Data>(pkey, certificate));
         if (!it->initialized)
@@ -167,32 +149,54 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
     {
         LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
     }
+}
 
-    // try
-    // {
-    //     auto it = findOrInsert(ctx, prefix);
-    //
-    //     bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
-    //     bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
-    //
-    //     if (cert_file_changed || key_file_changed)
-    //     {
-    //         LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-    //
-    //         std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
-    //         it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
-    //
-    //         LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
-    //     }
-    //
-    //     /// If callback is not set yet
-    //     if (!it->initialized)
-    //         init(&*it);
-    // }
-    // catch (...)
-    // {
-    //     LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
-    // }
+void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
+{
+    /// fixme fail if both acme and certificateFile/privateKeyFile are set
+    if conifg.has("acme")
+    {
+        tryLoadACMECertificate(config, ctx, prefix);
+        return;
+    }
+
+    /// If at least one of the files is modified - recreate
+    std::string new_cert_path = config.getString(prefix + "certificateFile", "");
+    std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
+
+    /// For empty paths (that means, that user doesn't want to use certificates)
+    /// no processing required
+    if (new_cert_path.empty() || new_key_path.empty())
+    {
+        LOG_WARNING(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+        return;
+    }
+
+    try
+    {
+        auto it = findOrInsert(ctx, prefix);
+
+        bool cert_file_changed = it->cert_file.changeIfModified(std::move(new_cert_path), log);
+        bool key_file_changed = it->key_file.changeIfModified(std::move(new_key_path), log);
+
+        if (cert_file_changed || key_file_changed)
+        {
+            LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+
+            std::string pass_phrase = config.getString(prefix + "privateKeyPassphraseHandler.options.password", "");
+            it->data.set(std::make_unique<const Data>(it->cert_file.path, it->key_file.path, pass_phrase));
+
+            LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", it->cert_file.path, it->key_file.path);
+        }
+
+        /// If callback is not set yet
+        if (!it->initialized)
+            init(&*it);
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false));
+    }
 }
 
 

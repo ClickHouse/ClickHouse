@@ -4,6 +4,7 @@
 #include "OpenSSLHelpers.h"
 #include <base/scope_guard.h>
 #include <openssl/err.h>
+#include <openssl/rsa.h>
 #include <openssl/sha.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
@@ -44,9 +45,13 @@ std::string calculateHMACwithSHA256(std::string to_sign, const Poco::Crypto::RSA
 {
     EVP_PKEY * pkey = EVP_PKEY_new();
 
-    if (EVP_PKEY_assign_RSA(pkey, key.impl()->getRSA()) != 1)
+    auto * rsa = key.impl()->getRSA();
+    RSA_up_ref(rsa);
+
+    if (EVP_PKEY_assign_RSA(pkey, rsa) != 1)
     {
         EVP_PKEY_free(pkey);
+        RSA_free(rsa);
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error converting RSA key to an EVP_PKEY structure: {}", getOpenSSLErrors());
     }
 
@@ -61,6 +66,7 @@ std::string calculateHMACwithSHA256(std::string to_sign, const Poco::Crypto::RSA
     {
         EVP_MD_CTX_destroy(context);
         EVP_PKEY_free(pkey);
+        RSA_free(rsa);
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error forming SHA256 digest: {}", getOpenSSLErrors());
     }
 
@@ -68,11 +74,14 @@ std::string calculateHMACwithSHA256(std::string to_sign, const Poco::Crypto::RSA
     if (EVP_DigestSignFinal(context, &signature_bytes.front(), &signature_length) != 1)
     {
         EVP_MD_CTX_destroy(context);
+        EVP_PKEY_free(pkey);
+        RSA_free(rsa);
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error finalizing SHA256 digest: {}", getOpenSSLErrors());
     }
 
     EVP_MD_CTX_destroy(context);
-    // EVP_PKEY_free(pkey);  /// FIXME this segfaults due to cleaning RSAKey memory.
+    EVP_PKEY_free(pkey);
+    RSA_free(rsa);
 
     std::string signature = { signature_bytes.begin(), signature_bytes.end() };
     return base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true);
