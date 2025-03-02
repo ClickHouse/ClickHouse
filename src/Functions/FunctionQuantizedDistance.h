@@ -12,14 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ILLEGAL_COLUMN;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int SIZES_OF_ARRAYS_DONT_MATCH;
-}
-
 template <typename Kernel, const char * function_name>
 class FunctionQuantizedL2Distance : public IFunction
 {

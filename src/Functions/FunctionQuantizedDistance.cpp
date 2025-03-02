@@ -220,7 +220,10 @@ struct CosineProduct1Bit
             for (size_t j = 0; j < 256; ++j)
             {
                 float product = 0.0f;
-                for (size_t k = 0, x = i, y = j; k < 8; ++k) {
+                size_t x = i;
+                size_t y = j;
+                for (size_t bit = 0; bit < 8; ++bit)
+                {
                     product += dequantize[x % 2] * dequantize[y % 2];
                     x >>= 1;
                     y >>= 1;

@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 template <typename Traits, typename QuantizeImpl>
@@ -124,4 +125,4 @@ public:
     }
 };
 
-} // namespace DB
+}
