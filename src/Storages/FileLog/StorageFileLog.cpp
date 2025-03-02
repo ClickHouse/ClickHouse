@@ -757,6 +757,7 @@ bool StorageFileLog::streamToViews()
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist", table_id.getNameForLogs());
+
     auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
 
