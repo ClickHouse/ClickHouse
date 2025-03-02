@@ -1,4 +1,5 @@
 #include "FunctionDequantize.h"
+#include "Common/FunctionDocumentation.h"
 
 namespace DB
 {
@@ -97,22 +98,22 @@ using FunctionDequantize1Bit = FunctionDequantizeBase<Dequantize1BitTraits, Dequ
 
 REGISTER_FUNCTION(Dequantize16Bit)
 {
-    factory.registerFunction<FunctionDequantize16Bit>();
+    factory.registerFunction<FunctionDequantize16Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
 }
 
 REGISTER_FUNCTION(Dequantize8Bit)
 {
-    factory.registerFunction<FunctionDequantize8Bit>();
+    factory.registerFunction<FunctionDequantize8Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
 }
 
 REGISTER_FUNCTION(Dequantize4Bit)
 {
-    factory.registerFunction<FunctionDequantize4Bit>();
+    factory.registerFunction<FunctionDequantize4Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
 }
 
 REGISTER_FUNCTION(Dequantize1Bit)
 {
-    factory.registerFunction<FunctionDequantize1Bit>();
+    factory.registerFunction<FunctionDequantize1Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
 }
 
 }

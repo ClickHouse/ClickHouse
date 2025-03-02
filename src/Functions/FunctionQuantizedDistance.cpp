@@ -279,49 +279,57 @@ struct CosineDistanceGeneric
 REGISTER_FUNCTION(Quantized16BitL2Distance)
 {
     static constexpr char name[] = "quantized16BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt16, L2Accumulate16Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt16, L2Accumulate16Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized8BitL2Distance)
 {
     static constexpr char name[] = "quantized8BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate8Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate8Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized4BitL2Distance)
 {
     static constexpr char name[] = "quantized4BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate4Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate4Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized1BitL2Distance)
 {
     static constexpr char name[] = "quantized1BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate1Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate1Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized16BitCosineDistance)
 {
     static constexpr char name[] = "quantized16BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt16, CosineProduct16Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt16, CosineProduct16Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized8BitCosineDistance)
 {
     static constexpr char name[] = "quantized8BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct8Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct8Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized4BitCosineDistance)
 {
     static constexpr char name[] = "quantized4BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct4Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct4Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
 }
 
 REGISTER_FUNCTION(Quantized1BitCosineDistance)
 {
     static constexpr char name[] = "quantized1BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct1Bit>, name>>();
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct1Bit>, name>>(
+        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
 }
 
 }

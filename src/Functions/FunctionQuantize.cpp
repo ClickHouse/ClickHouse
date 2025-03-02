@@ -328,22 +328,22 @@ using FunctionQuantize1Bit = FunctionQuantizeBase<Quantize1BitTraits, Quantize1B
 
 REGISTER_FUNCTION(Quantize16Bit)
 {
-    factory.registerFunction<FunctionQuantize16Bit>();
+    factory.registerFunction<FunctionQuantize16Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
 }
 
 REGISTER_FUNCTION(Quantize8Bit)
 {
-    factory.registerFunction<FunctionQuantize8Bit>();
+    factory.registerFunction<FunctionQuantize8Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
 }
 
 REGISTER_FUNCTION(Quantize4Bit)
 {
-    factory.registerFunction<FunctionQuantize4Bit>();
+    factory.registerFunction<FunctionQuantize4Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
 }
 
 REGISTER_FUNCTION(Quantize1Bit)
 {
-    factory.registerFunction<FunctionQuantize1Bit>();
+    factory.registerFunction<FunctionQuantize1Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
 }
 
 }
