@@ -34,7 +34,8 @@ std::vector<std::string> splitByNewline(const std::string & s)
     return result;
 }
 
-void AddPrefixToKeys(rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator, bool in_projection = false)
+void AddPrefixToKeys(
+    rapidjson::Value & value, rapidjson::Document::AllocatorType & allocator, const String & current_path = "", bool in_projection = false)
 {
     if (value.IsObject())
     {
@@ -50,7 +51,8 @@ void AddPrefixToKeys(rapidjson::Value & value, rapidjson::Document::AllocatorTyp
                 }
                 else
                 {
-                    rapidjson::Value new_key(("json." + key).c_str(), allocator);
+                    auto result_path = current_path.empty() ? key : current_path + "." + key;
+                    rapidjson::Value new_key(result_path.c_str(), allocator);
                     new_object.AddMember(new_key, it->value, allocator);
                 }
             }
@@ -63,7 +65,8 @@ void AddPrefixToKeys(rapidjson::Value & value, rapidjson::Document::AllocatorTyp
                 }
                 else
                 {
-                    rapidjson::Value new_value(("json." + str_value).c_str(), allocator);
+                    auto result_path = current_path.empty() ? str_value : current_path + "." + str_value;
+                    rapidjson::Value new_value(result_path.c_str(), allocator);
                     new_object.AddMember(it->name, new_value, allocator);
                 }
             }
@@ -80,7 +83,12 @@ void AddPrefixToKeys(rapidjson::Value & value, rapidjson::Document::AllocatorTyp
         for (auto & member : value.GetObject())
         {
             String name = member.name.GetString();
-            AddPrefixToKeys(member.value, allocator, in_projection | (name == "$projection"));
+            if (name == "$projection")
+                AddPrefixToKeys(member.value, allocator, current_path, true);
+            else if (!current_path.empty())
+                AddPrefixToKeys(member.value, allocator, current_path + "." + name, in_projection);
+            else
+                AddPrefixToKeys(member.value, allocator, name, in_projection);
         }
     }
     else if (value.IsArray())
@@ -166,7 +174,7 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::sha
             {
                 bson_t * bson_doc = bson_new();
 
-                BSON_APPEND_UTF8(bson_doc, "errMsg", ex.what());
+                BSON_APPEND_UTF8(bson_doc, "errmsg", ex.what());
                 BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
 
                 Document doc(bson_doc);
@@ -191,7 +199,7 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::sha
             {
                 bson_t * bson_doc = bson_new();
 
-                BSON_APPEND_UTF8(bson_doc, "errMsg", ex.what());
+                BSON_APPEND_UTF8(bson_doc, "errmsg", ex.what());
                 BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
 
                 Document doc(bson_doc);

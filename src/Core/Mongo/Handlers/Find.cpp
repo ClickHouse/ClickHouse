@@ -33,11 +33,11 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     const auto & json_representation = document.getRapidJsonRepresentation();
     String table_name = json_representation["find"].GetString();
 
-    bool has_projection = false;
+    //bool has_projection = false;
     rapidjson::Value filter;
     if (json_representation.FindMember("projection") != json_representation.MemberEnd())
     {
-        has_projection = true;
+        //has_projection = true;
         rapidjson::Document new_filter;
         new_filter.CopyFrom(json_representation["filter"], new_filter.GetAllocator());
 
@@ -105,34 +105,12 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     ast->format(sql_buffer, IAST::FormatSettings(true));
 
     sql_query = clearQuery(sql_query);
-    if (has_projection)
-        sql_query += " FORMAT JSON";
+    sql_query += " FORMAT JSON";
     sql_query += " SETTINGS allow_suspicious_types_in_order_by = 1";
     std::vector<Document> result;
     {
         auto output = executor->execute(sql_query);
 
-        if (!has_projection)
-        {
-            auto data_items = splitByNewline(output);
-            for (const auto & json : data_items)
-            {
-                rapidjson::Document doc;
-                doc.Parse(json.data());
-
-                auto it = doc.FindMember("_id");
-                if (it != doc.MemberEnd())
-                {
-                    doc.EraseMember(it);
-                }
-                rapidjson::StringBuffer json_buffer;
-                rapidjson::Writer<rapidjson::StringBuffer> json_writer(json_buffer);
-                doc.Accept(json_writer);
-
-                result.push_back(Document(json_buffer.GetString()));
-            }
-        }
-        else
         {
             rapidjson::Document doc;
             doc.Parse(output.data());

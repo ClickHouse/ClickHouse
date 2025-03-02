@@ -97,7 +97,7 @@ std::vector<String> Document::getDocumentKeys() const
 
 Document::~Document()
 {
-    bson_destroy(bson_doc);
+    //bson_destroy(bson_doc);
 }
 
 }

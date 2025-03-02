@@ -52,14 +52,15 @@ def test_count_query(started_cluster):
     db = client['db']
     collection = db['count']
 
+    collection.drop()
     documents = [
-        {"name": "Bob Johnson", "age": 32, "city": "New York"},
-        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
-        {"name": "David Williams", "age": 40, "city": "Chicago"}
+        {"name": "Bob Johnson", "age": 32, "city": 1},
+        {"name": "Charlie Brown", "age": 24, "city": 2},
+        {"name": "David Williams", "age": 40, "city": 3}
     ]
     collection.insert_many(documents)
 
-    assert collection.estimated_document_count() == 3
+    assert collection.estimated_document_count() == 3    
 
     collection.delete_many({"age" : 24})
 
@@ -84,9 +85,9 @@ def test_find_query(started_cluster):
     find_docs = sorted(find_docs, key=lambda x: x["age"])
 
     assert find_docs == [
-        {"name": "Charlie Brown", "age": '24', "city": "Los Angeles"},
-        {"name": "Bob Johnson", "age": '32', "city": "New York"},
-        {"name": "David Williams", "age": '40', "city": "Chicago"}
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
+        {"name": "Bob Johnson", "age": 32, "city": "New York"},
+        {"name": "David Williams", "age": 40, "city": "Chicago"}
     ]
 
     find_docs = [doc for doc in collection.find({}).limit(2)]
@@ -94,7 +95,7 @@ def test_find_query(started_cluster):
 
     find_docs = [doc for doc in collection.find({"age" : 24})]
     assert find_docs == [
-        {"name": "Charlie Brown", "age": '24', "city": "Los Angeles"},
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
     ]
 
     find_docs = [doc for doc in collection.find(projection = {"abacaba" : "name"})]
@@ -107,8 +108,37 @@ def test_find_query(started_cluster):
 
     find_docs = [doc for doc in collection.find().sort("city",1)]
     assert find_docs == [
-        {"name": "David Williams", "age": '40', "city": "Chicago"},
-        {"name": "Charlie Brown", "age": '24', "city": "Los Angeles"},
-        {"name": "Bob Johnson", "age": '32', "city": "New York"},
+        {"name": "David Williams", "age": 40, "city": "Chicago"},
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
+        {"name": "Bob Johnson", "age": 32, "city": "New York"},
     ]
 
+    collection.update_many(
+        {'age': 32},
+        {"$set" : {"city" : 42}}
+    )
+
+
+def test_index(started_cluster):
+    node = cluster.instances["node"]
+    client = pymongo.MongoClient(f"mongodb://default:123@{node.ip_address}:{server_port}/default?authMechanism=PLAIN")
+    db = client['db']
+    collection = db['index']
+
+    collection.drop()
+    documents = [
+        {"name": "Bob Johnson", "age": 32, "city": "New York"},
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
+        {"name": "David Williams", "age": 40, "city": "Chicago"}
+    ]
+    collection.insert_many(documents)
+
+    collection.create_index("age")
+    find_docs = [doc for doc in collection.find({})]
+    find_docs = sorted(find_docs, key=lambda x: x["age"])
+
+    assert find_docs == [
+        {"name": "Charlie Brown", "age": 24, "city": "Los Angeles"},
+        {"name": "Bob Johnson", "age": 32, "city": "New York"},
+        {"name": "David Williams", "age": 40, "city": "Chicago"}
+    ]

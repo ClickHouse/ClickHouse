@@ -195,9 +195,8 @@ bool MongoSetFunction::parseImpl(ASTPtr & node)
     {
         auto assignment_ast = std::make_shared<ASTAssignment>();
         assignment_ast->column_name = it->name.GetString();
-        std::cerr << "SET NAME " << it->name.GetString() << '\n';
         ASTPtr assigment_expr;
-        auto parser = createParser(it->value.GetObject(), metadata, "$arithmetic_function_element");
+        auto parser = createParser(copyValue(it->value), metadata, "$arithmetic_function_element");
         if (!parser->parseImpl(assigment_expr))
             return false;
         assignment_ast->children.push_back(assigment_expr);

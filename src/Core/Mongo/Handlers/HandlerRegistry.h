@@ -29,5 +29,7 @@ void registerDeleteHandler(HandlerRegitstry * registry);
 void registerListDatabasesHandler(HandlerRegitstry * registry);
 void registerListCollectionsHandler(HandlerRegitstry * registry);
 void registerAuthHandler(HandlerRegitstry * registry);
+void registerUpdateHandler(HandlerRegitstry * registry);
+void registerIndexHandler(HandlerRegitstry * registry);
 
 }

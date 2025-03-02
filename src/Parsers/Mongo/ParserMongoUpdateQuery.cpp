@@ -53,7 +53,6 @@ bool ParserMongoUpdateQuery::parseImpl(ASTPtr & node)
         rapidjson::Writer<rapidjson::StringBuffer> writer_filter(writer_buffer);
 
         filter_json.Accept(writer_filter);
-        std::cerr << "DUMP FILTER " << writer_buffer.GetString() << '\n';
     }
 
     {
@@ -61,7 +60,6 @@ bool ParserMongoUpdateQuery::parseImpl(ASTPtr & node)
         rapidjson::Writer<rapidjson::StringBuffer> writer_filter(writer_buffer);
 
         update_json.Accept(writer_filter);
-        std::cerr << "DUMP UPDATE " << writer_buffer.GetString() << '\n';
     }
 
 
@@ -79,7 +77,7 @@ bool ParserMongoUpdateQuery::parseImpl(ASTPtr & node)
     if (createParser(std::move(update_json), metadata, "")->parseImpl(update_operation))
     {
         update_query->children.push_back(update_operation);
-        update_query->update_assignments = where_condition.get();
+        update_query->update_assignments = update_operation.get();
     }
     else
     {

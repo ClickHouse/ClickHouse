@@ -45,17 +45,14 @@ bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     data.Accept(writer);
-    const char * json_string = buffer.GetString();
 
     if (ParserMongoFilter(std::move(data), metadata, "").parseImpl(where_condition))
     {
         delete_query->predicate = std::move(where_condition);
-        std::cerr << "Parse OK " << json_string << '\n';
         return true;
     }
     else
     {
-        std::cerr << "Parse NOT OK\n";
         return false;
     }
 }

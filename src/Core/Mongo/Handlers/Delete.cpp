@@ -24,38 +24,6 @@
 namespace DB::MongoProtocol
 {
 
-namespace
-{
-
-std::vector<String> splitQuery(const String & query, char delim = ' ')
-{
-    std::vector<String> parts = {""};
-    for (auto elem : query)
-    {
-        if (elem == delim && !parts.back().empty())
-            parts.push_back("");
-
-        if (elem != delim)
-            parts.back().push_back(elem);
-    }
-    while (parts.back().empty())
-        parts.pop_back();
-    return parts;
-}
-
-/// Transform DELETE FROM table WHERE condition; to ALTER TABLE table DELETE WHERE condition;
-String transformDeleteQueryToAlter(const String & query)
-{
-    auto parts = splitQuery(query);
-    auto table_name = parts[2];
-    String result = "ALTER TABLE " + table_name + " DELETE ";
-    for (size_t i = 3; i < parts.size(); ++i)
-        result += parts[i] + " ";
-    result.pop_back();
-    return result;
-}
-}
-
 std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & delete_info_doc = documents[0].documents[0];
@@ -90,7 +58,7 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     while (sql_query.back() == 0)
         sql_query.pop_back();
 
-    sql_query = transformDeleteQueryToAlter(sql_query) + ";";
+    sql_query = sql_query + ";";
     executor->execute(sql_query);
 
     bson_t * bson_doc = bson_new();

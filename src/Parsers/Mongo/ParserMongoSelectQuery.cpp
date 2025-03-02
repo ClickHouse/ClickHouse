@@ -67,7 +67,6 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
 
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
-    std::cerr << "before limit\n";
     if (metadata->getLimit())
     {
         size_t limit_value = *metadata->getLimit();
@@ -75,14 +74,11 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
         select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(literal));
     }
 
-    std::cerr << "before order by\n";
     if (metadata->getOrderBy())
     {
-        std::cerr << "try to parse order by\n";
         ASTPtr order_by_node;
         auto order_by = *metadata->getOrderBy();
         auto order_by_tree = parseData(order_by.data(), order_by.data() + order_by.size(), false);
-        std::cerr << "order_by_tree " << order_by << ' ' << order_by_tree.IsObject() << '\n';
         if (!ParserMongoOrderBy(std::move(order_by_tree), metadata, "").parseImpl(order_by_node))
         {
             return false;
