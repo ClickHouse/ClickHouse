@@ -433,7 +433,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
      * In the case of a COPY FROM request, the server sends CopyInResponse - a sign of readiness to receive data from the client.
      * The client then sends CopyInData until all data has been sent.
      * After this, the server sends a CommandComplete response.
-     * 
      * For more detailes see https://www.dolthub.com/blog/2024-09-17-tabular-data-imports/
      */
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_FROM)
@@ -474,7 +473,6 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
     /* In the case of a COPY TO request, the server calculates the number of rows and then sends it to the client in CopyOutResponse.
      * After this, the server sends the data in a CopyOutData message, and when the data runs out, it sends a CopyCompletionResponse.
-     * 
      * For more detailes see https://www.dolthub.com/blog/2024-09-17-tabular-data-imports/
      */
     if (copy_query_parsed && copy_query_parsed->as<ASTCopyQuery>()->type == ASTCopyQuery::QueryType::COPY_TO)
