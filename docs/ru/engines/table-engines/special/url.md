@@ -13,7 +13,7 @@ sidebar_label: URL
 
 `Format` должен быть таким, который ClickHouse может использовать в запросах
 `SELECT` и, если есть необходимость, `INSERT`. Полный список поддерживаемых форматов смотрите в
-разделе [Форматы](../../../interfaces/formats.md#formats).
+разделе [Форматы](/interfaces/formats#formats-overview).
 
 `URL` должен соответствовать структуре Uniform Resource Locator. По указанному URL должен находится сервер
 работающий по протоколу HTTP или HTTPS. При этом не должно требоваться никаких
