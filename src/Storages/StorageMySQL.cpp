@@ -70,7 +70,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(std::make_unique<MySQLSettings>(mysql_settings_))
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
-    , log(getLogger("StorageMySQL (" + table_id_.database_name "." + table_id_.table_name + ")"))
+    , log(getLogger("StorageMySQL (" + table_id_.getNameForLogs() + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
 
