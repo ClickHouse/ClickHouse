@@ -1273,9 +1273,8 @@ public:
         for (size_t i = 0; i < nonce_length; ++i)
         {
             generator >> scramble[i];
-            scramble[i] %= 26;
-            scramble[i] = abs(scramble[i]);
-            scramble[i] += 'a';
+            scramble[i] %= 13;
+            scramble[i] += 'n';
         }
 
         return base64Encode(scramble);
