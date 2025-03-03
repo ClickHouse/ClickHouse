@@ -1197,7 +1197,7 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
-    grace_hash_join_max_buckets = join_settings.grace_hash_join_initial_buckets;
+    grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;
 
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
     max_threads = join_settings.max_threads;
