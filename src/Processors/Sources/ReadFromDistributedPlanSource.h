@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/ISource.h>
 
+#include <deque>
+
 namespace DB
 {
 
@@ -22,6 +24,7 @@ private:
     Chunk generate() override;
 
     const DistributedQueryPlan distributed_query_plan;
+    std::optional<std::deque<Chunk>> result;
 };
 
 }

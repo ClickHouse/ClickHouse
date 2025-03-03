@@ -1,3 +1,5 @@
+#include <memory>
+#include <mutex>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
@@ -14,7 +16,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
-#include "Common/DateLUT.h"
 #include <Common/logger_useful.h>
 
 
@@ -56,6 +57,8 @@ public:
 
     WriteBuffer & getTemporaryFileForWriting(const String & file_name) override
     {
+        LOG_DEBUG(logger, "Writing to temporary file {}", file_name);
+
         if (!output_temporary_files.contains(file_name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected output temporary file requested: {} ", file_name);
         StoredObject object(object_storage_path + "/" + file_name, file_name);
@@ -65,6 +68,8 @@ public:
 
     std::unique_ptr<ReadBuffer> getTemporaryFileForReading(const String & file_name) override
     {
+        LOG_TRACE(logger, "Reading from temporary file {}", file_name);
+
         if (!input_temporary_files.contains(file_name))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected input temporary file requested: {} ", file_name);
         StoredObject object(object_storage_path + "/" + file_name, file_name);
@@ -77,6 +82,7 @@ private:
     const std::unordered_set<String> input_temporary_files;
     const std::unordered_set<String> output_temporary_files;
     std::vector<std::unique_ptr<WriteBuffer>> write_buffers;
+    LoggerPtr logger = getLogger("TemporaryFilesInObjectStorage");
 };
 
 String serializeQueryPlan(const QueryPlan & query_plan)
@@ -92,7 +98,14 @@ QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr 
     return QueryPlan::deserialize(in, context).plan;
 }
 
-void doExecuteTask(const String & serialized_query_plan, const DistributedQueryTask & task, ObjectStoragePtr object_storage, const String & object_storage_path, ContextPtr context)
+class ResultSink
+{
+public:
+    virtual ~ResultSink() = default;
+    virtual void addBlock(Block block) = 0;
+};
+
+void doExecuteTask(const String & serialized_query_plan, const DistributedQueryTask & task, ObjectStoragePtr object_storage, const String & object_storage_path, ResultSink & result, ContextPtr context)
 {
     QueryPlan query_plan = deserializeQueryPlan(serialized_query_plan, context);
 
@@ -142,13 +155,15 @@ void doExecuteTask(const String & serialized_query_plan, const DistributedQueryT
             rows_num += block.rows();
 
             LOG_TEST(logger, "Block {}:\n{}", block_num, block.dumpStructure());
+
+            result.addBlock(block);
         }
 
         LOG_DEBUG(logger, "Read {} blocks with {} rows from pipeline", block_num, rows_num);
     }
 }
 
-void executeTask(const String & serialized_query_plan, const DistributedQueryTask & task, ContextPtr context)
+void executeTask(const String & serialized_query_plan, const DistributedQueryTask & task, ResultSink & result, ContextPtr context)
 {
     bool use_local_object_storage = true;
     ObjectStoragePtr object_storage;
@@ -172,21 +187,21 @@ void executeTask(const String & serialized_query_plan, const DistributedQueryTas
         object_storage = ObjectStorageFactory::instance().create("s3", config, config_prefix, context, false);
     }
 
-    doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
+    doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, result, context);
 }
 
-std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
+std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ResultSink & result, ContextPtr context)
 {
     std::promise<void> task_promise;
     std::future<void> future = task_promise.get_future();
 
     const String serialized_query_plan = serializeQueryPlan(query_plan);
 
-    std::thread([promise = std::move(task_promise), serialized_query_plan, task, context]() mutable
+    std::thread([promise = std::move(task_promise), serialized_query_plan, task, &result, context]() mutable
     {
         try
         {
-            executeTask(serialized_query_plan, task, context);
+            executeTask(serialized_query_plan, task, result, context);
             promise.set_value();
         }
         catch (...)
@@ -198,12 +213,12 @@ std::future<void> startTask(const QueryPlan & query_plan, const DistributedQuery
     return future;
 }
 
-void executeStage(const DistributedQueryStage & stage, ContextPtr context)
+void executeStage(const DistributedQueryStage & stage, ResultSink & result, ContextPtr context)
 {
     std::vector<std::future<void>> started_tasks;
     started_tasks.reserve(stage.tasks.size());
     for (const auto & task : stage.tasks)
-        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, context));
+        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, result, context));
 
     /// TODO: periodically check for cancellation
     for (const auto & task : started_tasks)
@@ -214,11 +229,33 @@ void executeStage(const DistributedQueryStage & stage, ContextPtr context)
         task.get();
 }
 
-void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
+class StageResult : public ResultSink
+{
+public:
+    void addBlock(Block block) override
+    {
+        std::lock_guard lock(mutex);
+        blocks.push_back(std::move(block));
+    }
+
+    std::vector<Block> getBlocks()
+    {
+        std::lock_guard lock(mutex);
+        return blocks;
+    }
+
+private:
+    std::vector<Block> blocks;
+    std::mutex mutex;
+};
+
+using StageResultPtr = std::shared_ptr<StageResult>;
+
+Chunks executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
 {
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
     /// Execute stages in topological order
-    std::unordered_set<String> executed_stages;
+    std::unordered_map<String, StageResultPtr> executed_stages;
     std::function<void(const String &)> execute_stage = [&](const String & stage_name)
     {
         if (executed_stages.contains(stage_name))
@@ -236,12 +273,20 @@ void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan
             "plan:\n{}\n"
             "==========================================================================",
             stage_name, dumpQueryPlan(stage.query_plan_fragment));
-        executeStage(stage, context);
-        executed_stages.insert(stage_name);
+        StageResultPtr stage_result = std::make_shared<StageResult>();
+        executeStage(stage, *stage_result, context);
+        executed_stages[stage_name] = stage_result;
     };
 
     for (const auto & [stage_name, _] : distributed_query_plan.stages)
         execute_stage(stage_name);
+
+    Chunks result;
+    auto main_result = executed_stages.at("main");
+    for (const auto & block : main_result->getBlocks())
+        result.push_back(Chunk(block.getColumns(), block.rows()));
+
+    return result;
 }
 
 }
