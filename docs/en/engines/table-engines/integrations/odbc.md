@@ -135,5 +135,5 @@ SELECT * FROM odbc_t
 
 ## See Also {#see-also}
 
-- [ODBC dictionaries](/sql-reference/dictionaries#dictionary-sources#dicts-external_dicts_dict_sources-odbc)
+- [ODBC dictionaries](/sql-reference/dictionaries#mysql)
 - [ODBC table function](../../../sql-reference/table-functions/odbc.md)
