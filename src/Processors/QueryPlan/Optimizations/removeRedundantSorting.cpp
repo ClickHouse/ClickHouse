@@ -21,7 +21,7 @@
 
 namespace DB::QueryPlanOptimizations
 {
-constexpr bool debug_logging_enabled = false;
+constexpr bool debug_logging_enabled = true;
 
 class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>
 {
@@ -211,6 +211,14 @@ private:
             /// skip removed sorting steps
             if (typeid_cast<const SortingStep*>(step))
                 continue;
+
+            /// if Sorting is under Union step added for parallel replicas
+            /// then don't remove this Sorting step to keep plan similar to plan on remote node,
+            /// otherwise it can lead to different reading mode from MergeTree i.e. default vs in order
+            /// TODO: do it only if read-in-order optimization is enabled, otherwise it doesn't make sense
+            ///       (the cases when the read-in-order optimization is disabled are considered to be rare)
+            if (const auto * union_step = typeid_cast<const UnionStep *>(step); union_step && union_step->parallelReplicas())
+                return false;
 
             logStep("checking for stateful function", node);
             if (const auto * expr = typeid_cast<const ExpressionStep *>(step); expr)
