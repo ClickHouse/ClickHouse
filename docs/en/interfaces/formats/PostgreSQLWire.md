@@ -1,7 +1,7 @@
 ---
-title : PostgreSQLWire
+title: PostgreSQLWire
 slug: /interfaces/formats/PostgreSQLWire
-keywords : [PostgreSQLWire]
+keywords: [PostgreSQLWire]
 ---
 
 ## Description {#description}
