@@ -332,8 +332,6 @@ String getDefaultClientId(const StorageID & table_id)
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
 }
 
-
-
 void consumerGracefulStop(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {
