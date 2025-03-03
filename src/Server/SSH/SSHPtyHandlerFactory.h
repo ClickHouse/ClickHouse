@@ -70,6 +70,8 @@ public:
             ssh_bind.setHostKey(ed25519_key);
 
         enable_client_options_passing = config.getBool(prefix + "enable_client_options_passing", false);
+        if (enable_client_options_passing)
+            LOG_WARNING(log, "Client options propagation is enabled. This is considered unsafe and shouldn't be used in production.");
     }
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override

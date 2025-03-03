@@ -671,6 +671,9 @@ try
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
+        if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT && !server_logs_file.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
+
         bool logs_into_stdout = server_logs_file == "-";
         bool extras_into_stdout = need_render_progress || logs_into_stdout;
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
@@ -721,9 +724,6 @@ catch (...)
 
 void ClientBase::initLogsOutputStream()
 {
-    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT && !server_logs_file.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
-
     if (!logs_out_stream)
     {
         WriteBuffer * wb = out_logs_buf.get();
@@ -2939,7 +2939,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.count("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("queries-file"))
+    {
+        if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not allowed, because the client runs in an embedded mode");
         queries_files = options["queries-file"].as<std::vector<std::string>>();
+    }
     if (options.count("multiline"))
         getClientConfiguration().setBool("multiline", true);
     if (options.count("ignore-error"))
@@ -3008,20 +3012,33 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.count("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
+    {
+        if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
+    }
     if (options.count("history_max_entries"))
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.count("interactive"))
         getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))
+    {
+        if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom pager is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
+    }
+
     if (options.count("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
+    {
+        if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
         server_logs_file = options["server_logs_file"].as<std::string>();
+    }
 
     if (options.count("proto_caps"))
     {
