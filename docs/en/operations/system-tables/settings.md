@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about session settings for current user."
 slug: /operations/system-tables/settings
-title: "settings"
+title: "system.settings"
 keywords: ["system table", "settings"]
 ---
 
@@ -13,8 +13,8 @@ Columns:
 - `value` ([String](../../sql-reference/data-types/string.md)) — Setting value.
 - `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the setting was explicitly defined in the config or explicitly changed.
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short setting description.
-- `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](../../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../../sql-reference/syntax.md#null-literal).
-- `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](../../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../../sql-reference/syntax.md#null-literal).
+- `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](../../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
+- `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](../../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
 - `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     - `0` — Current user can change the setting.
     - `1` — Current user can't change the setting.
@@ -92,7 +92,7 @@ Possible values:
 
 **See Also**
 
-- [min_insert_block_size_rows](#min-insert-block-size-rows)
+- [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -116,7 +116,7 @@ Possible values:
 
 **See also**
 
-- [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+- [min_insert_block_size_bytes](/operations/settings/settings#min_insert_block_size_bytes)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -140,7 +140,7 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 **See also**
 
-- [Settings](../../operations/settings/overview#session-settings-intro)
+- [Settings](/operations/system-tables/overview#system-tables-introduction)
 - [Permissions for Queries](../../operations/settings/permissions-for-queries.md#settings_readonly)
 - [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 - [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement

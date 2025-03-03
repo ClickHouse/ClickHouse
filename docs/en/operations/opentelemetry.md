@@ -11,7 +11,7 @@ title: "Tracing ClickHouse with OpenTelemetry"
 
 ClickHouse accepts trace context HTTP headers, as described by the [W3C recommendation](https://www.w3.org/TR/trace-context/). It also accepts trace context over a native protocol that is used for communication between ClickHouse servers or between the client and server. For manual testing, trace context headers conforming to the Trace Context recommendation can be supplied to `clickhouse-client` using `--opentelemetry-traceparent` and `--opentelemetry-tracestate` flags.
 
-If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](../operations/settings/settings.md#opentelemetry-start-trace-probability) setting.
+If no parent trace context is supplied or the provided trace context does not comply with W3C standard above, ClickHouse can start a new trace, with probability controlled by the [opentelemetry_start_trace_probability](/operations/settings/settings#opentelemetry_start_trace_probability) setting.
 
 ## Propagating the Trace Context {#propagating-the-trace-context}
 

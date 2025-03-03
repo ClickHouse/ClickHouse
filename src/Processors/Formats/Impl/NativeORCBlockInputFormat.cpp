@@ -40,7 +40,6 @@
 #    include <orc/MemoryPool.hh>
 #    include <orc/Vector.hh>
 #    include <Common/Allocator.h>
-#    include <Common/FieldVisitorsAccurateComparison.h>
 #    include <Common/quoteString.h>
 
 #    include "ArrowBufferedStreams.h"
