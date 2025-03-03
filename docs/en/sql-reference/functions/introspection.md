@@ -20,7 +20,7 @@ For proper operation of introspection functions:
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace_log](/operations/system-tables/trace_log) system table. Make sure the table and profiler are configured properly.
 
 ## addressToLine {#addresstoline}
 
@@ -403,7 +403,7 @@ clone
 ```
 ## tid {#tid}
 
-Returns id of the thread, in which current [Block](/docs/development/architecture/#block) is processed.
+Returns id of the thread, in which current [Block](/development/architecture/#block) is processed.
 
 **Syntax**
 
@@ -433,7 +433,7 @@ Result:
 
 ## logTrace {#logtrace}
 
-Emits trace log message to server log for each [Block](/docs/development/architecture/#block).
+Emits trace log message to server log for each [Block](/development/architecture/#block).
 
 **Syntax**
 

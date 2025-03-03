@@ -563,7 +563,8 @@ bool ExternalAuthenticators::checkHTTPBasicCredentials(
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
     std::unordered_map<String, String> headers;
-    if (const auto * http_credentials = typeid_cast<const HTTPCredentials *>(&credentials)) {
+    if (const auto * http_credentials = typeid_cast<const HTTPCredentials *>(&credentials))
+    {
         headers = http_credentials->getHeaders();
     }
 

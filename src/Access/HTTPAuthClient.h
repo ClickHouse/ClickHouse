@@ -88,11 +88,12 @@ public:
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
-        
+
         for (const auto & k : this->getForwardHeaders())
         {
             auto it = headers.find(k);
-            if (it == headers.end()) {
+            if (it == headers.end())
+            {
                 continue;
             }
             request.add(k, it->second);
