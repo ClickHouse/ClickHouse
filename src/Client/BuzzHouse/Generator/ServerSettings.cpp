@@ -6,8 +6,7 @@ namespace BuzzHouse
 const RandomSettingParameter probRange
     = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
-const RandomSettingParameter highRange
-    = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
+const RandomSettingParameter highRange = [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); };
 
 static const CHSetting threadRange = CHSetting(
     [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
@@ -964,8 +963,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (!fc.timezones.empty())
     {
         serverSettings.insert(
-            {{"session_timezone",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.timezones) + "'"; }, {}, false)}});
+            {{"session_timezone", CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(fc.timezones) + "'"; }, {}, false)}});
     }
     if (!fc.clusters.empty())
     {

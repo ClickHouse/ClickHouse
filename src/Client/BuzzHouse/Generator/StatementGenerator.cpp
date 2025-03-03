@@ -339,8 +339,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     }
     else if (drop_database && nopt < (drop_table + drop_view + drop_database + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
         dp->set_sobject(SQLObject::DATABASE);
@@ -743,16 +742,14 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     }
     else if (trunc_db_tables && nopt < (trunc_table + trunc_db_tables + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
         trunc->mutable_all_tables()->set_database("d" + std::to_string(d->dname));
     }
     else if (trunc_db && nopt < (trunc_table + trunc_db_tables + trunc_db + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
         trunc->mutable_database()->set_database("d" + std::to_string(d->dname));
@@ -1040,14 +1037,7 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                 AddColumn * add_col = ati->mutable_modify_column();
 
                 addTableColumn(
-                    rg,
-                    t,
-                    rg.pickRandomly(t.cols),
-                    true,
-                    true,
-                    rg.nextMediumNumber() < 6,
-                    ColumnSpecial::NONE,
-                    add_col->mutable_new_col());
+                    rg, t, rg.pickRandomly(t.cols), true, true, rg.nextMediumNumber() < 6, ColumnSpecial::NONE, add_col->mutable_new_col());
                 if (next_option < 4)
                 {
                     flatTableColumnPath(flat_tuple | flat_nested, t, [](const SQLColumn &) { return true; });
@@ -1751,8 +1741,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     }
     else if (attach_database)
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(detached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(detached_databases));
 
         cluster = d->getCluster();
         att->set_sobject(SQLObject::DATABASE);
@@ -1815,8 +1804,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
     else if (detach_database)
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         cluster = d->getCluster();
         det->set_sobject(SQLObject::DATABASE);
@@ -2219,8 +2207,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
                + stop_replicated_sends + start_replicated_sends + stop_replication_queues + start_replication_queues
                + stop_pulling_replication_log + start_pulling_replication_log + sync_replica + sync_replicated_database + 1))
     {
-        const std::shared_ptr<SQLDatabase> & d
-            = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+        const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
         sc->mutable_sync_replicated_database()->set_database("d" + std::to_string(d->dname));
     }

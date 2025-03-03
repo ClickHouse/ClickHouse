@@ -580,8 +580,7 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
     {
         if (collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && noption < 4)
         {
-            const std::shared_ptr<SQLDatabase> & d
-                = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
+            const std::shared_ptr<SQLDatabase> & d = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
 
             return initial + std::to_string(d->dname);
         }
@@ -1367,8 +1366,8 @@ void StatementGenerator::getNextPeerTableDatabase(RandomGenerator & rg, SQLBase 
             this->ids.emplace_back(static_cast<uint32_t>(PeerTableDatabase::ClickHouse)); // give more probability
         }
     }
-    b.peer_table = (this->ids.empty() || rg.nextBool()) ? PeerTableDatabase::None
-                                                        : static_cast<PeerTableDatabase>(rg.pickRandomly(this->ids));
+    b.peer_table
+        = (this->ids.empty() || rg.nextBool()) ? PeerTableDatabase::None : static_cast<PeerTableDatabase>(rg.pickRandomly(this->ids));
     this->ids.clear();
 }
 
