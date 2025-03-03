@@ -556,10 +556,24 @@ struct SubtractIntervalImpl : public Transform
     }
 
     template <typename T>
-    NO_SANITIZE_UNDEFINED auto executeForTime(T t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale) const
+    NO_SANITIZE_UNDEFINED auto executeForTime(
+        T t,
+        Int64 delta,
+        const DateLUTImpl & time_zone,
+        const DateLUTImpl & utc_time_zone,
+        UInt16 scale) const
     {
-        /// Signed integer overflow is Ok.
-        return Transform::executeForTime(t, -delta, time_zone, utc_time_zone, scale);
+        // If T is actually a 32-bit integer that the transform
+        // can handle with `executeForTime(...)`, do that:
+        if constexpr (std::is_same_v<T, Int32>)
+        {
+            return Transform::executeForTime(t, -delta, time_zone, utc_time_zone, scale);
+        }
+        else
+        {
+            // Otherwise, fallback to a normal “execute(...)” call:
+            return Transform::execute(t, -delta, time_zone, utc_time_zone, scale);
+        }
     }
 };
 
@@ -774,7 +788,7 @@ template <> struct ResultDataTypeMap<UInt16>           { using ResultDataType = 
 template <> struct ResultDataTypeMap<UInt32>           { using ResultDataType = DataTypeDateTime; };
 template <> struct ResultDataTypeMap<Int32>            { using ResultDataType = DataTypeDate32; };
 template <> struct ResultDataTypeMap<DateTime64>       { using ResultDataType = DataTypeDateTime64; };
-template <> struct ResultDataTypeMap<Int64>            { using ResultDataType = DataTypeTime; };
+template <> struct ResultDataTypeMap<Int64>            { using ResultDataType = DataTypeTime; }; // Time has generic type Int32, which interferres with Date32, so I needed to map Time with the vacant generic type
 template <> struct ResultDataTypeMap<Time64>           { using ResultDataType = DataTypeTime64; };
 template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = DataTypeInt8; }; // error
 }
@@ -845,20 +859,46 @@ public:
 
     /// Helper templates to deduce return type based on argument type, since some overloads may promote or denote types,
     /// e.g. addSeconds(Date, 1) => DateTime
-    template <typename FieldType>
-    using TransformExecuteReturnType = decltype(std::declval<Transform>().execute(FieldType(), 0, std::declval<DateLUTImpl>(), std::declval<DateLUTImpl>(), 0));
+    template <typename FromDataType, typename Enable = void>
+    struct TransformExecuteReturnTypeImpl
+    {
+        using FieldType = typename FromDataType::FieldType;
+
+        using type = decltype(
+            std::declval<Transform>().execute(
+                std::declval<FieldType>(),    // e.g. Int32, UInt16, Int64...
+                0,                            // delta
+                std::declval<DateLUTImpl>(),  // timezone
+                std::declval<DateLUTImpl>(),  // utc
+                0                             // scale
+            )
+        );
+    };
+
+    template <>
+    struct TransformExecuteReturnTypeImpl<DataTypeTime, Transform>
+    {
+        using FieldType = DataTypeTime::FieldType;
+
+        using type = decltype(
+            std::declval<Transform>().executeForTime(
+                std::declval<FieldType>(),    // Int32
+                0,                            // delta
+                std::declval<DateLUTImpl>(),  // timezone
+                std::declval<DateLUTImpl>(),  // utc
+                0                             // scale
+            )
+        );
+    };
+
+    template <typename FromDataType>
+    using TransformExecuteReturnType = typename TransformExecuteReturnTypeImpl<FromDataType, Transform>::type;
 
     // Deduces RETURN DataType from INPUT DataType, based on return type of Transform{}.execute(INPUT_TYPE, UInt64, DateLUTImpl).
     // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
     // argument type is expected to be 'Date', and result type is deduced to be 'DateTime'.
     template <typename FromDataType>
-    using TransformResultDataType = std::conditional_t<
-        std::is_same_v<FromDataType, DataTypeTime>,
-        DataTypeTime,
-        typename date_and_time_type_details::ResultDataTypeMap<
-            TransformExecuteReturnType<typename FromDataType::FieldType>
-        >::ResultDataType
-    >;
+    using TransformResultDataType = typename date_and_time_type_details::ResultDataTypeMap<TransformExecuteReturnType<FromDataType>>::ResultDataType;
 
     template <typename FromDataType>
     DataTypePtr resolveReturnType(const ColumnsWithTypeAndName & arguments) const
