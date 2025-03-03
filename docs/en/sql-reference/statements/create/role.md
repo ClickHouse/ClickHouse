@@ -19,7 +19,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 A user can be assigned multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](../../../sql-reference/statements/set-role.md) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
 
-User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](../../../sql-reference/statements/set-role.md#set-default-role-statement) statement or the [ALTER USER](../../../sql-reference/statements/alter/user.md#alter-user-statement) statement.
+User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](../../../sql-reference/statements/set-role.md#set-default-role-statement) statement or the [ALTER USER](/sql-reference/statements/alter/user) statement.
 
 To revoke a role, use the [REVOKE](../../../sql-reference/statements/revoke.md) statement.
 
