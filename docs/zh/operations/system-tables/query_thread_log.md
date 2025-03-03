@@ -111,5 +111,5 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 
 **另请参阅**
 
--   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — `query_log` 系统表描述，其中包含有关查询执行的公共信息。
--   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — 这个表包含在查询线程中使用的各个视图的信息。
+-   [system.query_log](/operations/system-tables/query_log) — `query_log` 系统表描述，其中包含有关查询执行的公共信息。
+-   [system.query_views_log](/operations/system-tables/query_views_log) — 这个表包含在查询线程中使用的各个视图的信息。

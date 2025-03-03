@@ -113,7 +113,7 @@ Note, that now, once user `my_user` uses `kerberos`, Kerberos must be enabled in
 
 ### Enabling Kerberos using SQL {#enabling-kerberos-using-sql}
 
-When [SQL-driven Access Control and Account Management](/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by Kerberos can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'

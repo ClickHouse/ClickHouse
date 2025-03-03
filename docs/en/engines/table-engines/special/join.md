@@ -8,10 +8,10 @@ description: "Optional prepared data structure for usage in JOIN operations."
 
 # Join Table Engine
 
-Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join.md/#select-join) operations.
+Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
 
 :::note
-This is not an article about the [JOIN clause](/sql-reference/statements/select/join.md/#select-join) itself.
+This is not an article about the [JOIN clause](/sql-reference/statements/select/join) itself.
 :::
 
 ## Creating a Table {#creating-a-table}
@@ -24,17 +24,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table.md/#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Engine Parameters {#engine-parameters}
 
 ### join_strictness {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join.md/#select-join-types).
+`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join-types).
 
 ### join_type {#join_type}
 
-`join_type` – [JOIN type](/sql-reference/statements/select/join.md/#select-join-types).
+`join_type` – [JOIN type](/sql-reference/statements/select/join#supported-types-of-join).
 
 ### Key columns {#key-columns}
 
