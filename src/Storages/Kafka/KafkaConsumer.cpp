@@ -265,6 +265,12 @@ void KafkaConsumer::commit()
 
 void KafkaConsumer::subscribe()
 {
+    if (stopped)
+    {
+        LOG_TRACE(log, "Consumer is stopped. Can't subscribe.");
+        return;
+    }
+
     LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
 
     if (assignment.has_value())
@@ -312,6 +318,12 @@ void KafkaConsumer::cleanUnprocessed()
 
 void KafkaConsumer::rejoin_consumer_group()
 {
+    if (stopped)
+    {
+        LOG_TRACE(log, "Consumer is stopped. Can't rejoin.");
+        return;
+    }
+
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
     cleanUnprocessed();
 
