@@ -146,10 +146,6 @@ KafkaConsumer2::~KafkaConsumer2()
     // {
     //     LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
     // }
-    LOG_TRACE(log, "KafkaConsumer2 destructor stub"); // temporary to make tidy happy
-
-    // Feb 27 21:36:32 /build/src/Storages/Kafka/KafkaConsumer2.cpp:128:17: error: use '= default' to define a trivial destructor [hicpp-use-equals-default,modernize-use-equals-default,-warnings-as-errors]
-    // Feb 27 21:36:32   128 | KafkaConsumer2::~KafkaConsumer2()
 }
 
 // Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
