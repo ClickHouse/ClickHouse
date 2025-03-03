@@ -69,16 +69,19 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     const auto & right_input_header = join->getInputHeaders().back();
     const auto & output_header = join->getOutputHeader();
 
-    bool left = false;
-    bool right = false;
     for (const auto & column_with_type_and_name : output_header)
     {
-        left |= left_input_header.has(column_with_type_and_name.name);
-        right |= right_input_header.has(column_with_type_and_name.name);
+        const auto & column_name = column_with_type_and_name.name;
+        bool left = left_input_header.has(column_name);
+        bool right = right_input_header.has(column_name);
+
+        /// All come from left side?
+        if (!(left && !right))
+            return 0;
+
+        if (!left_input_header.getByName(column_name).type->equals(*column_with_type_and_name.type))
+            return 0;
     }
-    /// All come from left side?
-    if (!(left && !right))
-        return 0;
 
     if (join_info.expression.condition.predicates.empty())
         return 0;
