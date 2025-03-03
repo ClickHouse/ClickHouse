@@ -160,15 +160,13 @@ Expression
       Join
         Union
           Expression
-            Sorting
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
-                    Expression
-                      Expression
-                        ReadFromMergeTree
-                    Expression
-                      ReadFromMemoryStorage
+                  Expression
+                    ReadFromMergeTree
+                Expression
+                  ReadFromMemoryStorage
           Expression
             ReadFromRemoteParallelReplicas
         Union
@@ -215,10 +213,8 @@ Expression
           Join
             Union
               Expression
-                Sorting
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                Expression
+                  ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
             Union
@@ -611,16 +607,14 @@ Expression
       Join
         Union
           Expression
-            Sorting
-              Expression
+            Expression
+              Join
                 Expression
-                  Join
-                    Expression
-                      Expression
-                        ReadFromMergeTree
-                    Expression
-                      Expression
-                        ReadFromMergeTree
+                  Expression
+                    ReadFromMergeTree
+                Expression
+                  Expression
+                    ReadFromMergeTree
           Expression
             ReadFromRemoteParallelReplicas
         Union
@@ -667,10 +661,8 @@ Expression
           Join
             Union
               Expression
-                Sorting
-                  Expression
-                    Expression
-                      ReadFromMergeTree
+                Expression
+                  ReadFromMergeTree
               Expression
                 ReadFromRemoteParallelReplicas
             Union
