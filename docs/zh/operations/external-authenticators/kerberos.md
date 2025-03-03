@@ -97,7 +97,7 @@ Kerberos主体名称格式通常遵循以下模式:
 请注意, 现在, 一旦用户 `my_user` 使用 `kerberos`, 必须在主 `config.xml` 文件中启用 Kerberos，如前所述.
 
 ### 使用 SQL 启用 Kerberos {#enabling-kerberos-using-sql}
-在 ClickHouse 中启用 [SQL 驱动的访问控制和帐户管理](/operations/access-rights/#access-control)后, 也可以使用 SQL 语句创建由 Kerberos 识别的用户.
+在 ClickHouse 中启用 [SQL 驱动的访问控制和帐户管理](/operations/access-rights)后, 也可以使用 SQL 语句创建由 Kerberos 识别的用户.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'

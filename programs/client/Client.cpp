@@ -28,6 +28,8 @@
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
+#include <Parsers/ASTAlterQuery.h>
+
 #include <Poco/Util/Application.h>
 
 #include <filesystem>

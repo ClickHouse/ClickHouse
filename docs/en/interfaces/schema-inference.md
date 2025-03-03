@@ -1678,7 +1678,7 @@ $$)
 
 ### JSON formats with metadata {#json-with-metadata}
 
-Some JSON input formats ([JSON](formats.md#json), [JSONCompact](formats.md#json-compact), [JSONColumnsWithMetadata](formats.md#jsoncolumnswithmetadata)) contain metadata with column names and types.
+Some JSON input formats ([JSON](formats.md#json), [JSONCompact](/interfaces/formats/JSONCompact), [JSONColumnsWithMetadata](/interfaces/formats/JSONColumnsWithMetadata)) contain metadata with column names and types.
 In schema inference for such formats, ClickHouse reads this metadata.
 
 **Example**
