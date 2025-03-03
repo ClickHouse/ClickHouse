@@ -223,7 +223,7 @@ bool authenticateUserByHTTP(
         chassert(!user.empty());
         http_credentials->setUserName(user);
         http_credentials->setPassword(password);
-        http_credentials->setS2S("asd");
+        http_credentials->setHeaders(request);
     }
 
     if (params.has("quota_key"))

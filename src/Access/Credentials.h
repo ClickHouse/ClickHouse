@@ -8,6 +8,12 @@
 
 #include "config.h"
 
+namespace Poco::Net
+{
+    class HTTPRequest;
+    class SocketAddress;
+}
+
 namespace DB
 {
 
@@ -79,9 +85,11 @@ class HTTPCredentials
     : public BasicCredentials
 {
 public:
-    void setS2S(const String & s2s_);
+    void setHeaders(const Poco::Net::HTTPRequest & request);
+    std::unordered_map<String, String> getHeaders() const;
+
 private:
-    String s2s;
+    std::unordered_map<String, String> http_headers;
 };
 
 class CredentialsWithScramble : public Credentials

@@ -252,6 +252,14 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     http_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
     http_auth_params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
 
+    Strings forward_headers;
+    config.keys(prefix + ".forward_headers", forward_headers);
+    for (const auto & header : forward_headers)
+    {
+        String name = config.getString(prefix + ".forward_headers." + header);
+        http_auth_params.forward_headers.push_back(name);
+    }
+
     return http_auth_params;
 }
 
@@ -551,13 +559,15 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
     const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const
 {
-    // if (const auto * _ = typeid_cast<const HTTPCredentials *>(&credentials)) {
-    // }
-
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword());
+    std::unordered_map<String, String> headers;
+    if (const auto * http_credentials = typeid_cast<const HTTPCredentials *>(&credentials)) {
+        headers = http_credentials->getHeaders();
+    }
+
+    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
