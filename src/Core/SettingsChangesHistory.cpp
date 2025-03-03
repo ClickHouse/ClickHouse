@@ -80,6 +80,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."}
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
