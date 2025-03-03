@@ -250,7 +250,7 @@ add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf,
 
 add_contrib (jwt-cpp-cmake jwt-cpp)
 
-add_contrib (sha3iuf-cmake sha3iuf)
+add_contrib (sha3iuf-cmake SHA3IUF)
 
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
