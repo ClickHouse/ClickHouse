@@ -182,7 +182,7 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
 
 void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command)
 {
-    setDatabaseComment(command.comment.value());
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
