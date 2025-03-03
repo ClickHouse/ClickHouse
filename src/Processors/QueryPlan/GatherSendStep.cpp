@@ -24,7 +24,8 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
     auto file_name = fileNameForExchange(exchange_id, bucket, "0");
 
-    chassert(pipeline.getNumStreams() == 1, "Single stream is expected to be written to NativeCompressedSink");
+    /// Cannot have multiple sinks writing to the same file concurrently.
+    pipeline.resize(1);
 
     pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type)
     {
