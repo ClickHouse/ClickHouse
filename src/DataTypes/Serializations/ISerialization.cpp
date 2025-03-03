@@ -7,10 +7,17 @@
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
 #include <base/EnumReflection.h>
-
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool save_variant_with_escaped_filename;
+}
 
 namespace ErrorCodes
 {
@@ -165,6 +172,11 @@ String getNameForSubstreamPath(
 {
     using Substream = ISerialization::Substream;
 
+    auto context = CurrentThread::getQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    bool escape_variant = context->getSettingsRef()[Setting::save_variant_with_escaped_filename];
+
     size_t array_level = 0;
     for (auto it = begin; it != end; ++it)
     {
@@ -196,9 +208,21 @@ String getNameForSubstreamPath(
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
-            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->variant_element_name) : it->variant_element_name);
+        {
+            if (escape_variant)
+                stream_name += "." + (escape_for_file_name ? escapeForFileName(it->variant_element_name)
+                                                       : it->variant_element_name);
+            else
+                stream_name += "." + it->variant_element_name;
+        }
         else if (it->type == Substream::VariantElementNullMap)
-            stream_name += "." + (escape_for_file_name ? escapeForFileName(it->variant_element_name) : it->variant_element_name) + ".null";
+        {
+            if (escape_variant)
+                stream_name += "." + (escape_for_file_name ? escapeForFileName(it->variant_element_name)
+                                                       : it->variant_element_name) + ".null";
+            else
+                stream_name += "." + it->variant_element_name + ".null";
+        }
         else if (it->type == SubstreamType::DynamicStructure)
             stream_name += ".dynamic_structure";
         else if (it->type == SubstreamType::ObjectStructure)
