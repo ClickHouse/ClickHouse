@@ -990,7 +990,7 @@ ReturnType parseTimeBestEffortImpl(
                     // Parse fractional seconds
                     using FractionalType = typename std::decay_t<decltype(fractional->value)>;
                     // Limit to the precision supported by FractionalType
-                    size_t max_fractional_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), static_cast<size_t>(num_digits));
+                    size_t max_fractional_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
                     fractional->digits = max_fractional_digits;
                     fractional->value = 0;
                     for (size_t i = 0; i < max_fractional_digits; ++i)
@@ -1022,7 +1022,7 @@ ReturnType parseTimeBestEffortImpl(
                     // Parse fractional seconds
                     using FractionalType = typename std::decay_t<decltype(fractional->value)>;
                     // Limit to the precision supported by FractionalType
-                    size_t max_fractional_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), static_cast<size_t>(num_digits));
+                    size_t max_fractional_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
                     fractional->digits = max_fractional_digits;
                     fractional->value = 0;
                     for (size_t i = 0; i < max_fractional_digits; ++i)

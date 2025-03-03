@@ -213,7 +213,7 @@ struct AddSecondsImpl
     }
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int64>(d + delta);
+        return d + delta;
     }
     static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -256,7 +256,7 @@ struct AddMinutesImpl
     }
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int64>(d + delta * 60);
+        return d + delta * 60;
     }
     static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
@@ -299,7 +299,7 @@ struct AddHoursImpl
     }
     static NO_SANITIZE_UNDEFINED Int64 execute(Int64 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int64>(d + delta * 3600);
+        return d + delta * 3600;
     }
     static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
