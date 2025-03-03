@@ -54,6 +54,8 @@ ASTPtr createIdentifierFromColumnName(const String & column_name)
     ASTPtr res;
     Expected expected;
     ParserCompoundIdentifier().parse(pos, res, expected);
+    if (!res || getIdentifierName(res) != column_name)
+        return std::make_shared<ASTIdentifier>(column_name);
     return res;
 }
 
