@@ -106,7 +106,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     std::optional<ActionsDAG> dag = ActionsDAG(left_predicate_header.getColumnsWithTypeAndName());
 
     /// left parameter of IN function
-    std::vector<const ActionsDAG::Node *> left_columns = dag->getOutputs(); //actions.getOutputs();
+    std::vector<const ActionsDAG::Node *> left_columns = dag->getOutputs();
     FunctionOverloadResolverPtr func_tuple_builder =
         std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
     const ActionsDAG::Node * in_lhs_arg = left_columns.size() == 1 ?
@@ -134,7 +134,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     dag->getOutputs().push_back(&in_node);
 
     /// Attach IN to FilterStep
-    auto filter_step = std::make_unique<FilterStep>(left_predicate_header,
+    auto filter_step = std::make_unique<FilterStep>(left_input_header,
         std::move(*dag),
         in_node.result_name,
         false);
