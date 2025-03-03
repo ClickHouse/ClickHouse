@@ -5,6 +5,7 @@
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/UncompressedCache.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/MarkCache.h>
@@ -511,6 +512,10 @@ namespace DB
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
     \
     DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
+    DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
+    DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, "Size of the query condition cache.", 0) \
+    DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue in the query condition cache relative to the cache's total size.", 0) \
+    \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
     DECLARE(UInt64, dns_cache_max_entries, 10000, R"(Internal DNS cache max entries.)", 0) \
     DECLARE(Int32, dns_cache_update_period, 15, "Internal DNS cache update period in seconds.", 0) \
@@ -1128,6 +1133,32 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
              {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
              {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_io_thread_pool_size",
+             {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_io_thread_pool_free_size",
+             {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"io_thread_pool_queue_size",
+             {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_backups_io_thread_pool_size",
+             {getBackupsIOThreadPool().isInitialized() ? std::to_string(getBackupsIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_backups_io_thread_pool_free_size",
+             {getBackupsIOThreadPool().isInitialized() ? std::to_string(getBackupsIOThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"backups_io_thread_pool_queue_size",
+             {getBackupsIOThreadPool().isInitialized() ? std::to_string(getBackupsIOThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_fetch_partition_thread_pool_size",
+             {getFetchPartitionThreadPool().isInitialized() ? std::to_string(getFetchPartitionThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_active_parts_loading_thread_pool_size",
+             {getActivePartsLoadingThreadPool().isInitialized() ? std::to_string(getActivePartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_outdated_parts_loading_thread_pool_size",
+             {getOutdatedPartsLoadingThreadPool().isInitialized() ? std::to_string(getOutdatedPartsLoadingThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_parts_cleaning_thread_pool_size",
+             {getPartsCleaningThreadPool().isInitialized() ? std::to_string(getPartsCleaningThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_prefixes_deserialization_thread_pool_size",
+             {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"max_prefixes_deserialization_thread_pool_free_size",
+             {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getMaxFreeThreads()) : "0", ChangeableWithoutRestart::Yes}},
+            {"prefixes_deserialization_thread_pool_thread_pool_queue_size",
+             {getMergeTreePrefixesDeserializationThreadPool().isInitialized() ? std::to_string(getMergeTreePrefixesDeserializationThreadPool().get().getQueueSize()) : "0", ChangeableWithoutRestart::Yes}},
     };
 
     if (context->areBackgroundExecutorsInitialized())
