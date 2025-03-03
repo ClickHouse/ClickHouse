@@ -30,7 +30,7 @@ See the detailed description of the [CREATE TABLE](/sql-reference/statements/cre
 
 ### join_strictness {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join-types).
+`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
 
 ### join_type {#join_type}
 

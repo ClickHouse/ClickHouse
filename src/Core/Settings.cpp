@@ -1020,7 +1020,7 @@ Possible values:
 
 See also:
 
-- [GROUP BY clause](/sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by)
 )", 0) \
     \
     DECLARE(Bool, skip_unavailable_shards, false, R"(
