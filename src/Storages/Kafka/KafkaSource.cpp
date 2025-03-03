@@ -64,7 +64,7 @@ KafkaSource::~KafkaSource()
         return;
 
     if (broken)
-        consumer->unsubscribe();
+        consumer->rejoin_consumer_group();
 
     storage.pushConsumer(consumer);
 }

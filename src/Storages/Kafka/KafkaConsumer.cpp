@@ -344,7 +344,7 @@ void KafkaConsumer::cleanUnprocessed()
     offsets_stored = 0;
 }
 
-void KafkaConsumer::unsubscribe()
+void KafkaConsumer::rejoin_consumer_group()
 {
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
     cleanUnprocessed();
@@ -362,7 +362,7 @@ void KafkaConsumer::unsubscribe()
     }
     catch (const cppkafka::HandleException & e)
     {
-        LOG_ERROR(log, "Exception from KafkaConsumer::unsubscribe: {}", e.what());
+        LOG_ERROR(log, "Exception from KafkaConsumer::rejoin_consumer_group: {}", e.what());
     }
 
 }

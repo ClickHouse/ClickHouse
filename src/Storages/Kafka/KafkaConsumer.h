@@ -80,7 +80,11 @@ public:
 
     void commit(); // Commit all processed messages.
     void subscribe(); // Subscribe internal consumer to topics.
-    void unsubscribe(); // Unsubscribe internal consumer in case of failure.
+
+    // used during exception processing to restart the consumption from last committed offset
+    // Notes: duplicates can appear if the some data were already flushed
+    // it causes rebalance (and is an expensive way of exception handling)
+    void rejoin_consumer_group();
 
     auto pollTimeout() const { return poll_timeout; }
 
