@@ -215,9 +215,9 @@ struct AddSecondsImpl
     {
         return d + delta;
     }
-    static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta);
+        return static_cast<Int64>(d + delta);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -258,9 +258,9 @@ struct AddMinutesImpl
     {
         return d + delta * 60;
     }
-    static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta * 60);
+        return static_cast<Int64>(d + delta * 60);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -301,9 +301,9 @@ struct AddHoursImpl
     {
         return d + delta * 3600;
     }
-    static NO_SANITIZE_UNDEFINED Int32 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
+    static NO_SANITIZE_UNDEFINED Int64 executeForTime(Int32 d, Int64 delta, const DateLUTImpl &, const DateLUTImpl &, UInt16)
     {
-        return static_cast<Int32>(d + delta * 3600);
+        return static_cast<Int64>(d + delta * 3600);
     }
     static NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16)
     {
@@ -563,17 +563,8 @@ struct SubtractIntervalImpl : public Transform
         const DateLUTImpl & utc_time_zone,
         UInt16 scale) const
     {
-        // If T is actually a 32-bit integer that the transform
-        // can handle with `executeForTime(...)`, do that:
-        if constexpr (std::is_same_v<T, Int32>)
-        {
-            return Transform::executeForTime(t, -delta, time_zone, utc_time_zone, scale);
-        }
-        else
-        {
-            // Otherwise, fallback to a normal “execute(...)” call:
-            return Transform::execute(t, -delta, time_zone, utc_time_zone, scale);
-        }
+        /// Signed integer overflow is Ok.
+        return Transform::executeForTime(t, -delta, time_zone, utc_time_zone, scale);
     }
 };
 
@@ -859,7 +850,7 @@ public:
 
     /// Helper templates to deduce return type based on argument type, since some overloads may promote or denote types,
     /// e.g. addSeconds(Date, 1) => DateTime
-    template <typename FromDataType, typename Enable = void>
+    template <typename FromDataType>
     struct TransformExecuteReturnTypeImpl
     {
         using FieldType = typename FromDataType::FieldType;
@@ -876,7 +867,7 @@ public:
     };
 
     template <>
-    struct TransformExecuteReturnTypeImpl<DataTypeTime, Transform>
+    struct TransformExecuteReturnTypeImpl<DataTypeTime>
     {
         using FieldType = DataTypeTime::FieldType;
 
@@ -892,7 +883,7 @@ public:
     };
 
     template <typename FromDataType>
-    using TransformExecuteReturnType = typename TransformExecuteReturnTypeImpl<FromDataType, Transform>::type;
+    using TransformExecuteReturnType = typename TransformExecuteReturnTypeImpl<FromDataType>::type;
 
     // Deduces RETURN DataType from INPUT DataType, based on return type of Transform{}.execute(INPUT_TYPE, UInt64, DateLUTImpl).
     // e.g. for Transform-type that has execute()-overload with 'UInt16' input and 'UInt32' return,
