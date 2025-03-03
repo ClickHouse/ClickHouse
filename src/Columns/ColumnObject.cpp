@@ -851,12 +851,13 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 
         for (const auto & name : names_to_remove)
         {
-            columns_map.erase(name);
             if (is_dynamic_paths)
             {
                 dynamic_paths_ptrs.erase(name);
                 sorted_dynamic_paths.erase(name);
             }
+
+            columns_map.erase(name);
         }
     };
 
