@@ -151,9 +151,7 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 
 void ASTLiteral::formatImplWithoutAlias(const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (custom_type && isBool(custom_type) && isInt64OrUInt64FieldType(value.getType()))
-        settings.ostr << applyVisitor(FieldVisitorToString(), Field(value.safeGet<UInt64>() != 0));
-    else if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
+    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
         settings.ostr << applyVisitor(FieldVisitorToString(), value);
     else
         settings.ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
