@@ -1002,7 +1002,7 @@ Allow non-const timezone arguments in certain time-related functions like toTime
     DECLARE(Bool, use_legacy_to_time, false, R"(
 When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
 Otherwise, uses a new toTime function, that converts different type of data into the Time type.
-The old legacy function is also unconditially accessible as toTimeWithFixedDate.
+The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
 )", 0) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
 Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
