@@ -2576,7 +2576,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Параметр перенесен в [серверную конфигурацию](-   [后台消息代理调度池大小](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size).
+Параметр перенесен в [серверную конфигурацию](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
