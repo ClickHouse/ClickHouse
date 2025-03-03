@@ -13,7 +13,7 @@ Contains information about threads that execute queries, for example, thread nam
 To start logging:
 
 1.  Configure parameters in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) section.
-2.  Set [log_query_threads](operations/settings/settings#log_query_threads) to 1.
+2.  Set [log_query_threads](/operations/settings/settings#log_query_threads) to 1.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
