@@ -1,8 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 #include <DataTypes/IDataType.h>
 
 #include <pcg-random/pcg_random.hpp>
@@ -13,6 +10,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
+#include <Parsers/ParserInsertQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
@@ -52,8 +51,6 @@ public:
     // ASTPtr to point to new AST with some random changes.
     void fuzzMain(ASTPtr & ast);
 
-    ASTs getInsertQueriesForFuzzedTables(const String & full_query);
-    ASTs getOptimizeQueriesForFuzzedTables(const String & full_query);
     ASTs getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query);
     void notifyQueryFailed(ASTPtr ast);
 
@@ -69,6 +66,78 @@ public:
 
     /// When measuring performance, sometimes change settings
     void getRandomSettings(SettingsChanges & settings_changes);
+
+private:
+    template <typename Parser>
+    ASTPtr tryParseQueryForFuzzedTables(const String & full_query)
+    {
+        String message;
+        const char * pos = full_query.data();
+        const char * end = full_query.data() + full_query.size();
+
+        if constexpr (std::is_same_v<Parser, ParserInsertQuery>)
+        {
+            Parser p(end, false);
+            return tryParseQuery(
+                p,
+                pos,
+                end,
+                message,
+                false,
+                "",
+                false,
+                DBMS_DEFAULT_MAX_QUERY_SIZE,
+                DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+                true);
+        }
+        else
+        {
+            Parser p;
+            return tryParseQuery(
+                p,
+                pos,
+                end,
+                message,
+                false,
+                "",
+                false,
+                DBMS_DEFAULT_MAX_QUERY_SIZE,
+                DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+                true);
+        }
+    }
+
+public:
+    template <typename ParsedAST, typename Parser>
+    ASTs getQueriesForFuzzedTables(const String & full_query)
+    {
+        auto parsed_query = tryParseQueryForFuzzedTables<Parser>(full_query);
+        if (!parsed_query)
+            return {};
+
+        const auto & query_ast = *parsed_query->template as<ParsedAST>();
+        if (!query_ast.table)
+            return {};
+
+        auto table_name = query_ast.getTable();
+        auto it = original_table_name_to_fuzzed.find(table_name);
+        if (it == original_table_name_to_fuzzed.end())
+            return {};
+
+        ASTs queries;
+        for (const auto & fuzzed_name : it->second)
+        {
+            /// Parse query from scratch for each table instead of clone,
+            /// to store proper pointers to inlined data,
+            /// which are not copied during clone.
+            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
+            query->template as<ParsedAST>()->setTable(fuzzed_name);
+        }
+
+        return queries;
+    }
 
 private:
     UInt64 seed;

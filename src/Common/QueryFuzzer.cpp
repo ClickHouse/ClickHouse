@@ -34,11 +34,7 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserDataType.h>
-#include <Parsers/ParserInsertQuery.h>
-#include <Parsers/ParserOptimizeQuery.h>
-#include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <pcg_random.hpp>
@@ -885,85 +881,6 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
             changes.emplace_back(setting, true);
         }
     }
-}
-
-static ASTPtr tryParseInsertQuery(const String & full_query)
-{
-    const char * pos = full_query.data();
-    const char * end = full_query.data() + full_query.size();
-
-    ParserInsertQuery parser(end, false);
-    String message;
-
-    return tryParseQuery(
-        parser,
-        pos,
-        end,
-        message,
-        false,
-        "",
-        false,
-        DBMS_DEFAULT_MAX_QUERY_SIZE,
-        DBMS_DEFAULT_MAX_PARSER_DEPTH,
-        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
-        true);
-}
-
-ASTs QueryFuzzer::getInsertQueriesForFuzzedTables(const String & full_query)
-{
-    auto parsed_query = tryParseInsertQuery(full_query);
-    if (!parsed_query)
-        return {};
-
-    const auto & insert = *parsed_query->as<ASTInsertQuery>();
-    if (!insert.table)
-        return {};
-
-    auto table_name = insert.getTable();
-    auto it = original_table_name_to_fuzzed.find(table_name);
-    if (it == original_table_name_to_fuzzed.end())
-        return {};
-
-    ASTs queries;
-    for (const auto & fuzzed_name : it->second)
-    {
-        /// Parse query from scratch for each table instead of clone,
-        /// to store proper pointers to inlined data,
-        /// which are not copied during clone.
-        auto & query = queries.emplace_back(tryParseInsertQuery(full_query));
-        query->as<ASTInsertQuery>()->setTable(fuzzed_name);
-    }
-
-    return queries;
-}
-
-/// I am still not very expert in templates to reuse the code above
-ASTs QueryFuzzer::getOptimizeQueriesForFuzzedTables(const String & full_query)
-{
-    auto parsed_query = tryParseInsertQuery(full_query);
-    if (!parsed_query)
-        return {};
-
-    const auto & opt = *parsed_query->as<ASTOptimizeQuery>();
-    if (!opt.table)
-        return {};
-
-    auto table_name = opt.getTable();
-    auto it = original_table_name_to_fuzzed.find(table_name);
-    if (it == original_table_name_to_fuzzed.end())
-        return {};
-
-    ASTs queries;
-    for (const auto & fuzzed_name : it->second)
-    {
-        ParserOptimizeQuery parser;
-        auto & query = queries.emplace_back(parseQuery(
-            parser, full_query, "", DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS));
-
-        query->as<ASTOptimizeQuery>()->setTable(fuzzed_name);
-    }
-
-    return queries;
 }
 
 ASTs QueryFuzzer::getDropQueriesForFuzzedTables(const ASTDropQuery & drop_query)

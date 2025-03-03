@@ -15,6 +15,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/ParserOptimizeQuery.h>
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
@@ -176,12 +177,12 @@ bool Client::processWithFuzzing(const String & full_query)
     else if (const auto * /*insert*/ _ = orig_ast->as<ASTInsertQuery>())
     {
         this_query_runs = 1;
-        queries_for_fuzzed_tables = fuzzer.getInsertQueriesForFuzzedTables(full_query);
+        queries_for_fuzzed_tables = fuzzer.getQueriesForFuzzedTables<ASTInsertQuery, ParserInsertQuery>(full_query);
     }
     else if (const auto * /*optimize*/ _ = orig_ast->as<ASTOptimizeQuery>())
     {
         this_query_runs = 1;
-        queries_for_fuzzed_tables = fuzzer.getOptimizeQueriesForFuzzedTables(full_query);
+        queries_for_fuzzed_tables = fuzzer.getQueriesForFuzzedTables<ASTOptimizeQuery, ParserOptimizeQuery>(full_query);
     }
     else if (const auto * drop = orig_ast->as<ASTDropQuery>())
     {
