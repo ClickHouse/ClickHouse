@@ -112,6 +112,9 @@ static constexpr auto DEFAULT_PAGE_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_PAGE_CACHE_MIN_SIZE = 100_MiB;
 /// It's ok that max < min. Max takes precedence, i.e. max = 0 disables the cache even if min > 0.
 static constexpr auto DEFAULT_PAGE_CACHE_MAX_SIZE = 0_MiB;
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)

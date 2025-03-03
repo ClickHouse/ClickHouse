@@ -32,4 +32,4 @@ slug: /zh/operations/system-tables/users
 
 ## 另请参阅 {#see-also}
 
--   [查看用户信息](../../sql-reference/statements/show.md#show-users-statement)
+-   [查看用户信息](/sql-reference/statements/show#show-users)

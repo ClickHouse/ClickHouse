@@ -37,8 +37,8 @@ LIMIT N
 
 where
 - `DistanceFunction` computes a distance between two vectors (e.g. the
-  [L2Distance](../../../sql-reference/functions/distance-functions.md#L2Distance) or
-  [cosineDistance](../../../sql-reference/functions/distance-functions.md#cosineDistance)),
+  [L2Distance](/sql-reference/functions/distance-functions#l2distance) or
+  [cosineDistance](/sql-reference/functions/distance-functions#cosinedistance),
 - `vectors` is a column of type [Array(Float64)](../../../sql-reference/data-types/array.md) or
   [Array(Float32)](../../../sql-reference/data-types/array.md), or [Array(BFloat16)](../../../sql-reference/data-types/array.md), typically
   storing embeddings,

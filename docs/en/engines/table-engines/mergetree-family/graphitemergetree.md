@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 A table for the Graphite data should have the following columns for the following data:
 
