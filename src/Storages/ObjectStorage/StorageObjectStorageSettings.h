@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class ASTStorage;
+class ASTSetQuery;
 struct StorageObjectStorageSettingsImpl;
 struct MutableColumnsAndConstraints;
 class StorageObjectStorage;

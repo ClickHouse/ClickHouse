@@ -1,6 +1,6 @@
 ---
 description: "Overview of what system tables are and why they are useful."
-slug: /en/operations/system-tables/overview
+slug: /operations/system-tables/overview
 sidebar_position: 52
 sidebar_label: Overview
 title: "System Tables Overview"
@@ -85,7 +85,7 @@ You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `
 
 ## System tables in ClickHouse Cloud {#system-tables-in-clickhouse-cloud}
 
-In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/docs/en/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
+In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
 
 
 ```sql
@@ -114,7 +114,7 @@ WHERE `table` = 'pypi'
 
 Conversely, other system tables are node-specific e.g. in-memory or persisting their data using the MergeTree table engine. This is typical for data such as logs and metrics. This persistence ensures that historical data remains available for analysis. However, these node-specific tables are inherently unique to each node.
 
-To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/docs/en/sql-reference/table-functions/cluster) function. This function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
+To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/sql-reference/table-functions/cluster) function. This function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
 
 :::note
 ClickHouse Cloud provides clusters of multiple replicas for redundancy and failover. This enables its features, such as dynamic autoscaling and zero-downtime upgrades. At a certain moment in time, new nodes could be in the process of being added to the cluster or removed from the cluster. To skip these nodes, add `SETTINGS skip_unavailable_shards = 1` to queries using `clusterAllReplicas` as shown below.

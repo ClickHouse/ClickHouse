@@ -99,7 +99,7 @@ Take this implementation specificity into account when programming queries.
 
 ## Null Processing {#null-processing}
 
-`DISTINCT` works with [NULL](../../../sql-reference/syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
+`DISTINCT` works with [NULL](/sql-reference/syntax#null) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
 
 ## Alternatives {#alternatives}
 

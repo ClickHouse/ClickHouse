@@ -39,7 +39,7 @@ On Linux, macOS and FreeBSD:
    ```
 
    :::note
-   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/docs/knowledgebase/fix-developer-verification-error-in-macos).
+   For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/knowledgebase/fix-developer-verification-error-in-macos).
    :::
 
 2. Run the following command to start [clickhouse-local](../operations/utilities/clickhouse-local.md):
@@ -81,7 +81,7 @@ On Linux, macOS and FreeBSD:
    You are ready to start sending SQL commands to ClickHouse!
 
 :::tip
-The [Quick Start](/docs/quick-start.mdx) walks through the steps for creating tables and inserting data.
+The [Quick Start](/quick-start.mdx) walks through the steps for creating tables and inserting data.
 :::
 
 ## Production Deployments {#available-installation-options}
@@ -139,7 +139,7 @@ You can also download and install packages manually from [here](https://packages
 #### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper}
 
 :::tip
-In production environment we [strongly recommend](/docs/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we strongly recommend running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -208,7 +208,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 #### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper-1}
 
 :::tip
-In production environment we [strongly recommend](/docs/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we [strongly recommend](/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -287,7 +287,7 @@ To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.doc
 
 ### Compile From Source {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](/docs/development/build.md) or [macOS](/docs/development/build-osx.md).
+To manually compile ClickHouse, follow the instructions for [Linux](/development/build.md) or [macOS](/development/build-osx.md).
 
 You can compile packages and install them or use programs without installing packages.
 
@@ -331,7 +331,7 @@ For example, to download a aarch64 binary for ClickHouse v23.4, follow these ste
 To install ClickHouse on macOS using [homebrew](https://brew.sh/), please see the ClickHouse [community homebrew formula](https://formulae.brew.sh/cask/clickhouse).
 
 :::note
-For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/docs/knowledgebase/fix-developer-verification-error-in-macos).
+For Mac users: If you are getting errors that the developer of the binary cannot be verified, please see [here](/knowledgebase/fix-developer-verification-error-in-macos).
 :::
 
 ## Launch {#launch}
@@ -375,7 +375,7 @@ If the configuration file is in the current directory, you do not need to specif
 
 ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
 By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section ["Configuration Files"](/docs/operations/configuration-files.md).
+For more information, see the section ["Configuration Files"](/operations/configuration-files.md).
 
 After launching server, you can use the command-line client to connect to it:
 
@@ -386,7 +386,7 @@ $ clickhouse-client
 By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
 The terminal must use UTF-8 encoding.
-For more information, see the section ["Command-line client"](/docs/interfaces/cli.md).
+For more information, see the section ["Command-line client"](/interfaces/cli.md).
 
 Example:
 
@@ -411,7 +411,7 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](/docs/tutorial.md).
+To continue experimenting, you can download one of the test data sets or go through [tutorial](/tutorial.md).
 
 ## Recommendations for Self-Managed ClickHouse {#recommendations-for-self-managed-clickhouse}
 
@@ -428,9 +428,9 @@ The required volume of RAM generally depends on:
 - The complexity of queries.
 - The amount of data that is processed in queries.
 
-To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/docs/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/docs/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/docs/sql-reference/statements/select/join.md#select-join) and other operations you use.
+To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/sql-reference/statements/select/group-by), [DISTINCT](/sql-reference/statements/select/distinct), [JOIN](/sql-reference/statements/select/join) and other operations you use.
 
-To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/docs/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
+To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/sql-reference/statements/select/group-by#group-by-in-external-memory) for details.
 
 We recommend to disable the operating system's swap file in production environments.
 
