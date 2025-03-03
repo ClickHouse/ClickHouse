@@ -1182,7 +1182,28 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(const Context & context)
     max_threads = settings[Setting::max_threads];
 
     initial_query_id = context.getInitialQueryId();
-    acquire_timeout = settings[Setting::lock_acquire_timeout];
+    lock_acquire_timeout = settings[Setting::lock_acquire_timeout];
+}
+
+JoinAlgorithmSettings::JoinAlgorithmSettings(
+    const JoinSettings & join_settings,
+    UInt64 max_entries_for_hash_table_stats_,
+    String initial_query_id_,
+    std::chrono::milliseconds lock_acquire_timeout_)
+{
+    join_any_take_last_row = join_settings.join_any_take_last_row;
+
+    collect_hash_table_stats_during_joins = join_settings.collect_hash_table_stats_during_joins;
+    max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
+
+    grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
+    grace_hash_join_max_buckets = join_settings.grace_hash_join_initial_buckets;
+
+    max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
+    max_threads = join_settings.max_threads;
+
+    initial_query_id = std::move(initial_query_id_);
+    lock_acquire_timeout = lock_acquire_timeout_;
 }
 
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
@@ -1218,7 +1239,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             required_column_names.push_back(source_column_name_it->second);
         }
 
-        return storage->getJoinLocked(table_join, settings.initial_query_id, settings.acquire_timeout, required_column_names);
+        return storage->getJoinLocked(table_join, settings.initial_query_id, settings.lock_acquire_timeout, required_column_names);
     }
 
     /** JOIN with constant.

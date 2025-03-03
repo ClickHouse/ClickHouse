@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Core/Settings.h>
+#include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -34,10 +35,19 @@ namespace Setting
     extern const SettingsBool query_plan_try_use_vector_search;
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
 }
 
-QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & from)
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
+}
+
+QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
+    const Settings & from,
+    UInt64 max_entries_for_hash_table_stats_,
+    String initial_query_id_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -75,10 +85,14 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
     is_explain = false;
+
+    max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
+    initial_query_id = initial_query_id_;
+    lock_acquire_timeout = from[Setting::lock_acquire_timeout];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
-    : QueryPlanOptimizationSettings(from->getSettingsRef())
+    : QueryPlanOptimizationSettings(from->getSettingsRef(), from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats], from->getInitialQueryId())
 {
 }
 
