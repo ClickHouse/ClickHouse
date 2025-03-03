@@ -332,6 +332,47 @@ String getDefaultClientId(const StorageID & table_id)
     return fmt::format("{}-{}-{}-{}", VERSION_NAME, getFQDNOrHostName(), table_id.database_name, table_id.table_name);
 }
 
+
+
+void consumerGracefulStop(
+    cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
+{
+    try
+    {
+        consumer->pause();
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
+    }
+
+    try
+    {
+        consumer->unsubscribe();
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during unsubscribe (consumerGracefulStop): {}", e.what());
+    }
+
+    try
+    {
+        consumer->unassign();
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Error during unassign (consumerGracefulStop): {}", e.what());
+    }
+
+    drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+}
+
+
+
+// Needed to drain rest of the messages / queued callback calls from the consumer after unsubscribe, otherwise consumer
+// will hang on destruction. Partition queues doesn't have to be attached as events are not handled by those queues.
+// see https://github.com/edenhill/librdkafka/issues/2077
+//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
 void drainConsumer(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {

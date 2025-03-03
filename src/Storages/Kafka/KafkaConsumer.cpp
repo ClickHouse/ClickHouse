@@ -152,18 +152,9 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
     cleanUnprocessed();
-    if (!consumer->get_subscription().empty())
-    {
-        try
-        {
-            consumer->unsubscribe();
-        }
-        catch (const cppkafka::HandleException & e)
-        {
-            LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
-        }
-        drain();
-    }
+
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+
     return std::move(consumer);
 }
 
@@ -173,35 +164,10 @@ KafkaConsumer::~KafkaConsumer()
         return;
 
     cleanUnprocessed();
-    try
-    {
-        if (!consumer->get_subscription().empty())
-        {
-            try
-            {
-                consumer->unsubscribe();
-            }
-            catch (const cppkafka::HandleException & e)
-            {
-                LOG_ERROR(log, "Error during unsubscribe: {}", e.what());
-            }
-            drain();
-        }
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error while destructing consumer: {}", e.what());
-    }
+
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 }
 
-// Needed to drain rest of the messages / queued callback calls from the consumer
-// after unsubscribe, otherwise consumer will hang on destruction
-// see https://github.com/edenhill/librdkafka/issues/2077
-//     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
-void KafkaConsumer::drain()
-{
-    StorageKafkaUtils::drainConsumer(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
-}
 
 void KafkaConsumer::commit()
 {
