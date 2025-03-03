@@ -4,8 +4,6 @@ sidebar_label: 主键稀疏索引
 sidebar_position: 20
 ---
 
-
-
 # ClickHouse主键索引最佳实践
 
 在本文中，我们将深入研究ClickHouse索引。我们将对此进行详细说明和讨论：

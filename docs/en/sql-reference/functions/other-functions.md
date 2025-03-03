@@ -240,7 +240,7 @@ Result:
 
 ## blockSize {#blockSize}
 
-In ClickHouse, queries are processed in [blocks](../../development/architecture.md/#block-block) (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
 
 **Syntax**
@@ -3235,7 +3235,7 @@ Result:
 
 Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
 
-The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user)).
 
 **Syntax**
 
@@ -3263,7 +3263,7 @@ enabledProfiles()
 
 ## defaultProfiles {#defaultprofiles}
 
-Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
+Returns all the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user) statement).
 
 **Syntax**
 
@@ -3400,7 +3400,7 @@ Result:
 
 Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
-In contrast to [queryID](#queryid) function, `initialQueryID` returns the same results on different shards (see example).
+In contrast to [queryID](/sql-reference/functions/other-functions#queryid) function, `initialQueryID` returns the same results on different shards (see example).
 
 **Syntax**
 
