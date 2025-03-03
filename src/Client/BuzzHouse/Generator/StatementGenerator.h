@@ -128,6 +128,7 @@ private:
     std::vector<uint32_t> ids;
     std::vector<ColumnPathChain> entries, table_entries, remote_entries;
     std::vector<std::reference_wrapper<const ColumnPathChain>> filtered_entries;
+    std::vector<std::reference_wrapper<const SQLColumn>> filtered_columns;
     std::vector<std::reference_wrapper<const SQLTable>> filtered_tables;
     std::vector<std::reference_wrapper<const SQLView>> filtered_views;
     std::vector<std::reference_wrapper<const std::shared_ptr<SQLDatabase>>> filtered_databases;
@@ -260,6 +261,16 @@ private:
     void generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr);
     void generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
     void pickUpNextCols(RandomGenerator & rg, const SQLTable & t, ColumnPathList * clist);
+    void addTableColumnInternal(
+        RandomGenerator & rg,
+        SQLTable & t,
+        uint32_t cname,
+        bool modify,
+        bool is_pk,
+        ColumnSpecial special,
+        uint32_t col_tp_mask,
+        SQLColumn & col,
+        ColumnDef * cd);
     void addTableColumn(
         RandomGenerator & rg, SQLTable & t, uint32_t cname, bool staged, bool modify, bool is_pk, ColumnSpecial special, ColumnDef * cd);
     void addTableIndex(RandomGenerator & rg, SQLTable & t, bool staged, IndexDef * idef);
@@ -330,6 +341,8 @@ private:
     void addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr);
     void generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj);
     void setTableRemote(RandomGenerator & rg, bool table_engine, const SQLTable & t, TableFunction * tfunc);
+    bool joinedTableOrFunction(
+        RandomGenerator & rg, const String & rel_name, uint32_t allowed_clauses, bool under_remote, TableOrFunction * tof);
     void generateFromElement(RandomGenerator & rg, uint32_t allowed_clauses, TableOrSubquery * tos);
     void generateJoinConstraint(RandomGenerator & rg, bool allow_using, JoinConstraint * jc);
     void generateDerivedTable(RandomGenerator & rg, SQLRelation & rel, uint32_t allowed_clauses, uint32_t ncols, Select * sel);
