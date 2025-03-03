@@ -37,7 +37,7 @@ CREATE TABLE test.visits
 
 This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
 
-When [flatten_nested](../../../operations/settings/settings.md#flatten-nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
+When [flatten_nested](../../../operations/settings/settings.md/operations/settings/settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
 
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 

@@ -22,7 +22,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 -   `replica_name` — Имя реплики. Имена реплик должны быть разными для всех реплик одного и того же шарда.
 
 :::note Предупреждение
-Для таблиц [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) если аргументы не заданы, то используются аргументы по умолчанию: `/clickhouse/tables/{uuid}/{shard}` и `{replica}`. Они могут быть изменены в серверных настройках: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Макрос `{uuid}` раскрывается в `UUID` таблицы, `{shard}` и `{replica}` — в значения из конфига сервера. В будущем появится возможность использовать значения `shard_name` и `replica_name` аргументов движка базы данных `Replicated`.
+Для таблиц [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) если аргументы не заданы, то используются аргументы по умолчанию: `/clickhouse/tables/{uuid}/{shard}` и `{replica}`. Они могут быть изменены в серверных настройках: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Макрос `{uuid}` раскрывается в `UUID` таблицы, `{shard}` и `{replica}` — в значения из конфига сервера. В будущем появится возможность использовать значения `shard_name` и `replica_name` аргументов движка базы данных `Replicated`.
 :::
 ## Особенности и рекомендации {#specifics-and-recommendations}
 
