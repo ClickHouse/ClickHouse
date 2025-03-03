@@ -30,7 +30,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         pipeline.addTransform(scatter);
     }
 
-    const String shard_id = settings.parameter_lookup->getParameter("shard_id").safeGet<String>();
+    const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
     /// Add sink for each bucket
     size_t bucket = 0;
