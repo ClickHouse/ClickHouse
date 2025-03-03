@@ -283,7 +283,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
+                /// Radix sort treats all positive NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
                 if (is_floating_point<T> && nan_direction_hint < 0)
                 {
