@@ -5,6 +5,11 @@
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
 <clickhouse>
+    <http_authentication_servers>
+        <basic_auth_server>
+            <uri>http://localhost:8000/auth</uri>
+        </basic_auth_server>
+    </http_authentication_servers>
     <logger>
         <!-- Possible levels [1]:
 

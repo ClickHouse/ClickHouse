@@ -6,6 +6,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -550,6 +551,9 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
     const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const
 {
+    // if (const auto * _ = typeid_cast<const HTTPCredentials *>(&credentials)) {
+    // }
+
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 

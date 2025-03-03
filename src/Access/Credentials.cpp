@@ -90,6 +90,11 @@ void BasicCredentials::setPassword(const String & password_)
     password = password_;
 }
 
+void HTTPCredentials::setS2S(const String & s2s_)
+{
+    s2s = s2s_;
+}
+
 const String & BasicCredentials::getPassword() const
 {
     if (!isReady())

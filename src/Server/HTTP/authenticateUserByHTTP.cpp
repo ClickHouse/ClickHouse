@@ -208,21 +208,22 @@ bool authenticateUserByHTTP(
     {
         current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
     }
-    else // I.e., now using user name and password strings ("Basic").
+    else
     {
         if (!current_credentials)
-            current_credentials = std::make_unique<BasicCredentials>();
+            current_credentials = std::make_unique<HTTPCredentials>();
 
-        auto * basic_credentials = dynamic_cast<BasicCredentials *>(current_credentials.get());
-        if (!basic_credentials)
+        auto * http_credentials = dynamic_cast<HTTPCredentials *>(current_credentials.get());
+        if (!http_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
 
         if (request.get("Authorization", "") != "never")
-            basic_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
+            http_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
 
         chassert(!user.empty());
-        basic_credentials->setUserName(user);
-        basic_credentials->setPassword(password);
+        http_credentials->setUserName(user);
+        http_credentials->setPassword(password);
+        http_credentials->setS2S("asd");
     }
 
     if (params.has("quota_key"))

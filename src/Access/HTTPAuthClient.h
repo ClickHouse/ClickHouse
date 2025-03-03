@@ -84,6 +84,7 @@ public:
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
+        request.add("s2s", "123");
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};
         basic_credentials.authenticate(request);
 

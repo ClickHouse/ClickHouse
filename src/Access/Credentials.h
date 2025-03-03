@@ -75,6 +75,15 @@ private:
     bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
+class HTTPCredentials
+    : public BasicCredentials
+{
+public:
+    void setS2S(const String & s2s_);
+private:
+    String s2s;
+};
+
 class CredentialsWithScramble : public Credentials
 {
 public:
