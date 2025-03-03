@@ -91,7 +91,7 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
-    const std::string & table_name, const String & compression_method_) const
+    const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
     const auto & settings = global_context->getSettingsRef();
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
@@ -102,7 +102,7 @@ StoragePtr TableFunctionURL::getStorage(
 
     const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    if (can_use_parallel_replicas && !is_secondary_query)
+    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
     {
         return std::make_shared<StorageURLCluster>(
             global_context,
