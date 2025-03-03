@@ -1255,6 +1255,10 @@ Quote column names with '`' characters
 If true escape ' with '', otherwise quoted with \\'
 )", 0) \
     \
+    DECLARE(Bool, output_format_values_escape_nul_with_concat_sqlite, false, R"(
+If true escape \0 with ||char(0)||, otherwise quoted with \\0
+)", 0) \
+    \
     DECLARE(Bool, output_format_bson_string_as_string, false, R"(
 Use BSON String type instead of Binary for String columns.
 )", 0) \
