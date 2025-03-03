@@ -27,7 +27,7 @@ Columns:
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — The date when the last event of the view happened.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution.
 - `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — The date and time when the view finished execution with microseconds precision.
-- `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of view execution (sum of its stages) in milliseconds.
+- `view_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Duration of view execution (sum of its stages) in milliseconds.
 - `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the initial query (for distributed query execution).
 - `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
 - `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.
@@ -37,10 +37,10 @@ Columns:
     - `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 - `view_query` ([String](../../sql-reference/data-types/string.md)) — The query executed by the view.
 - `view_target` ([String](../../sql-reference/data-types/string.md)) — The name of the view target table.
-- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read rows.
-- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of read bytes.
-- `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written rows.
-- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of written bytes.
+- `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read rows.
+- `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of read bytes.
+- `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of written rows.
+- `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of written bytes.
 - `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — The maximum difference between the amount of allocated and freed memory in context of this view.
 - `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics. The description of them could be found in the table [system.events](/operations/system-tables/events).
 - `status` ([Enum8](../../sql-reference/data-types/enum.md)) — Status of the view. Values:

@@ -28,15 +28,15 @@ Columns:
 - `key.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [key types](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key) provided by the dictionary.
 - `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [attribute names](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes) provided by the dictionary.
 - `attribute.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [attribute types](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes) provided by the dictionary.
-- `bytes_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Amount of RAM allocated for the dictionary.
-- `query_count` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
+- `bytes_allocated` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Amount of RAM allocated for the dictionary.
+- `query_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
 - `hit_rate` ([Float64](../../sql-reference/data-types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.
 - `found_rate` ([Float64](../../sql-reference/data-types/float.md)) — The percentage of uses for which the value was found.
-- `element_count` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of items stored in the dictionary.
+- `element_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of items stored in the dictionary.
 - `load_factor` ([Float64](../../sql-reference/data-types/float.md)) — Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
 - `source` ([String](../../sql-reference/data-types/string.md)) — Text describing the [data source](../../sql-reference/dictionaries/index.md#dictionary-sources) for the dictionary.
-- `lifetime_min` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Minimum [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
-- `lifetime_max` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Maximum [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
+- `lifetime_min` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Minimum [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
+- `lifetime_max` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Maximum [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
 - `loading_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
 - `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes.
 - `loading_duration` ([Float32](../../sql-reference/data-types/float.md)) — Duration of a dictionary loading.

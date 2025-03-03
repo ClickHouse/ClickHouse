@@ -16,7 +16,7 @@ Columns:
 
 - `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Number of elements for this profile in the `system.settings_profile_elements` table.
 
-- `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows that the settings profile set for all roles and/or users.
+- `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows that the settings profile set for all roles and/or users.
 
 - `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of the roles and/or users to which the setting profile is applied.
 

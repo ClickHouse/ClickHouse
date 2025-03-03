@@ -21,7 +21,7 @@ ClickHouse не удаляет данные из таблицы автомати
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата, когда произошло последнее событие с представлением.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время завершения выполнения представления.
 -   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время завершения выполнения представления с точностью до микросекунд.
--   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — продолжительность выполнения представления (сумма его этапов) в миллисекундах.
+-   `view_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — продолжительность выполнения представления (сумма его этапов) в миллисекундах.
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор начального запроса (при распределённом выполнении запроса).
 -   `view_name` ([String](../../sql-reference/data-types/string.md)) — имя представления.
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID представления.
@@ -31,10 +31,10 @@ ClickHouse не удаляет данные из таблицы автомати
     -   `'Live' = 3` — [live представления](../../sql-reference/statements/create/view.md#live-view).
 -   `view_query` ([String](../../sql-reference/data-types/string.md)) — запрос, выполняемый представлением.
 -   `view_target` ([String](../../sql-reference/data-types/string.md)) — имя целевой таблицы представления.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных строк.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных байт.
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных строк.
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных байт.
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество прочитанных строк.
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество прочитанных байт.
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество записанных строк.
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество записанных байт.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — максимальная разница между объемом выделенной и освобожденной памяти в контексте этого представления.
 -   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — события профиля, которые измеряют различные показатели. Их описание можно найти в таблице [system.events](/operations/system-tables/events).
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — статус представления. Возможные значения:

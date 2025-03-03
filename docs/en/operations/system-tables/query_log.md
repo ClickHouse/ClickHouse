@@ -50,18 +50,18 @@ Columns:
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Query starting time with microseconds precision.
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
-- `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
-- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
-- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
-- `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
-- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes (uncompressed). For other queries, the column value is 0.
-- `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
-- `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — RAM volume in bytes used to store a query result.
-- `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
+- `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Duration of query execution in milliseconds.
+- `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
+- `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
+- `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written bytes (uncompressed). For other queries, the column value is 0.
+- `result_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
+- `result_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — RAM volume in bytes used to store a query result.
+- `memory_usage` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Memory consumption by the query.
 - `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
-- `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
+- `normalized_query_hash` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
 - `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 - `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 - `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.

@@ -22,11 +22,11 @@ Columns:
 
 - `select_filter` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Condition which is used to filter rows.
 
-- `is_restrictive` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the row policy restricts access to rows, see [CREATE ROW POLICY](../../sql-reference/statements/create/row-policy.md#create-row-policy-as). Value:
+- `is_restrictive` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows whether the row policy restricts access to rows, see [CREATE ROW POLICY](../../sql-reference/statements/create/row-policy.md#create-row-policy-as). Value:
 - `0` — The row policy is defined with `AS PERMISSIVE` clause.
 - `1` — The row policy is defined with `AS RESTRICTIVE` clause.
 
-- `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows that the row policies set for all roles and/or users.
+- `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows that the row policies set for all roles and/or users.
 
 - `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of the roles and/or users to which the row policies is applied.
 

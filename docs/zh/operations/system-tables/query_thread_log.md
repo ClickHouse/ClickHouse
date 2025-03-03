@@ -19,30 +19,30 @@ ClickHouse不会自动从表中删除数据。 欲了解更多详情，请参照
 -   `event_date` ([日期](../../sql-reference/data-types/date.md)) — 该查询线程执行完成的日期。
 -   `event_time` ([日期时间](../../sql-reference/data-types/datetime.md)) — 该查询线程执行完成的时间。
 -   `query_start_time` ([日期时间](../../sql-reference/data-types/datetime.md)) — 查询的开始时间。
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 查询执行持续的时间。
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 读取的行数。
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 读取的字节数。
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 对于 `INSERT` 查询，写入的行数。 对于其他查询，为0。
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 对于 `INSERT` 查询，写入的字节数。 对于其他查询，为0。
+-   `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 查询执行持续的时间。
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 读取的行数。
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 读取的字节数。
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 对于 `INSERT` 查询，写入的行数。 对于其他查询，为0。
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 对于 `INSERT` 查询，写入的字节数。 对于其他查询，为0。
 -   `memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — 在线程上下文，分配的内存和空闲内存之差。
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — 在线程上下文，分配的内存和空闲内存之差的最大值。
 -   `thread_name` ([字符串](../../sql-reference/data-types/string.md)) — 线程名。
 -   `thread_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — 内部线程ID。
 -   `thread_id` ([Int32](../../sql-reference/data-types/int-uint.md)) — 线程ID。
--   `master_thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — OS初始线程的初始ID。
+-   `master_thread_id` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — OS初始线程的初始ID。
 -   `query` ([字符串](../../sql-reference/data-types/string.md)) — 查询语句。
--   `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 查询类型，可能的值：
+-   `is_initial_query` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 查询类型，可能的值：
     -   1 — 由用户发起的查询。
     -   0 — 由其他查询发起的分布式查询。
 -   `user` ([字符串](../../sql-reference/data-types/string.md)) — 发起查询的用户名。
 -   `query_id` ([字符串](../../sql-reference/data-types/string.md)) — 查询的ID。
 -   `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — 发起查询的IP地址。
--   `port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起查询的端口。
+-   `port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — 发起查询的端口。
 -   `initial_user` ([字符串](../../sql-reference/data-types/string.md)) — 首次发起查询的用户名（对于分布式查询）。
 -   `initial_query_id` ([字符串](../../sql-reference/data-types/string.md)) — 首次发起查询的ID（对于分布式查询）。
 -   `initial_address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — 发起该查询的父查询IP地址。
--   `initial_port` ([UInt16](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起该查询的父查询端口。
--   `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起查询的界面，可能的值:
+-   `initial_port` ([UInt16](/sql-reference/data-types/int-uint#integer-ranges)) — 发起该查询的父查询端口。
+-   `interface` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 发起查询的界面，可能的值:
     -   1 — TCP.
     -   2 — HTTP.
 -   `os_user` ([字符串](../../sql-reference/data-types/string.md)) — 使用 [clickhouse-client](../../interfaces/cli.md) 的系统用户名。
@@ -52,7 +52,7 @@ ClickHouse不会自动从表中删除数据。 欲了解更多详情，请参照
 -   `client_version_major` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或另一个TCP客户端的主版本号。
 -   `client_version_minor` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或另一个TCP客户端的次版本号。
 -   `client_version_patch` ([UInt32](../../sql-reference/data-types/int-uint.md)) — [clickhouse-client](../../interfaces/cli.md) 或另一个TCP客户端的补丁版本号。
--   `http_method` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 发起查询的HTTP方法，可能的值：
+-   `http_method` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 发起查询的HTTP方法，可能的值：
     -   0 — 查询通过TCP界面发起。
     -   1 — `GET` 方法被使用。
     -   2 — `POST` 方法被使用。

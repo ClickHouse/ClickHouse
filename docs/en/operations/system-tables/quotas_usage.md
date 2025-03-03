@@ -13,7 +13,7 @@ Quota usage by all users.
 Columns:
 - `quota_name` ([String](../../sql-reference/data-types/string.md)) — Quota name.
 - `quota_key` ([String](../../sql-reference/data-types/string.md)) — Key value.
-- `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Quota usage for current user.
+- `is_current` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Quota usage for current user.
 - `start_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — Start time for calculating resource consumption.
 - `end_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — End time for calculating resource consumption.
 - `duration` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — Length of the time interval for calculating resource consumption, in seconds.

@@ -43,14 +43,14 @@ ClickHouse不会自动从表中删除数据。更多详情请看 [introduction](
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 查询开始时间（毫秒精度）.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 查询执行的开始时间.
 -   `query_start_time_microseconds` (DateTime64) — 查询执行的开始时间（毫秒精度）.
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 查询消耗的时间（毫秒）.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 从参与了查询的所有表和表函数读取的总行数. 包括：普通的子查询,  `IN` 和 `JOIN`的子查询. 对于分布式查询 `read_rows` 包括在所有副本上读取的行总数。 每个副本发送它的 `read_rows` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 从参与了查询的所有表和表函数读取的总字节数. 包括：普通的子查询,  `IN` 和 `JOIN`的子查询. 对于分布式查询 `read_bytes` 包括在所有副本上读取的字节总数。 每个副本发送它的 `read_bytes` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 对于 `INSERT` 查询，为写入的行数。 对于其他查询，值为0。
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 对于 `INSERT` 查询时，为写入的字节数。 对于其他查询，值为0。
--   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — `SELECT` 查询结果的行数，或`INSERT` 的行数。
--   `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 存储查询结果的RAM量.
--   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 查询使用的内存.
+-   `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 查询消耗的时间（毫秒）.
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 从参与了查询的所有表和表函数读取的总行数. 包括：普通的子查询,  `IN` 和 `JOIN`的子查询. 对于分布式查询 `read_rows` 包括在所有副本上读取的行总数。 每个副本发送它的 `read_rows` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 从参与了查询的所有表和表函数读取的总字节数. 包括：普通的子查询,  `IN` 和 `JOIN`的子查询. 对于分布式查询 `read_bytes` 包括在所有副本上读取的字节总数。 每个副本发送它的 `read_bytes` 值，并且查询的服务器-发起方汇总所有接收到的和本地的值。 缓存卷不会影响此值。
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 对于 `INSERT` 查询，为写入的行数。 对于其他查询，值为0。
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 对于 `INSERT` 查询时，为写入的字节数。 对于其他查询，值为0。
+-   `result_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — `SELECT` 查询结果的行数，或`INSERT` 的行数。
+-   `result_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 存储查询结果的RAM量.
+-   `memory_usage` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 查询使用的内存.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — 查询语句.
 -   `exception` ([String](../../sql-reference/data-types/string.md)) — 异常信息.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — 异常码.

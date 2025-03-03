@@ -321,7 +321,7 @@ tid()
 
 **Возвращаемое значение**
 
--   Id текущего потока. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   Id текущего потока. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Пример**
 

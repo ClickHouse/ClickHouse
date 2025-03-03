@@ -413,7 +413,7 @@ tid()
 
 **Returned value**
 
-- Current thread id. [Uint64](../data-types/int-uint.md#uint-ranges).
+- Current thread id. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 

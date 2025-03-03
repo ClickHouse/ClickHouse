@@ -21,7 +21,7 @@ ClickHouse不会自动从表中删除数据. 详见 [Introduction](../../operati
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 视图的最后一个事件发生的日期.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 视图完成执行的日期和时间.
 -   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — 视图以微秒精度完成执行的日期和时间.
--   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 视图执行的持续时间(各阶段之和), 以毫秒为单位.
+-   `view_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 视图执行的持续时间(各阶段之和), 以毫秒为单位.
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — 初始查询的ID (用于分布式查询执行).
 -   `view_name` ([String](../../sql-reference/data-types/string.md)) — 视图名称.
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — 视图的UUID.
@@ -31,10 +31,10 @@ ClickHouse不会自动从表中删除数据. 详见 [Introduction](../../operati
     -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 -   `view_query` ([String](../../sql-reference/data-types/string.md)) — 视图执行的查询.
 -   `view_target` ([String](../../sql-reference/data-types/string.md)) — 视图目标表的名称.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 读行数.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 读字节数.
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 写入行数.
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 写入字节数.
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 读行数.
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 读字节数.
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 写入行数.
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 写入字节数.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — 在此视图上下文中, 已分配内存和已释放内存之间的最大差值.
 -   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents度量不同的指标. 它们的描述可以在表 [system.events](/operations/system-tables/events) 中找到.
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — 视图状态. 值:

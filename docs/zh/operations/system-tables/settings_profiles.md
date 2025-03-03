@@ -14,7 +14,7 @@ slug: /zh/operations/system-tables/settings_profiles
 
 -    `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — `system.settings_profile_elements` 表中此配置文件的元素数.
 
--    `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 为所有角色和/或用户设置的 Setting 配置文件.
+-    `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 为所有角色和/或用户设置的 Setting 配置文件.
 
 -    `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — 应用 Setting 配置文件的角色和/或用户列表. 
 
