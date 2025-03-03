@@ -201,7 +201,7 @@ Engine supports all s3 related settings. For more information about S3 settings 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/docs/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
