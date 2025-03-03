@@ -67,8 +67,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
-            {"iceberg_snapshot_id", 0, 0, "New setting."},
-        });        
+        });
         addSettingsChanges(settings_changes_history, "25.2",
         {
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
