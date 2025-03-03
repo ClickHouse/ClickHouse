@@ -6409,7 +6409,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#accuratecastornullx-t}
 
-Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](/sql-reference/syntax#null) if the cast value is not representable in the target type.
 
 **Syntax**
 
@@ -7033,7 +7033,7 @@ parseDateTime64(str[, format[, timezone]])
 
 - `str` — The String to be parsed.
 - `format` — The format string. Optional. `%Y-%m-%d %H:%i:%s.%f` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7062,7 +7062,7 @@ parseDateTime64InJodaSyntax(str[, format[, timezone]])
 
 - `str` — The String to be parsed.
 - `format` — The format string. Optional. `yyyy-MM-dd HH:mm:ss` if not specified.
-- `timezone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). Optional.
+- `timezone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). Optional.
 
 **Returned value(s)**
 
@@ -7253,7 +7253,7 @@ parseDateTime64BestEffort(time_string [, precision [, time_zone]])
 
 - `time_string` — String containing a date or date with time to convert. [String](../data-types/string.md).
 - `precision` — Required precision. `3` — for milliseconds, `6` — for microseconds. Default — `3`. Optional. [UInt8](../data-types/int-uint.md).
-- `time_zone` — [Timezone](/docs/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
+- `time_zone` — [Timezone](/operations/server-configuration-parameters/settings.md#timezone). The function parses `time_string` according to the timezone. Optional. [String](../data-types/string.md).
 
 **Returned value**
 
@@ -7677,7 +7677,7 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/docs/interfaces/formats.md/#csv), [TSV](/docs/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
@@ -7748,7 +7748,7 @@ formatRowNoNewline(format, x, y, ...)
 
 **Arguments**
 
-- `format` — Text format. For example, [CSV](/docs/interfaces/formats.md/#csv), [TSV](/docs/interfaces/formats.md/#tabseparated).
+- `format` — Text format. For example, [CSV](/interfaces/formats.md/#csv), [TSV](/interfaces/formats.md/#tabseparated).
 - `x`,`y`, ... — Expressions.
 
 **Returned value**
