@@ -399,7 +399,7 @@ void DatabasePostgreSQL::shutdown()
 
 void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
 {
-    setDatabaseComment(command.comment.value());
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const

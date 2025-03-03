@@ -664,7 +664,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     }
 }
 
-void DatabaseCatalog::updateDatabaseComment(const DatabasePtr & database)
+void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
     ASTPtr ast = database->getCreateDatabaseQuery();

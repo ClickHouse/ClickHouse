@@ -371,10 +371,7 @@ public:
     }
 
     // Alter comment of database.
-    virtual void alterDatabaseComment(const AlterCommand &)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
-    }
+    virtual void alterDatabaseComment(const AlterCommand &);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
