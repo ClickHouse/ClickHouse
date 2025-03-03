@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/QueryProcessingStage.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryFlags.h>
+#include <Interpreters/QueryLogElement.h>
 #include <QueryPipeline/BlockIO.h>
 
 #include <memory>
@@ -29,12 +31,6 @@ struct QueryResultDetails
 
 using SetResultDetailsFunc = std::function<void(const QueryResultDetails &)>;
 using HandleExceptionInOutputFormatFunc = std::function<void(IOutputFormat & output_format, const String & format_name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings)>;
-
-struct QueryFlags
-{
-    bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
-    bool distributed_backup_restore = false; /// If true, this query is a part of backup restore.
-};
 
 
 /// Parse and execute a query.

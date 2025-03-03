@@ -14,7 +14,7 @@ ClickHouse运行允许分析查询执行的采样探查器。 使用探查器，
 
 -   设置 [trace_log](../server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) 服务器配置部分。
 
-    本节配置 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表包含探查器运行的结果。 它是默认配置的。 请记住，此表中的数据仅对正在运行的服务器有效。 服务器重新启动后，ClickHouse不会清理表，所有存储的虚拟内存地址都可能无效。
+    本节配置 [trace_log](/operations/system-tables/trace_log) 系统表包含探查器运行的结果。 它是默认配置的。 请记住，此表中的数据仅对正在运行的服务器有效。 服务器重新启动后，ClickHouse不会清理表，所有存储的虚拟内存地址都可能无效。
 
 -   设置 [query_profiler_cpu_time_period_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) 或 [query_profiler_real_time_period_ns](../settings/settings.md#query_profiler_real_time_period_ns) 设置。 这两种设置可以同时使用。
 

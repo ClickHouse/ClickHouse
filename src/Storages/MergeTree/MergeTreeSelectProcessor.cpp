@@ -4,9 +4,11 @@
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Columns/FilterDescription.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
@@ -96,21 +98,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), prewhere_info))
 {
-    if (reader_settings.apply_deleted_mask)
-    {
-        PrewhereExprStep step
-        {
-            .type = PrewhereExprStep::Filter,
-            .actions = nullptr,
-            .filter_column_name = RowExistsColumn::name,
-            .remove_filter_column = true,
-            .need_filter = true,
-            .perform_alter_conversions = true,
-        };
-
-        lightweight_delete_filter_step = std::make_shared<PrewhereExprStep>(std::move(step));
-    }
-
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -188,8 +175,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             throw;
         }
 
-        if (!task->getMainRangeReader().isInitialized())
-            initializeRangeReaders();
+        if (!task->getReadersChain().isInitialized())
+            initializeReadersChain();
 
         auto res = algorithm->readFromTask(*task);
 
@@ -221,11 +208,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
     return {Chunk(), 0, 0, true};
 }
 
-void MergeTreeSelectProcessor::initializeRangeReaders()
+void MergeTreeSelectProcessor::initializeReadersChain()
 {
     PrewhereExprInfo all_prewhere_actions;
-    if (lightweight_delete_filter_step && task->getInfo().data_part->hasLightweightDelete())
-        all_prewhere_actions.steps.push_back(lightweight_delete_filter_step);
 
     for (const auto & step : task->getInfo().mutation_steps)
         all_prewhere_actions.steps.push_back(step);
@@ -233,7 +218,7 @@ void MergeTreeSelectProcessor::initializeRangeReaders()
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    task->initializeRangeReaders(all_prewhere_actions, read_steps_performance_counters);
+    task->initializeReadersChain(all_prewhere_actions, read_steps_performance_counters);
 }
 
 Block MergeTreeSelectProcessor::transformHeader(Block block, const PrewhereInfoPtr & prewhere_info)

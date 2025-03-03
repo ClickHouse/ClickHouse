@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/table_engines
+description: "System table containing descriptions of table engines supported by the server and the features they support."
+slug: /operations/system-tables/table_engines
+title: "system.table_engines"
+keywords: ["system table", "table_engines"]
 ---
-# table_engines
 
 Contains description of table engines supported by server and their feature support information.
 

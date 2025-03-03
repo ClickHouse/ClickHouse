@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/ISink.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
