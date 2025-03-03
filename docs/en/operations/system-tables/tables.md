@@ -52,7 +52,7 @@ Columns:
 - `storage_policy` ([String](../../sql-reference/data-types/string.md)) - The storage policy:
 
     - [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    - [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+    - [Distributed](/engines/table-engines/special/distributed)
 
 - `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `NULL` (including underlying `Buffer` table).
 
