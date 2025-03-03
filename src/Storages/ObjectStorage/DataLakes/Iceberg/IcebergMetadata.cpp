@@ -218,7 +218,8 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorage::Configuration & configuration,
     ContextPtr local_context,
-    LoggerPtr log)
+    LoggerPtr log,
+    Int32 format_version)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -251,6 +252,18 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
         return {version, metadata_object};
     }
 
+    std::optional<std::string> table_uuid
+        = metadata_object->has("table-uuid") ? std::optional{metadata_object->getValue<std::string>("table-uuid")} : std::nullopt;
+
+    if (format_version > 1 && !table_uuid)
+    {
+        LOG_WARNING(
+            log,
+            "Table uuid is missing in metadata for table {} which is required for format version {}",
+            configuration.getPath(),
+            format_version);
+    }
+
     auto query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].value;
     std::optional<Int64> closest_timestamp;
     std::optional<Int32> chosen_version;
@@ -279,6 +292,11 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
         {
             auto current_metadata_object = IcebergMetadata::readJSON(current_path, local_context, object_storage, log);
             auto last_updated_ms = current_metadata_object->getValue<Int64>("last-updated-ms");
+            if (table_uuid && current_metadata_object->has("table-uuid")
+                && current_metadata_object->getValue<std::string>("table-uuid") != table_uuid)
+            {
+                continue;
+            }
             if (last_updated_ms <= query_timestamp && (!closest_timestamp || last_updated_ms > closest_timestamp))
             {
                 closest_timestamp = last_updated_ms;
