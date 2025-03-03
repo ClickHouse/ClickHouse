@@ -222,7 +222,7 @@ private:
 
     int envRequest(ssh_session, ssh_channel, const char * env_name, const char * env_value)
     {
-        LOG_TRACE(log, "Received env request");
+        LOG_TEST(log, "Received env request. Client options passing is {}enabled", enable_client_options_passing ? "" : "not ");
         if (enable_client_options_passing)
             env[env_name] = env_value;
         return SSH_OK;
@@ -437,6 +437,11 @@ SSHPtyHandler::SSHPtyHandler(
 {
 }
 
+SSHPtyHandler::~SSHPtyHandler()
+{
+    session.disconnect();
+}
+
 void SSHPtyHandler::run()
 {
     ::ssh::SSHEvent event;
@@ -500,14 +505,16 @@ void SSHPtyHandler::run()
 
 
     sdata.channel_callback->channel.sendEof();
+    sdata.channel_callback->channel.sendExitStatus(0);
     sdata.channel_callback->channel.close();
 
-    /* Wait up to finish_timeout_seconds seconds for the client to terminate the session. */
-    max_iterations = options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
-    for (n = 0; n < max_iterations && !session.hasFinished(); n++)
-    {
-        event.poll(options.event_poll_interval_milliseconds);
-    }
+    // /* Wait up to finish_timeout_seconds seconds for the client to terminate the session. */
+    // max_iterations = options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
+    // for (n = 0; n < max_iterations && !session.hasFinished(); n++)
+    // {
+    //     event.poll(options.event_poll_interval_milliseconds);
+    // }
+
     LOG_DEBUG(log, "Connection closed");
 }
 

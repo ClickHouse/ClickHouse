@@ -32,6 +32,8 @@ public:
         const Options & options
     );
 
+    ~SSHPtyHandler() override;
+
     void run() override;
 
 private:
