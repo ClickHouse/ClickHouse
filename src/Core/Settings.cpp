@@ -5605,6 +5605,9 @@ Allow to use the function `getClientHTTPHeader` which lets to obtain a value of 
     DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
 Use types inference during String to Dynamic conversion
 )", 0) \
+    DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
+Use types inference during String to Variant conversion.
+)", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \

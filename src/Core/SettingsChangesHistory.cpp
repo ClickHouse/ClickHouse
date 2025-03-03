@@ -67,6 +67,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
+            {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
