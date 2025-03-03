@@ -1121,17 +1121,8 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     bool apply_virtual_row = false;
 
-    if (const auto * union_step = typeid_cast<const UnionStep *>(node.children.front()->step.get()))
+    if (typeid_cast<const UnionStep *>(node.children.front()->step.get()))
     {
-        if (union_step->parallelReplicas())
-        {
-            /// in case of parallel replicas
-            /// avoid applying read-in-order optimization for local replica
-            /// since it will lead to different parallel replicas modes
-            /// between local and remote nodes
-            return;
-        }
-
         auto & union_node = node.children.front();
 
         bool use_buffering = false;
@@ -1251,9 +1242,6 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     if (!distinct->getSortDescription().empty())
-        return;
-
-    if (distinct->disallowInOrderOptimization())
         return;
 
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front());

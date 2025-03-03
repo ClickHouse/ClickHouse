@@ -44,8 +44,6 @@ public:
     void applyOrder(SortDescription sort_desc) { distinct_sort_desc = std::move(sort_desc); }
     const SortDescription & getSortDescription() const override { return distinct_sort_desc; }
 
-    bool & disallowInOrderOptimization() { return disallow_in_order_optimization; }
-
 private:
     void updateOutputHeader() override;
 
@@ -54,7 +52,6 @@ private:
     const Names columns;
     bool pre_distinct;
     SortDescription distinct_sort_desc;
-    bool disallow_in_order_optimization = false;
 };
 
 }
