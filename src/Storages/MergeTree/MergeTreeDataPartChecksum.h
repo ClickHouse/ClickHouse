@@ -1,6 +1,10 @@
 #pragma once
 
 #include <base/types.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
+#include <Core/Types_fwd.h>
 
 #include <map>
 #include <optional>

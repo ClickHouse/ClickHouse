@@ -4618,21 +4618,6 @@ Strings getPartFiles(MergeTreeData::MutableDataPartPtr & part, bool with_project
 }
 
 
-String getDebugString(const Strings & arg)
-{
-    WriteBufferFromOwnString out;
-    {
-        auto it = arg.begin();
-        if (it != arg.end())
-            out << *it;
-        ++it;
-        for (; it != arg.end(); ++it)
-            out << ", " << *it;
-    }
-    return out.str();
-}
-
-
 void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPartPtr & part)
 {
     Strings files_in_part = getPartFiles(part);
@@ -4656,18 +4641,16 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
     LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"), "checksums has {} files, new part has {} files, files in checksums: {}, files in part: {}",
         part->checksums.files.size(),
         files_in_part.size(),
-        getDebugString(files_in_checksums),
-        getDebugString(files_in_part));
+        fmt::join(files_in_checksums, ", "),
+        fmt::join(files_in_part, ", "));
 
     if (files_in_part != files_in_checksums)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "checksums.txt file is not consistent with the files on file system, checksums.txt file has {} files, part '{}' has {} files, files in checksums: {}, files in part: {}",
             part->checksums.files.size(),
             part->name,
             files_in_part.size(),
-            getDebugString(files_in_checksums),
-            getDebugString(files_in_part));
-
-
+            fmt::join(files_in_checksums, ", "),
+            fmt::join(files_in_part, ", "));
 }
 
 

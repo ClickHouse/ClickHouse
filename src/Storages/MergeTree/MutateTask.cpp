@@ -1801,8 +1801,6 @@ private:
 
         NameSet hardlinked_files;
 
-
-
         /// NOTE: Renames must be done in order
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
@@ -1845,7 +1843,7 @@ private:
             String destination = it->name();
 
             LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "rename unchanged {} -> {}",
-            file_name, destination);
+                file_name, destination);
 
             if (it->isFile())
             {
