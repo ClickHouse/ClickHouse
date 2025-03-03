@@ -22,7 +22,7 @@ Resolution: 1 second.
 
 The `Date` data type is faster than `Time` under _most_ conditions. But the `Time` data type is around the same as `DateTime` data type.
 
-Due to the implementation delatils, the `Time` and `DateTime` type requires 4 bytes of storage, while `Date` requires 2 bytes. However, when the database compresses the database, this difference is amplified.
+Due to the implementation details, the `Time` and `DateTime` type requires 4 bytes of storage, while `Date` requires 2 bytes. However, when the database compresses the database, this difference is amplified.
 
 ## Usage Remarks {#usage-remarks}
 
