@@ -24,4 +24,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
+- [SHOW PROFILES](/sql-reference/statements/show#show-profiles)

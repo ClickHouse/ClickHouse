@@ -22,4 +22,4 @@ slug: /zh/operations/system-tables/settings_profiles
 
 ## 另请参阅 {#see-also}
 
--   [查看配置文件信息](../../sql-reference/statements/show.md#show-profiles-statement)
+-   [查看配置文件信息](/sql-reference/statements/show#show-profiles)
