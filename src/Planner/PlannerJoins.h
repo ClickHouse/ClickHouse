@@ -255,9 +255,15 @@ struct JoinAlgorithmSettings
     UInt64 max_threads;
 
     String initial_query_id;
-    std::chrono::milliseconds acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout;
 
     explicit JoinAlgorithmSettings(const Context & context);
+
+    JoinAlgorithmSettings(
+        const JoinSettings & join_settings,
+        UInt64 max_entries_for_hash_table_stats_,
+        String initial_query_id_,
+        std::chrono::milliseconds lock_acquire_timeout_);
 };
 
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
