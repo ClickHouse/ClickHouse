@@ -1652,6 +1652,8 @@ Converts a date with time to a certain fixed date, while preserving the time.
 toTimeWithFixedDate(date[,timezone])
 ```
 
+Alias: `toTime` - can be used only when the `use_legacy_to_time` setting is enabled.
+
 **Arguments**
 
 - `date` — Date to convert to a time. [Date](../data-types/date.md)/[DateTime](../data-types/datetime.md)/[DateTime64](../data-types/datetime64.md).

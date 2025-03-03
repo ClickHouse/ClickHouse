@@ -397,6 +397,8 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 
 将DateTime中的日期转换为一个固定的日期，同时保留时间部分。
 
+別名: `toTime` - 只能在啟用 `use_legacy_to_time` 設定時使用。
+
 ## toRelativeYearNum {#torelativeyearnum}
 
 将Date或DateTime转换为年份的编号，从过去的某个固定时间点开始。

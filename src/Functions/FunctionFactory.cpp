@@ -1,6 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 
+#include <Functions/DateTimeTransforms.h>
+
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -19,6 +21,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool log_queries;
+    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ErrorCodes
@@ -139,6 +142,15 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         auto query_context = CurrentThread::get().getQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+
+        /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to 
+        /// check this setting here and decide if we need to change the function to get
+        if (query_context && Poco::toLower(name) == "totime" && query_context->getSettingsRef()[Setting::use_legacy_to_time])
+        {
+            it = functions.find(ToTimeWithFixedDateImpl::name);
+            if (functions.end() != it)
+                res = it->second.first(context);
+        }
     }
 
     return res;
