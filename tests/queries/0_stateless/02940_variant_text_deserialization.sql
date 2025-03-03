@@ -79,7 +79,7 @@ select 'FixedString';
 select v, variantElement(v, 'FixedString(4)') from format(CSV, 'v Variant(String, FixedString(4))', '\\N\n"string"\nstring\n"abcd"') format CSV;
 
 select 'Bool';
-select v, variantElement(v, 'Bool') from format(CSV, 'v Variant(String, Bool)', '\\N\nTruee\nTrue') format CSV;
+select v, variantElement(v, 'Bool') from format(CSV, 'v Variant(String, Bool)', '\\N\ntruee\ntrue') format CSV;
 
 select 'Integers';
 select v, variantElement(v, 'Int8') from format(CSV, 'v Variant(String, Int8, UInt64)', '\n"string"\n-1\n0\n10000000000\n42d42') format CSV;
@@ -144,7 +144,7 @@ select 'FixedString';
 select v, variantElement(v, 'FixedString(4)') from format(TSV, 'v Variant(String, FixedString(4))', '\\N\nstring\nabcd') format TSV;
 
 select 'Bool';
-select v, variantElement(v, 'Bool') from format(TSV, 'v Variant(String, Bool)', '\\N\nTruee\nTrue') format TSV;
+select v, variantElement(v, 'Bool') from format(TSV, 'v Variant(String, Bool)', '\\N\ntruee\ntrue') format TSV;
 
 select 'Integers';
 select v, variantElement(v, 'Int8') from format(TSV, 'v Variant(String, Int8, UInt64)', '\\N\nstring\n-1\n0\n10000000000\n42d42') format TSV;
@@ -209,7 +209,7 @@ select 'FixedString';
 select v, variantElement(v, 'FixedString(4)') from format(Values, 'v Variant(String, FixedString(4))', '(NULL), (''string''), (''abcd'')') format Values;
 
 select 'Bool';
-select v, variantElement(v, 'Bool') from format(Values, 'v Variant(String, Bool)', '(NULL), (True)') format Values;
+select v, variantElement(v, 'Bool') from format(Values, 'v Variant(String, Bool)', '(NULL), (true)') format Values;
 
 select 'Integers';
 select v, variantElement(v, 'Int8') from format(Values, 'v Variant(String, Int8, UInt64)', '(NULL), (''string''), (-1), (0), (10000000000)') format Values;
