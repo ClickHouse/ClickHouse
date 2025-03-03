@@ -13,7 +13,7 @@ Contains information about threads that execute queries, for example, thread nam
 To start logging:
 
 1.  Configure parameters in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) section.
-2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
+2.  Set [log_query_threads](operations/settings/settings#log_query_threads) to 1.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
@@ -122,5 +122,5 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 
 **See Also**
 
-- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
+- [system.query_log](/operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_views_log](/operations/system-tables/query_views_log) — This table contains information about each view executed during a query.
