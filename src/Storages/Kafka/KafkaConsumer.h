@@ -193,7 +193,6 @@ private:
     /// Last used time (for TTL)
     std::atomic<UInt64> last_used_usec = 0;
 
-    void drain();
     void cleanUnprocessed();
     void resetIfStopped();
     void filterMessageErrors();
