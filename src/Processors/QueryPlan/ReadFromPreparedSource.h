@@ -33,6 +33,10 @@ public:
 
     const StoragePtr & getStorage() const { return storage; }
 
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
 private:
     StoragePtr storage;
 

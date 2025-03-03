@@ -62,6 +62,16 @@ void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
+
+void registerReadFromStorageStep(QueryPlanStepRegistry & registry);
+void registerShuffleExchangeStep(QueryPlanStepRegistry & registry);
+void registerShuffleSendStep(QueryPlanStepRegistry & registry);
+void registerShuffleReceiveStep(QueryPlanStepRegistry & registry);
+void registerGatherExchangeStep(QueryPlanStepRegistry & registry);
+void registerGatherSendStep(QueryPlanStepRegistry & registry);
+void registerGatherReceiveStep(QueryPlanStepRegistry & registry);
+
+
 void QueryPlanStepRegistry::registerPlanSteps()
 {
     QueryPlanStepRegistry & registry = QueryPlanStepRegistry::instance();
@@ -90,6 +100,14 @@ void QueryPlanStepRegistry::registerPlanSteps()
     registerReadFromTableFunctionStep(registry);
     registerBuildRuntimeFilterStep(registry);
     registerObjectFilterStep(registry);
+
+    registerReadFromStorageStep(registry);
+    registerShuffleExchangeStep(registry);
+    registerShuffleSendStep(registry);
+    registerShuffleReceiveStep(registry);
+    registerGatherExchangeStep(registry);
+    registerGatherSendStep(registry);
+    registerGatherReceiveStep(registry);
 }
 
 }
