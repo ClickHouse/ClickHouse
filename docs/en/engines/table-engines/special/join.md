@@ -77,7 +77,7 @@ When creating a table, the following settings are applied:
 
 #### max_bytes_in_join {#max_bytes_in_join}
 
-[max_bytes_in_join](/operations/settings/query-complexity#max_bytes_in_join)
+[max_bytes_in_join](/operations/settings/query-complexity#settings-max_bytes_in_join)
 
 #### join_overflow_mode {#join_overflow_mode}
 

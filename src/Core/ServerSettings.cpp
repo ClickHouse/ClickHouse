@@ -791,7 +791,7 @@ namespace DB
     User wishing to see secrets must also have
     [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
     turned on and a
-    [`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+    [`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
     Possible values:
 
