@@ -79,9 +79,7 @@ struct ExplainPlanOptions
 
     SettingsChanges toSettingsChanges() const;
 };
-#if CLICKHOUSE_CLOUD
 struct DistributedQueryPlan;
-#endif
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -117,11 +115,9 @@ public:
     void resolveStorages(const ContextPtr & context);
 
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
-#if CLICKHOUSE_CLOUD
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
     /// contains a step that executes the distributed plan and a step that receives the result.
     void convertToDistributed(const QueryPlanOptimizationSettings & optimization_settings);
-#endif
 
     QueryPipelineBuilderPtr buildQueryPipeline(
         const QueryPlanOptimizationSettings & optimization_settings,
@@ -238,5 +234,40 @@ struct QueryPlanAndSets
 
 std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
+
+
+
+
+/// Stores named paramaters for query plan.
+/// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
+struct QueryPlanParamaters
+{
+    std::unordered_map<String, Field> parameters;
+};
+
+struct DistributedQueryTask
+{
+    String task_id;
+    QueryPlanParamaters parameters;
+    std::vector<String> input_temporary_files;
+    std::vector<String> output_temporary_files;
+};
+
+
+struct DistributedQueryStage
+{
+    QueryPlan query_plan_fragment;   /// Common for all tasks
+    std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
+};
+
+
+/// Represents a graph of stages
+/// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
+struct DistributedQueryPlan
+{
+    std::unordered_map<String, DistributedQueryStage> stages;
+    std::unordered_map<String, std::unordered_set<String>> stage_depends_on;    /// Maps stage name to stages it depends on
+};
+
 
 }

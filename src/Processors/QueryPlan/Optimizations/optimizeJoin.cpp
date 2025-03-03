@@ -34,6 +34,10 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
+
 #include <algorithm>
 #include <limits>
 #include <memory>
@@ -507,6 +511,8 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
+    /// Distributed plan keeps logical joins steps. They are converted to physical steps afterwards, when plan fragment is executed by a worker.
+    keep_logical |= optimization_settings.make_distributed_plan;
     if (keep_logical)
         return false;
     if (!typeid_cast<JoinStepLogical *>(node.step.get()))
@@ -1336,7 +1342,6 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
 }
-
 }
 
 }

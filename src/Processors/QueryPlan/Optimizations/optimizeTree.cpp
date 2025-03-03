@@ -10,10 +10,14 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
 
 #include <memory>
 #include <stack>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace DB
 {
@@ -541,6 +545,5 @@ void addStepsToBuildSets(
         stack.pop_back();
     }
 }
-
 }
 }
