@@ -139,7 +139,7 @@ You can also download and install packages manually from [here](https://packages
 #### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper}
 
 :::tip
-In production environment we [strongly recommend](/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we strongly recommend running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::
@@ -428,9 +428,9 @@ The required volume of RAM generally depends on:
 - The complexity of queries.
 - The amount of data that is processed in queries.
 
-To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/sql-reference/statements/select/group-by.md#select-group-by-clause), [DISTINCT](/sql-reference/statements/select/distinct.md#select-distinct), [JOIN](/sql-reference/statements/select/join.md#select-join) and other operations you use.
+To calculate the required volume of RAM, you may estimate the size of temporary data for [GROUP BY](/sql-reference/statements/select/group-by), [DISTINCT](/sql-reference/statements/select/distinct), [JOIN](/sql-reference/statements/select/join) and other operations you use.
 
-To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/sql-reference/statements/select/group-by.md#select-group-by-in-external-memory) for details.
+To reduce memory consumption, ClickHouse can swap temporary data to external storage. See [GROUP BY in External Memory](/sql-reference/statements/select/group-by#group-by-in-external-memory) for details.
 
 We recommend to disable the operating system's swap file in production environments.
 

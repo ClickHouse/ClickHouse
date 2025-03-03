@@ -244,10 +244,17 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
         return {version, metadata_object};
     }
 
-    auto timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].value;
-    std::optional<Int64> max_timestamp;
-    std::optional<Int32> max_version;
-    std::optional<String> metadata_path;
+    auto last_metadata_timestamp = metadata_object->getValue<Int64>("last-updated-ms");
+
+    if (last_metadata_timestamp <= local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].value)
+    {
+        return {version, metadata_object};
+    }
+
+    auto query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms].value;
+    std::optional<Int64> closest_timestamp;
+    std::optional<Int32> chosen_version;
+    std::optional<String> chosen_metadata_path;
     if (metadata_object->has("metadata-log"))
     {
         auto metadata_log = metadata_object->get("metadata-log").extract<Poco::JSON::Array::Ptr>();
@@ -255,12 +262,15 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
         {
             const auto metadata_log_entry = metadata_log->getObject(static_cast<UInt32>(i));
             auto metadata_timestamp = metadata_log_entry->getValue<Int64>("timestamp-ms");
-            if (metadata_timestamp <= timestamp && (!max_timestamp || metadata_timestamp > max_timestamp))
+            if (metadata_timestamp <= query_timestamp && (!closest_timestamp || metadata_timestamp > closest_timestamp))
             {
-                max_timestamp = metadata_timestamp;
-                max_version = metadata_log_entry->getValue<Int32>("version");
-                metadata_path = metadata_log_entry->getValue<String>("metadata-file");
+                closest_timestamp = metadata_timestamp;
+                chosen_metadata_path = metadata_log_entry->getValue<String>("metadata-file");
             }
+        }
+        if (chosen_metadata_path)
+        {
+            chosen_version = getMetadataVersion(chosen_metadata_path.value());
         }
     }
     else
@@ -269,17 +279,17 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
         {
             auto current_metadata_object = IcebergMetadata::readJSON(current_path, local_context, object_storage, log);
             auto last_updated_ms = current_metadata_object->getValue<Int64>("last-updated-ms");
-            if (last_updated_ms <= timestamp && (!max_timestamp || last_updated_ms > max_timestamp))
+            if (last_updated_ms <= query_timestamp && (!closest_timestamp || last_updated_ms > closest_timestamp))
             {
-                max_timestamp = last_updated_ms;
-                max_version = current_version;
-                metadata_path = current_path;
+                closest_timestamp = last_updated_ms;
+                chosen_version = current_version;
+                chosen_metadata_path = current_path;
             }
         }
     }
-    if (!metadata_path)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find metadata file for timestamp: {}", timestamp);
-    return {max_version.value(), IcebergMetadata::readJSON(metadata_path.value(), local_context, object_storage, log)};
+    if (!chosen_metadata_path)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find metadata file for timestamp: {}", query_timestamp);
+    return {chosen_version.value(), IcebergMetadata::readJSON(chosen_metadata_path.value(), local_context, object_storage, log)};
 }
 
 Poco::JSON::Object::Ptr IcebergMetadata::readJSON(

@@ -6,7 +6,6 @@
 #include <Poco/JSON/Parser.h>
 
 #include <IO/ReadBufferFromString.h>
-#include "Common/logger_useful.h"
 #include <Common/Exception.h>
 #include "base/scope_guard.h"
 
@@ -98,7 +97,6 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
 {
     Int32 schema_id = schema_ptr->getValue<Int32>("schema-id");
     current_schema_id = schema_id;
-    LOG_DEBUG(&Poco::Logger::get("IcebergMetadata table add"), "addIcebergTableSchema: {}", schema_id);
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
         chassert(clickhouse_table_schemas_by_ids.contains(schema_id));

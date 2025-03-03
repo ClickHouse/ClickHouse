@@ -77,7 +77,16 @@ Currently, it is not possible to change nested structures or the types of elemen
 
 **Partition Pruning**
 
-ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
+ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`
+
+**Time Travel**
+
+ClickHouse supports time travel for Iceberg tables, which allows you to query historical data by specifying of a timestamp. To enable time travel for a select query, set `iceberg_timestamp_ms` parameter to necessary UTC timestamp in milliseconds.
+
+```sql
+SELECT * FROM icebergS3(...) ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
 
 **Aliases**
 

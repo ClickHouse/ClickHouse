@@ -87,6 +87,15 @@ To read a table where the schema has changed after its creation with dynamic sch
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
 
+**Time Travel**
+
+ClickHouse supports time travel for Iceberg tables, which allows you to query historical data by specifying of a timestamp. To enable time travel for a select query, set `iceberg_timestamp_ms` parameter to necessary UTC timestamp in milliseconds.
+
+```sql
+SELECT * FROM example_table ORDER BY 1 
+SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
 ### Data cache {#data-cache}
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).

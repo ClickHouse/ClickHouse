@@ -94,7 +94,7 @@ Below you can find some quick links which may be useful when writing code for Cl
 
 - [ClickHouse Architecture](/development/architecture/).
 - [Code style guide](/development/style/).
-- [Third-party libraries](/development/contrib/#adding-third-party-libraries)
+- [Third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries)
 - [Writing tests](/development/tests/)
 - [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
