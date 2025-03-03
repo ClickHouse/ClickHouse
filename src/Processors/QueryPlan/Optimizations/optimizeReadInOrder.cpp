@@ -1253,11 +1253,6 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
     if (!distinct->getSortDescription().empty())
         return;
 
-    // LOG_DEBUG(
-    //     getLogger(__PRETTY_FUNCTION__),
-    //     "Distinct in order is (not) dissallowed: {}\n{}",
-    //     distinct->disallowInOrderOptimization(),
-    //     StackTrace().toString());
     if (distinct->disallowInOrderOptimization())
     {
         return;

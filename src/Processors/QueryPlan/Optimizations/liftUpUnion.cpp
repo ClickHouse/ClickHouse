@@ -95,10 +95,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->isPreliminary());
             new_distinct->setStepDescription(distinct->getStepDescription());
             if (union_step->parallelReplicas())
-            {
-                // LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "Disallow distinct in order: {}", StackTrace().toString());
                 new_distinct->disallowInOrderOptimization() = true;
-            }
 
             distinct_node.step = std::move(new_distinct);
         }
