@@ -26,6 +26,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
         for (const auto & key_name : key_names)
             key_columns.push_back(stream_header.getPositionByName(key_name));
 
+        pipeline.resize(1);
         auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns);
         pipeline.addTransform(scatter);
     }
