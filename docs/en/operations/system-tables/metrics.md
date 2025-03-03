@@ -752,7 +752,7 @@ Value of soft limit on number of CPU slots.
 
 **See Also**
 
-- [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
-- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
+- [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
 - [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

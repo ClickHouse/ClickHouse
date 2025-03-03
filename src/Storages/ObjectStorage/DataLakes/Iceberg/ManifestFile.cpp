@@ -11,12 +11,9 @@
 #include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
 
-#    include <Common/logger_useful.h>
-
 namespace DB::ErrorCodes
 {
 extern const int ILLEGAL_COLUMN;
-extern const int BAD_ARGUMENTS;
 extern const int UNSUPPORTED_METHOD;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
@@ -75,7 +72,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     const DB::FormatSettings & format_settings,
     Int32 schema_id_,
     const IcebergSchemaProcessor & schema_processor,
-    Int64 inherited_sequence_number)
+    Int64 inherited_sequence_number,
+    const String & table_location)
 {
     this->schema_id = schema_id_;
 
@@ -224,12 +222,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         }
         const auto status = ManifestEntryStatus(status_int_column->getInt(i));
 
-        const auto data_path = std::string(file_path_string_column->getDataAt(i).toView());
-        const auto pos = data_path.find(common_path);
-        if (pos == std::string::npos)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected to find {} in data path: {}", common_path, data_path);
+        const auto file_path = getProperFilePathFromMetadataInfo(file_path_string_column->getDataAt(i).toView(), common_path, table_location);
 
-        const auto file_path = data_path.substr(pos);
         std::unordered_map<Int32, Range> partition_ranges;
         for (size_t j = 0; j < partition_columns.size(); ++j)
         {
