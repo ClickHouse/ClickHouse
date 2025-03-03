@@ -4377,7 +4377,14 @@ Possible values:
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
-    \
+    DECLARE(Bool, use_query_condition_cache, false, R"(
+Enable the query condition cache.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \
@@ -5682,7 +5689,7 @@ Use async and potentially multithreaded execution of materialized view query, ca
 Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
-Allows to execute functions with Nullable arguments only on rows with non-NULL values in all arguments when ratio of NULL values in arguments exceeds short_circuit_function_evaluation_for_nulls_threshold. Applies only to functions that return NULL value for rows with at least one NULL value in arguments.
+Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
 )", 0) \
     DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
 Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
