@@ -419,7 +419,7 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 块的大小 `max_block_size` 并不总是从表中加载。 如果显然需要检索的数据较少，则处理较小的块。
 
-## preferred_block_size_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred_block_size_bytes}
 
 用于相同的目的 `max_block_size`，但它通过使其适应块中的行数来设置推荐的块大小（以字节为单位）。
 但是，块大小不能超过 `max_block_size` 行。
@@ -516,7 +516,7 @@ ClickHouse在从表中读取数据时使用此设置。 如果要读取的所有
 
 设置查询日志记录。
 
-使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log) 服务器配置参数。
+使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query_log](../server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log) 服务器配置参数。
 
 示例:
 
@@ -867,7 +867,7 @@ load_balancing = first_or_random
 
 在TSV中使用DOC/Windows样式的行分隔符（CRLF）而不是Unix样式（LF）。
 
-## insert_quorum {#settings-insert_quorum}
+## insert_quorum {#insert_quorum
 
 启用仲裁写入。
 
@@ -902,7 +902,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
@@ -922,7 +922,7 @@ ClickHouse生成异常
 
 另请参阅:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 
 ## insert_deduplicate {#settings-insert-deduplicate}

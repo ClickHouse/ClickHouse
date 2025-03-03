@@ -738,7 +738,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Из таблицы не всегда загружаются блоки размера `max_block_size`. Если ясно, что нужно прочитать меньше данных, то будет считан блок меньшего размера.
 
-## preferred_block_size_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred_block_size_bytes}
 
 Служит для тех же целей что и `max_block_size`, но задает рекомендуемый размер блоков в байтах, выбирая адаптивное количество строк в блоке.
 При этом размер блока не может быть более `max_block_size` строк.
@@ -892,7 +892,7 @@ ClickHouse использует этот параметр при чтении д
 
 Установка логирования запроса.
 
-Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
+Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log).
 
 Пример:
 
@@ -1231,7 +1231,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
 Подробнее смотрите раздел «Экстремальные значения».
 
-## kafka_max_wait_ms {#kafka-max-wait-ms}
+## kafka_max_wait_ms {#kafka_max_wait_ms}
 
 Время ожидания в миллисекундах для чтения сообщений из [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) перед повторной попыткой.
 
@@ -1707,7 +1707,7 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 
 Использовать в качестве разделителя строк для TSV формата CRLF (DOC/Windows стиль) вместо LF (Unix стиль).
 
-## insert_quorum {#settings-insert_quorum}
+## insert_quorum {#insert_quorum
 
 Включает кворумную запись.
 
@@ -1743,7 +1743,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
@@ -1760,7 +1760,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
@@ -1783,7 +1783,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
@@ -2576,7 +2576,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
+Параметр перенесен в [серверную конфигурацию](-   [后台消息代理调度池大小](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
