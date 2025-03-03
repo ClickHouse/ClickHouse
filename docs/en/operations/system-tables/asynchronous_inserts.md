@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about pending asynchronous inserts in queue."
 slug: /operations/system-tables/asynchronous_inserts
-title: "asynchronous_inserts"
+title: "system.asynchronous_inserts"
 keywords: ["system table", "asynchronous_inserts"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -46,5 +46,5 @@ entries.bytes:    [133223]
 
 **See Also**
 
-- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.asynchronous_insert_log](../../operations/system-tables/asynchronous_insert_log.md#system_tables-asynchronous_insert_log) — This table contains information about async inserts performed.
+- [system.query_log](/operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.asynchronous_insert_log](/operations/system-tables/asynchronous_insert_log) — This table contains information about async inserts performed.

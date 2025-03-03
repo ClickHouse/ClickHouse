@@ -29,7 +29,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 错误情况下的行为是由[distributed_ddl_output_mode](../../operations/settings/settings.md#distributed_ddl_output_mode)设置调节的，对于`Replicated`数据库，最好将其设置为`null_status_on_timeout` - 例如，如果一些主机没有时间执行[distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout)的请求，那么不要抛出异常，但在表中显示它们的`NULL`状态。
 
-[system.clusters](../../operations/system-tables/clusters.md)系统表包含一个名为复制数据库的集群，它包含数据库的所有副本。当创建/删除副本时，这个集群会自动更新，它可以用于[Distributed](../../engines/table-engines/special/distributed.md#distributed)表。
+[system.clusters](../../operations/system-tables/clusters.md)系统表包含一个名为复制数据库的集群，它包含数据库的所有副本。当创建/删除副本时，这个集群会自动更新，它可以用于[Distributed](/engines/table-engines/special/distributed)表。
 
 当创建数据库的新副本时，该副本会自己创建表。如果副本已经不可用很长一段时间，并且已经滞后于复制日志-它用ZooKeeper中的当前元数据检查它的本地元数据，将带有数据的额外表移动到一个单独的非复制数据库(以免意外地删除任何多余的东西)，创建缺失的表，如果表名已经被重命名，则更新表名。数据在`ReplicatedMergeTree`级别被复制，也就是说，如果表没有被复制，数据将不会被复制(数据库只负责元数据)。
 

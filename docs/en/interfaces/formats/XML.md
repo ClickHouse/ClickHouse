@@ -1,7 +1,7 @@
 ---
-title : XML
+title: XML
 slug: /interfaces/formats/XML
-keywords : [XML]
+keywords: [XML]
 input_format: false
 output_format: true
 alias: []

@@ -39,7 +39,7 @@ PRIMARY KEY(primary_key_name);
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
 :::
 
-Arguments also can be passed using [named collections](/docs/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
 
 :::note Filtering
 Queries with `key equals` or `in filtering` will be optimized to multi keys lookup from Redis. If queries without filtering key full table scan will happen which is a heavy operation.
@@ -60,7 +60,7 @@ CREATE TABLE redis_table
 ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
 ```
 
-Or using [named collections](/docs/operations/named-collections.md):
+Or using [named collections](/operations/named-collections.md):
 
 ```xml
 <named_collections>

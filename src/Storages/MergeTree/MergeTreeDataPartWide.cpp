@@ -312,7 +312,8 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     if (!stream_name)
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No stream ({}) file checksum for column {} in part {}",
+                            "No stream ({}{}) file checksum for column {} in part {}",
+                            ISerialization::getFileNameForStream(name_type, substream_path),
                             DATA_FILE_EXTENSION,
                             name_type.name,
                             getDataPartStorage().getFullPath());

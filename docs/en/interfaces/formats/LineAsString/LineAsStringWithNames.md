@@ -1,7 +1,7 @@
 ---
-title : LineAsStringWithNames
+title: LineAsStringWithNames
 slug: /interfaces/formats/LineAsStringWithNames
-keywords : [LineAsStringWithNames]
+keywords: [LineAsStringWithNames]
 input_format: true
 output_format: true
 alias: []

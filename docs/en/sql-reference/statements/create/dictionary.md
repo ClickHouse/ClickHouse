@@ -154,7 +154,7 @@ LAYOUT(HASHED())
 
 ### Create a dictionary from another database {#create-a-dictionary-from-another-database}
 
-Please see the details in [Dictionary sources](/docs/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
+Please see the details in [Dictionary sources](/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
 
 **See Also**
 
