@@ -137,7 +137,7 @@ public:
     /// preliminary query filtering (filterBlockWithExpression()), because they just
     /// pass available virtual columns, which cannot be moved in case they are
     /// used multiple times.
-    virtual void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false);
+    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false);
     /// The same, but without `num_rows`. If result block is empty, adds `_dummy` column to keep block size.
     void execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false);
 
@@ -171,6 +171,8 @@ protected:
 
     virtual void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run);
 
+    virtual void executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input);
+
 
 };
 
@@ -180,7 +182,8 @@ class AdaptiveExpressionActions : public ExpressionActions
 public:
     explicit AdaptiveExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_ = {}, bool project_inputs_ = false);
     ~AdaptiveExpressionActions() override = default;
-    void execute(Block & block, size_t & num_rows, bool dry_run = false, bool allow_duplicates_in_input = false) override;
+protected:
+    void executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) override;
 private:
     size_t current_round_input_rows = 0;
 
