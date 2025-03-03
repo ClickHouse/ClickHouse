@@ -15,6 +15,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemReplicas.h>
+#include <Storages/System/StorageSystemTables.h>
 
 
 namespace DB::Setting
@@ -32,7 +33,8 @@ bool findReadingStep(QueryPlan::Node & node)
     if (dynamic_cast<ISourceStep *>(step))
     {
         /// might be more cases here
-        if (typeid_cast<ReadFromSystemColumns *>(step) || typeid_cast<ReadFromSystemReplicas *>(step))
+        if (typeid_cast<ReadFromSystemColumns *>(step) || typeid_cast<ReadFromSystemReplicas *>(step)
+            || typeid_cast<ReadFromSystemOneBlock *>(step) || typeid_cast<ReadFromSystemTables *>(step))
             return false;
         return true;
     }
@@ -100,6 +102,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     }
 
     /// Steps like ReadFromSystemColumns would build set in place, different from here, so return.
+    /// TODO: might have stricter filter
     if (!findReadingStep(*parent_node->children.front()))
         return 0;
 
