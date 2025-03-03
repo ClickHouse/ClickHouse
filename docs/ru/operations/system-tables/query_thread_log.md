@@ -10,11 +10,11 @@ slug: /ru/operations/system-tables/query_thread_log
 1. Настройте параметры [query_thread_log](/ru/operations/server-configuration-parameters/settings#server_configuration_parameters-query_thread_log) в конфигурации сервера.
 2. Установите значение [log_query_threads](../settings/settings.md#settings-log-query-threads) равным 1.
 
-Интервал сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
+Интервал сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs).
 
 ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](../../operations/system-tables/index.md#system-tables-introduction).
 
-Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_thread_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_thread_log`, вы можете использовать настройку [log_queries_probability](/operations/settings/settings#log_queries_probability)).
 
 Столбцы:
 

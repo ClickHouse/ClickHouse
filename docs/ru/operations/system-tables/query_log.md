@@ -12,7 +12,7 @@ slug: /ru/operations/system-tables/query_log
 
 Можно отключить логгирование настройкой [log_queries = 0](../settings/settings.md#settings-log-queries). По-возможности, не отключайте логгирование, поскольку информация из таблицы важна при решении проблем.
 
-Период сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](../server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
+Период сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](../server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs).
 
 ClickHouse не удаляет данные из таблица автоматически. Смотрите [Введение](/ru/operations/system-tables/).
 
@@ -27,7 +27,7 @@ ClickHouse не удаляет данные из таблица автомати
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом `ExceptionBeforeStart`.
 
-Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](/operations/settings/settings#log_queries_probability)).
 
 Чтобы регистрировать отформатированные запросы в столбце `formatted_query`, вы можете использовать настройку [log_formatted_queries](../../operations/settings/settings.md#settings-log-formatted-queries).
 

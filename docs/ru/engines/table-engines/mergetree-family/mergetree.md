@@ -392,7 +392,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
     -   `NOT startsWith(s, 'test')`
 
 ## Проекции {#projections}
-Проекции похожи на [материализованные представления](../../../sql-reference/statements/create/view.md#materialized), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
+Проекции похожи на [материализованные представления](/sql-reference/statements/create/view#materialized-view), но определяются на уровне кусков данных. Это обеспечивает гарантии согласованности данных наряду с автоматическим использованием в запросах.
 
 Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [optimize_use_projections](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#optimize_use_projections).
 

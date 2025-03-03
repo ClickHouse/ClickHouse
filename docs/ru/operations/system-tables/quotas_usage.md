@@ -35,4 +35,4 @@ slug: /ru/operations/system-tables/quotas_usage
 -   `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — максимальное время выполнения запроса.
 ## Смотрите также {#see-also}
 
--   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+-   [SHOW QUOTA](/sql-reference/statements/show#show-quota))

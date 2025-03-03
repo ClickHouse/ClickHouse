@@ -3212,7 +3212,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](/sql-reference/statements/create/view#materialized-view).
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -3974,7 +3974,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 ## alter_partition_verbose_result {#alter-partition-verbose-result}
 
-Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](/sql-reference/statements/alter/partition#attach-partitionpart) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
 
 Возможные значения:
 

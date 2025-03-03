@@ -16,7 +16,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 您可以通过设置 [log_queries=0](../../operations/settings/settings.md#settings-log-queries)来禁用query_log. 我们不建议关闭此日志，因为此表中的信息对于解决问题很重要。
 
-数据刷新的周期可通过 `flush_interval_milliseconds` 参数来设置 [query_log](../../operations/server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log) 。 要强制刷新，请使用 [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs)。
+数据刷新的周期可通过 `flush_interval_milliseconds` 参数来设置 [query_log](../../operations/server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log) 。 要强制刷新，请使用 [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs)。
 
 ClickHouse不会自动从表中删除数据。更多详情请看 [introduction](../../operations/system-tables/index.md#system-tables-introduction) 。
 

@@ -15,11 +15,11 @@ To start logging:
 1. Configure parameters in the [query_views_log](../../operations/server-configuration-parameters/settings.md#query_views_log) section.
 2. Set [log_query_views](/operations/settings/settings#log_query_views) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](../../operations/server-configuration-parameters/settings.md#query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
-You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_views_log` table.
+You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_views_log` table.
 
 Columns:
 
@@ -32,8 +32,8 @@ Columns:
 - `view_name` ([String](../../sql-reference/data-types/string.md)) — Name of the view.
 - `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID of the view.
 - `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of the view. Values:
-    - `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). Should not appear in this log.
-    - `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
+    - `'Default' = 1` — [Default views](/sql-reference/statements/create/view#normal-view). Should not appear in this log.
+    - `'Materialized' = 2` — [Materialized views](/sql-reference/statements/create/view#materialized-view).
     - `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 - `view_query` ([String](../../sql-reference/data-types/string.md)) — The query executed by the view.
 - `view_target` ([String](../../sql-reference/data-types/string.md)) — The name of the view target table.

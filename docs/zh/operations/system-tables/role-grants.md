@@ -17,6 +17,6 @@ slug: /zh/operations/system-tables/role-grants
     -   1 — `granted_role` is a default role.
     -   0 — `granted_role` is not a default role.
 
-- `with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 显示 `granted_role` 是否是具有 [ADMIN OPTION](../../sql-reference/statements/grant.md#admin-option-privilege) 特权的角色的标志. 参考值:
+- `with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 显示 `granted_role` 是否是具有 [ADMIN OPTION](/sql-reference/statements/grant#admin-option) 特权的角色的标志. 参考值:
     -   1 — 该角色具有 `ADMIN OPTION` 权限.
     -   0 — 该角色不具有  `ADMIN OPTION` 权限.

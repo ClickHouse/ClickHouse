@@ -10,11 +10,11 @@ slug: /zh/operations/system-tables/query_views_log
 1.  在 [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) 部分配置参数.
 2.  设置 [log_query_views](../../operations/settings/settings.md#settings-log-query-views) 为 1.
 
-数据的刷新周期是在[query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log)服务器设置部分的 `flush_interval_milliseconds` 参数中设置的. 要强制刷新，请使用[SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs)查询.
+数据的刷新周期是在[query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log)服务器设置部分的 `flush_interval_milliseconds` 参数中设置的. 要强制刷新，请使用[SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs)查询.
 
 ClickHouse不会自动从表中删除数据. 详见 [Introduction](../../operations/system-tables/index.md#system-tables-introduction).
 
-您可以使用[log_queries_probability](../../operations/settings/settings.md#log-queries-probability)设置来减少在 `query_views_log` 表中注册的查询数量.
+您可以使用[log_queries_probability](/operations/settings/settings#log_queries_probability))设置来减少在 `query_views_log` 表中注册的查询数量.
 
 列信息:
 
@@ -26,8 +26,8 @@ ClickHouse不会自动从表中删除数据. 详见 [Introduction](../../operati
 -   `view_name` ([String](../../sql-reference/data-types/string.md)) — 视图名称.
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — 视图的UUID.
 -   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — 视图类型. 值:
-    -   `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). 不应该出现在日志中.
-    -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
+    -   `'Default' = 1` — [Default views](/sql-reference/statements/create/view#normal-view). 不应该出现在日志中.
+    -   `'Materialized' = 2` — [Materialized views](/sql-reference/statements/create/view#materialized-view).
     -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 -   `view_query` ([String](../../sql-reference/data-types/string.md)) — 视图执行的查询.
 -   `view_target` ([String](../../sql-reference/data-types/string.md)) — 视图目标表的名称.

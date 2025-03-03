@@ -10,7 +10,7 @@ slug: /zh/operations/system-tables/query_thread_log
 1.  在配置参数 [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) 部分。
 2.  设置 [log_query_threads](../../operations/settings/settings.md#settings-log-query-threads) 为1。
 
-数据从缓存写入数据表周期时间参数 `flush_interval_milliseconds` 位于 [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) 服务器设置部分。如果需要强制从缓存写入数据表，请使用 [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) 查询请求。
+数据从缓存写入数据表周期时间参数 `flush_interval_milliseconds` 位于 [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) 服务器设置部分。如果需要强制从缓存写入数据表，请使用 [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) 查询请求。
 
 ClickHouse不会自动从表中删除数据。 欲了解更多详情，请参照 [介绍](../../operations/system-tables/index.md#system-tables-introduction)。
 

@@ -19,6 +19,6 @@ Columns:
     - 1 — `granted_role` is a default role.
     - 0 — `granted_role` is not a default role.
 
-- `with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `granted_role` is a role with [ADMIN OPTION](../../sql-reference/statements/grant.md#admin-option-privilege) privilege. Possible values:
+- `with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Flag that shows whether `granted_role` is a role with [ADMIN OPTION](/sql-reference/statements/grant#admin-option) privilege. Possible values:
     - 1 — The role has `ADMIN OPTION` privilege.
     - 0 — The role without `ADMIN OPTION` privilege.

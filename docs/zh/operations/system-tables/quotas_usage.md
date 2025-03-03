@@ -33,4 +33,4 @@ slug: /zh/operations/system-tables/quotas_usage
 
 ## 另请参阅 {#see-also}
 
--   [查看配额信息](../../sql-reference/statements/show.md#show-quota-statement)
+-   [查看配额信息](/sql-reference/statements/show#show-quota))
