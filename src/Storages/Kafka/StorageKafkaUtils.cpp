@@ -334,7 +334,7 @@ void consumerGracefulStop(
 {
     try
     {
-        consumer->pause();
+        consumer.pause();
     }
     catch (const cppkafka::HandleException & e)
     {
@@ -343,7 +343,7 @@ void consumerGracefulStop(
 
     try
     {
-        consumer->unsubscribe();
+        consumer.unsubscribe();
     }
     catch (const cppkafka::HandleException & e)
     {
@@ -352,7 +352,7 @@ void consumerGracefulStop(
 
     try
     {
-        consumer->unassign();
+        consumer.unassign();
     }
     catch (const cppkafka::HandleException & e)
     {
