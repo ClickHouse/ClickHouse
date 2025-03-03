@@ -53,26 +53,15 @@ struct NullableLess
         bool lhs_is_null = null_map[lhs];
         bool rhs_is_null = null_map[rhs];
 
+        if (lhs_is_null) [[unlikely]]
+            return false;
+        if (rhs_is_null) [[unlikely]]
+            return true;
+
         if constexpr (positive)
-        {
-            if (lhs_is_null) [[unlikely]]
-                return false;
-
-            if (rhs_is_null) [[unlikely]]
-                return true;
-
             return nested_column.compareAt(lhs, rhs, nested_column, 1) < 0;
-        }
         else
-        {
-            if (rhs_is_null) [[unlikely]]
-                return false;
-
-            if (lhs_is_null) [[unlikely]]
-                return true;
-
             return nested_column.compareAt(lhs, rhs, nested_column, -1) > 0;
-        }
     }
 };
 
