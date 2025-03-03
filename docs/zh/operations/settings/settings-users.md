@@ -11,7 +11,7 @@ sidebar_label: "\u7528\u6237\u8BBE\u7F6E"
 `users.xml` 中的 `users` 配置段包含了用户配置
 
 :::note
-ClickHouse还支持 [SQL驱动的工作流](/operations/access-rights#access-control) 用于管理用户。 我们建议使用它。
+ClickHouse还支持 [SQL驱动的工作流](/operations/access-rights) 用于管理用户。 我们建议使用它。
 :::
 
 `users` 配置段的结构:
@@ -79,7 +79,7 @@ ClickHouse还支持 [SQL驱动的工作流](/operations/access-rights#access-con
 
 ### access_management {#access_management-user-setting}
 
-此设置可为用户启用或禁用 SQL-driven [访问控制和帐户管理](/operations/access-rights#access-control) 。
+此设置可为用户启用或禁用 SQL-driven [访问控制和帐户管理](/operations/access-rights) 。
 
 可能的值:
 

@@ -24,6 +24,7 @@ public:
     ThreadPool & get();
 
     void initialize(size_t max_threads, size_t max_free_threads, size_t queue_size);
+    bool isInitialized() const;
     void reloadConfiguration(size_t max_threads, size_t max_free_threads, size_t queue_size);
 
     /// At runtime we can increase the number of threads up the specified limit
