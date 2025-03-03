@@ -402,7 +402,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     bool /* throw_on_error */) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
+    auto table_metadata = DataLake::TableMetadata().withLocationIfExists().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);

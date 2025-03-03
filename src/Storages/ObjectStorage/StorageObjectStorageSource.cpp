@@ -233,7 +233,10 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
-            const auto & full_path = fs::path(configuration->getPath()) / object_info->getPath();
+            std::string full_path = object_info->getPath();
+
+            if (!full_path.starts_with(configuration->getPath()))
+                full_path = fs::path(configuration->getPath()) / object_info->getPath();
 
             chassert(object_info->metadata);
 

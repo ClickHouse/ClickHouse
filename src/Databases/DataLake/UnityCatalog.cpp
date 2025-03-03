@@ -287,6 +287,9 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
             std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
+            if (!hasNotNoneValue("tables", object))
+                return tables;
+
             auto tables_object = object->get("tables").extract<Poco::JSON::Array::Ptr>();
             if (!tables_object)
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
