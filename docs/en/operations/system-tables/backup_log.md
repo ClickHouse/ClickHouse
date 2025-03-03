@@ -1,13 +1,14 @@
 ---
-slug: /en/operations/system-tables/backup_log
+description: "System table containing logging entries with information about `BACKUP` and `RESTORE` operations."
+slug: /operations/system-tables/backup_log
+title: "system.backup_log"
+keywords: ["system table", "backup_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
-# backup_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Contains logging entries with the information about `BACKUP` and `RESTORE` operations.
+Contains logging entries with information about `BACKUP` and `RESTORE` operations.
 
 Columns:
 

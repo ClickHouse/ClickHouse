@@ -123,7 +123,7 @@ public:
         StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;
         StoragePtr getStorage() const;
         const MergeTreeData * getMergeTreeData() const;
-
+        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;

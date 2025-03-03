@@ -146,6 +146,14 @@ class Info:
             json.dump(custom_data, f, indent=4)
 
     def get_custom_data(self, key=None):
+        # todo: remove intermediary file CUSTOM_DATA_FILE and store/get directly to/from RunConfig
+        if Path(Settings.CUSTOM_DATA_FILE).is_file():
+            # first check CUSTOM_DATA_FILE in case data is not yet in RunConfig
+            #   might happen if data stored in one pre-hook and fetched in another
+            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+                custom_data = json.load(f)
+        else:
+            custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
         if key:
-            return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data.get(key, None)
-        return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+            return custom_data.get(key, None)
+        return custom_data

@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>

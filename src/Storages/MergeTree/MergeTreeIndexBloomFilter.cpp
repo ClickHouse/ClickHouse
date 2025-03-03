@@ -7,7 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,6 +18,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/castColumn.h>
@@ -624,7 +625,7 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
         }
 
         Field zero(0);
-        bool constant_equal_zero = applyVisitor(FieldVisitorAccurateEquals(), constant_value, zero);
+        bool constant_equal_zero = accurateEquals(constant_value, zero);
 
         if (function_name == "equals" && !constant_equal_zero)
         {
@@ -636,13 +637,13 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
             /// indexOf(...) != c, c = 0
             return true;
         }
-        if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
+        if (function_name == (reversed ? "less" : "greater") && !accurateLess(constant_value, zero))
         {
             /// indexOf(...) > c, c >= 0
             return true;
         }
         if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals")
-            && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
+            && accurateLess(zero, constant_value))
         {
             /// indexOf(...) >= c, c > 0
             return true;
@@ -775,7 +776,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (which.isTuple() && key_node_function_name == "tuple")
         {
-            const Tuple & tuple = value_field.safeGet<const Tuple &>();
+            const Tuple & tuple = value_field.safeGet<Tuple>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)

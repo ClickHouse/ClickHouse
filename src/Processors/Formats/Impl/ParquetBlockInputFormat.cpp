@@ -25,7 +25,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
@@ -480,9 +480,9 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
             if (null_as_default)
             {
                 /// Make sure the range contains the default value.
-                if (!min.isNull() && applyVisitor(FieldVisitorAccurateLess(), default_value, min))
+                if (!min.isNull() && accurateLess(default_value, min))
                     min = default_value;
-                if (!max.isNull() && applyVisitor(FieldVisitorAccurateLess(), max, default_value))
+                if (!max.isNull() && accurateLess(max, default_value))
                     max = default_value;
             }
             else
@@ -878,13 +878,9 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
     pool->scheduleOrThrowOnError(
         [this, row_group_batch_idx, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
-                setThreadName("ParquetDecoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetDecoder");
 
                 threadFunction(row_group_batch_idx);
             }

@@ -61,6 +61,7 @@ public:
     UInt64 getCompressedSize() const override;
     size_t getNumReadFiles() const override;
     UInt64 getNumReadBytes() const override;
+    bool directoryExists(const String & directory) const override;
     Strings listFiles(const String & directory, bool recursive) const override;
     bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
@@ -68,8 +69,8 @@ public:
     UInt64 getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const override;
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
@@ -104,7 +105,7 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
+    std::unique_ptr<ReadBufferFromFileBase> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
     const BackupFactory::CreateParams params;
     BackupInfo backup_info;
