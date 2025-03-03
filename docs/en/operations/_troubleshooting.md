@@ -52,7 +52,7 @@ sudo apt-get clean
 sudo apt-get autoclean
 ```
 
-### You Can't Get Packages With Yum Because Of Wrong Signature
+### You Can't Get Packages With Yum Because Of Wrong Signature {#you-cant-get-packages-with-yum-because-of-wrong-signature}
 
 Possible issue: the cache is wrong, maybe it's broken after updated GPG key in 2022-09.
 
@@ -65,7 +65,7 @@ sudo rm -f /etc/yum.repos.d/clickhouse.repo
 
 After that follow the [install guide](../getting-started/install.md#from-rpm-packages)
 
-### You Can't Run Docker Container
+### You Can't Run Docker Container {#you-cant-run-docker-container}
 
 You are running a simple `docker run clickhouse/clickhouse-server` and it crashes with a stack trace similar to following:
 

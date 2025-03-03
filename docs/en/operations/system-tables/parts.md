@@ -1,6 +1,6 @@
 ---
 slug: /operations/system-tables/parts
-title: "parts"
+title: "system.parts"
 keywords: ["system table", "parts"]
 ---
 
@@ -91,7 +91,7 @@ Columns:
 
 - `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
-- `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md/#alter_freeze-partition)
+- `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition)
 
 - `database` ([String](../../sql-reference/data-types/string.md)) – Name of the database.
 

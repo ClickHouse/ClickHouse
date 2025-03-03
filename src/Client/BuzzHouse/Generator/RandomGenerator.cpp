@@ -5,7 +5,7 @@
 namespace BuzzHouse
 {
 
-uint32_t RandomGenerator::getSeed() const
+uint64_t RandomGenerator::getSeed() const
 {
     return seed;
 }
