@@ -908,6 +908,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
 
 void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
 {
-    setDatabaseComment(command.comment.value());
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
+
+
 }

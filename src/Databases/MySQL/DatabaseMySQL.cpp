@@ -427,7 +427,7 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
 
 void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
 {
-    setDatabaseComment(command.comment.value());
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 String DatabaseMySQL::getMetadataPath() const
