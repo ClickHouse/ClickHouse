@@ -18,6 +18,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
+void optimizeParallelReplicasLocalPlan(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+
+void optimizePlan(
+    QueryPlan & plan, const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.

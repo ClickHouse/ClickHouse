@@ -35,6 +35,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
+    extern const SettingsBool parallel_replicas_local_plan;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & from)
@@ -80,6 +81,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     : QueryPlanOptimizationSettings(from->getSettingsRef())
 {
+    optimize_parallel_replicas_local_plan_separately
+        = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_local_plan];
 }
 
 }

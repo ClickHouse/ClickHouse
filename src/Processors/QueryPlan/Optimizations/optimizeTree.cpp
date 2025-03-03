@@ -49,6 +49,12 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     {
         auto & frame = stack.top();
 
+        if (frame.node->step->optimizationBarrier())
+        {
+            stack.pop();
+            continue;
+        }
+
         /// If traverse_depth_limit == 0, then traverse without limit (first entrance)
         /// If traverse_depth_limit > 1, then traverse with (limit - 1)
         if (frame.depth_limit != 1)
@@ -122,6 +128,12 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
     while (!stack.empty())
     {
+        if (stack.back().node->step->optimizationBarrier())
+        {
+            stack.pop_back();
+            continue;
+        }
+
         optimizePrimaryKeyConditionAndLimit(stack);
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
@@ -146,6 +158,12 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     while (!stack.empty())
     {
         auto & frame = stack.back();
+
+        if (frame.node->step->optimizationBarrier())
+        {
+            stack.pop_back();
+            continue;
+        }
 
         if (frame.next_child == 0)
         {
@@ -180,6 +198,11 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
         {
             /// NOTE: frame cannot be safely used after stack was modified.
             auto & frame = stack.back();
+            if (frame.node->step->optimizationBarrier())
+            {
+                stack.pop_back();
+                continue;
+            }
 
             if (frame.next_child == 0)
             {
@@ -257,6 +280,11 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
+        if (frame.node->step->optimizationBarrier())
+        {
+            stack.pop_back();
+            continue;
+        }
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())
@@ -271,6 +299,63 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
 
         stack.pop_back();
     }
+}
+
+void optimizeParallelReplicasLocalPlan(QueryPlan & plan, const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    if (!optimization_settings.optimize_parallel_replicas_local_plan_separately)
+        return;
+
+    Stack stack;
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if (auto * union_step = typeid_cast<UnionStep *>(frame.node->step.get()); union_step && union_step->parallelReplicas())
+        {
+            // optimize plan
+            auto * local_plan_node = frame.node->children.front();
+            auto new_optimization_settings = optimization_settings;
+            new_optimization_settings.optimize_parallel_replicas_local_plan_separately = false;
+
+            optimizePlan(plan, new_optimization_settings, *local_plan_node, nodes);
+
+            union_step->optimizationBarrier() = true;
+        }
+        else
+        {
+            /// Traverse all children first.
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+        }
+
+        stack.pop_back();
+    }
+}
+
+void optimizePlan(
+    QueryPlan & plan, const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+{
+    if (optimization_settings.optimize_parallel_replicas_local_plan_separately)
+        optimizeParallelReplicasLocalPlan(plan, optimization_settings, root, nodes);
+
+    /// optimization need to be applied before "mergeExpressions" optimization
+    /// it removes redundant sorting steps, but keep underlying expressions,
+    /// so "mergeExpressions" optimization handles them afterwards
+    if (optimization_settings.remove_redundant_sorting)
+        QueryPlanOptimizations::tryRemoveRedundantSorting(&root);
+
+    QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, root, nodes);
+    QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, root, nodes);
+    if (optimization_settings.build_sets)
+        QueryPlanOptimizations::addStepsToBuildSets(plan, root, nodes);
 }
 
 }

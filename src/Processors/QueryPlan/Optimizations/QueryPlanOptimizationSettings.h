@@ -70,6 +70,7 @@ struct QueryPlanOptimizationSettings
 
     bool keep_logical_steps;
     bool is_explain;
+    bool optimize_parallel_replicas_local_plan_separately;
 };
 
 }

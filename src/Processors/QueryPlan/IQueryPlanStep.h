@@ -103,6 +103,8 @@ public:
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
 
+    bool & optimizationBarrier() { return optimization_barrier; }
+
 protected:
     virtual void updateOutputHeader() = 0;
 
@@ -117,6 +119,8 @@ protected:
     Processors processors;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
+
+    bool optimization_barrier = false;
 
 private:
     size_t step_index = 0;
