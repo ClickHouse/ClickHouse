@@ -36,6 +36,7 @@ def started_cluster():
             user_configs=[],
             image="clickhouse/integration-test-with-unity-catalog",
             with_installed_binary=False,
+            tag=os.environ.get("DOCKER_BASE_WITH_UNITY_CATALOG_TAG", "latest")
         )
 
         logging.info("Starting cluster...")
