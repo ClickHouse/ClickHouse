@@ -103,7 +103,7 @@ Take this implementation specificity into account when programming queries.
 
 ## Alternatives {#alternatives}
 
-It is possible to obtain the same result by applying [GROUP BY](../../../sql-reference/statements/select/group-by.md) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
+It is possible to obtain the same result by applying [GROUP BY](/sql-reference/statements/select/group-by) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
 
 - `DISTINCT` can be applied together with `GROUP BY`.
 - When [ORDER BY](../../../sql-reference/statements/select/order-by.md) is omitted and [LIMIT](../../../sql-reference/statements/select/limit.md) is defined, the query stops running immediately after the required number of different rows has been read.
