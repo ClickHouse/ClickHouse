@@ -252,6 +252,8 @@ Strings MergeTreeDataPartChecksums::getFileNames() const
     for (const auto & [name, _] : files)
         result.push_back(name);
 
+    std::sort(result.begin(), result.end());
+
     return result;
 }
 

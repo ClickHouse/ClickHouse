@@ -4651,19 +4651,23 @@ void MergeTreeData::checkChecksumsFileIsConsistentWithFileSystem(MutableDataPart
             }),
         files_in_part.end());
 
+    Strings files_in_checksums = part->checksums.getFileNames();
+
     LOG_DEBUG(getLogger("checkChecksumsFileIsConsistentWithFileSystem"), "checksums has {} files, new part has {} files, files in checksums: {}, files in part: {}",
         part->checksums.files.size(),
         files_in_part.size(),
-        getDebugString(part->checksums.getFileNames()),
+        getDebugString(files_in_checksums),
         getDebugString(files_in_part));
 
-    if (files_in_part.size() != part->checksums.files.size())
+    if (files_in_part != files_in_checksums)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "checksums.txt file is not consistent with the files on file system, checksums.txt file has {} files, part '{}' has {} files, files in checksums: {}, files in part: {}",
             part->checksums.files.size(),
             part->name,
             files_in_part.size(),
-            getDebugString(part->checksums.getFileNames()),
+            getDebugString(files_in_checksums),
             getDebugString(files_in_part));
+
+
 }
 
 

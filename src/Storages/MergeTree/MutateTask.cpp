@@ -1801,9 +1801,15 @@ private:
 
         NameSet hardlinked_files;
 
+
+
         /// NOTE: Renames must be done in order
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
+
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "files_to_rename {} -> {}",
+                rename_from, rename_to);
+
             if (rename_to.empty()) /// It's DROP COLUMN
             {
                 /// pass
@@ -1818,10 +1824,12 @@ private:
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
-            if (ctx->files_to_skip.contains(it->name()))
-                continue;
+            const String & file_name = it->name();
 
-            String file_name = it->name();
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "list {}", file_name);
+
+            if (ctx->files_to_skip.contains(file_name))
+                continue;
 
             auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&file_name](const auto & rename_pair)
             {
@@ -1835,6 +1843,9 @@ private:
             }
 
             String destination = it->name();
+
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "rename unchanged {} -> {}",
+            file_name, destination);
 
             if (it->isFile())
             {
@@ -1890,7 +1901,13 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
+        auto source_checksums_files = ctx->source_part->checksums.getFileNames();
+        LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "source parts checksums files {} : {}", source_checksums_files.size(), fmt::join(source_checksums_files, ", "));
+
         ctx->compression_codec = ctx->source_part->default_codec;
+
+        LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "prepare has pipelinebuilder {} updated header {}",
+            ctx->mutating_pipeline_builder.initialized(), ctx->updated_header.getNamesAndTypesList().toNamesAndTypesDescription());
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
@@ -1914,7 +1931,7 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
-            LOG_DEBUG(getLogger("prepare"), "ctor, columns: {}", ctx->updated_header.getNamesAndTypesList().toNamesAndTypesDescription());
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "prepare, columns: {}", ctx->updated_header.getNamesAndTypesList().toNamesAndTypesDescription());
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
@@ -1966,15 +1983,18 @@ private:
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
         {
-            if (rename_to.empty() && ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
-            else if (ctx->new_data_part->checksums.files.contains(rename_from))
-            {
-                ctx->new_data_part->checksums.files[rename_to] = ctx->new_data_part->checksums.files[rename_from];
-                ctx->new_data_part->checksums.files.erase(rename_from);
-            }
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "finalize, files_to_rename {} -> {}, remove to/from", rename_from, rename_to);
+            ctx->new_data_part->checksums.files.erase(rename_from);
+            if (!rename_to.empty())
+                ctx->new_data_part->checksums.files.erase(rename_to);
+        }
+
+        for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
+        {
+            LOG_DEBUG(getLogger("MutateSomePartColumnsTask"), "finalize, files_to_rename {} -> {}", rename_from, rename_to);
+
+            if (!rename_to.empty())
+                ctx->new_data_part->checksums.files[rename_to] = ctx->source_part->checksums.files.at(rename_from);
         }
 
         constexpr std::string proj_suffix = ".proj";
