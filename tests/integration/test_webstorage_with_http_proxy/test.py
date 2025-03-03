@@ -18,6 +18,7 @@ def cluster():
                 "configs/config.d/proxy_list.xml",
             ],
             with_nginx=True,
+            with_minio=True,
             use_old_analyzer=True,
         )
         logging.info("Starting cluster...")
