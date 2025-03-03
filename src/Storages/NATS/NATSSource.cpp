@@ -1,5 +1,6 @@
 #include <Storages/NATS/NATSSource.h>
 
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
@@ -93,8 +94,7 @@ Chunk NATSSource::generate()
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
-        if (consumer)
-            consumer->subscribe();
+        consumer->subscribe();
     }
 
     if (!consumer || is_finished)

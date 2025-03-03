@@ -9,9 +9,9 @@ sidebar_position: 207
 
 Максимальная ошибка 1%. Потребление памяти — `log(n)`, где `n` — число значений. Результат не детерминирован и зависит от порядка выполнения запроса.
 
-Производительность функции ниже, чем производительность функции [quantile](/docs/ru/sql-reference/aggregate-functions/reference/quantile) или [quantileTiming](/docs/ru/sql-reference/aggregate-functions/reference/quantiletiming). По соотношению размера состояния к точности вычисления, эта функция значительно превосходит `quantile`.
+Производительность функции ниже, чем производительность функции [quantile](/ru/sql-reference/aggregate-functions/reference/quantile) или [quantileTiming](/ru/sql-reference/aggregate-functions/reference/quantiletiming). По соотношению размера состояния к точности вычисления, эта функция значительно превосходит `quantile`.
 
-Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles), это повысит эффективность запроса.
+Внутренние состояния функций `quantile*` не объединяются, если они используются в одном запросе. Если вам необходимо вычислить квантили нескольких уровней, используйте функцию [quantiles](/ru/sql-reference/aggregate-functions/reference/quantiles), это повысит эффективность запроса.
 
 **Синтаксис**
 
@@ -54,5 +54,5 @@ SELECT quantileTDigest(number) FROM numbers(10)
 
 **Смотрите также**
 
--   [median](/docs/ru/sql-reference/aggregate-functions/reference/median)
--   [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles)
+-   [median](/ru/sql-reference/aggregate-functions/reference/median)
+-   [quantiles](/ru/sql-reference/aggregate-functions/reference/quantiles)

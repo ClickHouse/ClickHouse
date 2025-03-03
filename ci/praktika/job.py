@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
+from praktika import Artifact
 from praktika.utils import Utils
 
 
@@ -16,6 +17,7 @@ class Job:
     class CacheDigestConfig:
         include_paths: List[str] = field(default_factory=list)
         exclude_paths: List[str] = field(default_factory=list)
+        with_git_submodules: bool = False
 
     @dataclass
     class Config:
@@ -48,9 +50,9 @@ class Job:
 
         allow_merge_on_failure: bool = False
 
-        parameter: Any = None
+        enable_commit_status: bool = False
 
-        no_download_requires: bool = False
+        parameter: Any = None
 
         def parametrize(
             self,
@@ -143,10 +145,12 @@ class Job:
             """
             return copy.deepcopy(self)
 
-        def set_dependency(self, job):
+        def set_dependency(self, job, reset=False):
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
+            if reset:
+                res.requires = []
             for job_ in job:
                 if isinstance(job_, str):
                     res.requires.append(job_)
@@ -155,3 +159,29 @@ class Job:
                 else:
                     Utils.raise_with_error(f"Invalid dependency type [{job_}]")
             return res
+
+        def set_provides(self, artifact_name, reset=False):
+            res = copy.deepcopy(self)
+            if not (
+                isinstance(artifact_name, list) or isinstance(artifact_name, tuple)
+            ):
+                artifact_name = [artifact_name]
+            if reset:
+                res.provides = []
+            for artifact_name_ in artifact_name:
+                if isinstance(artifact_name_, str):
+                    res.provides.append(artifact_name_)
+                elif isinstance(artifact_name_, Artifact.Config):
+                    res.provides.append(artifact_name_.name)
+                else:
+                    Utils.raise_with_error(
+                        f"Invalid artifact type {type(artifact_name_)} for [{artifact_name_}]"
+                    )
+            return res
+
+        @staticmethod
+        def get_job(job_configs, job_name):
+            for job in job_configs:
+                if job.name == job_name:
+                    return job
+            raise RuntimeError(f"Failed to find job [{job_name}] in [{job_configs}]")

@@ -123,7 +123,7 @@ def get_run_command(
 
     if "stateful" in check_name.lower():
         run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
-    elif "stateless" in check_name.lower():
+    elif "stateless" in check_name.lower() or "validation" in check_name.lower():
         run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
     else:
         assert False

@@ -1,6 +1,7 @@
 #include <Interpreters/DDLTask.h>
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/isLocalAddress.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>

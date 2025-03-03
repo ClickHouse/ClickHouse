@@ -2,6 +2,7 @@
 #define CURL_DISABLE_FTP
 #define CURL_DISABLE_TFTP
 #define CURL_DISABLE_LDAP
+#define CURL_DISABLE_SMB
 #define CURL_EXTERN_SYMBOL __attribute__ ((__visibility__ ("default")))
 
 #define SIZEOF_SHORT 2
@@ -20,6 +21,7 @@
 #define HAVE_SIGSETJMP
 #define HAVE_SOCKET
 #define HAVE_STRUCT_TIMEVAL
+#define HAVE_POLL
 
 #define HAVE_RECV
 #define RECV_TYPE_ARG1 int

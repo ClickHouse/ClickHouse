@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheUtils.h>
+#include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
@@ -13,8 +14,6 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
-#include <magic_enum.hpp>
 
 namespace fs = std::filesystem;
 

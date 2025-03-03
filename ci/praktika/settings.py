@@ -17,7 +17,7 @@ class _Settings:
     CI_CONFIG_JOB_NAME = "Config Workflow"
     DOCKER_BUILD_JOB_NAME = "Docker Builds"
     FINISH_WORKFLOW_JOB_NAME = "Finish Workflow"
-    READY_FOR_MERGE_STATUS_NAME = "Ready for Merge"
+    READY_FOR_MERGE_CUSTOM_STATUS_NAME = ""
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
@@ -75,9 +75,11 @@ class _Settings:
     #        Report settings             #
     ######################################
     HTML_S3_PATH: str = ""
-    HTML_PAGE_FILE: str = "./praktika/json.html"
-    TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
+    HTML_PAGE_FILE: str = "./ci/praktika/json.html"
     S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
+    TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
+    # Compress if text file size exceeds this threshold (in MB, 0 - disable compression)
+    COMPRESS_THRESHOLD_MB: int = 0
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
@@ -120,7 +122,7 @@ _USER_DEFINED_SETTINGS = [
     "VALIDATE_FILE_PATHS",
     "DOCKERHUB_USERNAME",
     "DOCKERHUB_SECRET",
-    "READY_FOR_MERGE_STATUS_NAME",
+    "READY_FOR_MERGE_CUSTOM_STATUS_NAME",
     "SECRET_CI_DB_URL",
     "SECRET_CI_DB_USER",
     "SECRET_CI_DB_PASSWORD",
@@ -137,6 +139,7 @@ _USER_DEFINED_SETTINGS = [
     "PYTHONPATHS",
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
+    "COMPRESS_THRESHOLD_MB",
 ]
 
 
@@ -144,7 +147,13 @@ def _get_settings() -> _Settings:
     res = _Settings()
 
     directory = Path(_Settings.SETTINGS_DIRECTORY)
-    for py_file in directory.glob("*.py"):
+
+    py_files = list(directory.glob("*.py"))
+    # Support for overriding settings (if for whatever reason you need to override setting(s) in your fork)
+    # Sort: First files without "overrides", then files with "overrides"
+    sorted_files = sorted(py_files, key=lambda f: "_overrides" in f.name)
+
+    for py_file in sorted_files:
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{_Settings.SETTINGS_DIRECTORY}/{module_name}"
