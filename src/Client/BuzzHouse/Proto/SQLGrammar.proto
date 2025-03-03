@@ -2657,7 +2657,7 @@ enum DatabaseEngineValues {
     DShared = 4;
     DLazy = 5;
     DOrdinary = 6;
-    DDatabaseBackup = 7;
+    DBackup = 7;
 }
 
 message BackupDisk {

@@ -71,7 +71,7 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     }
     if (!fc.disks.empty())
     {
-        this->ids.emplace_back(DDatabaseBackup);
+        this->ids.emplace_back(DBackup);
     }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomlyFromVector(this->ids));
     this->ids.clear();
@@ -93,7 +93,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     else if (next.isBackupDatabase())
     {
         next.backed_db
-            = "d" + ((databases.empty() || rg.nextSmallNumber() < 9) ? std::to_string(rg.pickKeyRandomlyFromMap(databases)) : "efault");
+            = "d" + ((databases.empty() || rg.nextSmallNumber() < 3) ? "efault" : std::to_string(rg.pickKeyRandomlyFromMap(databases)));
         next.backed_disk = rg.pickRandomlyFromVector(fc.disks);
     }
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
