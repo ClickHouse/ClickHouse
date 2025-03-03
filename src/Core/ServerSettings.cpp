@@ -283,7 +283,7 @@ namespace DB
 
     **See also:**
 
-    - [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
+    - [max_memory_usage](/operations/settings/settings#max_memory_usage)
     - [merges_mutations_memory_usage_soft_limit](#merges_mutations_memory_usage_soft_limit)
     )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \

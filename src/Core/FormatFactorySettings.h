@@ -138,7 +138,7 @@ Treat empty fields in TSV input as default values.
 Treat inserted enum values in TSV formats as enum indices.
 )", 0) \
     DECLARE(Bool, input_format_null_as_default, true, R"(
-Enables or disables the initialization of [NULL](../../sql-reference/syntax.md/#null-literal) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
+Enables or disables the initialization of [NULL](/sql-reference/syntax#literals) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](/sql-reference/data-types/nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable for most input formats.
