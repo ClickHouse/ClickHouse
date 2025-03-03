@@ -1,7 +1,7 @@
 ---
-title : Prometheus
+title: Prometheus
 slug: /interfaces/formats/Prometheus
-keywords : [Prometheus]
+keywords: [Prometheus]
 input_format: false
 output_format: true
 alias: []

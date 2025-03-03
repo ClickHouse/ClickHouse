@@ -1,7 +1,7 @@
 ---
-title : MsgPack
+title: MsgPack
 slug: /interfaces/formats/MsgPack
-keywords : [MsgPack]
+keywords: [MsgPack]
 input_format: true
 output_format: true
 alias: []
