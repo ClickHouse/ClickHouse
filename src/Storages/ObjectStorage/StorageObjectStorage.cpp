@@ -407,7 +407,7 @@ SinkToStoragePtr StorageObjectStorage::write(
                         configuration->getPath());
     }
 
-    if (configuration->withPartitionWildcard())
+    if (partition_by || configuration->withPartitionWildcard())
     {
         ASTPtr partition_by_ast = nullptr;
         if (auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query))

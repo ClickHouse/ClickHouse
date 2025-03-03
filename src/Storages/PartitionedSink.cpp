@@ -42,6 +42,21 @@ Names extractPartitionRequiredColumns(const ASTPtr & partition_by, const Block &
     return exp_analyzer->getRequiredColumns();
 }
 
+static std::string formatToFileExtension(const std::string & format)
+{
+    if (format == "Parquet")
+    {
+        return "parquet";
+    }
+
+    if (format == "CSV")
+    {
+        return "csv";
+    }
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented for format {}", format);
+}
+
 /*
  * Constructs expression that generates a hive style partition.
  * partition by (year, country, city) on hive partition style looks like the following: 'year=2022/country=brazil/state=sc'
@@ -49,6 +64,7 @@ Names extractPartitionRequiredColumns(const ASTPtr & partition_by, const Block &
  * `concat(partition_column_names[0], '=', toString(partition_value[0]), '/', ...)`
  * */
 void buildHivePartitionExpressionAnalyzer(const ASTFunction * tuple_function,
+                                          const std::string & format,
                                           const ASTPtr partition_by,
                                           ExpressionActionsPtr & partition_by_expr,
                                           String & partition_by_column_name,
@@ -68,11 +84,11 @@ void buildHivePartitionExpressionAnalyzer(const ASTFunction * tuple_function,
 
         concat_args.push_back(makeASTFunction("toString", child));
 
-        if (i != tuple_function->arguments->children.size() - 1)
-        {
-            concat_args.push_back(std::make_shared<ASTLiteral>("/"));
-        }
+        concat_args.push_back(std::make_shared<ASTLiteral>("/"));
     }
+
+    concat_args.push_back(makeASTFunction("generateSnowflakeID"));
+    concat_args.push_back(std::make_shared<ASTLiteral>("." + formatToFileExtension(format)));
 
     ASTPtr hive_expr = makeASTFunction("concat", std::move(concat_args));
     auto hive_syntax_result = TreeRewriter(context).analyze(hive_expr, sample_block.getNamesAndTypesList());
@@ -82,6 +98,7 @@ void buildHivePartitionExpressionAnalyzer(const ASTFunction * tuple_function,
 
 void buildPartitionExpressionAnalyzer(
     const ASTPtr partition_by,
+    const std::string & format,
     ExpressionActionsPtr & partition_by_expr,
     String & partition_by_column_name,
     const Block & sample_block,
@@ -93,7 +110,7 @@ void buildPartitionExpressionAnalyzer(
         if (const auto * tuple_func = partition_by->as<ASTFunction>();
             tuple_func && tuple_func->name == "tuple")
         {
-            buildHivePartitionExpressionAnalyzer(tuple_func, partition_by, partition_by_expr, partition_by_column_name, sample_block, context);
+            buildHivePartitionExpressionAnalyzer(tuple_func, format, partition_by, partition_by_expr, partition_by_column_name, sample_block, context);
             return;
         }
     }
@@ -110,12 +127,13 @@ void buildPartitionExpressionAnalyzer(
 PartitionedSink::PartitionedSink(
     const ASTPtr & partition_by,
     ContextPtr context_,
-    const Block & sample_block_)
+    const Block & sample_block_,
+    const std::string & format)
     : SinkToStorage(sample_block_)
     , context(context_)
     , sample_block(sample_block_)
 {
-    buildPartitionExpressionAnalyzer(partition_by, partition_by_expr, partition_by_column_name, sample_block, context);
+    buildPartitionExpressionAnalyzer(partition_by, format, partition_by_expr, partition_by_column_name, sample_block, context);
 }
 
 

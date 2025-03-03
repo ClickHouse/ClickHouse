@@ -1910,7 +1910,7 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
+        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock(), format_name_)
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -1926,19 +1926,28 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
+        std::string filepath;
 
-        fs::create_directories(fs::path(partition_path).parent_path());
+        if (path.contains("{_partition_id}"))
+        {
+            filepath = PartitionedSink::replaceWildcards(path, partition_id);
+        }
+        else
+        {
+            filepath = path + "/" + partition_id;
+        }
 
-        PartitionedSink::validatePartitionKey(partition_path, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
+        fs::create_directories(fs::path(filepath).parent_path());
+
+        PartitionedSink::validatePartitionKey(filepath, true);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
             -1,
             /* use_table_fd */false,
             base_path,
-            partition_path,
+            filepath,
             compression_method,
             format_settings,
             format_name,

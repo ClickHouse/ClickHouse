@@ -16,7 +16,11 @@ class PartitionedSink : public SinkToStorage
 public:
     static constexpr auto PARTITION_ID_WILDCARD = "{_partition_id}";
 
-    PartitionedSink(const ASTPtr & partition_by, ContextPtr context_, const Block & sample_block_);
+    PartitionedSink(
+        const ASTPtr & partition_by,
+        ContextPtr context_,
+        const Block & sample_block_,
+        const std::string & format);
 
     ~PartitionedSink() override;
 

@@ -705,7 +705,7 @@ public:
         const CompressionMethod compression_method_,
         const HTTPHeaderEntries & headers_,
         const String & http_method_)
-        : PartitionedSink(partition_by, context_, sample_block_)
+        : PartitionedSink(partition_by, context_, sample_block_, format_)
         , uri(uri_)
         , format(format_)
         , format_settings(format_settings_)
@@ -720,7 +720,17 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
+        std::string partition_path;
+
+        if (uri.contains("{_partition_id}"))
+        {
+            partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
+        }
+        else
+        {
+            partition_path = uri + "/" + partition_id;
+        }
+
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(
             partition_path, format, format_settings, sample_block, context, timeouts, compression_method, headers, http_method);

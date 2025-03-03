@@ -1,0 +1,11 @@
+test/t_03363_s3_sink_root/year=2022/country=USA/<snowflakeid>.parquet	1
+test/t_03363_s3_sink_root/year=2022/country=Canada/<snowflakeid>.parquet	2
+test/t_03363_s3_sink_root/year=2023/country=USA/<snowflakeid>.parquet	3
+test/t_03363_s3_sink_root/year=2023/country=Mexico/<snowflakeid>.parquet	4
+test/t_03363_s3_sink_root/year=2024/country=France/<snowflakeid>.parquet	5
+test/t_03363_s3_sink_root/year=2024/country=Germany/<snowflakeid>.parquet	6
+test/t_03363_s3_sink_root/year=2024/country=Germany/<snowflakeid>.parquet	7
+test/t_03363_s3_sink_root/year=1999/country=Brazil/<snowflakeid>.parquet	8
+test/t_03363_s3_sink_root/year=2100/country=Japan/<snowflakeid>.parquet	9
+test/t_03363_s3_sink_root/year=2024/country=/<snowflakeid>.parquet	10
+test/t_03363_s3_sink_root/year=2024/country=CN/<snowflakeid>.parquet	11
