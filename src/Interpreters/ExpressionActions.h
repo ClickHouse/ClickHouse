@@ -167,9 +167,9 @@ protected:
 
     void linearizeActions(const std::unordered_set<const Node *> & lazy_executed_nodes);
 
-    void executeAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run, bool allow_duplicates_in_input);
+    void executeAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input);
 
-    virtual void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run);
+    virtual void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run);
 
     virtual void executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input);
 
@@ -187,7 +187,7 @@ protected:
 private:
     size_t current_round_input_rows = 0;
 
-    void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execute_context, bool dry_run) override;
+    void executeFunctionAction(ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run) override;
     void onNewFunctionBatchProfile(ExpressionActions::Action & action, const FunctionExecuteProfile & profile);
     void refreshLazyExecutedActions(size_t current_batch_rows);
     void appendProfileToActionsParent();
