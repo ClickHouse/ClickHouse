@@ -781,7 +781,13 @@ void ExpressionActions::executeAction(
     }
 }
 
+
 void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
+{
+    executeImpl(block, num_rows, dry_run, allow_duplicates_in_input);
+}
+
+void ExpressionActions::executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
     ExecutionContext execution_context
     {
@@ -1041,9 +1047,9 @@ AdaptiveExpressionActions::AdaptiveExpressionActions(ActionsDAG actions_dag_, co
     : ExpressionActions(std::move(actions_dag_), settings_, project_inputs_)
 {}
 
-void AdaptiveExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
+void AdaptiveExpressionActions::executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
-    ExpressionActions::execute(block, num_rows, dry_run, allow_duplicates_in_input);
+    ExpressionActions::executeImpl(block, num_rows, dry_run, allow_duplicates_in_input);
     refreshLazyExecutedActions(num_rows);
 }
 
